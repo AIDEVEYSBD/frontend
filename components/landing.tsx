@@ -4,6 +4,7 @@ import { Button, Mono, Status, Tag } from "./ui";
 import { CAT } from "./charts";
 import {
   CountUp,
+  HeroCarousel,
   IntegrationExplorer,
   Pin,
   Rise,
@@ -133,15 +134,7 @@ export function Band({
 export function Hero() {
   return (
     <section className="relative flex min-h-screen items-center overflow-hidden border-b border-line">
-      <Image
-        src="/media/hero.jpg"
-        alt=""
-        fill
-        priority
-        sizes="100vw"
-        className="object-cover"
-        aria-hidden
-      />
+      <HeroCarousel />
       {/* Scrim: canvas-tinted so the image recedes correctly in both themes. */}
       <div className="absolute inset-0 bg-gradient-to-r from-canvas via-canvas/85 to-canvas/35" />
       <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-canvas to-transparent" />
@@ -178,7 +171,7 @@ export function Hero() {
             </div>
             <div className="flex flex-col gap-0.5">
               <span className="text-[22px] leading-none font-semibold tracking-[-0.02em]">
-                <CountUp to={80} suffix="+" />
+                <CountUp to={130} suffix="+" />
               </span>
               <span className="text-[11.5px] text-faint">systems reachable through connectors</span>
             </div>
@@ -325,6 +318,11 @@ const HARNESS_ROWS = [
   ["Policy decision", "decision", "Disposition + governing clause", "94.1%", 5],
   ["Report drafting", "drafting", "Draft + change log", "89.3%", 3],
   ["Assessment review", "review", "Findings with severity", "98.6%", 4],
+  ["Control mapping", "decision", "Framework crosswalk + rationale", "92.8%", 6],
+  ["Vendor triage", "research", "Risk summary + evidence links", "93.5%", 7],
+  ["Access certification", "review", "Entitlement findings + owner", "95.2%", 9],
+  ["Incident summary", "drafting", "Timeline + affected assets", "90.7%", 0],
+  ["Data classification", "extraction", "Label + matched policy terms", "94.9%", 2],
   ["Human approval", "gate", "Approval + reviewer identity", "n/a", 8],
 ] as const;
 
@@ -378,6 +376,36 @@ export function Harnesses() {
           </table>
         </div>
       </div>
+
+      <Rise delay={80} className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {[
+          {
+            title: "Declared contract",
+            body: "Typed inputs and outputs, an explicit tool allowlist and defined exception paths. Nothing outside the contract is reachable at runtime.",
+            tags: ["inputs", "outputs", "tools", "exceptions"],
+          },
+          {
+            title: "Evaluation before deployment",
+            body: "Every harness ships with its own evaluation suite. Releases that fall below the accepted pass rate do not reach production.",
+            tags: ["214 cases in the library", "threshold gated"],
+          },
+          {
+            title: "Versioned releases",
+            body: "Behaviour changes ship as new versions with a changelog. Rollback to any prior version is a single action.",
+            tags: ["semver", "changelog", "rollback"],
+          },
+        ].map((c) => (
+          <div key={c.title} className="flex flex-col gap-2.5 rounded-lg border border-line bg-surface p-4">
+            <span className="text-[13px] font-semibold">{c.title}</span>
+            <p className="text-[12.5px] leading-[1.6] text-dim">{c.body}</p>
+            <div className="mt-auto flex flex-wrap gap-1.5 pt-1">
+              {c.tags.map((t) => (
+                <Tag key={t}>{t}</Tag>
+              ))}
+            </div>
+          </div>
+        ))}
+      </Rise>
     </Band>
   );
 }
@@ -403,7 +431,7 @@ export function Integrations() {
           <div className="flex gap-8">
             <div className="flex flex-col gap-0.5">
               <span className="text-[26px] leading-none font-semibold tracking-[-0.02em]">
-                <CountUp to={80} suffix="+" />
+                <CountUp to={130} suffix="+" />
               </span>
               <span className="text-[11.5px] text-faint">reachable systems</span>
             </div>

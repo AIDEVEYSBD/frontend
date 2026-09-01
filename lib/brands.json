@@ -716,13 +716,15 @@
     "name": "RiskRecon",
     "hex": "#F58220",
     "path": null,
-    "domain": "riskrecon.com"
+    "domain": "riskrecon.com",
+    "img": "/logos/riskrecon.com.png"
   },
   {
     "name": "Panorays",
     "hex": "#7C4DFF",
     "path": null,
-    "domain": "panorays.com"
+    "domain": "panorays.com",
+    "img": "/logos/panorays.com.png"
   },
   {
     "name": "Tableau",
@@ -735,37 +737,43 @@
     "name": "Kubernetes",
     "hex": "#326CE5",
     "path": null,
-    "domain": "kubernetes.io"
+    "domain": "kubernetes.io",
+    "img": "/logos/kubernetes.io.svg"
   },
   {
     "name": "Docker",
     "hex": "#2496ED",
     "path": null,
-    "domain": "docker.com"
+    "domain": "docker.com",
+    "img": "/logos/docker.com.svg"
   },
   {
     "name": "Terraform",
     "hex": "#7B42BC",
     "path": null,
-    "domain": "terraform.io"
+    "domain": "terraform.io",
+    "img": "/logos/terraform.io.svg"
   },
   {
     "name": "Ansible",
     "hex": "#EE0000",
     "path": null,
-    "domain": "ansible.com"
+    "domain": "ansible.com",
+    "img": "/logos/ansible.com.svg"
   },
   {
     "name": "Jenkins",
     "hex": "#D24939",
     "path": null,
-    "domain": "jenkins.io"
+    "domain": "jenkins.io",
+    "img": "/logos/jenkins.io.svg"
   },
   {
     "name": "CircleCI",
     "hex": "#343434",
     "path": null,
-    "domain": "circleci.com"
+    "domain": "circleci.com",
+    "img": "/logos/circleci.com.svg"
   },
   {
     "name": "Datadog",
@@ -778,42 +786,49 @@
     "name": "Grafana",
     "hex": "#F46800",
     "path": null,
-    "domain": "grafana.com"
+    "domain": "grafana.com",
+    "img": "/logos/grafana.com.svg"
   },
   {
     "name": "New Relic",
     "hex": "#1CE783",
     "path": null,
-    "domain": "newrelic.com"
+    "domain": "newrelic.com",
+    "img": "/logos/newrelic.com.svg"
   },
   {
     "name": "PagerDuty",
     "hex": "#06AC38",
     "path": null,
-    "domain": "pagerduty.com"
+    "domain": "pagerduty.com",
+    "img": "/logos/pagerduty.com.svg"
   },
   {
     "name": "Zoom",
     "hex": "#0B5CFF",
     "path": null,
-    "domain": "zoom.us"
+    "domain": "zoom.us",
+    "img": "/logos/zoom.us.svg"
   },
   {
     "name": "Webex",
     "hex": "#00CF64",
     "path": null,
-    "domain": "webex.com"
+    "domain": "webex.com",
+    "img": "/logos/webex.com.svg"
   },
   {
     "name": "Monday.com",
     "hex": "#FF3D57",
     "path": null,
-    "domain": "monday.com"
+    "domain": "monday.com",
+    "img": "/logos/monday.com.png"
   },
   {
     "name": "Smartsheet",
     "hex": "#003059",
     "path": null,
-    "domain": "smartsheet.com"
+    "domain": "smartsheet.com",
+    "img": "/logos/smartsheet.com.png"
   }
 ]

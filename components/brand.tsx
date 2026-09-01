@@ -29,6 +29,7 @@ export interface Brand {
 const MICROSOFT = new Set([
   "Dynamics 365", "SharePoint", "Azure Blob", "Outlook", "Teams", "SQL Server",
   "Entra ID", "Microsoft Purview", "Microsoft Defender", "Microsoft Sentinel",
+  "OneDrive", "Power BI", "Azure DevOps",
 ]);
 
 const MAP = new Map((brands as Brand[]).map((b) => [b.name, b]));

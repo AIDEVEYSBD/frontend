@@ -11,6 +11,7 @@ import {
 import { Button, Mono, Status, Tag } from "./ui";
 import { CAT } from "./charts";
 import { BrandMark } from "./brand";
+import Image from "next/image";
 
 /* ═══════════════════ In-view hook ═══════════════════ */
 
@@ -629,13 +630,16 @@ export function AgenticBuild() {
 /* ═══════════════════ Integration explorer ═══════════════════ */
 
 const GROUPS = [
-  { name: "Detection & DLP", c: 1, items: ["Microsoft Purview", "Microsoft Defender", "Microsoft Sentinel", "Splunk", "CrowdStrike", "Forcepoint", "Zscaler", "Netskope", "Proofpoint", "Elastic"] },
-  { name: "GRC & audit", c: 5, items: ["ServiceNow", "Archer", "OneTrust", "AuditBoard", "Jira", "Confluence"] },
-  { name: "Identity", c: 8, items: ["Okta", "Entra ID", "Ping Identity", "Auth0", "CyberArk", "HashiCorp Vault"] },
-  { name: "Vulnerability & code", c: 2, items: ["Qualys", "Tenable", "Rapid7", "Wiz", "Snyk", "Veracode", "Semgrep", "GitHub", "GitLab"] },
-  { name: "Third-party risk", c: 6, items: ["BitSight", "SecurityScorecard", "SAP", "Workday", "Coupa"] },
-  { name: "Documents & data", c: 3, items: ["SharePoint", "Google Drive", "Box", "Amazon S3", "Azure Blob", "Snowflake", "Databricks", "Postgres", "Elasticsearch"] },
-  { name: "Communication", c: 10, items: ["Outlook", "Gmail", "Slack", "Teams"] },
+  { name: "Detection & response", c: 1, items: ["Microsoft Sentinel", "Microsoft Defender", "Splunk", "CrowdStrike", "SentinelOne", "Palo Alto Networks", "Fortinet", "Cisco", "Check Point", "Trend Micro", "Sophos", "Darktrace", "Elastic", "Sumo Logic"] },
+  { name: "Data protection & network", c: 4, items: ["Microsoft Purview", "Forcepoint", "Zscaler", "Netskope", "Proofpoint", "Mimecast", "Cloudflare", "Akamai", "F5"] },
+  { name: "GRC & audit", c: 5, items: ["ServiceNow", "Archer", "OneTrust", "AuditBoard", "MetricStream", "LogicGate", "Vanta", "Drata", "Hyperproof", "Workiva", "Diligent", "Jira", "Confluence"] },
+  { name: "Identity & secrets", c: 8, items: ["Okta", "Entra ID", "Ping Identity", "Auth0", "SailPoint", "Duo", "CyberArk", "BeyondTrust", "Delinea", "JumpCloud", "1Password", "HashiCorp Vault"] },
+  { name: "Vulnerability & code", c: 2, items: ["Qualys", "Tenable", "Rapid7", "Wiz", "Snyk", "Veracode", "Semgrep", "Checkmarx", "Sonar", "JFrog", "Aqua Security", "Orca Security", "GitHub", "GitLab", "Bitbucket", "Azure DevOps"] },
+  { name: "Third-party risk", c: 6, items: ["BitSight", "SecurityScorecard", "UpGuard", "RiskRecon", "Panorays"] },
+  { name: "Business systems", c: 9, items: ["SAP", "Salesforce", "Oracle", "NetSuite", "Workday", "Dynamics 365", "Coupa", "Concur", "Stripe", "QuickBooks", "Xero", "Bloomberg", "Refinitiv", "Guidewire", "Duck Creek"] },
+  { name: "Documents & data", c: 3, items: ["SharePoint", "OneDrive", "Google Drive", "Box", "Dropbox", "iManage", "DocuSign", "Adobe Sign", "Amazon S3", "Azure Blob", "Snowflake", "Databricks", "BigQuery", "Redshift", "Postgres", "SQL Server", "MongoDB", "Elasticsearch", "Kafka", "Fivetran", "dbt", "Tableau", "Power BI", "Notion"] },
+  { name: "Cloud & DevOps", c: 7, items: ["Google Cloud", "Kubernetes", "Docker", "Terraform", "Ansible", "Jenkins", "CircleCI", "Datadog", "Grafana", "New Relic", "PagerDuty", "UiPath"] },
+  { name: "Communication & ITSM", c: 0, items: ["Outlook", "Gmail", "Slack", "Teams", "Zoom", "Webex", "Zendesk", "Intercom", "Genesys", "Five9", "Twilio", "Asana", "Monday.com", "Smartsheet"] },
 ];
 
 const ALL = GROUPS.flatMap((g) => g.items.map((i) => ({ name: i, group: g.name, c: g.c })));
@@ -705,23 +709,83 @@ export function IntegrationExplorer() {
         </Mono>
       </div>
 
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
-        {shown.map((i) => (
+      {shown.length > 0 ? (
+        // Fixed row count, column flow: the wall keeps a constant height and
+        // grows sideways instead of downwards, scrolling once it outruns the
+        // viewport. Column width is responsive down to a floor.
+        <div className="overflow-x-auto overscroll-x-contain rounded-lg border border-line">
           <div
-            key={i.name}
-            className="af-in flex items-center gap-2.5 bg-surface px-3 py-2.5 transition-colors hover:bg-raise"
+            className="grid w-max min-w-full grid-flow-col gap-px bg-line [grid-auto-columns:minmax(196px,1fr)]"
+            style={{ gridTemplateRows: `repeat(${Math.min(9, shown.length)}, minmax(0, 1fr))` }}
           >
-            <BrandMark name={i.name} size={16} />
-            <span className="truncate text-[12.5px]">{i.name}</span>
+            {shown.map((i) => (
+              <div
+                key={i.name}
+                className="af-in flex items-center gap-2.5 bg-surface px-3 py-2.5 transition-colors hover:bg-raise"
+              >
+                <BrandMark name={i.name} size={16} />
+                <span className="truncate text-[12.5px]">{i.name}</span>
+              </div>
+            ))}
           </div>
-        ))}
-        {shown.length === 0 && (
-          <div className="col-span-full bg-surface px-3 py-8 text-center text-[12.5px] text-faint">
-            No connector matches “{q}”. Additional connectors are released regularly, and
-            the External-tool connector supports integration with API-enabled systems.
-          </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-line bg-surface px-3 py-8 text-center text-[12.5px] text-faint">
+          No connector matches “{q}”. Additional connectors are released regularly, and
+          the External-tool connector supports integration with API-enabled systems.
+        </div>
+      )}
     </div>
+  );
+}
+
+/* ═══════════════════ Hero carousel ═══════════════════ */
+
+const HERO_IMAGES = [
+  "/media/hero.jpg",
+  "/media/hero-city.jpg",
+  "/media/hero-tower.jpg",
+  "/media/hero-desk.jpg",
+];
+
+export function HeroCarousel() {
+  const [idx, setIdx] = useState(0);
+
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const t = setInterval(() => setIdx((i) => (i + 1) % HERO_IMAGES.length), 7000);
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <>
+      <div className="absolute inset-0" aria-hidden>
+        {HERO_IMAGES.map((src, i) => (
+          <Image
+            key={src}
+            src={src}
+            alt=""
+            fill
+            priority={i === 0}
+            sizes="100vw"
+            className={`object-cover [transition:opacity_1.6s_ease,transform_8s_linear] ${
+              i === idx ? "scale-[1.06] opacity-100" : "scale-100 opacity-0"
+            }`}
+          />
+        ))}
+      </div>
+      <div className="absolute right-5 bottom-6 z-10 flex gap-1.5 sm:right-8 lg:right-12 2xl:right-20">
+        {HERO_IMAGES.map((src, i) => (
+          <button
+            key={src}
+            onClick={() => setIdx(i)}
+            aria-label={`Show image ${i + 1}`}
+            className={`focusable h-1 cursor-pointer rounded-full transition-all ${
+              i === idx ? "w-6 bg-fg" : "w-3 bg-fg/25 hover:bg-fg/50"
+            }`}
+          />
+        ))}
+      </div>
+    </>
   );
 }
