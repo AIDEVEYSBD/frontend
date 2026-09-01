@@ -1,0 +1,354 @@
+{
+  "_comment": "GENERATED from runtime/agentfactory/capabilities.py PARAMS. Do not edit by hand.",
+  "agent.invoke": {
+    "type": "object",
+    "properties": {
+      "agent": {
+        "type": "string"
+      },
+      "input": {
+        "type": "object"
+      }
+    },
+    "required": [
+      "agent"
+    ]
+  },
+  "code.parse": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "path"
+    ]
+  },
+  "code.read": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "Path relative to the code root"
+      }
+    },
+    "required": [
+      "path"
+    ]
+  },
+  "document.write": {
+    "type": "object",
+    "properties": {
+      "title": {
+        "type": "string"
+      },
+      "content": {
+        "description": "Prose, an object, or rows for tabular formats"
+      },
+      "format": {
+        "type": "string",
+        "enum": [
+          "md",
+          "txt",
+          "json",
+          "csv",
+          "html",
+          "docx",
+          "pdf",
+          "xlsx"
+        ]
+      },
+      "filename": {
+        "type": "string",
+        "description": "Optional stem; never a path"
+      },
+      "images": {
+        "type": "array",
+        "description": "Optional [{url, caption}] \u2014 embedded in pdf/html/md",
+        "items": {
+          "type": "object"
+        }
+      }
+    },
+    "required": [
+      "title",
+      "content"
+    ]
+  },
+  "engine.run": {
+    "type": "object",
+    "properties": {
+      "engine": {
+        "type": "string",
+        "description": "Shipped: cvss (CVSS 3.1 vector), montecarlo (frequency + loss triple) \u2014 plus any configured"
+      },
+      "input": {
+        "type": "object"
+      }
+    },
+    "required": [
+      "engine"
+    ]
+  },
+  "event.query": {
+    "type": "object",
+    "properties": {
+      "match": {
+        "type": "string",
+        "description": "Substring or /regex/ to match"
+      },
+      "since": {
+        "type": "string",
+        "description": "ISO timestamp lower bound"
+      },
+      "until": {
+        "type": "string",
+        "description": "ISO timestamp upper bound"
+      },
+      "limit": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "match"
+    ]
+  },
+  "finding.dispose": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "disposition": {
+        "type": "string",
+        "description": "e.g. false-positive, benign, duplicate, remediated"
+      },
+      "rationale": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "disposition"
+    ]
+  },
+  "notify.send": {
+    "type": "object",
+    "properties": {
+      "to": {
+        "type": "string",
+        "description": "#channel, an address, or a configured recipient"
+      },
+      "subject": {
+        "type": "string"
+      },
+      "body": {
+        "type": "string"
+      },
+      "transport": {
+        "type": "string",
+        "description": "Name a configured transport to bypass routing"
+      }
+    },
+    "required": [
+      "to",
+      "body"
+    ]
+  },
+  "peer.discover": {
+    "type": "object",
+    "properties": {
+      "peer": {
+        "type": "string",
+        "description": "A configured peer's name"
+      }
+    },
+    "required": [
+      "peer"
+    ]
+  },
+  "peer.result": {
+    "type": "object",
+    "properties": {
+      "peer": {
+        "type": "string"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The receipt peer.send returned"
+      },
+      "wait_s": {
+        "type": "number",
+        "description": "How long to wait for the peer to settle"
+      }
+    },
+    "required": [
+      "peer",
+      "task_id"
+    ]
+  },
+  "peer.send": {
+    "type": "object",
+    "properties": {
+      "peer": {
+        "type": "string",
+        "description": "A configured peer's name"
+      },
+      "message": {
+        "type": "string",
+        "description": "The task, in text"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "Optional \u2014 continue an existing task"
+      }
+    },
+    "required": [
+      "peer",
+      "message"
+    ]
+  },
+  "record.query": {
+    "type": "object",
+    "properties": {
+      "type": {
+        "type": "string",
+        "description": "Record type, e.g. user, asset, case"
+      },
+      "id": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "type"
+    ]
+  },
+  "record.write": {
+    "type": "object",
+    "properties": {
+      "type": {
+        "type": "string"
+      },
+      "fields": {
+        "type": "object"
+      }
+    },
+    "required": [
+      "type",
+      "fields"
+    ]
+  },
+  "retrieval.fetch": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string",
+        "description": "Document identifier"
+      }
+    },
+    "required": [
+      "id"
+    ]
+  },
+  "retrieval.search": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "What to look for"
+      },
+      "limit": {
+        "type": "integer",
+        "description": "Maximum documents to return"
+      },
+      "include_images": {
+        "type": "boolean",
+        "description": "Also return relevant images with descriptions, from sources that have them"
+      }
+    },
+    "required": [
+      "query"
+    ]
+  },
+  "sandbox.execute": {
+    "type": "object",
+    "properties": {
+      "language": {
+        "type": "string"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "source"
+    ]
+  },
+  "spec.propose": {
+    "type": "object",
+    "properties": {
+      "document": {
+        "description": "A complete AgentSystem document (object or JSON string)"
+      }
+    },
+    "required": [
+      "document"
+    ]
+  },
+  "spec.reference": {
+    "type": "object",
+    "properties": {
+      "example": {
+        "type": "boolean",
+        "description": "Include one known-good full spec"
+      }
+    }
+  },
+  "store.get": {
+    "type": "object",
+    "properties": {
+      "key": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "key"
+    ]
+  },
+  "store.put": {
+    "type": "object",
+    "properties": {
+      "key": {
+        "type": "string"
+      },
+      "value": {}
+    },
+    "required": [
+      "key",
+      "value"
+    ]
+  },
+  "web.fetch": {
+    "type": "object",
+    "properties": {
+      "url": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "url"
+    ]
+  },
+  "web.search": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "query"
+    ]
+  }
+}

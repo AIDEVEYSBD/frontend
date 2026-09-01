@@ -1,26 +1,535 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* ════════════════════════════════════════════════════════════════
+   Agent Factory — design tokens
+
+   Two themes, built independently rather than inverted. Dark mode
+   uses a lighter surface for elevation (shadows are invisible on
+   dark) and desaturated accents (saturated hues vibrate on dark).
+   Neutrals carry a slight warm bias so the greys never read clinical.
+   ════════════════════════════════════════════════════════════════ */
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-plex);
+  --font-mono: var(--font-plex-mono);
+
+  /* Ground */
+  --color-canvas: var(--t-canvas);
+  --color-surface: var(--t-surface);
+  --color-raise: var(--t-raise);
+  --color-sunken: var(--t-sunken);
+
+  /* Text ramp */
+  --color-fg: var(--t-fg);
+  --color-mist: var(--t-fg-2);
+  --color-dim: var(--t-fg-3);
+  --color-faint: var(--t-fg-4);
+  --color-ghost: var(--t-fg-5);
+
+  /* Lines */
+  --color-line: var(--t-line);
+  --color-line-strong: var(--t-line-strong);
+
+  /* Inverted (primary action) */
+  --color-ink: var(--t-ink);
+  --color-on-ink: var(--t-on-ink);
+
+  /* Text that sits on a solid semantic fill, in either theme. */
+  --color-on-solid: var(--t-on-solid);
+
+  /* Text over a grained surface: pure black or pure white, never a
+     blended ramp value — grain eats the contrast of mid-tones. */
+  --color-on-grain: var(--t-on-grain);
+
+  /* Fields */
+  --color-field: var(--t-field);
+
+  /* Semantic — each has fg / bg / border */
+  --color-run: var(--t-run);
+  --color-run-bg: var(--t-run-bg);
+  --color-run-line: var(--t-run-line);
+
+  --color-ok: var(--t-ok);
+  --color-ok-bg: var(--t-ok-bg);
+  --color-ok-line: var(--t-ok-line);
+
+  --color-warn: var(--t-warn);
+  --color-warn-bg: var(--t-warn-bg);
+  --color-warn-line: var(--t-warn-line);
+
+  --color-err: var(--t-err);
+  --color-err-bg: var(--t-err-bg);
+  --color-err-line: var(--t-err-line);
+
+  --color-queue: var(--t-queue);
+  --color-queue-bg: var(--t-queue-bg);
+  --color-queue-line: var(--t-queue-line);
+
+  /* Categorical palette — 10 pre-muted hues for series, categories and
+     tags. Constrained on purpose: nobody picks an arbitrary hex, they
+     pick from this set, which is what stops a dense view going garish. */
+  --color-c1: var(--t-c1);
+  --color-c2: var(--t-c2);
+  --color-c3: var(--t-c3);
+  --color-c4: var(--t-c4);
+  --color-c5: var(--t-c5);
+  --color-c6: var(--t-c6);
+  --color-c7: var(--t-c7);
+  --color-c8: var(--t-c8);
+  --color-c9: var(--t-c9);
+  --color-c10: var(--t-c10);
+
+  /* Radius — small and crisp. Nothing blobby. */
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* ─────────────── Light (default) ───────────────
+   Also applies to any nested [data-theme="light"] subtree, which is
+   how the design spec shows both palettes at once. */
+:root,
+[data-theme="light"] {
+  --t-canvas: #fbfaf9;
+  --t-surface: #ffffff;
+  --t-raise: #eeebe5;
+  --t-sunken: #e2ded6;
+
+  --t-fg: #1a1917;
+  --t-fg-2: #3d3a36;
+  --t-fg-3: #5c5852;
+  --t-fg-4: #837d74;
+  --t-fg-5: #a9a39a;
+
+  --t-line: #e0dbd3;
+  --t-line-strong: #c7c0b5;
+
+  --t-ink: #1a1917;
+  --t-on-ink: #fbfaf9;
+  /* Light semantics are dark hues, so solid fills take near-white text. */
+  --t-on-solid: #fbfaf9;
+  --t-on-grain: #000000;
+  --t-field: #ffffff;
+
+  /* Amber-ochre: work in flight. Muted, never neon. */
+  --t-run: #8a5f0a;
+  --t-run-bg: #faf3e4;
+  --t-run-line: #e4d3ab;
+
+  --t-ok: #2f6b4f;
+  --t-ok-bg: #eef5f0;
+  --t-ok-line: #bcd6c7;
+
+  --t-warn: #97591d;
+  --t-warn-bg: #fdf1e7;
+  --t-warn-line: #e9cbae;
+
+  --t-err: #a32b25;
+  --t-err-bg: #fdefee;
+  --t-err-line: #eec4c1;
+
+  --t-queue: #3d5a80;
+  --t-queue-bg: #eef2f7;
+  --t-queue-line: #c4d0e0;
+
+  /* Base material — achromatic only. */
+  --material-grain: 0.07;
+  /* Chrome is a small area, so page-level grain reads as nothing there.
+     It gets its own, heavier level. */
+  --material-grain-chrome: 0.42;
+  /* Monochrome noise laid over near-white barely shifts a pixel — on a
+     light ground it has to darken, on a dark ground it has to lighten.
+     Same texture, opposite operation. */
+  --material-grain-blend: multiply;
+  --material-cast: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.55) 0%,
+    rgba(255, 255, 255, 0) 46%
+  );
+
+  /* Categorical — darker/saturated so they hold on a light ground. */
+  --t-c1: #4a52a3;
+  --t-c2: #1f6fa8;
+  --t-c3: #12786f;
+  --t-c4: #2f6b3f;
+  --t-c5: #63752a;
+  --t-c6: #8a6a12;
+  --t-c7: #a2620f;
+  --t-c8: #b04a24;
+  --t-c9: #a93a5c;
+  --t-c10: #7a4ba0;
+
+  /* Layered shadows. Tinted with the canvas hue, never pure black. */
+  --shadow-1:
+    0 1px 1px rgba(41, 37, 33, 0.04),
+    0 2px 3px rgba(41, 37, 33, 0.03);
+  --shadow-2:
+    0 1px 1px rgba(41, 37, 33, 0.04),
+    0 2px 4px rgba(41, 37, 33, 0.04),
+    0 6px 10px rgba(41, 37, 33, 0.04);
+  --shadow-3:
+    0 1px 2px rgba(41, 37, 33, 0.05),
+    0 4px 8px rgba(41, 37, 33, 0.05),
+    0 12px 22px rgba(41, 37, 33, 0.06);
+}
+
+/* ─────────────── Dark ─────────────── */
+[data-theme="dark"] {
+  --t-canvas: #0a0a09;
+  --t-surface: #121211;
+  --t-raise: #1b1a18;
+  --t-sunken: #050504;
+
+  --t-fg: #f2f0ed;
+  --t-fg-2: #cdc9c3;
+  --t-fg-3: #a29d96;
+  --t-fg-4: #7d7871;
+  --t-fg-5: #5c5852;
+
+  --t-line: #232120;
+  --t-line-strong: #34312d;
+
+  --t-ink: #f2f0ed;
+  --t-on-ink: #0a0a09;
+  /* Dark semantics are light hues, so solid fills take near-black text. */
+  --t-on-solid: #0a0a09;
+  --t-on-grain: #ffffff;
+  --t-field: #0d0d0c;
+
+  --t-run: #d9a441;
+  --t-run-bg: #1c160b;
+  --t-run-line: #3d3018;
+
+  --t-ok: #6cbb8f;
+  --t-ok-bg: #0d1913;
+  --t-ok-line: #1d3628;
+
+  --t-warn: #d99a5b;
+  --t-warn-bg: #1c140d;
+  --t-warn-line: #3d2b1a;
+
+  --t-err: #e0817a;
+  --t-err-bg: #1c0f0e;
+  --t-err-line: #3f201d;
+
+  --t-queue: #8aa4c8;
+  --t-queue-bg: #0e1319;
+  --t-queue-line: #222b36;
+
+  /* Categorical — lifted and desaturated so they don't vibrate on dark. */
+  --t-c1: #8c90e0;
+  --t-c2: #6fb2e0;
+  --t-c3: #59bdb0;
+  --t-c4: #6fbe86;
+  --t-c5: #a9bc63;
+  --t-c6: #d3b155;
+  --t-c7: #dfa05c;
+  --t-c8: #e08a66;
+  --t-c9: #dc8098;
+  --t-c10: #b48adf;
+
+  --material-grain: 0.05;
+  --material-grain-chrome: 0.14;
+  --material-grain-blend: screen;
+  --material-cast: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.035) 0%,
+    rgba(255, 255, 255, 0) 46%
+  );
+
+  /* On dark, depth comes from surface steps — these stay minimal. */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.45);
+  --shadow-3: 0 8px 24px rgba(0, 0, 0, 0.55);
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not([data-theme="light"]) {
+    --t-canvas: #0a0a09;
+    --t-surface: #121211;
+    --t-raise: #1b1a18;
+    --t-sunken: #050504;
+
+    --t-fg: #f2f0ed;
+    --t-fg-2: #cdc9c3;
+    --t-fg-3: #a29d96;
+    --t-fg-4: #7d7871;
+    --t-fg-5: #5c5852;
+
+    --t-line: #232120;
+    --t-line-strong: #34312d;
+
+    --t-ink: #f2f0ed;
+    --t-on-ink: #0a0a09;
+    --t-on-solid: #0a0a09;
+    --t-on-grain: #ffffff;
+    --t-field: #0d0d0c;
+
+    --t-run: #d9a441;
+    --t-run-bg: #1c160b;
+    --t-run-line: #3d3018;
+
+    --t-ok: #6cbb8f;
+    --t-ok-bg: #0d1913;
+    --t-ok-line: #1d3628;
+
+    --t-warn: #d99a5b;
+    --t-warn-bg: #1c140d;
+    --t-warn-line: #3d2b1a;
+
+    --t-err: #e0817a;
+    --t-err-bg: #1c0f0e;
+    --t-err-line: #3f201d;
+
+    --t-queue: #8aa4c8;
+    --t-queue-bg: #0e1319;
+    --t-queue-line: #222b36;
+
+  /* Categorical — lifted and desaturated so they don't vibrate on dark. */
+    --t-c1: #8c90e0;
+    --t-c2: #6fb2e0;
+    --t-c3: #59bdb0;
+    --t-c4: #6fbe86;
+    --t-c5: #a9bc63;
+    --t-c6: #d3b155;
+    --t-c7: #dfa05c;
+    --t-c8: #e08a66;
+    --t-c9: #dc8098;
+    --t-c10: #b48adf;
+
+    --material-grain: 0.05;
+    --material-grain-chrome: 0.14;
+    --material-grain-blend: screen;
+    --material-cast: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.035) 0%,
+      rgba(255, 255, 255, 0) 46%
+    );
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.45);
+    --shadow-3: 0 8px 24px rgba(0, 0, 0, 0.55);
   }
 }
 
+/* ─────────────── Base ─────────────── */
+
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--t-canvas);
+  color: var(--t-fg);
+}
+
+html {
+  /* Stops the elastic bounce that reveals blank space above the navbar.
+     Vertical only: `overscroll-behavior: none` on both axes is heavier
+     than the problem needs. */
+  overscroll-behavior-y: none;
+}
+
+body {
+  /* `clip`, not `hidden`. Setting overflow-x:hidden on html or body makes
+     it a scroll container, which breaks position:sticky and hijacks the
+     document's own scrolling. `clip` trims sideways drift and leaves
+     vertical scrolling alone. */
+  overflow-x: clip;
+}
+
+body {
+  font-feature-settings: "cv05" 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Numbers in data contexts must align in columns. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+::selection {
+  background: var(--t-fg);
+  color: var(--t-canvas);
+}
+
+/* One focus treatment, used everywhere. */
+.focusable:focus-visible {
+  outline: 2px solid var(--t-fg);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ─────────────── Elevation ─────────────── */
+
+.elev-1 {
+  box-shadow: var(--shadow-1);
+}
+.elev-2 {
+  box-shadow: var(--shadow-2);
+}
+.elev-3 {
+  box-shadow: var(--shadow-3);
+}
+
+/* On dark, a shadow is invisible — elevation becomes a lighter surface.
+   The overlay composites over whatever background the element sets. */
+[data-theme="dark"] .elev-1 {
+  background-image: linear-gradient(rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.025));
+}
+[data-theme="dark"] .elev-2 {
+  background-image: linear-gradient(rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.05));
+}
+[data-theme="dark"] .elev-3 {
+  background-image: linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08));
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .elev-1 {
+    background-image: linear-gradient(rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.025));
+  }
+  :root:not([data-theme="light"]) .elev-2 {
+    background-image: linear-gradient(rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.05));
+  }
+  :root:not([data-theme="light"]) .elev-3 {
+    background-image: linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08));
+  }
+}
+
+/* ─────────────── Motion ─────────────── */
+
+@keyframes af-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes af-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes af-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+@keyframes af-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes af-bar {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.af-fade-up {
+  animation: af-fade-up 240ms var(--ease-out) both;
+}
+.af-pulse {
+  animation: af-pulse 1.6s var(--ease-out) infinite;
+}
+.af-indeterminate {
+  animation: af-indeterminate 1.4s var(--ease-out) infinite;
+}
+.af-spin {
+  animation: af-spin 700ms linear infinite;
+}
+.af-bar {
+  animation: af-bar 900ms var(--ease-out) infinite;
+}
+
+/* Reduced motion is an off switch, not a shorter duration. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Popovers arrive from the element they belong to, not from nowhere. */
+@keyframes af-pop-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+.af-pop {
+  animation: af-pop-in 140ms var(--ease-out) both;
+}
+
+/* A list that flipped above its trigger should arrive from below it, or the
+   motion points away from the thing the list belongs to. */
+@keyframes af-pop-in-up {
+  from { opacity: 0; transform: translateY(4px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+.af-pop-up {
+  animation: af-pop-in-up 140ms var(--ease-out) both;
+}
+
+/* ─────────────── Landing motion ─────────────── */
+
+@keyframes af-flow { to { stroke-dashoffset: -26; } }
+@keyframes af-node-fill { from { width: 0%; } to { width: 100%; } }
+@keyframes af-swap { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes af-chip { from { opacity: 0; transform: translateY(4px) scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes af-caret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+
+.af-flow { animation: af-flow 700ms linear infinite; }
+.af-node-fill { animation: af-node-fill 900ms var(--ease-out) forwards; }
+.af-swap { animation: af-swap 260ms var(--ease-out) both; }
+.af-chip { animation: af-chip 220ms var(--ease-out) both; }
+.af-caret { animation: af-caret 900ms step-end infinite; }
+
+/* ─────────────── Demo flow ─────────────── */
+
+@keyframes af-halo {
+  0%, 100% { opacity: 0.9; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(1.03); }
+}
+@keyframes af-notice {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes af-dots {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+.af-halo { animation: af-halo 1.6s var(--ease-out) infinite; }
+.af-notice { animation: af-notice 320ms var(--ease-spring, cubic-bezier(0.34,1.4,0.64,1)) both; }
+.af-dots > span { animation: af-dots 1s var(--ease-out) infinite; }
+.af-dots > span:nth-child(2) { animation-delay: 140ms; }
+.af-dots > span:nth-child(3) { animation-delay: 280ms; }
+
+/* Entry animation with no fill-mode: content is fully visible before and
+   after, so a grid that never animates is still a grid you can read. */
+.af-in {
+  animation: af-chip 220ms var(--ease-out);
 }

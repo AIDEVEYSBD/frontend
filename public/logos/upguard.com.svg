@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<svg width="400" height="400" viewBox="0 0 400 400" fill="none" version="1.2" baseProfile="tiny-ps" xmlns="http://www.w3.org/2000/svg">
+  <title>UpGuard</title>
+  <rect width="400" height="400" fill="black"/>
+  <path d="M150 192.17V100H100V250H150V192.17ZM250 100V250H300V100H250ZM150 250V300H250V250H150Z" fill="white"/>
+</svg>
