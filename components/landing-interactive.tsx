@@ -10,7 +10,7 @@ import {
 } from "react";
 import { Button, Mono, Status, Tag } from "./ui";
 import { CAT } from "./charts";
-import { BrandMark } from "./brand";
+import { BrandMark, brandOf } from "./brand";
 import Image from "next/image";
 
 /* ═══════════════════ In-view hook ═══════════════════ */
@@ -713,17 +713,36 @@ export function IntegrationExplorer() {
         // The wall keeps a constant visible height (about nine rows) and
         // scrolls vertically once the catalog outruns it. Tile width stays
         // responsive.
-        <div className="max-h-[378px] overflow-y-auto overscroll-y-contain rounded-lg border border-line">
+        <div className="max-h-[520px] overflow-y-auto overscroll-y-contain rounded-lg border border-line">
           <div className="grid grid-cols-2 gap-px bg-line sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
-            {shown.map((i) => (
-              <div
-                key={i.name}
-                className="af-in flex items-center gap-2.5 bg-surface px-3 py-2.5 transition-colors hover:bg-raise"
-              >
-                <BrandMark name={i.name} size={16} />
-                <span className="truncate text-[12.5px]">{i.name}</span>
-              </div>
-            ))}
+            {shown.map((i) => {
+              const href = siteFor(i.name);
+              const inner = (
+                <>
+                  <BrandMark name={i.name} size={16} />
+                  <span className="truncate text-[12.5px]">{i.name}</span>
+                </>
+              );
+              return href ? (
+                <a
+                  key={i.name}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={`${i.name} website`}
+                  className="af-in flex items-center gap-2.5 bg-surface px-3 py-2.5 transition-colors hover:bg-raise"
+                >
+                  {inner}
+                </a>
+              ) : (
+                <div
+                  key={i.name}
+                  className="af-in flex items-center gap-2.5 bg-surface px-3 py-2.5 transition-colors hover:bg-raise"
+                >
+                  {inner}
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : (
@@ -736,12 +755,75 @@ export function IntegrationExplorer() {
   );
 }
 
+/* Product pages for connectors whose vendor domain is shared across many
+   products (Microsoft, Google, Atlassian, AWS) or otherwise not the right
+   destination. Everything else links to the vendor domain from brands.json. */
+const SITE: Record<string, string> = {
+  "Microsoft Sentinel": "https://azure.microsoft.com/en-us/products/microsoft-sentinel",
+  "Microsoft Defender": "https://www.microsoft.com/en-us/security/business/microsoft-defender",
+  "Microsoft Purview": "https://www.microsoft.com/en-us/security/business/microsoft-purview",
+  "Entra ID": "https://www.microsoft.com/en-us/security/business/identity-access/microsoft-entra-id",
+  "SharePoint": "https://www.microsoft.com/en-us/microsoft-365/sharepoint/collaboration",
+  "OneDrive": "https://www.microsoft.com/en-us/microsoft-365/onedrive/online-cloud-storage",
+  "Outlook": "https://www.microsoft.com/en-us/microsoft-365/outlook",
+  "Teams": "https://www.microsoft.com/en-us/microsoft-teams/group-chat-software",
+  "Power BI": "https://www.microsoft.com/en-us/power-platform/products/power-bi",
+  "Azure DevOps": "https://azure.microsoft.com/en-us/products/devops",
+  "Azure Blob": "https://azure.microsoft.com/en-us/products/storage/blobs",
+  "SQL Server": "https://www.microsoft.com/en-us/sql-server",
+  "Dynamics 365": "https://www.microsoft.com/en-us/dynamics-365",
+  "Splunk": "https://www.splunk.com",
+  "Palo Alto Networks": "https://www.paloaltonetworks.com",
+  "Fortinet": "https://www.fortinet.com",
+  "Elastic": "https://www.elastic.co",
+  "Elasticsearch": "https://www.elastic.co/elasticsearch",
+  "Jira": "https://www.atlassian.com/software/jira",
+  "Confluence": "https://www.atlassian.com/software/confluence",
+  "Okta": "https://www.okta.com",
+  "Auth0": "https://auth0.com",
+  "HashiCorp Vault": "https://www.hashicorp.com/products/vault",
+  "Qualys": "https://www.qualys.com",
+  "Snyk": "https://snyk.io",
+  "GitHub": "https://github.com",
+  "GitLab": "https://about.gitlab.com",
+  "SecurityScorecard": "https://securityscorecard.com",
+  "SAP": "https://www.sap.com",
+  "Stripe": "https://stripe.com",
+  "QuickBooks": "https://quickbooks.intuit.com",
+  "Xero": "https://www.xero.com",
+  "Google Drive": "https://workspace.google.com/products/drive/",
+  "Gmail": "https://workspace.google.com/products/gmail/",
+  "Google Cloud": "https://cloud.google.com",
+  "BigQuery": "https://cloud.google.com/bigquery",
+  "Box": "https://www.box.com",
+  "Dropbox": "https://www.dropbox.com",
+  "Snowflake": "https://www.snowflake.com",
+  "Databricks": "https://www.databricks.com",
+  "Postgres": "https://www.postgresql.org",
+  "MongoDB": "https://www.mongodb.com",
+  "Kafka": "https://kafka.apache.org",
+  "Notion": "https://www.notion.so",
+  "UiPath": "https://www.uipath.com",
+  "Zendesk": "https://www.zendesk.com",
+  "Intercom": "https://www.intercom.com",
+  "Asana": "https://asana.com",
+  "Amazon S3": "https://aws.amazon.com/s3/",
+  "Redshift": "https://aws.amazon.com/redshift/",
+  "Adobe Sign": "https://www.adobe.com/acrobat/business/sign.html",
+};
+
+function siteFor(name: string): string | undefined {
+  if (SITE[name]) return SITE[name];
+  const d = brandOf(name).domain;
+  return d ? `https://${d}` : undefined;
+}
+
 /* ═══════════════════ Hero carousel ═══════════════════ */
 
 const HERO_IMAGES = [
   "/media/hero-racks.jpg",
   "/media/hero-globe.jpg",
-  "/media/hero-datacenter.jpg",
+  "/media/hero-nodes.jpg",
   "/media/hero-circuit.jpg",
   "/media/hero-city.jpg",
   "/media/hero-board.jpg",

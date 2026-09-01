@@ -492,6 +492,54 @@ export function Deployment() {
           <DeployPanel />
         </Rise>
       </div>
+
+      {/* The planes that land in the tenancy, drawn from the reference
+          architecture: what is provisioned, what executes, what persists,
+          what governs, and how it connects outward. */}
+      <Rise delay={120} className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {[
+          {
+            title: "Build plane",
+            body: "Reusable agent and workflow templates, a data adaptor catalogue and the evaluation harness, provisioned through infrastructure-as-code.",
+            tags: ["templates", "data adaptors", "IaC"],
+          },
+          {
+            title: "Agent runtime",
+            body: "Ephemeral workers execute under a supervisor with approved tools and session memory, and are deprovisioned when the run completes.",
+            tags: ["ephemeral workers", "orchestrator", "approved tools"],
+          },
+          {
+            title: "Work plane",
+            body: "A durable work registry and immutable execution ledger, with watchdog recovery and provenance history retained for every run.",
+            tags: ["execution ledger", "watchdog", "provenance"],
+          },
+          {
+            title: "Control plane",
+            body: "Agent identities carry least-privilege entitlements. Policy and guardrail decisions, FinOps quotas and emergency suspension apply across every runtime.",
+            tags: ["least privilege", "guardrails", "FinOps", "kill switch"],
+          },
+          {
+            title: "Integration gateway",
+            body: "Traffic in and out passes through a context gateway with input and output sanitization. Standard interfaces connect existing platforms and downstream reporting.",
+            tags: ["MCP", "A2A", "REST", "webhooks"],
+          },
+          {
+            title: "Model consumption",
+            body: "Requests route per task across your model garden. Sensitive work runs on self-hosted models; frontier models are reached through your approved endpoints.",
+            tags: ["model garden", "self-hosted", "frontier endpoints"],
+          },
+        ].map((c) => (
+          <div key={c.title} className="flex flex-col gap-2.5 rounded-lg border border-line bg-surface p-4">
+            <span className="text-[13px] font-semibold">{c.title}</span>
+            <p className="text-[12.5px] leading-[1.6] text-dim">{c.body}</p>
+            <div className="mt-auto flex flex-wrap gap-1.5 pt-1">
+              {c.tags.map((t) => (
+                <Tag key={t}>{t}</Tag>
+              ))}
+            </div>
+          </div>
+        ))}
+      </Rise>
     </Band>
   );
 }
