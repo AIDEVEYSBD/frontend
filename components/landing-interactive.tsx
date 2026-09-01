@@ -710,14 +710,11 @@ export function IntegrationExplorer() {
       </div>
 
       {shown.length > 0 ? (
-        // Fixed row count, column flow: the wall keeps a constant height and
-        // grows sideways instead of downwards, scrolling once it outruns the
-        // viewport. Column width is responsive down to a floor.
-        <div className="overflow-x-auto overscroll-x-contain rounded-lg border border-line">
-          <div
-            className="grid w-max min-w-full grid-flow-col gap-px bg-line [grid-auto-columns:minmax(196px,1fr)]"
-            style={{ gridTemplateRows: `repeat(${Math.min(9, shown.length)}, minmax(0, 1fr))` }}
-          >
+        // The wall keeps a constant visible height (about nine rows) and
+        // scrolls vertically once the catalog outruns it. Tile width stays
+        // responsive.
+        <div className="max-h-[378px] overflow-y-auto overscroll-y-contain rounded-lg border border-line">
+          <div className="grid grid-cols-2 gap-px bg-line sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
             {shown.map((i) => (
               <div
                 key={i.name}
@@ -742,10 +739,12 @@ export function IntegrationExplorer() {
 /* ═══════════════════ Hero carousel ═══════════════════ */
 
 const HERO_IMAGES = [
-  "/media/hero.jpg",
+  "/media/hero-racks.jpg",
+  "/media/hero-globe.jpg",
+  "/media/hero-datacenter.jpg",
+  "/media/hero-circuit.jpg",
   "/media/hero-city.jpg",
-  "/media/hero-tower.jpg",
-  "/media/hero-desk.jpg",
+  "/media/hero-board.jpg",
 ];
 
 export function HeroCarousel() {

@@ -47,7 +47,7 @@ export const LAYERS: Layer[] = [
     question: "How does a workflow reach production?",
     headline: "Every stage must present its own evidence.",
     support:
-      "Design, benchmark, deployment and monitoring are supported by stage-specific records. Progress is evidenced explicitly, helping teams assess readiness rather than rely on assumptions.",
+      "Design, benchmark, deployment and monitoring are supported by stage-specific records, and the registry maintains a live inventory of agents, models and tools. Progress is evidenced explicitly, helping teams assess readiness rather than rely on assumptions.",
     chips: ["Registry", "Benchmarks", "Deploy stamps"],
     token: "--t-c2",
   },
@@ -56,7 +56,7 @@ export const LAYERS: Layer[] = [
     question: "What did the agent actually do?",
     headline: "Each action writes its own audit record.",
     support:
-      "Execution journals record what ran, which information was accessed and what changed, together with the supporting evidence for each step. Auditability is embedded in the workflow rather than added after execution.",
+      "Execution journals record what ran, which information was accessed and what changed, together with the supporting evidence for each step, supporting forensic reconstruction of any run.",
     chips: ["Journal", "Provenance", "Artifacts"],
     token: "--t-c3",
   },
@@ -65,7 +65,7 @@ export const LAYERS: Layer[] = [
     question: "How do people stay in control?",
     headline: "Approval before. Intervention during. Cost visibility throughout.",
     support:
-      "Higher-risk actions pause for authorized review and record the decision and rationale. Runs can be stopped when required, with the intervention retained in the journal, while live usage data supports cost oversight.",
+      "Higher-risk actions pause at defined decision points for authorized review, recording the decision and rationale. Runs can be stopped when required, with the intervention retained in the journal. Oversight is enforced at runtime, not reconstructed after the fact.",
     chips: ["Gates", "Kill switch", "FinOps", "Evals"],
     token: "--t-warn",
   },
