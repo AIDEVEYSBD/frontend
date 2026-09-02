@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Mono, Status } from "./ui";
+import { Button, Mono, Status, Tag } from "./ui";
 import { Sparkline } from "./data";
+import { CAT } from "./charts";
 import { Icon } from "./builder/icons";
 
 /**
@@ -716,6 +717,18 @@ export function Control() {
         <section className="mb-4 flex break-inside-avoid flex-col overflow-hidden rounded-md border border-line bg-surface">
           <PanelHead title="Model mix" meta="7 days — click a model" />
           <ModelMix models={data?.models ?? []} onPick={(id) => open({ kind: "model", id })} selected={drill?.kind === "model" ? drill.id : null} />
+        </section>
+
+        {/* The optimizing triangle: cost, accuracy, time. Every model sits
+            where its own evidence pulls it. */}
+        <section className="mb-4 flex break-inside-avoid flex-col overflow-hidden rounded-md border border-line bg-surface">
+          <TradeoffTriangle
+            models={data?.models ?? []}
+            runs={data?.runs ?? []}
+            agents={data?.agents ?? []}
+            selected={drill?.kind === "model" ? drill.id : null}
+            onPick={(id) => open({ kind: "model", id })}
+          />
         </section>
 
         {/* What the estate actually produced — files, not vibes */}
@@ -1661,4 +1674,286 @@ function renderDrill(
         ),
       };
   }
+}
+
+/* ═══════════════════ the optimizing triangle ═══════════════════ */
+
+interface Corner {
+  model: string;
+  local: boolean;
+  costPerRun: number | null;
+  avgMs: number | null;
+  passRate: number | null;
+  evalCases: number;
+  runs: number;
+  /** 0..1 per axis, relative to the estate in view; null when there is no evidence. */
+  score: { cost: number | null; accuracy: number | null; time: number | null };
+  overall: number;
+  known: number;
+}
+
+/**
+ * Cost, accuracy and time are the three things every model choice trades
+ * between, and they cannot all be maximised at once. Each model gets its own
+ * triangle: a reference outline is the ideal, and the filled shape inside it
+ * is the model's actual profile, one vertex per axis. A full triangle is a
+ * model good at everything; a shape leaning to one corner is a trade-off you
+ * can read at a glance, and two models side by side compare as shapes before
+ * anyone reads a number.
+ *
+ * Scores are relative to the estate in view (cheapest = 1, slowest = 0,
+ * accuracy = eval pass rate on that model), so the panel answers "which of my
+ * models" rather than making an absolute claim.
+ */
+function cornersOf(models: ModelRow[], runs: RunRow[], agents: AgentRow[]): Corner[] {
+  const raw = models.map((m) => {
+    const used = runs.filter((r) => r.models.includes(m.model) && r.ms > 0);
+    const evals = agents.flatMap((a) => a.evals.filter((e) => e.model === m.model));
+    const total = evals.reduce((s, e) => s + e.total, 0);
+    return {
+      model: m.model,
+      local: m.local,
+      runs: m.runs,
+      costPerRun: m.cost === null ? null : m.cost / Math.max(1, m.runs),
+      avgMs: used.length ? used.reduce((s, r) => s + r.ms, 0) / used.length : null,
+      passRate: total ? evals.reduce((s, e) => s + e.passed, 0) / total : null,
+      evalCases: total,
+    };
+  });
+  // Log scale against the best in view, two decades wide: the cheapest or
+  // fastest model scores 1, ten times worse scores 0.5, a hundred times worse
+  // scores 0. Halving a bar always means the same thing, and the worst model
+  // still has a shape instead of collapsing to a point. Zero (local) is best.
+  const bestOf = (vals: (number | null)[]) => {
+    const pos = vals.filter((v): v is number => v !== null && v > 0);
+    return pos.length ? Math.min(...pos) : null;
+  };
+  const logScore = (v: number | null, best: number | null) => {
+    if (v === null) return null;
+    if (v <= 0 || best === null) return 1;
+    return Math.max(0, Math.min(1, 1 - Math.log10(v / best) / 2));
+  };
+  const bestCost = bestOf(raw.map((r) => r.costPerRun));
+  const bestMs = bestOf(raw.map((r) => r.avgMs));
+  return raw.map((r) => {
+    const score = {
+      cost: logScore(r.costPerRun, bestCost),
+      accuracy: r.passRate,
+      time: logScore(r.avgMs, bestMs),
+    };
+    const known = [score.cost, score.accuracy, score.time].filter((v): v is number => v !== null);
+    return {
+      ...r,
+      score,
+      known: known.length,
+      overall: known.length ? known.reduce((a, b) => a + b, 0) / known.length : 0,
+    };
+  });
+}
+
+/* One model's profile: the reference triangle, and the shape it actually makes. */
+function TriangleGlyph({ score, color, size = 150 }: { score: Corner["score"]; color: string; size?: number }) {
+  const W = 150, H = 122;
+  const A: [number, number] = [75, 12];
+  const C: [number, number] = [14, 108];
+  const T: [number, number] = [136, 108];
+  const O: [number, number] = [(A[0] + C[0] + T[0]) / 3, (A[1] + C[1] + T[1]) / 3];
+  const toward = (v: [number, number], s: number): [number, number] => [O[0] + (v[0] - O[0]) * s, O[1] + (v[1] - O[1]) * s];
+  const ring = (s: number) => [toward(A, s), toward(C, s), toward(T, s)].map((p) => p.join(",")).join(" ");
+  const pa = toward(A, score.accuracy ?? 0);
+  const pc = toward(C, score.cost ?? 0);
+  const pt = toward(T, score.time ?? 0);
+  const shape = [pa, pc, pt].map((p) => p.join(",")).join(" ");
+  const vertex = (p: [number, number], s: number | null) =>
+    s === null ? (
+      <circle cx={p[0]} cy={p[1]} r={3.5} fill="var(--color-surface)" stroke="var(--t-fg-4)" strokeWidth="1.5" strokeDasharray="2 2" />
+    ) : (
+      <circle cx={p[0]} cy={p[1]} r={3.5} fill={color} stroke="var(--color-surface)" strokeWidth="2" />
+    );
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width={size} height={(size * H) / W} className="block" aria-hidden>
+      {/* the ideal, as a recessive outline, with thirds for scale */}
+      <polygon points={ring(1 / 3)} fill="none" stroke="var(--t-line)" strokeWidth="1" />
+      <polygon points={ring(2 / 3)} fill="none" stroke="var(--t-line)" strokeWidth="1" />
+      <polygon points={ring(1)} fill="none" stroke="var(--t-fg-4)" strokeWidth="1.2" strokeLinejoin="round" />
+      {/* spokes */}
+      {[A, C, T].map((v, i) => (
+        <line key={i} x1={O[0]} y1={O[1]} x2={v[0]} y2={v[1]} stroke="var(--t-line)" strokeWidth="1" />
+      ))}
+      {/* the model's actual shape */}
+      <polygon points={shape} fill={color} fillOpacity="0.16" stroke={color} strokeWidth="2" strokeLinejoin="round" />
+      {vertex(pa, score.accuracy)}
+      {vertex(pc, score.cost)}
+      {vertex(pt, score.time)}
+    </svg>
+  );
+}
+
+function TradeoffTriangle({
+  models,
+  runs,
+  agents,
+  selected,
+  onPick,
+}: {
+  models: ModelRow[];
+  runs: RunRow[];
+  agents: AgentRow[];
+  selected: string | null;
+  onPick: (id: string) => void;
+}) {
+  const [view, setView] = useState<"profiles" | "table">("profiles");
+  const corners = cornersOf(models, runs, agents);
+  const colorOf = new Map(corners.map((c, i) => [c.model, CAT[i % CAT.length]]));
+  const ranked = [...corners].sort((a, b) => b.overall - a.overall || b.known - a.known);
+  const short = (id: string) => id.split("/").pop() ?? id;
+
+  // Superlatives: computed over models that have evidence on that axis.
+  const best = (pick: (c: Corner) => number | null, dir: 1 | -1) => {
+    const have = corners.filter((c) => pick(c) !== null);
+    if (have.length < 2) return null;
+    return have.reduce((b, c) => ((pick(c)! - pick(b)!) * dir > 0 ? c : b)).model;
+  };
+  const cheapest = best((c) => c.costPerRun, -1);
+  const mostAccurate = best((c) => c.passRate, 1);
+  const fastest = best((c) => c.avgMs, -1);
+  const balanced = ranked.find((c) => c.known >= 2)?.model ?? null;
+
+  const axes = [
+    { key: "accuracy", label: "Accuracy", sub: "eval pass rate" },
+    { key: "cost", label: "Cost", sub: "cheaper per run" },
+    { key: "time", label: "Time", sub: "faster wall clock" },
+  ] as const;
+
+  return (
+    <>
+      <PanelHead
+        title="Cost · accuracy · time"
+        meta="7 days — one triangle per model"
+        right={
+          <Button size="sm" variant="quiet" onClick={() => setView(view === "profiles" ? "table" : "profiles")}>
+            {view === "profiles" ? "Table" : "Profiles"}
+          </Button>
+        }
+      />
+      {view === "table" ? (
+        <div className="overflow-x-auto">
+          <table className="tnum w-full text-[11px]">
+            <thead>
+              <tr className="text-left text-[10px] text-faint">
+                <th className="px-3 py-1.5 font-medium">model</th>
+                <th className="px-2 py-1.5 text-right font-medium">cost / run</th>
+                <th className="px-2 py-1.5 text-right font-medium">eval pass</th>
+                <th className="px-2 py-1.5 text-right font-medium">avg time</th>
+                <th className="px-3 py-1.5 text-right font-medium">runs</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ranked.map((c) => (
+                <tr key={c.model} className="border-t border-line text-dim">
+                  <td className="px-3 py-1.5 font-mono text-[10.5px] text-fg">{c.model}</td>
+                  <td className="px-2 py-1.5 text-right">{fmtCost(c.costPerRun)}</td>
+                  <td className="px-2 py-1.5 text-right">
+                    {c.passRate === null ? "no evals" : `${Math.round(c.passRate * 100)}% · ${c.evalCases}`}
+                  </td>
+                  <td className="px-2 py-1.5 text-right">{fmtMs(c.avgMs)}</td>
+                  <td className="px-3 py-1.5 text-right">{c.runs}</td>
+                </tr>
+              ))}
+              {!corners.length && (
+                <tr><td colSpan={5} className="px-3 py-3 text-faint">No model calls in the last 7 days.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="flex flex-col">
+          {/* the key: the three corners, stated once */}
+          <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 border-b border-line px-3 py-2.5">
+            <TriangleGlyph score={{ cost: 1, accuracy: 1, time: 1 }} color="var(--t-fg-4)" size={54} />
+            <div className="flex flex-wrap gap-x-4 gap-y-0.5">
+              {axes.map((a) => (
+                <span key={a.key} className="flex items-baseline gap-1.5 text-[10.5px]">
+                  <span className="font-semibold text-fg">{a.label}</span>
+                  <span className="text-faint">{a.sub}</span>
+                </span>
+              ))}
+              <span className="basis-full text-[10px] leading-[1.5] text-faint">
+                The outline is the ideal. The shape inside is the model. Dashed corner: no evidence on that axis yet.
+              </span>
+            </div>
+          </div>
+
+          {!ranked.length && (
+            <p className="px-3 py-4 text-[12px] text-faint">No model calls in the last 7 days.</p>
+          )}
+
+          <div className="flex flex-col">
+            {ranked.map((c, i) => {
+              const color = colorOf.get(c.model)!;
+              const badges = [
+                c.model === balanced && corners.length > 1 ? { t: "best balance", tone: "ok" as const } : null,
+                c.model === cheapest ? { t: "cheapest", tone: "neutral" as const } : null,
+                c.model === mostAccurate ? { t: "most accurate", tone: "neutral" as const } : null,
+                c.model === fastest ? { t: "fastest", tone: "neutral" as const } : null,
+              ].filter((b): b is { t: string; tone: "ok" | "neutral" } => b !== null);
+              const isSel = selected === c.model;
+              const rows = [
+                { k: "Accuracy", v: c.passRate === null ? "no evals" : `${Math.round(c.passRate * 100)}%`, s: c.score.accuracy, sub: c.passRate === null ? "" : `${c.evalCases} cases` },
+                { k: "Cost", v: fmtCost(c.costPerRun), s: c.score.cost, sub: c.local ? "local" : "per run" },
+                { k: "Time", v: fmtMs(c.avgMs), s: c.score.time, sub: c.avgMs === null ? "" : "avg run" },
+              ];
+              return (
+                <button
+                  key={c.model}
+                  onClick={() => onPick(c.model)}
+                  aria-pressed={isSel}
+                  className={`focusable grid cursor-pointer grid-cols-[96px_minmax(0,1fr)] items-center gap-x-3 border-b border-line px-3 py-2.5 text-left transition-colors ${
+                    isSel ? "bg-raise/80" : "hover:bg-raise/50"
+                  }`}
+                >
+                  <TriangleGlyph score={c.score} color={color} size={96} />
+
+                  <span className="flex min-w-0 flex-col gap-1.5">
+                    <span className="flex items-center gap-2">
+                      <span className="tnum shrink-0 font-mono text-[10px] text-ghost">#{i + 1}</span>
+                      <span className="min-w-0 truncate font-mono text-[11.5px] font-medium text-fg" title={c.model}>
+                        {short(c.model)}
+                      </span>
+                      <span className="grow" />
+                      {badges.map((b) => (
+                        <Tag key={b.t} tone={b.tone}>{b.t}</Tag>
+                      ))}
+                    </span>
+
+                    {rows.map((row) => (
+                      <span key={row.k} className="grid grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-x-2">
+                        <span className="text-[10px] text-faint">{row.k}</span>
+                        <span className="h-1.5 overflow-hidden rounded-full bg-raise">
+                          <span
+                            className="block h-full rounded-full transition-[width] duration-300"
+                            style={{ width: `${Math.round((row.s ?? 0) * 100)}%`, background: row.s === null ? "transparent" : color }}
+                          />
+                        </span>
+                        <span className="flex items-baseline gap-1 whitespace-nowrap">
+                          <span className={`tnum w-14 text-right text-[11.5px] font-semibold ${row.s === null ? "text-ghost" : "text-fg"}`}>{row.v}</span>
+                          <span className="w-12 truncate text-[9.5px] text-ghost">{row.sub}</span>
+                        </span>
+                      </span>
+                    ))}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <p className="px-3 py-2 text-[10.5px] leading-[1.5] text-faint">
+            Cost and Time bars are log-scaled against the best model in view: full is the best, half is ten
+            times worse, empty is a hundred times worse. Accuracy is the eval pass rate measured on that model.
+            Click a model for the runs behind it.
+          </p>
+        </div>
+      )}
+    </>
+  );
 }

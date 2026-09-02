@@ -61,6 +61,7 @@ export function dbReady(): Promise<boolean> {
             updated_at timestamptz NOT NULL DEFAULT now()
           );
           ALTER TABLE eval_sets ADD COLUMN IF NOT EXISTS model text NOT NULL DEFAULT '';
+          ALTER TABLE eval_sets ADD COLUMN IF NOT EXISTS labels jsonb;
           CREATE TABLE IF NOT EXISTS eval_runs (
             id      text PRIMARY KEY,
             set_id  text NOT NULL,
@@ -72,6 +73,7 @@ export function dbReady(): Promise<boolean> {
             results jsonb NOT NULL DEFAULT '[]'::jsonb,
             at      timestamptz NOT NULL DEFAULT now()
           );
+          ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS matrix jsonb;
           ALTER TABLE workflows ADD COLUMN IF NOT EXISTS deployed_at timestamptz;
           CREATE TABLE IF NOT EXISTS run_metrics (
             id          text PRIMARY KEY,

@@ -23,23 +23,26 @@ export async function GET(req: Request) {
 
   if (id) {
     const sets = await query<{ id: string; agent: string; name: string; model: string; cases: EvalCase[] }>(
-      "SELECT id, agent, name, model, cases FROM eval_sets WHERE id = $1",
+    const sets = await query<{ id: string; agent: string; name: string; model: string; labels: unknown; cases: EvalCase[] }>(
+      "SELECT id, agent, name, model, labels, cases FROM eval_sets WHERE id = $1",
       [id],
     );
     if (!sets.length) return Response.json({ error: `no eval set "${id}"` }, { status: 404 });
     const runs = await query(
-      `SELECT id, model, digest, passed, total, results, at FROM eval_runs
+      `SELECT id, model, digest, passed, total, results, matrix, at FROM eval_runs
        WHERE set_id = $1 ORDER BY at DESC LIMIT 20`,
       [id],
     );
-    return Response.json({ set: sets[0], runs });
+    const set = { ...sets[0], labels: sets[0].labels ?? undefined };
+    return Response.json({ set, runs });
   }
 
-  const sets = await query<{ id: string; agent: string; name: string; model: string; n: number }>(
-    `SELECT s.id, s.agent, s.name, s.model, jsonb_array_length(s.cases) AS n FROM eval_sets s ORDER BY s.updated_at DESC`,
+  const sets = await query<{ id: string; agent: string; name: string; model: string; labeled: boolean; n: number }>(
+    `SELECT s.id, s.agent, s.name, s.model, (s.labels IS NOT NULL) AS labeled, jsonb_array_length(s.cases) AS n
+     FROM eval_sets s ORDER BY s.updated_at DESC`,
   );
-  const latest = await query<{ set_id: string; passed: number; total: number; model: string; at: string }>(
-    `SELECT DISTINCT ON (set_id) set_id, passed, total, model, at FROM eval_runs ORDER BY set_id, at DESC`,
+  const latest = await query<{ set_id: string; passed: number; total: number; model: string; matrix: unknown; at: string }>(
+    `SELECT DISTINCT ON (set_id) set_id, passed, total, model, matrix, at FROM eval_runs ORDER BY set_id, at DESC`,
   );
   const byId = new Map(latest.map((l) => [l.set_id, l]));
   return Response.json({
@@ -64,10 +67,10 @@ export async function POST(req: Request) {
   }
 
   await query(
-    `INSERT INTO eval_sets (id, agent, name, model, cases, updated_at) VALUES ($1, $2, $3, $4, $5, now())
+    `INSERT INTO eval_sets (id, agent, name, model, labels, cases, updated_at) VALUES ($1, $2, $3, $4, $5, $6, now())
      ON CONFLICT (id) DO UPDATE SET agent = EXCLUDED.agent, name = EXCLUDED.name,
-       model = EXCLUDED.model, cases = EXCLUDED.cases, updated_at = now()`,
-    [set.id, set.agent, set.name, set.model ?? "", JSON.stringify(set.cases)],
+       model = EXCLUDED.model, labels = EXCLUDED.labels, cases = EXCLUDED.cases, updated_at = now()`,
+    [set.id, set.agent, set.name, set.model ?? "", set.labels ? JSON.stringify(set.labels) : null, JSON.stringify(set.cases)],
   );
   // Write-through: the set lives beside the workspace like everything durable.
   await mkdir(EVALS_DIR, { recursive: true });

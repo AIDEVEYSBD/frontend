@@ -823,7 +823,7 @@ function siteFor(name: string): string | undefined {
 const HERO_IMAGES = [
   "/media/hero-racks.jpg",
   "/media/hero-globe.jpg",
-  "/media/hero-nodes.jpg",
+  "/media/hero-tower.jpg",
   "/media/hero-circuit.jpg",
   "/media/hero-city.jpg",
   "/media/hero-board.jpg",

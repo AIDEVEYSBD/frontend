@@ -184,7 +184,7 @@ export function Builder() {
   /* Click-to-grant: a palette click carries the same payload its drag would,
      targeted at the selected node instead of the drop point. */
   const onGrant = useCallback(
-    (kind: "tool" | "connector" | "system" | "harness" | "workflow", payload: string) => {
+    (kind: "tool" | "connector" | "system" | "harness" | "workflow" | "custom", payload: string) => {
       if (kind === "harness") return; // the palette's onAdd already handles it
       if (kind === "workflow") {
         try {
@@ -216,6 +216,12 @@ export function Builder() {
       }
       if (kind === "tool") {
         dispatch({ type: "grant-tool-card", node, card: payload });
+      } else if (kind === "custom") {
+        try {
+          dispatch({ type: "grant-custom-tool", node, tool: JSON.parse(payload) });
+        } catch {
+          /* malformed payload — ignore */
+        }
       } else {
         try {
           const c = JSON.parse(payload) as { tool: string; kind: string };

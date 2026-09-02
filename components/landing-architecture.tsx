@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Mono } from "./ui";
 
 /**
@@ -35,28 +35,28 @@ export interface Layer {
 export const LAYERS: Layer[] = [
   {
     id: "experience",
-    question: "Who designs the workflows?",
+    question: "Who builds the workflows?",
     headline: "Your teams describe the process. The factory assembles it.",
     support:
-      "Analysts can combine approved components on a visual canvas or describe the required process in plain language. Each draft passes the same validation controls used for deployment, supporting consistent adoption without unmanaged development.",
+      "Compose approved harnesses on a visual canvas or describe the process in plain language and let the builder draft it. Every draft passes the same validation as a deployment, so teams ship workflows quickly without unmanaged development.",
     chips: ["Canvas", "Agent builder", "Deploy theater"],
     token: "--t-c1",
   },
   {
     id: "lifecycle",
     question: "How does a workflow reach production?",
-    headline: "Every stage must present its own evidence.",
+    headline: "Every stage earns its promotion.",
     support:
-      "Design, benchmark, deployment and monitoring are supported by stage-specific records, and the registry maintains a live inventory of agents, models and tools. Progress is evidenced explicitly, helping teams assess readiness rather than rely on assumptions.",
+      "Design, benchmark, deployment and monitoring each leave their own stamp, and the registry keeps a live inventory of agents, models and tools. Readiness is shown by record, not asserted, so teams promote work on results rather than assumptions.",
     chips: ["Registry", "Benchmarks", "Deploy stamps"],
     token: "--t-c2",
   },
   {
     id: "workplane",
     question: "What did the agent actually do?",
-    headline: "Each action writes its own audit record.",
+    headline: "Every action writes its own record.",
     support:
-      "Execution journals record what ran, which information was accessed and what changed, together with the supporting evidence for each step, supporting forensic reconstruction of any run.",
+      "Execution journals capture what ran, what was read, what changed and which artifacts were produced, with provenance attached to each step. Any run can be reconstructed in full, whether the question comes from an engineer, a reviewer or a regulator.",
     chips: ["Journal", "Provenance", "Artifacts"],
     token: "--t-c3",
   },
@@ -65,7 +65,7 @@ export const LAYERS: Layer[] = [
     question: "How do people stay in control?",
     headline: "Approval before. Intervention during. Cost visibility throughout.",
     support:
-      "Higher-risk actions pause at defined decision points for authorized review, recording the decision and rationale. Runs can be stopped when required, with the intervention retained in the journal. Oversight is enforced at runtime, not reconstructed after the fact.",
+      "Higher-risk steps pause at defined gates for human decision, and the decision is recorded with its rationale. Any run can be stopped mid-flight, with the intervention kept in the journal. Budgets and evals are enforced at runtime, not reviewed after the fact.",
     chips: ["Gates", "Kill switch", "FinOps", "Evals"],
     token: "--t-warn",
   },
@@ -74,25 +74,25 @@ export const LAYERS: Layer[] = [
     question: "What can an agent reach?",
     headline: "Access is granted per node, never assumed.",
     support:
-      "Least-privilege access is configured at each workflow node. Untrusted content is identified at entry and prevented from reaching restricted actions without the required controls.",
+      "Each node declares the retrieval sources, records and engines it may use, and nothing else is reachable. Untrusted content is tainted at entry and cannot flow into restricted actions until policy clears it.",
     chips: ["Retrieval", "Records", "Engines", "Taint rules"],
     token: "--t-c5",
   },
   {
     id: "partners",
     question: "What about external agents?",
-    headline: "External agents work under the same controls, without exception.",
+    headline: "External agents work under the same rules, without exception.",
     support:
-      "Partner agents connect through A2A, are identified through their agent card and are subject to the same journal and trust controls. Responses remain marked as untrusted until validated.",
+      "Partner agents connect over A2A, are identified by their agent card and inherit the same journal, permission and taint rules as native harnesses. Their replies stay marked untrusted until validated.",
     chips: ["A2A discover", "Hand-off", "Tainted replies"],
     token: "--t-c6",
   },
   {
     id: "models",
     question: "Where does the reasoning run?",
-    headline: "Each task runs on the model environment its sensitivity requires.",
+    headline: "Each task runs on the model its sensitivity requires.",
     support:
-      "Each node defines its model requirements and the router determines where execution occurs. Sensitive tasks can be directed to locally hosted models to support privacy, policy and cost requirements.",
+      "Nodes state their model requirements and the router decides where execution happens. Sensitive work can be pinned to locally hosted models, routine work sent to frontier models, and the choice is governed by policy and cost rather than by convention.",
     chips: ["Per-node routing", "Local models", "Frontier models"],
     token: "--t-c7",
   },
@@ -101,15 +101,15 @@ export const LAYERS: Layer[] = [
     question: "What does it all stand on?",
     headline: "Governance is the foundation, not a feature.",
     support:
-      "Identity, policy and audit controls underpin the platform, supported by credential management, prompt-injection filtering and a runtime designed for deployment within your tenancy.",
+      "Identity, policy and audit sit beneath every layer, with secrets resolved only at the moment of the call, prompt-injection filtering on every input and a runtime built to run inside your own tenancy.",
     chips: ["Vault", "Injection filters", "Your tenancy"],
     token: "--t-c9",
   },
 ];
 
 export const OPENING = {
-  headline: "An AI agent has completed a control test.",
-  support: "Every step it took is already on the record, available for review.",
+  headline: "An AI agent has just finished a piece of work.",
+  support: "Every step it took, every source it touched and every decision along the way is already on the record.",
   cue: "Explore the architecture",
 };
 
@@ -120,9 +120,9 @@ export const TURN = {
 
 export const MERGE = {
   headline: "One architecture, fully accountable.",
-  support: "Each layer contributes the evidence, oversight and operational controls required for enterprise use.",
+  support: "Each layer contributes the record, oversight and operational controls that enterprise agents require, whatever the workflow.",
   final: "Designed to be inspected.",
-  finalSupport: "Deployed in your tenancy. Prepared for audit.",
+  finalSupport: "Deployed in your tenancy. Governed by design.",
 };
 
 /* ═══════════════════ Vignettes ═══════════════════
@@ -306,10 +306,25 @@ const HOLD_OUT = 0.07;
 const seg = (p: number, a: number, b: number) => Math.min(1, Math.max(0, (p - a) / (b - a)));
 const ease = (t: number) => (t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2);
 
+const ENHANCE_QUERIES = ["(min-width: 768px)", "(prefers-reduced-motion: no-preference)"];
+function subscribeEnhanced(cb: () => void) {
+  const mqs = ENHANCE_QUERIES.map((q) => window.matchMedia(q));
+  mqs.forEach((m) => m.addEventListener("change", cb));
+  return () => mqs.forEach((m) => m.removeEventListener("change", cb));
+}
+function getEnhanced() {
+  return ENHANCE_QUERIES.every((q) => window.matchMedia(q).matches);
+}
+
 export function ArchitectureStory() {
   const section = useRef<HTMLElement>(null);
   const [beat, setBeat] = useState(-1); // -1 opening · 0..N-1 layers · N merge
-  const [enhanced, setEnhanced] = useState(false);
+  // The scroll-driven deck only runs where it fits: a viewport at least
+  // 768px wide (the sticky 100dvh stage cannot hold deck + copy + vignette
+  // on a phone) and no reduced-motion preference. Everything else gets the
+  // static, fully stacked telling. Server snapshot is false so the static
+  // version is what hydrates.
+  const enhanced = useSyncExternalStore(subscribeEnhanced, getEnhanced, () => false);
   const beatRef = useRef(-1);
 
   const setBeatIfChanged = useCallback((b: number) => {
@@ -317,11 +332,6 @@ export function ArchitectureStory() {
       beatRef.current = b;
       setBeat(b);
     }
-  }, []);
-
-  useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    setEnhanced(true);
   }, []);
 
   useEffect(() => {
@@ -399,6 +409,12 @@ export function ArchitectureStory() {
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
       if (raf) cancelAnimationFrame(raf);
+      // Leave no driver state behind so the static telling renders clean.
+      el.style.removeProperty("--explode");
+      el.querySelectorAll<HTMLElement>("[data-arch-layer]").forEach((l) => {
+        for (const v of ["--dim", "--lift", "--push", "--fx", "--fy"]) l.style.removeProperty(v);
+      });
+      setBeatIfChanged(-1);
     };
   }, [enhanced, setBeatIfChanged]);
 
@@ -436,8 +452,9 @@ export function ArchitectureStory() {
            counter-rotation the card's local Z is the screen normal, so the
            lift moves it straight OUT of the screen, past every tilted
            corner (max ~500px), with zero up-screen drift. The inverse scale
-           cancels the perspective growth, so it clears everything without
-           appearing to move much at all. */
+           cancels the perspective growth (about 1.25x at P=1400, S=0.8), so
+           the lifted card lands at roughly 1.05x its slot width and stays
+           inside its own column at every width from 768px up. */
         .af-arch [data-arch-layer] {
           transform-style: preserve-3d;
           transform:
@@ -446,7 +463,7 @@ export function ArchitectureStory() {
             rotateX(calc(var(--tiltX, 54deg) * -1 * var(--lift, 0)))
             translate(calc(var(--fx, 0) * 1px), calc(var(--fy, 0) * 1px))
             translateZ(calc(var(--lift, 0) * 560px))
-            scale(calc(1 + 0.09 * var(--lift, 0)));
+            scale(calc(1 - 0.16 * var(--lift, 0)));
         }
         /* Slabs are SOLID, depth reads through brightness and saturation,
            never through see-through planes. */
@@ -534,7 +551,12 @@ export function ArchitectureStory() {
           .af-arch-beat { gap: 0.6rem; }
         }
         .af-arch:not([data-enhanced]) .af-arch-beat { opacity: 1; transform: none; position: static; pointer-events: auto; }
-        .af-arch:not([data-enhanced]) .af-arch-copy { display: flex; flex-direction: column; gap: 2rem; }
+        .af-arch:not([data-enhanced]) .af-arch-copy { display: flex; flex-direction: column; gap: 2.5rem; }
+        .af-arch:not([data-enhanced]) .af-arch-stage > div { align-items: start; }
+        .af-arch:not([data-enhanced]) .af-arch-viewport { position: sticky; top: 4.5rem; }
+        @media (max-width: 767px) {
+          .af-arch:not([data-enhanced]) .af-arch-viewport { position: static; }
+        }
       `}</style>
 
       <div className="af-arch-stage flex flex-col justify-center px-5 py-14 sm:px-8 lg:px-12 2xl:px-20">
@@ -636,7 +658,7 @@ export function ArchitectureStory() {
                   {layer.headline}
                 </h3>
                 <p className="max-w-[54ch] text-[15.5px] leading-[1.65] text-mist">{layer.support}</p>
-                <Vignette layer={layer} active={beat === i} />
+                <Vignette layer={layer} active={enhanced ? beat === i : true} />
               </div>
             ))}
 

@@ -7,7 +7,9 @@ import { Button, Mono, Status } from "./ui";
 import { Icon } from "./builder/icons";
 import { useModels } from "@/lib/use-models";
 import { Pick } from "./select";
+import { Switch } from "./forms";
 import { fromDocument, inputKeysOf, type Kind } from "@/lib/spec";
+import { derive, labeledTemplate, INVALID, type Labels, type Matrix, type Reducer } from "@/lib/metrics";
 
 /**
  * Evals: build a benchmark beside an agent, run it, keep the score.
@@ -28,7 +30,8 @@ interface SetRow {
   name: string;
   model: string;
   n: number;
-  latest: { passed: number; total: number; model: string; at: string } | null;
+  labeled?: boolean;
+  latest: { passed: number; total: number; model: string; at: string; matrix?: Matrix | null } | null;
 }
 
 interface Check {
@@ -43,6 +46,7 @@ interface EvalCase {
   note?: string;
   input: Record<string, unknown>;
   checks: Check[];
+  expected?: string;
 }
 
 interface CaseResult {
@@ -52,6 +56,8 @@ interface CaseResult {
   state: string;
   error: string;
   checks: { kind: string; ok: boolean; note: string }[];
+  expected?: string;
+  predicted?: string | null;
   duration_ms: number;
   run_file: string;
 }
@@ -63,6 +69,7 @@ interface HistoryRow {
   passed: number;
   total: number;
   results: CaseResult[];
+  matrix?: Matrix | null;
   at: string;
 }
 
@@ -71,8 +78,17 @@ interface FullSet {
   agent: string;
   name: string;
   model: string;
+  labels?: Labels;
   cases: EvalCase[];
 }
+
+const REDUCER_KINDS = [
+  { value: "field", label: "Read a result field" },
+  { value: "threshold", label: "Bucket a number by cut points" },
+  { value: "match", label: "Match a pattern per label" },
+] as const;
+
+const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
 
 const CHECK_KINDS = [
   { value: "contains", label: "Result contains" },
@@ -103,11 +119,12 @@ const slug = (s: string) =>
 
 const csvEscape = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
 
-function csvTemplate(inputKeys: { name: string }[]): string {
+function csvTemplate(inputKeys: { name: string }[], labels?: Labels): string {
   const head = [
     "id",
     "note",
     ...inputKeys.map((k) => `input:${k.name}`),
+    ...(labels ? ["expected"] : []),
     "check_contains",
     "check_not_contains",
     "check_field_path",
@@ -118,13 +135,25 @@ function csvTemplate(inputKeys: { name: string }[]): string {
     "first-case",
     "What this case proves",
     ...inputKeys.map(() => "the input for this case"),
-    "text the result must include",
+    ...(labels ? [labels.positive ?? labels.space[0]] : []),
+    labels ? "" : "text the result must include",
     "",
-    "recorded.disposition",
-    "escalate",
-    "done",
+    labels ? "" : "recorded.disposition",
+    labels ? "" : "escalate",
+    labels ? "" : "done",
   ];
-  return [head.join(","), example.map(csvEscape).join(",")].join("\n") + "\n";
+  const rows = [head.join(","), example.map(csvEscape).join(",")];
+  if (labels) {
+    rows.push(
+      [
+        "second-case", "The other side of the boundary",
+        ...inputKeys.map(() => "the input for this case"),
+        labels.space.find((l) => l !== (labels.positive ?? labels.space[0])) ?? labels.space[1],
+        "", "", "", "", "",
+      ].map(csvEscape).join(","),
+    );
+  }
+  return rows.join("\n") + "\n";
 }
 
 /** Minimal quote-aware CSV parser — enough for the template it hands out. */
@@ -178,11 +207,14 @@ function casesFromCsv(text: string): EvalCase[] | string {
       checks.push({ kind: "field", path: get(col("check_field_path")), equals: get(col("check_field_equals")) });
     }
     if (get(col("check_state"))) checks.push({ kind: "state", equals: get(col("check_state")) });
+    const expected = get(col("expected"));
     return {
       id: slug(get(col("id")) || `case-${n + 1}`),
       note: get(col("note")),
       input: Object.fromEntries(inputCols.map(({ key, i }) => [key, get(i)])),
-      checks: checks.length ? checks : [{ kind: "state", equals: "done" }],
+      // A labeled row needs no check; an unlabeled one must at least finish.
+      checks: checks.length ? checks : expected ? [] : [{ kind: "state", equals: "done" }],
+      ...(expected ? { expected } : {}),
     };
   });
 }
@@ -281,14 +313,21 @@ interface AgentOpt {
   name: string;
 }
 
-function blankCase(n: number, keys: { name: string }[]): EvalCase {
+function blankCase(n: number, keys: { name: string }[], labels?: Labels | null): EvalCase {
   return {
     id: `case-${n}`,
     note: "",
     input: Object.fromEntries(keys.map((k) => [k.name, ""])),
-    checks: [{ kind: "contains", value: "" }],
+    checks: labels ? [] : [{ kind: "contains", value: "" }],
+    ...(labels ? { expected: labels.space[0] } : {}),
   };
 }
+
+const blankLabels = (): Labels => ({
+  space: ["negative", "positive"],
+  positive: "positive",
+  reducer: { kind: "field", path: "" },
+});
 
 function SetBuilder({
   initial,
@@ -304,6 +343,7 @@ function SetBuilder({
   const [agent, setAgent] = useState(initial?.agent ?? presetAgent ?? "");
   const [name, setName] = useState(initial?.name ?? "");
   const [model, setModel] = useState(initial?.model ?? "");
+  const [labels, setLabels] = useState<Labels | null>(initial?.labels ?? null);
   const [cases, setCases] = useState<EvalCase[]>(initial?.cases ?? []);
   const [inputKeys, setInputKeys] = useState<{ name: string; kind: Kind }[]>([]);
   const [error, setError] = useState("");
@@ -351,6 +391,52 @@ function SetBuilder({
   const patchCase = (i: number, patch: Partial<EvalCase>) =>
     setCases((cs) => cs.map((c, j) => (j === i ? { ...c, ...patch } : c)));
 
+  /* Turning labels on gives every case a default expected label; turning
+     them off strips it and restores a check so the case still grades. */
+  const toggleLabels = (on: boolean) => {
+    if (on) {
+      const l = blankLabels();
+      setLabels(l);
+      setCases((cs) => cs.map((c) => ({ ...c, expected: c.expected ?? l.space[0] })));
+    } else {
+      setLabels(null);
+      setCases((cs) =>
+        cs.map((c) => {
+          const { expected: _drop, ...rest } = c;
+          void _drop;
+          return { ...rest, checks: rest.checks.length ? rest.checks : [{ kind: "contains", value: "" }] };
+        }),
+      );
+    }
+  };
+
+  const patchLabels = (patch: Partial<Labels>) => setLabels((l) => l && { ...l, ...patch });
+
+  const setSpace = (text: string) => {
+    const space = text.split(",").map((s) => s.trim()).filter(Boolean);
+    setLabels((l) => {
+      if (!l) return l;
+      const positive = l.positive && space.includes(l.positive) ? l.positive : undefined;
+      const reducer: Reducer =
+        l.reducer.kind === "threshold"
+          ? { ...l.reducer, cuts: l.reducer.cuts.slice(0, Math.max(0, space.length - 1)) }
+          : l.reducer.kind === "match"
+            ? { kind: "match", patterns: Object.fromEntries(space.map((s) => [s, l.reducer.kind === "match" ? (l.reducer.patterns[s] ?? "") : ""])) }
+            : l.reducer;
+      return { ...l, space, positive, reducer };
+    });
+  };
+
+  const download = (filename: string, text: string, type: string) => {
+    const blob = new Blob([text], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const save = async () => {
     setBusy(true);
     setError("");
@@ -360,6 +446,7 @@ function SetBuilder({
         agent,
         name: name || `${agent} benchmark`,
         model,
+        ...(labels ? { labels: { ...labels, positive: labels.positive || undefined } } : {}),
         cases: cases.map((c, i) => ({
           ...c,
           id: c.id.trim() || `case-${i + 1}`,
@@ -388,6 +475,7 @@ function SetBuilder({
       if (s.agent) setAgent(s.agent);
       if (s.name) setName(s.name);
       if (s.model) setModel(s.model);
+      setLabels(s.labels ?? null);
       if (Array.isArray(s.cases)) setCases(s.cases);
       setShowJson(false);
       setError("");
@@ -405,21 +493,32 @@ function SetBuilder({
         <span className="grow" />
         {agent && (
           <>
-            <button
-              onClick={() => {
-                const blob = new Blob([csvTemplate(inputKeys)], { type: "text/csv" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `${agent}-benchmark-template.csv`;
-                a.click();
-                URL.revokeObjectURL(url);
-              }}
-              title="A spreadsheet with this agent's input columns — fill a row per case, upload it back"
-              className="focusable cursor-pointer rounded-sm text-[11px] text-faint transition-colors hover:text-fg"
-            >
-              CSV template
-            </button>
+            <span title="A spreadsheet with this agent's input columns — fill a row per case, upload it back">
+              <Button
+                size="sm"
+                variant="quiet"
+                onClick={() =>
+                  download(`${agent}-benchmark-template.csv`, csvTemplate(inputKeys, labels ?? undefined), "text/csv")
+                }
+              >
+                CSV template
+              </Button>
+            </span>
+            <span title="The general labeled-benchmark template: label space, positive class, reducer, and cases with expected labels. Fill it, then paste it into Edit as JSON.">
+              <Button
+                size="sm"
+                variant="quiet"
+                onClick={() =>
+                  download(
+                    `${agent}-labeled-benchmark-template.json`,
+                    JSON.stringify(labeledTemplate(agent, inputKeys.map((k) => k.name)), null, 2) + "\n",
+                    "application/json",
+                  )
+                }
+              >
+                Labeled template
+              </Button>
+            </span>
             <input
               ref={csvRef}
               type="file"
@@ -437,23 +536,21 @@ function SetBuilder({
                 e.target.value = "";
               }}
             />
-            <button
-              onClick={() => csvRef.current?.click()}
-              className="focusable cursor-pointer rounded-sm text-[11px] text-faint transition-colors hover:text-fg"
-            >
+            <Button size="sm" variant="quiet" onClick={() => csvRef.current?.click()}>
               Upload CSV
-            </button>
+            </Button>
           </>
         )}
-        <button
+        <Button
+          size="sm"
+          variant="quiet"
           onClick={() => {
             setShowJson((v) => !v);
-            setJsonText(JSON.stringify({ id: initial?.id, agent, name, model, cases }, null, 2));
+            setJsonText(JSON.stringify({ id: initial?.id, agent, name, model, ...(labels ? { labels } : {}), cases }, null, 2));
           }}
-          className="focusable cursor-pointer rounded-sm text-[11px] text-faint transition-colors hover:text-fg"
         >
           {showJson ? "Back to the form" : "Edit as JSON"}
-        </button>
+        </Button>
         <Button size="sm" variant="quiet" onClick={() => onDone(null)}>
           Cancel
         </Button>
@@ -520,6 +617,121 @@ function SetBuilder({
             </p>
           )}
 
+          {/* the label template: space, positive class, reducer */}
+          {agent && (
+            <div className="flex flex-col gap-3 rounded-md border border-line bg-canvas/60 p-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <Switch label="Labeled benchmark" checked={!!labels} onChange={toggleLabels} />
+                <span className="text-[11.5px] text-faint">
+                  Each case carries a ground-truth label. Runs return a confusion matrix; precision,
+                  recall and F1 are derived from it.
+                </span>
+              </div>
+
+              {labels && (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <label className="flex flex-col gap-1 sm:col-span-2">
+                    <span className="text-[11px] font-semibold text-dim">Label space, in order</span>
+                    <input
+                      defaultValue={labels.space.join(", ")}
+                      onBlur={(e) => setSpace(e.target.value)}
+                      placeholder="low, medium, high"
+                      className="focusable h-8 rounded-md border border-line bg-canvas px-2.5 font-mono text-[12px] text-fg placeholder:text-ghost"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[11px] font-semibold text-dim">Positive class (for F1)</span>
+                    <Pick
+                      value={labels.positive ?? ""}
+                      onChange={(v) => patchLabels({ positive: v || undefined })}
+                      options={[
+                        { value: "", label: "None — report macro-F1" },
+                        ...labels.space.map((s) => ({ value: s, label: s })),
+                      ]}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[11px] font-semibold text-dim">Output becomes a label by</span>
+                    <Pick
+                      value={labels.reducer.kind}
+                      onChange={(kind) =>
+                        patchLabels({
+                          reducer:
+                            kind === "threshold"
+                              ? { kind: "threshold", path: "", cuts: labels.space.slice(1).map((_, i) => i + 1) }
+                              : kind === "match"
+                                ? { kind: "match", patterns: Object.fromEntries(labels.space.map((s) => [s, ""])) }
+                                : { kind: "field", path: "" },
+                        })
+                      }
+                      options={REDUCER_KINDS.map((k) => ({ value: k.value, label: k.label }))}
+                    />
+                  </label>
+                  {(labels.reducer.kind === "field" || labels.reducer.kind === "threshold") && (
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[11px] font-semibold text-dim">Result path</span>
+                      <input
+                        value={labels.reducer.path}
+                        onChange={(e) => patchLabels({ reducer: { ...labels.reducer, path: e.target.value } as Reducer })}
+                        placeholder="recorded.disposition"
+                        className="focusable h-8 rounded-md border border-line bg-canvas px-2.5 font-mono text-[12px] text-fg placeholder:text-ghost"
+                      />
+                    </label>
+                  )}
+                  {labels.reducer.kind === "threshold" && (
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[11px] font-semibold text-dim">
+                        Cut points ({labels.space.length - 1}, ascending)
+                      </span>
+                      <input
+                        defaultValue={labels.reducer.cuts.join(", ")}
+                        onBlur={(e) =>
+                          patchLabels({
+                            reducer: {
+                              kind: "threshold",
+                              path: labels.reducer.kind === "threshold" ? labels.reducer.path : "",
+                              cuts: e.target.value.split(",").map((s) => Number(s.trim())).filter((n) => Number.isFinite(n)),
+                            },
+                          })
+                        }
+                        placeholder="0.33, 0.66"
+                        className="focusable h-8 rounded-md border border-line bg-canvas px-2.5 font-mono text-[12px] text-fg placeholder:text-ghost"
+                      />
+                    </label>
+                  )}
+                  {labels.reducer.kind === "match" && (
+                    <div className="flex flex-col gap-1.5 sm:col-span-3">
+                      <span className="text-[11px] font-semibold text-dim">
+                        One regular expression per label, tested in order against the result text
+                      </span>
+                      {labels.space.map((s) => (
+                        <div key={s} className="flex items-center gap-2">
+                          <Mono className="w-28 shrink-0 truncate text-[11px] text-dim">{s}</Mono>
+                          <input
+                            value={labels.reducer.kind === "match" ? (labels.reducer.patterns[s] ?? "") : ""}
+                            onChange={(e) =>
+                              patchLabels({
+                                reducer: {
+                                  kind: "match",
+                                  patterns: {
+                                    ...(labels.reducer.kind === "match" ? labels.reducer.patterns : {}),
+                                    [s]: e.target.value,
+                                  },
+                                },
+                              })
+                            }
+                            placeholder={`\\b${s}\\b`}
+                            className="focusable h-8 min-w-0 grow rounded-md border border-line bg-canvas px-2.5 font-mono text-[12px] text-fg placeholder:text-ghost"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* the cases */}
           {agent &&
             cases.map((c, i) => (
@@ -583,10 +795,24 @@ function SetBuilder({
                   )}
                 </div>
 
+                {/* ground truth, when the set is labeled */}
+                {labels && (
+                  <label className="flex items-center gap-2">
+                    <span className="text-[10.5px] font-semibold tracking-wide text-dim uppercase">Expected label</span>
+                    <div className="w-52">
+                      <Pick
+                        value={c.expected ?? labels.space[0]}
+                        onChange={(v) => patchCase(i, { expected: v })}
+                        options={labels.space.map((s) => ({ value: s, label: s }))}
+                      />
+                    </div>
+                  </label>
+                )}
+
                 {/* checks */}
                 <div className="flex flex-col gap-1.5">
                   <span className="text-[10.5px] font-semibold tracking-wide text-dim uppercase">
-                    Passes when
+                    {labels ? "Also passes only when" : "Passes when"}
                   </span>
                   {c.checks.map((ch, j) => (
                     <div key={j} className="flex flex-wrap items-center gap-2">
@@ -662,7 +888,7 @@ function SetBuilder({
                         onClick={() =>
                           patchCase(i, { checks: c.checks.filter((_, y) => y !== j) })
                         }
-                        disabled={c.checks.length === 1}
+                        disabled={c.checks.length === 1 && !labels}
                         title="Remove check"
                         className="focusable cursor-pointer rounded-sm p-1 text-faint transition-colors hover:text-err disabled:opacity-30"
                       >
@@ -687,7 +913,7 @@ function SetBuilder({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setCases((cs) => [...cs, blankCase(cs.length + 1, inputKeys)])}
+                onClick={() => setCases((cs) => [...cs, blankCase(cs.length + 1, inputKeys, labels)])}
               >
                 Add a case
               </Button>
@@ -726,7 +952,7 @@ function SetCard({
   onChanged: () => void;
   onEdit: () => void;
 }) {
-  const [detail, setDetail] = useState<{ runs: HistoryRow[] } | null>(null);
+  const [detail, setDetail] = useState<{ runs: HistoryRow[]; labels?: Labels } | null>(null);
   const [live, setLive] = useState<{ done: number; total: number; cases: CaseResult[] } | null>(null);
   const [runError, setRunError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -741,7 +967,7 @@ function SetCard({
     let stop = false;
     fetch(`/api/evals?id=${encodeURIComponent(row.id)}`)
       .then((r) => r.json())
-      .then((d) => !stop && setDetail({ runs: d.runs ?? [] }))
+      .then((d) => !stop && setDetail({ runs: d.runs ?? [], labels: d.set?.labels ?? undefined }))
       .catch(() => !stop && setDetail({ runs: [] }));
     return () => {
       stop = true;
@@ -791,6 +1017,7 @@ function SetCard({
 
   const score = row.latest;
   const pct = score ? Math.round((score.passed / Math.max(1, score.total)) * 100) : null;
+  const headline = score?.matrix ? derive(score.matrix, detail?.labels?.positive) : null;
 
   return (
     <section className="overflow-hidden rounded-md border border-line bg-surface">
@@ -820,7 +1047,15 @@ function SetCard({
           </span>
         ) : score ? (
           <span className="flex items-center gap-2">
-            <span className={`tnum text-[15px] font-semibold ${pct === 100 ? "text-ok" : pct! >= 60 ? "text-warn" : "text-err"}`}>
+            {headline && (
+              <span className="flex items-baseline gap-1">
+                <span className="text-[10px] text-faint">F1</span>
+                <span className={`tnum text-[15px] font-semibold ${headline.headlineF1 >= 0.9 ? "text-ok" : headline.headlineF1 >= 0.6 ? "text-warn" : "text-err"}`}>
+                  {headline.headlineF1.toFixed(3)}
+                </span>
+              </span>
+            )}
+            <span className={`tnum ${headline ? "text-[11.5px] text-dim" : "text-[15px] font-semibold"} ${!headline && pct === 100 ? "text-ok" : !headline && pct! >= 60 ? "text-warn" : !headline ? "text-err" : ""}`}>
               {score.passed}/{score.total}
             </span>
             <span className="text-[10.5px] text-ghost">{ago(score.at)}</span>
@@ -882,12 +1117,20 @@ function SetCard({
 
           {!live && detail?.runs.length ? (
             <div className="flex flex-col gap-3">
+              {detail.runs[0].matrix && (
+                <ConfusionPanel matrix={detail.runs[0].matrix} positive={detail.labels?.positive} />
+              )}
               <CaseTable cases={detail.runs[0].results} />
               <div className="flex flex-col gap-1">
                 <span className="text-[11px] font-semibold text-dim">History</span>
                 {detail.runs.map((h) => (
                   <div key={h.id} className="flex items-center gap-3 text-[11.5px]">
-                    <span className={`tnum font-semibold ${h.passed === h.total ? "text-ok" : "text-warn"}`}>
+                    {h.matrix && (
+                      <span className="tnum font-semibold text-fg">
+                        F1 {derive(h.matrix, detail.labels?.positive).headlineF1.toFixed(3)}
+                      </span>
+                    )}
+                    <span className={`tnum ${h.matrix ? "text-dim" : "font-semibold"} ${!h.matrix && h.passed === h.total ? "text-ok" : !h.matrix ? "text-warn" : ""}`}>
                       {h.passed}/{h.total}
                     </span>
                     <Mono className="text-[10px] text-faint">{modelLabel(h.model === "default" ? "" : h.model)}</Mono>
@@ -920,6 +1163,13 @@ function CaseTable({ cases }: { cases: CaseResult[] }) {
           >
             <span className={`size-1.5 shrink-0 rounded-[2px] ${c.passed ? "bg-ok" : "bg-err"}`} />
             <span className="min-w-0 grow truncate text-[12.5px] font-medium text-fg">{c.id}</span>
+            {c.expected !== undefined && (
+              <Mono className="hidden shrink-0 text-[10.5px] sm:inline">
+                <span className="text-dim">{c.expected}</span>
+                <span className="text-ghost"> → </span>
+                <span className={c.predicted === c.expected ? "text-ok" : "text-err"}>{c.predicted ?? INVALID}</span>
+              </Mono>
+            )}
             {c.note && <span className="hidden truncate text-[11px] text-faint sm:inline">{c.note}</span>}
             <Mono className="shrink-0 text-[10px] text-ghost">{(c.duration_ms / 1000).toFixed(1)}s</Mono>
             <span className={`shrink-0 text-[11px] font-semibold ${c.passed ? "text-ok" : "text-err"}`}>
@@ -947,6 +1197,124 @@ function CaseTable({ cases }: { cases: CaseResult[] }) {
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+/* ═══════════════════ confusion matrix + derived metrics ═══════════════════ */
+
+/**
+ * The matrix is the primitive; everything else is a view over it. Rows are
+ * what the case expected, columns what the agent produced, with a final
+ * column for outputs that resolved to no label. Cell shading scales within
+ * each row so a rare class reads as clearly as a common one.
+ */
+function ConfusionPanel({ matrix, positive }: { matrix: Matrix; positive?: string }) {
+  const m = derive(matrix, positive);
+  const n = matrix.labels.length;
+  const cols = [...matrix.labels, INVALID];
+  return (
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-[auto_minmax(0,1fr)]">
+      <div className="overflow-x-auto rounded-md border border-line bg-canvas/60 p-3">
+        <div className="mb-2 flex items-baseline gap-2">
+          <span className="text-[11px] font-semibold text-dim">Confusion matrix</span>
+          <span className="text-[10.5px] text-faint">rows expected · columns produced</span>
+        </div>
+        <table className="tnum border-separate border-spacing-0.5 text-[11px]">
+          <thead>
+            <tr>
+              <th />
+              {cols.map((c, j) => (
+                <th
+                  key={c}
+                  className={`px-1.5 pb-1 text-center font-mono text-[10px] font-medium ${j === n ? "text-ghost" : "text-dim"}`}
+                >
+                  {c}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {matrix.counts.map((row, i) => {
+              const rowMax = Math.max(1, ...row);
+              return (
+                <tr key={matrix.labels[i]}>
+                  <th className="pr-2 text-right font-mono text-[10px] font-medium text-dim">{matrix.labels[i]}</th>
+                  {row.map((v, j) => {
+                    const diag = i === j;
+                    const a = v === 0 ? 0 : 0.12 + 0.55 * (v / rowMax);
+                    return (
+                      <td
+                        key={j}
+                        className={`size-9 rounded-[3px] text-center align-middle ${diag ? "font-semibold text-fg ring-1 ring-inset ring-line-strong" : "text-dim"}`}
+                        style={{
+                          background:
+                            v === 0
+                              ? "transparent"
+                              : diag
+                                ? `color-mix(in oklab, var(--ok) ${Math.round(a * 100)}%, transparent)`
+                                : `color-mix(in oklab, var(--err) ${Math.round(a * 100)}%, transparent)`,
+                        }}
+                        title={`expected ${matrix.labels[i]}, produced ${cols[j]}: ${v}`}
+                      >
+                        {v}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex min-w-0 flex-col gap-2 rounded-md border border-line bg-canvas/60 p-3">
+        <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
+          <span className="flex items-baseline gap-1.5">
+            <span className="text-[10.5px] text-faint">{m.headlineKind === "positive" ? `F1 · ${positive}` : "macro-F1"}</span>
+            <span className="tnum text-[18px] font-semibold text-fg">{m.headlineF1.toFixed(3)}</span>
+          </span>
+          {[
+            ["accuracy", pct(m.accuracy)],
+            ["macro-F1", m.macroF1.toFixed(3)],
+            ["micro-F1", m.microF1.toFixed(3)],
+            ["cases", String(m.total)],
+            ["no label", String(m.invalid)],
+          ].map(([k, v]) => (
+            <span key={k} className="flex items-baseline gap-1.5">
+              <span className="text-[10.5px] text-faint">{k}</span>
+              <span className="tnum text-[12.5px] font-medium text-fg">{v}</span>
+            </span>
+          ))}
+        </div>
+        <div className="overflow-x-auto">
+          <table className="tnum w-full text-[11px]">
+            <thead>
+              <tr className="text-left text-[10px] text-faint">
+                <th className="py-1 pr-3 font-medium">class</th>
+                {["TP", "FP", "TN", "FN", "precision", "recall", "F1", "support"].map((h) => (
+                  <th key={h} className="py-1 pr-3 text-right font-medium">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {m.classes.map((c) => (
+                <tr key={c.label} className={`border-t border-line ${c.label === positive ? "font-medium text-fg" : "text-dim"}`}>
+                  <td className="py-1 pr-3 font-mono text-[10.5px]">{c.label}</td>
+                  <td className="py-1 pr-3 text-right">{c.tp}</td>
+                  <td className="py-1 pr-3 text-right">{c.fp}</td>
+                  <td className="py-1 pr-3 text-right">{c.tn}</td>
+                  <td className="py-1 pr-3 text-right">{c.fn}</td>
+                  <td className="py-1 pr-3 text-right">{c.precision.toFixed(3)}</td>
+                  <td className="py-1 pr-3 text-right">{c.recall.toFixed(3)}</td>
+                  <td className="py-1 pr-3 text-right">{c.f1.toFixed(3)}</td>
+                  <td className="py-1 pr-3 text-right">{c.support}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

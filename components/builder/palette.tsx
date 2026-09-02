@@ -3,9 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { TOOL_CARDS, TOOL_BY_ID } from "@/lib/catalogue";
 import { CONNECTOR_DEFS } from "@/lib/connections";
+import { toolOf, useMcp, type McpServer, type McpTool } from "@/lib/use-mcp";
+import { RISK } from "@/lib/spec";
 import { HARNESS, HARNESS_ORDER, OUTPUT_META, TRIGGER_META, type AgentSystem } from "@/lib/spec";
 import type { HarnessKind } from "@/lib/spec";
 import { Icon } from "./icons";
+import { Button } from "../ui";
 
 /**
  * The left rail: everything that can land on the canvas. One category shows at
@@ -53,12 +56,13 @@ export function Palette({
   /** The selected node, when the shell supports click-to-grant. */
   selected?: string | null;
   /** Clicking a card grants it with the same payload the drag would carry. */
-  onGrant?: (kind: "tool" | "connector" | "system" | "harness" | "workflow", payload: string) => void;
+  onGrant?: (kind: "tool" | "connector" | "system" | "harness" | "workflow" | "custom", payload: string) => void;
 }) {
   const [cat, setCat] = useState<Cat>("agents");
   const [saved, setSaved] = useState<SavedAgent[] | null>(null);
   const [query, setQuery] = useState("");
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const { servers: mcp, refresh: refreshMcp } = useMcp();
 
   useEffect(() => {
     let stop = false;
@@ -120,6 +124,38 @@ export function Palette({
       <span className="w-full truncate text-[9.5px] text-faint">{t.blurb}</span>
     </button>
   );
+
+  /* A team's own tool. The card carries the whole binding, so dropping it is
+     the same gesture as a built-in card and needs nothing else to exist. */
+  const customCard = (s: McpServer, t: McpTool) => {
+    const tool = toolOf(s, t);
+    const payload = JSON.stringify(tool);
+    return (
+      <button
+        key={tool.name}
+        draggable
+        onDragStart={(e) => dragPayload(e, "custom", payload)}
+        onClick={onGrant ? () => onGrant("custom", payload) : undefined}
+        title={`${t.description || t.name}\n\n${tool.name} · ${RISK[tool.risk].label}: ${RISK[tool.risk].means}\n\nDrag onto an agent to grant it.`}
+        className="focusable flex cursor-grab flex-col items-start gap-1.5 rounded-md border border-line bg-surface px-2.5 py-2 text-left transition-[border-color,box-shadow] hover:border-line-strong hover:elev-1 active:cursor-grabbing"
+      >
+        <span className="flex w-full items-center gap-1.5">
+          <span className="grid size-6 place-items-center rounded-md bg-raise text-dim">
+            <Icon name="plug" size={13} />
+          </span>
+          <span className="grow" />
+          <span
+            className="rounded-[3px] px-1 py-px font-mono text-[8.5px] tracking-wide uppercase"
+            style={{ color: `var(${RISK[tool.risk].tone})`, background: `color-mix(in oklab, var(${RISK[tool.risk].tone}) 12%, transparent)` }}
+          >
+            {tool.risk}
+          </span>
+        </span>
+        <span className="w-full truncate font-mono text-[11px] leading-tight font-medium text-fg">{t.name}</span>
+        <span className="w-full truncate text-[9.5px] text-faint">{t.description || `on ${s.label}`}</span>
+      </button>
+    );
+  };
 
   const connectorCard = (c: (typeof CONNECTOR_DEFS)[number]) => (
     <button
@@ -200,6 +236,7 @@ export function Palette({
     ? {
         agents: HARNESS_ORDER.filter((k) => hit(HARNESS[k].name, HARNESS[k].does)),
         tools: TOOL_CARDS.filter((t) => hit(t.label, t.blurb)),
+        custom: (mcp ?? []).flatMap((s) => s.tools.filter((t) => hit(t.name, t.description, s.label)).map((t) => [s, t] as const)),
         connectors: CONNECTOR_DEFS.filter((c) => hit(c.label, c.blurb, c.tool)),
         system: (["input", "output"] as const).filter((s) =>
           hit(s, ...Object.values(s === "input" ? TRIGGER_META : OUTPUT_META).map((m) => m.label)),
@@ -276,6 +313,10 @@ export function Palette({
             {found.tools.length > 0 && (
               <div className="grid grid-cols-2 gap-1.5">{found.tools.map(toolCard)}</div>
             )}
+            {found.custom.length > 0 && cap("Custom tools")}
+            {found.custom.length > 0 && (
+              <div className="grid grid-cols-2 gap-1.5">{found.custom.map(([s, t]) => customCard(s, t))}</div>
+            )}
             {found.connectors.length > 0 && cap("Connectors")}
             {found.connectors.length > 0 && (
               <div className="grid grid-cols-2 gap-1.5">{found.connectors.map(connectorCard)}</div>
@@ -288,7 +329,7 @@ export function Palette({
             {found.workflows.length > 0 && (
               <div className="flex flex-col gap-1.5">{found.workflows.map(workflowCard)}</div>
             )}
-            {found.agents.length + found.tools.length + found.connectors.length + found.system.length + found.workflows.length === 0 && (
+            {found.agents.length + found.tools.length + found.custom.length + found.connectors.length + found.system.length + found.workflows.length === 0 && (
               <p className="text-[11px] text-faint">Nothing matches &ldquo;{query.trim()}&rdquo;.</p>
             )}
           </>
@@ -310,6 +351,19 @@ export function Palette({
                   configuration — the agent only knows the verb.
                 </p>
                 <div className="grid grid-cols-2 gap-1.5">{TOOL_CARDS.map(toolCard)}</div>
+
+                {cap("Custom tools · MCP")}
+                <p className="text-[11.5px] leading-[1.5] text-faint">
+                  Your team&rsquo;s own tools, served over MCP. Connect a server once and every
+                  tool it lists becomes a card here; the same server is attached at run time.
+                </p>
+                {mcp === null && <div className="h-[46px] animate-pulse rounded-md bg-raise" />}
+                {(mcp ?? []).map((s) => (
+                  <McpServerRail key={s.id} server={s} onChanged={refreshMcp}>
+                    <div className="grid grid-cols-2 gap-1.5">{s.tools.map((t) => customCard(s, t))}</div>
+                  </McpServerRail>
+                ))}
+                <McpConnect onConnected={refreshMcp} />
               </>
             )}
 
@@ -368,6 +422,166 @@ export function Palette({
             )}
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════ custom tools over MCP ═══════════════════ */
+
+function McpServerRail({
+  server,
+  onChanged,
+  children,
+}: {
+  server: McpServer;
+  onChanged: () => void;
+  children: React.ReactNode;
+}) {
+  const [busy, setBusy] = useState<"refresh" | "remove" | null>(null);
+  const [confirm, setConfirm] = useState(false);
+  const [error, setError] = useState("");
+
+  const refresh = async () => {
+    setBusy("refresh");
+    setError("");
+    try {
+      const r = await fetch("/api/mcp", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: server.id, refresh: true }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(String(d.error ?? r.status));
+      onChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const remove = async () => {
+    if (!confirm) {
+      setConfirm(true);
+      setTimeout(() => setConfirm(false), 3000);
+      return;
+    }
+    setBusy("remove");
+    await fetch(`/api/mcp?id=${encodeURIComponent(server.id)}`, { method: "DELETE" });
+    setBusy(null);
+    onChanged();
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-1.5">
+        <span className="min-w-0 truncate text-[11px] font-medium text-fg">{server.label}</span>
+        <span className="shrink-0 font-mono text-[9.5px] text-ghost">
+          {server.id} · {server.tools.length}
+        </span>
+        <span className="grow" />
+        <span title={`Ask the server for its tools again.\n${server.command} ${server.args.join(" ")}`}>
+          <Button size="sm" variant="quiet" disabled={!!busy} loading={busy === "refresh"} onClick={refresh}>
+            Refresh
+          </Button>
+        </span>
+        <Button size="sm" variant="quiet" tone={confirm ? "err" : "neutral"} disabled={!!busy} onClick={remove}>
+          {confirm ? "Sure?" : "Remove"}
+        </Button>
+      </div>
+      {error && <p className="text-[10px] text-err">{error}</p>}
+      {children}
+    </div>
+  );
+}
+
+function McpConnect({ onConnected }: { onConnected: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [label, setLabel] = useState("");
+  const [command, setCommand] = useState("");
+  const [env, setEnv] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const connect = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const r = await fetch("/api/mcp", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ label, command, env }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(String(d.error ?? r.status));
+      setLabel("");
+      setCommand("");
+      setEnv("");
+      setOpen(false);
+      onConnected();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="focusable flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-line-strong bg-surface px-2.5 py-2 text-left text-[11.5px] font-medium text-dim transition-colors hover:border-fg hover:text-fg"
+      >
+        <span className="grid size-6 place-items-center rounded-md bg-raise">
+          <Icon name="plug" size={13} />
+        </span>
+        Connect an MCP server
+      </button>
+    );
+  }
+
+  const field = "focusable w-full rounded-md border border-line bg-canvas px-2 py-1.5 font-mono text-[11px] text-fg placeholder:text-ghost";
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-line bg-surface p-2.5">
+      <span className="text-[11.5px] font-medium text-fg">Connect an MCP server</span>
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] font-semibold text-dim">Name</span>
+        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Risk engine" className={field} />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] font-semibold text-dim">Command that starts it (stdio)</span>
+        <input
+          value={command}
+          onChange={(e) => setCommand(e.target.value)}
+          placeholder="python3 tools/risk_server.py"
+          className={field}
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] font-semibold text-dim">Environment, one KEY=VALUE per line (optional)</span>
+        <textarea
+          value={env}
+          onChange={(e) => setEnv(e.target.value)}
+          rows={2}
+          spellCheck={false}
+          placeholder={"API_BASE=https://…\nAPI_KEY=${secret:risk-key}"}
+          className={`${field} resize-y`}
+        />
+      </label>
+      <p className="text-[10px] leading-[1.5] text-faint">
+        The server is started once now to list its tools, then again by the runtime whenever an
+        agent that holds one of them runs. It runs beside the runtime, never inside it.
+      </p>
+      {error && <p className="text-[10px] leading-[1.4] text-err">{error}</p>}
+      <div className="flex items-center gap-2">
+        <Button size="sm" variant="quiet" onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+        <span className="grow" />
+        <Button size="sm" variant="solid" tone="ink" disabled={busy || !command.trim()} loading={busy} onClick={connect}>
+          {busy ? "Discovering tools…" : "Connect"}
+        </Button>
       </div>
     </div>
   );

@@ -533,7 +533,7 @@ export function Canvas({
           const x = Math.round((p.x - NODE_W / 2) / GRID) * GRID;
           const y = Math.round((p.y - NODE_H / 2) / GRID) * GRID;
           setGhost((g) => (g && g.x === x && g.y === y ? g : { x, y }));
-        } else if (["tool", "connector"].some((k) => types.includes(`application/x-af-${k}`))) {
+        } else if (["tool", "connector", "custom"].some((k) => types.includes(`application/x-af-${k}`))) {
           setDropHint(true);
         }
       }}
@@ -566,7 +566,8 @@ export function Canvas({
         const sys = get("system");
         const workflow = get("workflow");
         const capability = get("capability");
-        if (!harness && !tool && !connector && !sys && !workflow && !capability) return;
+        const custom = get("custom");
+        if (!harness && !tool && !connector && !sys && !workflow && !capability && !custom) return;
         e.preventDefault();
 
         if (harness) {
@@ -577,6 +578,16 @@ export function Canvas({
           if (target) {
             dispatch({ type: "grant-tool-card", node: target, card: tool });
             onSelect(target);
+          }
+        } else if (custom) {
+          const target = under();
+          if (target) {
+            try {
+              dispatch({ type: "grant-custom-tool", node: target, tool: JSON.parse(custom) });
+              onSelect(target);
+            } catch {
+              /* malformed payload — ignore */
+            }
           }
         } else if (connector) {
           const target = under();

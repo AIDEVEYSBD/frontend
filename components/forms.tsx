@@ -227,13 +227,23 @@ export function Radio({
 export function Switch({
   label,
   defaultChecked,
+  checked,
+  onChange,
   disabled,
 }: {
   label?: string;
   defaultChecked?: boolean;
+  /** Controlled form: pass `checked` and `onChange`; otherwise it keeps its own state. */
+  checked?: boolean;
+  onChange?: (on: boolean) => void;
   disabled?: boolean;
 }) {
-  const [on, setOn] = useState(!!defaultChecked);
+  const [own, setOwn] = useState(!!defaultChecked);
+  const on = checked ?? own;
+  const flip = () => {
+    if (checked === undefined) setOwn((v) => !v);
+    onChange?.(!on);
+  };
   return (
     <div className="flex items-center gap-2.5">
       <button
@@ -241,7 +251,7 @@ export function Switch({
         aria-checked={on}
         aria-label={label ?? "Toggle"}
         disabled={disabled}
-        onClick={() => setOn((v) => !v)}
+        onClick={flip}
         className={`focusable relative h-5 w-9 shrink-0 cursor-pointer rounded-sm border transition-colors duration-150 ease-[var(--ease-out)] disabled:cursor-not-allowed disabled:opacity-40 ${
           on ? "border-ink bg-ink" : "border-line-strong bg-raise"
         }`}

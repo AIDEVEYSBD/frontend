@@ -4,6 +4,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { dbReady, query } from "@/lib/server/db";
 import { grade, loadSet } from "@/lib/server/evals";
 import { registerRun } from "@/lib/server/active-runs";
+import { derive, emptyMatrix, tally } from "@/lib/metrics";
 
 /**
  * Run an eval set: every case is a REAL run of the agent — same runtime, same
@@ -63,6 +64,9 @@ export async function POST(req: Request) {
       const results: unknown[] = [];
       let passed = 0;
       let digest = "";
+      // A labeled set accumulates the confusion matrix as it goes; every
+      // metric is derived from these counts, never stored separately.
+      const matrix = set.labels ? emptyMatrix(set.labels.space) : null;
 
       for (let i = 0; i < set.cases.length; i++) {
         const c = set.cases[i];
@@ -97,8 +101,10 @@ export async function POST(req: Request) {
           child.on("error", (e) => resolve({ state: "failed", result: null, error: e.message }));
         });
 
-        const verdict = grade(c.checks, outcome.state, outcome.result);
+        const labeled = set.labels && c.expected !== undefined ? { labels: set.labels, expected: c.expected } : undefined;
+        const verdict = grade(c.checks, outcome.state, outcome.result, labeled);
         if (verdict.passed) passed += 1;
+        if (matrix && labeled) tally(matrix, labeled.expected, verdict.predicted);
         const record = {
           id: c.id,
           note: c.note ?? "",
@@ -106,6 +112,7 @@ export async function POST(req: Request) {
           state: outcome.state,
           error: outcome.error,
           checks: verdict.detail,
+          ...(labeled ? { expected: labeled.expected, predicted: verdict.predicted } : {}),
           duration_ms: Date.now() - started,
           run_file: path.basename(statePath, ".json"),
         };
@@ -117,16 +124,26 @@ export async function POST(req: Request) {
       try {
         if (await dbReady()) {
           await query(
-            `INSERT INTO eval_runs (id, set_id, agent, model, digest, passed, total, results)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-            [evalRunId, set.id, set.agent, model || "default", digest, passed, set.cases.length, JSON.stringify(results)],
+            `INSERT INTO eval_runs (id, set_id, agent, model, digest, passed, total, results, matrix)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [
+              evalRunId, set.id, set.agent, model || "default", digest, passed, set.cases.length,
+              JSON.stringify(results), matrix ? JSON.stringify(matrix) : null,
+            ],
           );
         }
       } catch {
         /* the stream already carries the results */
       }
 
-      send({ type: "done", run_id: evalRunId, passed, total: set.cases.length, digest });
+      send({
+        type: "done",
+        run_id: evalRunId,
+        passed,
+        total: set.cases.length,
+        digest,
+        ...(matrix ? { matrix, metrics: derive(matrix, set.labels?.positive) } : {}),
+      });
       try {
         controller.close();
       } catch {

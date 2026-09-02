@@ -14,7 +14,7 @@
 import { CATALOGUE, TOOL_BY_ID, asTool } from "./catalogue";
 import { CONNECTOR_DEF, bindingFor } from "./connections";
 import { slug as slugify } from "./spec";
-import type { AgentSystem, Edge, Field, HarnessKind, Node, OutputDecl, Trigger } from "./spec";
+import type { AgentSystem, Edge, Field, HarnessKind, Node, OutputDecl, Tool, Trigger } from "./spec";
 import { slug } from "./spec";
 
 /** An empty system. The starting point, and the only one we ship. */
@@ -61,6 +61,7 @@ export type Action =
   | { type: "set-outputs"; outputs: OutputDecl[] }
   | { type: "tool-config"; name: string; config: Record<string, unknown> }
   | { type: "grant-tool-card"; node: string; card: string }
+  | { type: "grant-custom-tool"; node: string; tool: Tool }
   | { type: "add-connection"; tool: string; kind: string; node: string }
   | { type: "patch-connection"; server: string; slot: string; index: number; patch: Record<string, unknown> }
   | { type: "remove-connection"; server: string; slot: string; index: number }
@@ -273,6 +274,16 @@ export function reduce(s: AgentSystem, a: Action): AgentSystem {
         (acc, tool) => reduce(acc, { type: "grant", node: a.node, tool }),
         s,
       );
+    }
+
+    /* A team's own tool, discovered from its MCP server. The binding arrives
+       whole — server, remote name, schema, risk — so the spec carries
+       everything the runtime needs to call something it has never heard of. */
+    case "grant-custom-tool": {
+      const withTool = s.tools.some((t) => t.name === a.tool.name)
+        ? s
+        : { ...s, tools: [...s.tools, { ...a.tool }] };
+      return reduce(withTool, { type: "grant", node: a.node, tool: a.tool.name });
     }
 
     /* A connection is a connector card pinned beneath the agent it was
