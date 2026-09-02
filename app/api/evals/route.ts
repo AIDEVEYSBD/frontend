@@ -22,7 +22,6 @@ export async function GET(req: Request) {
   if (!(await dbReady())) return Response.json({ sets: [], store: "db unreachable" });
 
   if (id) {
-    const sets = await query<{ id: string; agent: string; name: string; model: string; cases: EvalCase[] }>(
     const sets = await query<{ id: string; agent: string; name: string; model: string; labels: unknown; cases: EvalCase[] }>(
       "SELECT id, agent, name, model, labels, cases FROM eval_sets WHERE id = $1",
       [id],
