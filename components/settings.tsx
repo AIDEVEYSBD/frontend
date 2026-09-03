@@ -238,76 +238,83 @@ function Models() {
           return (
             <div
               key={m.id}
-              className={`flex items-center gap-3 border-b border-line px-4 py-2 last:border-b-0 ${
+              className={`flex flex-col gap-1.5 border-b border-line px-4 py-2 last:border-b-0 ${
                 on ? "" : "opacity-75"
               }`}
             >
-              <Checkbox checked={on} onChange={() => toggle(m)} aria-label={`Offer ${m.label}`} />
-              <div className="flex min-w-[120px] grow flex-col">
-                <span className="truncate text-[12.5px] font-medium text-fg">{m.label}</span>
-                <span className="truncate font-mono text-[10.5px] text-faint">{m.id}</span>
+              {/* Identity and price on one line; long catalogue names truncate
+                  rather than push anything past the card edge. */}
+              <div className="flex min-w-0 items-center gap-3">
+                <Checkbox checked={on} onChange={() => toggle(m)} aria-label={`Offer ${m.label}`} />
+                <div className="flex min-w-0 grow flex-col">
+                  <span className="truncate text-[12.5px] font-medium text-fg" title={m.label}>{m.label}</span>
+                  <span className="truncate font-mono text-[10.5px] text-faint" title={m.id}>{m.id}</span>
+                </div>
+                <span className="flex shrink-0 flex-col items-end gap-0.5 text-right">
+                  {m.price > 0 && (
+                    <span className="tnum font-mono text-[10px] text-ghost">
+                      {(m.price_out ?? 0) > 0
+                        ? `$${m.price.toFixed(2)} in · $${(m.price_out ?? 0).toFixed(2)} out /M`
+                        : `$${m.price.toFixed(2)}/M in`}
+                    </span>
+                  )}
+                  {m.context > 0 && (
+                    <span className="tnum font-mono text-[10px] text-ghost">{Math.round(m.context / 1000)}k ctx</span>
+                  )}
+                </span>
               </div>
-              {m.context > 0 && (
-                <span className="tnum hidden shrink-0 font-mono text-[10px] text-ghost sm:inline">
-                  {Math.round(m.context / 1000)}k ctx
-                </span>
-              )}
-              {m.price > 0 && (
-                <span className="tnum hidden shrink-0 font-mono text-[10px] text-ghost sm:inline">
-                  {(m.price_out ?? 0) > 0
-                    ? `$${m.price.toFixed(2)} in · $${(m.price_out ?? 0).toFixed(2)} out /M`
-                    : `$${m.price.toFixed(2)}/M in`}
-                </span>
-              )}
+              {/* The controls an offered model carries, on their own line so
+                  a narrow column never clips the tier picker. */}
               {on && (
-                <div className="w-[118px] shrink-0">
-                  <Pick
-                    value={config?.models.find((x) => x.id === m.id)?.class ?? ""}
-                    onChange={(v) =>
-                      config &&
-                      save({
-                        ...config,
-                        models: config.models.map((x) =>
-                          x.id === m.id ? { ...x, ...(v ? { class: v as ModelClass } : { class: undefined }) } : x,
-                        ),
-                      })
-                    }
-                    options={[{ value: "", label: "no tier" }, ...MODEL_CLASSES.map((c) => ({ value: c, label: c }))]}
-                  />
+                <div className="flex flex-wrap items-center gap-2 pl-7">
+                  <div className="w-32">
+                    <Pick
+                      value={config?.models.find((x) => x.id === m.id)?.class ?? ""}
+                      onChange={(v) =>
+                        config &&
+                        save({
+                          ...config,
+                          models: config.models.map((x) =>
+                            x.id === m.id ? { ...x, ...(v ? { class: v as ModelClass } : { class: undefined }) } : x,
+                          ),
+                        })
+                      }
+                      options={[{ value: "", label: "no tier" }, ...MODEL_CLASSES.map((c) => ({ value: c, label: c }))]}
+                    />
+                  </div>
+                  {config?.models.find((x) => x.id === m.id)?.class &&
+                    (config.class_defaults?.[config.models.find((x) => x.id === m.id)!.class!] === m.id ? (
+                      <span className="shrink-0 rounded-[3px] border border-line-strong px-1 py-px font-mono text-[9px] font-semibold text-dim" title="The model the router picks for this tier">
+                        TIER DEFAULT
+                      </span>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="quiet"
+                        className="shrink-0"
+                        onClick={() =>
+                          config &&
+                          save({
+                            ...config,
+                            class_defaults: { ...(config.class_defaults ?? {}), [config.models.find((x) => x.id === m.id)!.class!]: m.id },
+                          })
+                        }
+                      >
+                        tier default
+                      </Button>
+                    ))}
+                  <span className="grow" />
+                  {isDefault ? (
+                    <span className="shrink-0 rounded-[3px] border border-line-strong px-1 py-px font-mono text-[9px] font-semibold text-dim">
+                      DEFAULT
+                    </span>
+                  ) : (
+                    <Button size="sm" variant="quiet" className="shrink-0" onClick={() => config && save({ ...config, default_model: m.id })}>
+                      make default
+                    </Button>
+                  )}
                 </div>
               )}
-              {on && config?.models.find((x) => x.id === m.id)?.class && (
-                config.class_defaults?.[config.models.find((x) => x.id === m.id)!.class!] === m.id ? (
-                  <span className="shrink-0 rounded-[3px] border border-line-strong px-1 py-px font-mono text-[9px] font-semibold text-dim" title="The model the router picks for this tier">
-                    TIER DEFAULT
-                  </span>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="quiet"
-                    className="shrink-0"
-                    onClick={() =>
-                      config &&
-                      save({
-                        ...config,
-                        class_defaults: { ...(config.class_defaults ?? {}), [config.models.find((x) => x.id === m.id)!.class!]: m.id },
-                      })
-                    }
-                  >
-                    tier default
-                  </Button>
-                )
-              )}
-              {on &&
-                (isDefault ? (
-                  <span className="shrink-0 rounded-[3px] border border-line-strong px-1 py-px font-mono text-[9px] font-semibold text-dim">
-                    DEFAULT
-                  </span>
-                ) : (
-                  <Button size="sm" variant="quiet" className="shrink-0" onClick={() => config && save({ ...config, default_model: m.id })}>
-                    make default
-                  </Button>
-                ))}
             </div>
           );
         })}

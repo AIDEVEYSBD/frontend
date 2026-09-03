@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Button, IconButton, Label, Mono, Tag } from "./ui";
 import { Icon } from "./builder/icons";
 import { useModels } from "@/lib/use-models";
-import { Pick } from "./select";
+import { Pick, PickMany } from "./select";
 import { Field, Input, Switch, Textarea } from "./forms";
 import { Banner } from "./overlays";
 import { fromDocument, inputKeysOf, type Kind } from "@/lib/spec";
@@ -998,10 +998,29 @@ function SetCard({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [override, setOverride] = useState("");
   const [compare, setCompare] = useState(false);
-  const [scope, setScope] = useState<"class" | "below" | "all">("below");
+  const [picked, setPicked] = useState<string[]>([]);
   const [cmp, setCmp] = useState<CompareResult | null>(null);
   const [liveModel, setLiveModel] = useState<string | null>(null);
-  const { models } = useModels();
+  const { models, defaultModel } = useModels();
+
+  /* The incumbent is what the benchmark runs on today; it is always in the
+     comparison. The default pick is its tier and the one below, which is the
+     question people actually ask ("can something cheaper do this?"). */
+  const incumbent = override || row.model || defaultModel;
+  const tierOf = (id: string) => models.find((m) => m.id === id)?.class;
+  const TIERS = ["small", "medium", "large"] as const;
+  const pickTiers = (tiers: readonly string[]) =>
+    [...new Set([incumbent, ...models.filter((m) => m.class && tiers.includes(m.class)).map((m) => m.id)])];
+  const tierBelow = () => {
+    const t = tierOf(incumbent);
+    if (!t) return models.map((m) => m.id);
+    const i = TIERS.indexOf(t);
+    return pickTiers(i > 0 ? [t, TIERS[i - 1]] : [t]);
+  };
+  const enableCompare = (on: boolean) => {
+    setCompare(on);
+    if (on) setPicked(tierBelow());
+  };
 
   const modelLabel = (id: string) =>
     id ? (models.find((m) => m.id === id)?.label ?? id) : "deployment default";
@@ -1031,7 +1050,7 @@ function SetCard({
         body: JSON.stringify({
           set_id: row.id,
           ...(override ? { model: override } : {}),
-          ...(compare ? { compare: { scope } } : {}),
+          ...(compare ? { compare: { models: picked } } : {}),
         }),
       });
       if (!res.ok) {
@@ -1141,8 +1160,8 @@ function SetCard({
       {open && (
         <div className="flex flex-col gap-4 border-t border-line px-4 py-4">
           <div className="flex flex-wrap items-center gap-2.5">
-            <Button size="sm" variant="solid" tone="ink" disabled={!!live} loading={!!live} onClick={run}>
-              {live ? "Measuring…" : "Run the benchmark"}
+            <Button size="sm" variant="solid" tone="ink" disabled={!!live || (compare && picked.length < 2)} loading={!!live} onClick={run}>
+              {live ? "Measuring…" : compare ? `Compare ${picked.length} models` : "Run the benchmark"}
             </Button>
             <span className="text-[11px] text-faint">on</span>
             <div className="w-64">
@@ -1156,19 +1175,37 @@ function SetCard({
               />
             </div>
             <span className="ml-2 flex items-center gap-2">
-              <Switch label="Compare models" checked={compare} onChange={setCompare} disabled={!!live} />
+              <Switch label="Compare models" checked={compare} onChange={enableCompare} disabled={!!live} />
               {compare && (
-                <div className="w-60">
-                  <Pick
-                    value={scope}
-                    onChange={(v) => setScope(v as "class" | "below" | "all")}
-                    options={[
-                      { value: "class", label: "Same tier as the incumbent" },
-                      { value: "below", label: "Incumbent's tier and one below" },
-                      { value: "all", label: "Every model offered" },
-                    ]}
+                <div className="w-72">
+                  <PickMany
+                    values={picked}
+                    onChange={setPicked}
+                    disabled={!!live}
+                    aria-label="Models to compare"
+                    placeholder="Pick the models to compare"
+                    summary={(c) => `${c.length} model${c.length === 1 ? "" : "s"}: ${c.map((x) => x.label).join(", ")}`}
+                    options={models.map((m) => ({
+                      value: m.id,
+                      label: m.label,
+                      note: [m.class, m.id === incumbent ? "incumbent" : ""].filter(Boolean).join(" · "),
+                      locked: m.id === incumbent,
+                    }))}
                   />
                 </div>
+              )}
+              {compare && (
+                <span className="flex items-center gap-1.5">
+                  {([
+                    ["Same tier", () => setPicked(pickTiers([tierOf(incumbent) ?? ""]))],
+                    ["One below", () => setPicked(tierBelow())],
+                    ["All", () => setPicked(models.map((m) => m.id))],
+                  ] as [string, () => void][]).map(([label, fn]) => (
+                    <Button key={label} size="sm" variant="quiet" disabled={!!live} onClick={fn}>
+                      {label}
+                    </Button>
+                  ))}
+                </span>
               )}
             </span>
             <span className="grow" />
