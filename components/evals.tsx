@@ -1001,6 +1001,7 @@ function SetCard({
   const [picked, setPicked] = useState<string[]>([]);
   const [cmp, setCmp] = useState<CompareResult | null>(null);
   const [liveModel, setLiveModel] = useState<string | null>(null);
+  const [viewModel, setViewModel] = useState<string | null>(null);
   const { models, defaultModel } = useModels();
 
   /* The incumbent is what the benchmark runs on today; it is always in the
@@ -1102,6 +1103,18 @@ function SetCard({
     });
     onChanged();
   };
+
+  const activeCmp = cmp ?? lastComparison(detail?.runs ?? [], detail?.labels?.positive);
+  /* Which compared model's run is on screen: the one picked, else the
+     recommendation, else the incumbent, else the latest run of all. */
+  const viewRun = (() => {
+    if (!activeCmp || !detail?.runs.length) return null;
+    const want = viewModel ?? activeCmp.recommended ?? activeCmp.incumbent;
+    const m = activeCmp.models.find((x) => x.model === want) ?? activeCmp.models[0];
+    const r = m?.run_id ? detail.runs.find((x) => x.id === m.run_id) : undefined;
+    return r ? { ...r, model: m.model } : null;
+  })();
+  const shownRun = viewRun ?? detail?.runs[0] ?? null;
 
   const score = row.latest;
   const pct = score ? Math.round((score.passed / Math.max(1, score.total)) * 100) : null;
@@ -1243,21 +1256,37 @@ function SetCard({
             </p>
           )}
           {live && live.cases.length > 0 && <CaseTable cases={live.cases} />}
-          {!live && (cmp ?? lastComparison(detail?.runs ?? [], detail?.labels?.positive)) && (
-            <ComparePanel
-              cmp={(cmp ?? lastComparison(detail?.runs ?? [], detail?.labels?.positive))!}
-              models={models}
-              onUse={useModel}
-              currentModel={row.model}
-            />
+          {!live && activeCmp && (
+            <>
+              <Recommendation cmp={activeCmp} models={models} onUse={useModel} currentModel={row.model} onChanged={onChanged} agent={row.agent} />
+              <ComparePanel cmp={activeCmp} models={models} onUse={useModel} currentModel={row.model} />
+            </>
           )}
 
           {!live && detail?.runs.length ? (
             <div className="flex flex-col gap-3">
-              {detail.runs[0].matrix && (
-                <ConfusionPanel matrix={detail.runs[0].matrix} positive={detail.labels?.positive} />
+              {activeCmp && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] font-semibold text-dim">Results for</span>
+                  <div className="w-72">
+                    <Pick
+                      value={viewRun?.model ?? ""}
+                      onChange={setViewModel}
+                      options={activeCmp.models
+                        .filter((m) => m.run_id && detail.runs.some((r) => r.id === m.run_id))
+                        .map((m) => ({
+                          value: m.model,
+                          label: `${modelLabel(m.model === "default" ? "" : m.model)}${m.model === activeCmp.recommended ? " · recommended" : m.model === activeCmp.incumbent ? " · incumbent" : ""}`,
+                        }))}
+                    />
+                  </div>
+                  <span className="text-[10.5px] text-faint">the matrix and the cases below are this model's run</span>
+                </div>
               )}
-              <CaseTable cases={detail.runs[0].results} />
+              {shownRun?.matrix && (
+                <ConfusionPanel matrix={shownRun.matrix} positive={detail.labels?.positive} />
+              )}
+              <CaseTable cases={shownRun?.results ?? []} />
               <div className="flex flex-col gap-1">
                 <span className="text-[11px] font-semibold text-dim">History</span>
                 {detail.runs.map((h) => (
@@ -1467,6 +1496,7 @@ function ConfusionPanel({ matrix, positive }: { matrix: Matrix; positive?: strin
 
 interface ModelSummary {
   model: string;
+  run_id?: string;
   tier: "small" | "medium" | "large" | null;
   passed: number;
   total: number;
@@ -1598,13 +1628,19 @@ function lastComparison(runs: HistoryRow[], positive?: string): CompareResult | 
     if (!b || !r.summary?.compare) continue;
     batches.set(b, [...(batches.get(b) ?? []), r]);
   }
-  const latest = [...batches.values()].sort((a, b) => new Date(b[0].at).getTime() - new Date(a[0].at).getTime())[0];
-  if (!latest || latest.length < 2) return null;
+  // The newest batch with at least two legs. A batch whose other legs failed
+  // (a refused model, a stopped run) is not a comparison, and must not hide
+  // the last one that was.
+  const latest = [...batches.values()]
+    .filter((rows) => rows.length >= 2)
+    .sort((a, b) => new Date(b[0].at).getTime() - new Date(a[0].at).getTime())[0];
+  if (!latest) return null;
   const models: ModelSummary[] = latest.map((r) => {
     const m = r.matrix ? derive(r.matrix, positive) : null;
     const durations = (r.results ?? []).map((c) => c.duration_ms);
     return {
       model: r.model,
+      run_id: r.id,
       tier: r.summary?.tier ?? null,
       passed: r.passed,
       total: r.total,
@@ -1639,4 +1675,113 @@ function lastComparison(runs: HistoryRow[], positive?: string): CompareResult | 
         : `${best.model} clears the incumbent's quality within 0.02${inc.cost_per_case && best.cost_per_case !== null ? ` at ${Math.round((1 - best.cost_per_case / inc.cost_per_case) * 100)}% lower cost per case` : ""}.`
       : "No candidate cleared the incumbent's quality with a known cost; keep the incumbent.",
   };
+}
+
+
+/**
+ * The decision the comparison was run for, stated once and made actionable:
+ * which model to use, why in the terms a person weighs (quality, cost, time
+ * against the incumbent), and the two things they can do about it. A
+ * recommendation, never a switch: both actions are explicit clicks.
+ */
+function Recommendation({
+  cmp,
+  models,
+  onUse,
+  currentModel,
+  onChanged,
+  agent,
+}: {
+  cmp: CompareResult;
+  models: { id: string; label: string; class?: string }[];
+  onUse: (id: string) => void;
+  currentModel: string;
+  onChanged: () => void;
+  /** The workflow this benchmark measures; the recommendation can become its model. */
+  agent: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const label = (id: string) => models.find((m) => m.id === id)?.label ?? id;
+  const inc = cmp.models.find((m) => m.model === cmp.incumbent) ?? cmp.models[0];
+  const rec = cmp.recommended ? cmp.models.find((m) => m.model === cmp.recommended) ?? null : null;
+  const quality = (m: ModelSummary) => m.headline_f1 ?? m.pass_rate;
+  const q = (m: ModelSummary) => (m.headline_f1 !== null ? `F1 ${m.headline_f1.toFixed(3)}` : `${Math.round(m.pass_rate * 100)}% pass`);
+  const pctDelta = (a: number | null, b: number | null) => (a === null || b === null || b === 0 ? null : Math.round(((a - b) / b) * 100));
+
+  /* Make the recommendation the workflow's own model: every node that calls
+     a model is pinned to it, and tier routing on those nodes is cleared so
+     the choice is explicit in the saved spec. The benchmark's model is left
+     alone; that is the other button. */
+  const [applied, setApplied] = useState(false);
+  const makeWorkflowDefault = async () => {
+    if (!rec) return;
+    setBusy(true);
+    try {
+      const d = await (await fetch(`/api/agents?id=${encodeURIComponent(agent)}`)).json();
+      if (!d.spec) throw new Error(String(d.error ?? "no spec"));
+      const spec = d.spec as { spec: { nodes: Record<string, unknown>[] } };
+      spec.spec.nodes = spec.spec.nodes.map((n) => {
+        const callsModel = n.harness === "delegate" || (Array.isArray(n.steps) && (n.steps as { action?: string }[]).some((st) => st.action === "model"));
+        if (!callsModel) return n;
+        const next: Record<string, unknown> = { ...n, model: rec.model };
+        delete next.model_class;
+        return next;
+      });
+      const res = await fetch("/api/agents", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ spec }) });
+      if (!res.ok) throw new Error(String((await res.json()).error ?? res.status));
+      setApplied(true);
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!rec) {
+    return (
+      <div className="flex flex-col gap-1 rounded-md border border-warn-line bg-warn-bg px-3 py-2.5">
+        <span className="text-[12.5px] font-semibold text-warn">Keep {label(inc.model)} for now</span>
+        <span className="text-[11.5px] leading-[1.5] text-dim">{cmp.rationale}</span>
+      </div>
+    );
+  }
+  const same = rec.model === inc.model;
+  const dq = quality(rec) - quality(inc);
+  const dCost = pctDelta(rec.cost_per_case, inc.cost_per_case);
+  const dTime = pctDelta(rec.avg_ms, inc.avg_ms);
+  const reasons = same
+    ? [`${q(inc)} on this benchmark`, "no cheaper model in the comparison clears that quality", `${fmtCost(inc.cost_per_case)} per case`]
+    : [
+        dq >= 0 ? `quality ${dq === 0 ? "matches" : "beats"} the incumbent (${q(rec)} vs ${q(inc)})` : `quality within 0.02 of the incumbent (${q(rec)} vs ${q(inc)})`,
+        dCost === null ? `${fmtCost(rec.cost_per_case)} per case` : dCost < 0 ? `${Math.abs(dCost)}% cheaper per case (${fmtCost(rec.cost_per_case)} vs ${fmtCost(inc.cost_per_case)})` : `${dCost}% more per case`,
+        dTime === null ? `${fmtMs(rec.avg_ms)} per case` : dTime <= 0 ? `${Math.abs(dTime)}% faster (${fmtMs(rec.avg_ms)} vs ${fmtMs(inc.avg_ms)})` : `${dTime}% slower (${fmtMs(rec.avg_ms)} vs ${fmtMs(inc.avg_ms)})`,
+        `${rec.invalid === 0 ? "no invalid outputs" : `${rec.invalid} invalid outputs`} across ${rec.total} cases`,
+      ];
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-ok-line bg-ok-bg px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <Tag tone="ok" solid>recommended</Tag>
+        <span className="text-[13px] font-semibold text-fg">
+          {same ? "Keep" : "Use"} {label(rec.model)}
+        </span>
+        {rec.tier && <Tag>{rec.tier}</Tag>}
+        <span className="grow" />
+        {!same && rec.model !== currentModel && (
+          <Button size="sm" variant="solid" tone="ink" onClick={() => onUse(rec.model)}>
+            Use for this benchmark
+          </Button>
+        )}
+        <Button size="sm" variant="outline" disabled={busy || applied} loading={busy} onClick={makeWorkflowDefault}>
+          {applied ? "Workflow updated" : "Make it the workflow's model"}
+        </Button>
+      </div>
+      <ul className="flex flex-col gap-0.5 pl-4 text-[11.5px] leading-[1.5] text-dim">
+        {reasons.map((r) => (
+          <li key={r} className="list-disc">{r}</li>
+        ))}
+      </ul>
+      <span className="text-[10.5px] text-faint">
+        Every call was pinned to each model on the same {rec.total} cases. Making it the workflow&rsquo;s model pins every model-calling node of {agent} to it in the saved spec (tier routing on those nodes is cleared); the benchmark&rsquo;s own model changes only with the other button. Both are explicit: nothing switches on its own.
+      </span>
+    </div>
+  );
 }
