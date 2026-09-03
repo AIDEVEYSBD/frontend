@@ -10,7 +10,7 @@
 
 import { TOOL_BY_ID } from "./catalogue";
 import type { AgentSystem } from "./spec";
-import { newSource, SOURCE_META, type RetrievalSource } from "./retrieval";
+import { newSource, SOURCE_META } from "./retrieval";
 
 export interface FieldDef {
   key: string;
@@ -34,6 +34,7 @@ export interface ConnectorDef {
   label: string;
   blurb: string;
   icon: string;
+  /** A `var(--t-cN)` token for a generic kind, or the vendor's own hex for a brand mark. */
   hex: string;
   fields: FieldDef[];
   defaults: Record<string, unknown>;
@@ -51,7 +52,7 @@ export const CONNECTOR_DEFS: ConnectorDef[] = [
     label: SOURCE_META[kind].label,
     blurb: SOURCE_META[kind].blurb.split(".")[0],
     icon: { folder: "folder", documents: "file", vector: "vector", tavily: "globe", images: "image", tool: "plug" }[kind],
-    hex: { folder: "#5C7CFA", documents: "#0B7285", vector: "#7048E8", tavily: "#2F6BFF", images: "#E8590C", tool: "#087F5B" }[kind],
+    hex: { folder: "var(--t-c1)", documents: "var(--t-c3)", vector: "var(--t-c10)", tavily: "var(--t-c2)", images: "var(--t-c8)", tool: "var(--t-c4)" }[kind],
     fields: (
       {
         folder: [{ key: "root", label: "Root", mono: true, hint: "Relative paths resolve in the workspace." }],
@@ -92,7 +93,7 @@ export const CONNECTOR_DEFS: ConnectorDef[] = [
   },
   {
     tool: "records", server: "records", slot: "backends", kind: "rest",
-    label: "REST register", blurb: "Any HTTP system of record", icon: "plug", hex: "#087F5B",
+    label: "REST register", blurb: "Any HTTP system of record", icon: "plug", hex: "var(--t-c4)",
     fields: [
       { key: "url", label: "Query URL", mono: true, required: true },
       { key: "rows_path", label: "Rows path", mono: true, hint: "Dotted path to the row list." },
@@ -114,7 +115,7 @@ export const CONNECTOR_DEFS: ConnectorDef[] = [
   },
   {
     tool: "events", server: "events", slot: "sources", kind: "rest",
-    label: "Log API", blurb: "SIEM or log platform over HTTP", icon: "pulse", hex: "#E8590C",
+    label: "Log API", blurb: "SIEM or log platform over HTTP", icon: "pulse", hex: "var(--t-c8)",
     fields: [
       { key: "url", label: "Query URL", mono: true, required: true },
       { key: "rows_path", label: "Rows path", mono: true },
@@ -134,7 +135,7 @@ export const CONNECTOR_DEFS: ConnectorDef[] = [
   },
   {
     tool: "notify", server: "notify", slot: "transports", kind: "smtp",
-    label: "Mail", blurb: "Through your relay", icon: "bell", hex: "#0B7285",
+    label: "Mail", blurb: "Through your relay", icon: "bell", hex: "var(--t-c3)",
     fields: [
       { key: "host", label: "Relay host", mono: true, required: true },
       { key: "port", label: "Port", kind: "number" },
@@ -145,7 +146,7 @@ export const CONNECTOR_DEFS: ConnectorDef[] = [
   },
   {
     tool: "notify", server: "notify", slot: "transports", kind: "webhook",
-    label: "Webhook", blurb: "Pagers, Teams, ticket hooks", icon: "webhook", hex: "#087F5B",
+    label: "Webhook", blurb: "Pagers, Teams, ticket hooks", icon: "webhook", hex: "var(--t-c4)",
     fields: [
       { key: "url", label: "URL", mono: true, required: true },
       { key: "matches", label: "Delivers to", kind: "csv", mono: true },
@@ -156,7 +157,7 @@ export const CONNECTOR_DEFS: ConnectorDef[] = [
   /* ── peers: someone else's agent, spoken to over A2A ── */
   {
     tool: "peer", server: "peers", slot: "peers", kind: "a2a",
-    label: "A2A agent", blurb: "Any agent speaking Agent2Agent", icon: "bot", hex: "#B54708",
+    label: "A2A agent", blurb: "Any agent speaking Agent2Agent", icon: "bot", hex: "var(--t-c7)",
     fields: [
       { key: "name", label: "Name", mono: true, hint: "How workflows address this peer.", required: true },
       { key: "url", label: "URL", mono: true, placeholder: "https://agent.vendor.example", required: true,
@@ -169,7 +170,7 @@ export const CONNECTOR_DEFS: ConnectorDef[] = [
   /* ── compute: a team's own engine ── */
   {
     tool: "compute", server: "engines", slot: "engines", kind: "http",
-    label: "Custom engine", blurb: "Your deterministic service, one URL", icon: "chip", hex: "#7048E8",
+    label: "Custom engine", blurb: "Your deterministic service, one URL", icon: "chip", hex: "var(--t-c10)",
     fields: [
       { key: "name", label: "Engine name", mono: true, hint: "How agents call it: engine.run(engine: name)" },
       { key: "url", label: "URL", mono: true, required: true },

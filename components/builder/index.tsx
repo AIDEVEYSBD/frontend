@@ -2,14 +2,17 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { Button } from "../ui";
+import { Button, IconButton } from "../ui";
+import { Banner, Toast } from "../overlays";
 import { Canvas, NODE_H, NODE_W, type CanvasApi } from "./canvas";
 import { Inspector } from "./inspector";
 import { Palette } from "./palette";
 import { AuthorPanel } from "./author-panel";
 import { DeployTheater } from "./deploy-theater";
+import { Cross } from "./controls";
 import { EMPTY, reduce, withHistory, type HistoryAction } from "@/lib/builder-store";
 import { fromDocument, toDocument, validate, type HarnessKind, type Problem } from "@/lib/spec";
+import { useMcp } from "@/lib/use-mcp";
 
 type View = "canvas" | "agent";
 
@@ -36,12 +39,17 @@ export function Builder() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [deploying, setDeploying] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [restored, setRestored] = useState(false);
   const [problemsFlash, setProblemsFlash] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef(0);
   const canvasApi = useRef<CanvasApi | null>(null);
+  /* The MCP servers are read once here and handed to all three panels, so a
+     custom tool wears the same mark in the rail, on the canvas and in the
+     inspector — and a server connected in the rail shows up everywhere. */
+  const mcp = useMcp();
 
   /* Every edit marks the document dirty; Save and Deploy clear the mark. */
   const dispatch = useCallback((a: HistoryAction) => {
@@ -199,7 +207,7 @@ export function Builder() {
       }
       if (kind === "system") {
         if (payload === "input") {
-          if (!system.trigger || system.trigger.kind === "api") {
+          if (!system.trigger) {
             dispatch({ type: "set-trigger", trigger: { kind: "prompt", config: {} } });
           }
           select("sys:trigger");
@@ -238,7 +246,7 @@ export function Builder() {
     <div className="flex h-full min-h-0 flex-col">
       <header className="relative z-10 flex h-11 shrink-0 items-center gap-3 border-b border-line bg-canvas px-3">
         <div className="relative flex min-w-0 items-center gap-2">
-          <span className="truncate text-[13px] font-bold text-on-grain">{system.name}</span>
+          <span className="truncate text-[13px] font-semibold text-on-grain">{system.name}</span>
           <span className="hidden shrink-0 font-mono text-[10.5px] text-dim sm:inline">{system.id}</span>
         </div>
 
@@ -268,8 +276,8 @@ export function Builder() {
           {system.nodes.length > 0 && (
             <Button
               size="sm"
-              variant="quiet"
-              tone={confirmClear ? "err" : "neutral"}
+              variant="solid"
+              tone="err"
               onClick={() => {
                 // One click asks; the second, within three seconds, clears.
                 // A stray click must never erase a built graph.
@@ -310,7 +318,8 @@ export function Builder() {
                 }
                 setTimeout(() => setSaving("idle"), 1400);
               }}
-              disabled={system.nodes.length === 0 || saving === "busy"}
+              disabled={system.nodes.length === 0}
+              loading={saving === "busy"}
             >
               {saving === "done"
                 ? "Saved"
@@ -349,7 +358,7 @@ export function Builder() {
               if (errors.length) {
                 setShowProblems(true);
                 setProblemsFlash(true);
-                window.setTimeout(() => setProblemsFlash(false), 950);
+                window.setTimeout(() => setProblemsFlash(false), 260);
                 return;
               }
               setDeploying(true);
@@ -376,8 +385,8 @@ export function Builder() {
       )}
 
       {loadError && (
-        <div className="flex items-center gap-2 border-b border-line bg-err-bg px-4 py-2">
-          <p className="text-[12px] text-err">{loadError}</p>
+        <div className="border-b border-line px-3 py-2">
+          <Banner tone="err" title={loadError} />
         </div>
       )}
 
@@ -391,32 +400,44 @@ export function Builder() {
             refreshTick={refreshTick}
             selected={selected}
             onGrant={onGrant}
+            mcp={mcp}
           />
         </Rail>
         <div className="relative flex min-w-0 grow flex-col">
           {restored && (
-            <div className="flex shrink-0 items-center gap-2 border-b border-line bg-warn-bg px-3 py-1.5">
-              <p className="text-[12px] text-warn">Restored your unsaved work —</p>
-              <button
-                onClick={() => {
-                  rawDispatch({ type: "load", system: EMPTY });
-                  clearDraftSlot();
-                  setSelected(null);
-                  setRestored(false);
-                  setDirty(false);
-                }}
-                className="focusable cursor-pointer text-[12px] font-semibold text-warn underline underline-offset-2"
-              >
-                Discard
-              </button>
-              <span className="grow" />
-              <button
-                onClick={() => setRestored(false)}
-                aria-label="Dismiss"
-                className="focusable cursor-pointer px-1 text-[13px] leading-none text-warn transition-opacity hover:opacity-70"
-              >
-                ×
-              </button>
+            <div className="shrink-0 border-b border-line px-3 py-2">
+              <Banner
+                tone="warn"
+                title="Restored your unsaved work"
+                action={
+                  <span className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="solid"
+                      tone="err"
+                      onClick={() => {
+                        // One click asks; the second, within three seconds, discards.
+                        if (!confirmDiscard) {
+                          setConfirmDiscard(true);
+                          setTimeout(() => setConfirmDiscard(false), 3000);
+                          return;
+                        }
+                        rawDispatch({ type: "load", system: EMPTY });
+                        clearDraftSlot();
+                        setSelected(null);
+                        setRestored(false);
+                        setDirty(false);
+                        setConfirmDiscard(false);
+                      }}
+                    >
+                      {confirmDiscard ? "Discard restored work?" : "Discard"}
+                    </Button>
+                    <IconButton size="sm" label="Dismiss" onClick={() => setRestored(false)}>
+                      <Cross />
+                    </IconButton>
+                  </span>
+                }
+              />
             </div>
           )}
           <Canvas
@@ -429,10 +450,11 @@ export function Builder() {
             canUndo={state.past.length > 0}
             canRedo={state.future.length > 0}
             apiRef={canvasApi}
+            servers={mcp.servers}
           />
           {notice && (
-            <div className="af-pop pointer-events-none absolute bottom-12 left-1/2 z-30 -translate-x-1/2 rounded-md border border-line bg-surface px-3 py-1.5 text-[12px] font-medium text-dim elev-2">
-              {notice}
+            <div className="absolute bottom-12 left-1/2 z-30 w-max max-w-[calc(100%-24px)] -translate-x-1/2">
+              <Toast title={notice} duration={0} onDismiss={() => setNotice(null)} />
             </div>
           )}
           <Problems
@@ -449,7 +471,14 @@ export function Builder() {
           />
         </div>
         <Rail side="right" open={rightOpen} onToggle={() => setRightOpen((v) => !v)} width={340}>
-          <Inspector system={system} dispatch={dispatch} selected={selected} problems={problems} />
+          <Inspector
+            system={system}
+            dispatch={dispatch}
+            selected={selected}
+            problems={problems}
+            servers={mcp.servers}
+            onSelect={select}
+          />
         </Rail>
       </div>
       <div className={view === "agent" ? "flex min-h-0 grow" : "hidden"}>
@@ -493,10 +522,11 @@ function Problems({
   return (
     <div
       className="flex shrink-0 flex-col border-t border-line bg-surface"
-      style={{ animation: flash ? "af-prob-flash 450ms var(--ease-out) 2" : undefined }}
+      style={{ animation: flash ? "af-prob-flash 200ms var(--ease-out) 1" : undefined }}
     >
       <style>{`@keyframes af-prob-flash { 50% { background-color: var(--t-err-bg); } }`}</style>
       <button
+        type="button"
         onClick={() => setOpen(!open)}
         aria-expanded={open}
         className="focusable flex h-9 cursor-pointer items-center gap-3 px-3 text-left transition-colors hover:bg-raise/60"
@@ -549,6 +579,7 @@ function Problems({
           {problems.map((p, i) => (
             <button
               key={i}
+              type="button"
               onClick={() => onJump(p.at)}
               className="focusable flex w-full cursor-pointer items-start gap-2.5 border-b border-line px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-raise/60"
             >
@@ -611,6 +642,7 @@ function Rail({
       className={`relative flex h-full shrink-0 flex-col ${border} border-line bg-surface transition-[width] duration-200 ease-[var(--ease-out)]`}
     >
       <button
+        type="button"
         onClick={onToggle}
         aria-label={open ? "Collapse panel" : "Expand panel"}
         title={open ? "Collapse" : "Expand"}

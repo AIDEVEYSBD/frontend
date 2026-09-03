@@ -218,8 +218,8 @@ function Vignette({ layer, active }: { layer: Layer; active: boolean }) {
             <g className="af-vg-slide">
               <rect x="24" y="58" width="72" height="32" rx="5" {...common} />
               <text x="60" y="74" textAnchor="middle" className="af-vg-label">document</text>
-              <rect x="30" y="80" width="26" height="9" rx="2" fill="var(--t-warn)" opacity="0.85" />
-              <text x="43" y="87" textAnchor="middle" className="af-vg-tag">EXT</text>
+              <rect x="30" y="77" width="28" height="12" rx="2" fill="var(--t-warn)" opacity="0.85" />
+              <text x="44" y="86" textAnchor="middle" className="af-vg-tag">EXT</text>
             </g>
             <line x1="170" y1="42" x2="170" y2="108" stroke="var(--t-err)" strokeWidth="1.4" className="af-vg-wall" />
             <text x="170" y="126" textAnchor="middle" className="af-vg-micro">taint rule</text>
@@ -239,10 +239,10 @@ function Vignette({ layer, active }: { layer: Layer; active: boolean }) {
             <circle r="3" fill={A} className="af-vg-out"><title>task</title></circle>
             <circle r="3" fill="var(--t-warn)" className="af-vg-back" />
             <g className="af-vg-late">
-              <rect x="120" y="96" width="60" height="12" rx="2.5" fill="var(--warn-bg, transparent)" stroke="var(--t-warn)" strokeWidth="0.8" />
-              <text x="150" y="105" textAnchor="middle" className="af-vg-tag" style={{ fill: "var(--t-warn)" }}>tainted reply</text>
+              <rect x="105" y="95" width="90" height="14" rx="2.5" fill="var(--color-warn-bg)" stroke="var(--t-warn)" strokeWidth="0.8" />
+              <text x="150" y="105.5" textAnchor="middle" className="af-vg-tag" style={{ fill: "var(--t-warn)" }}>tainted reply</text>
             </g>
-            <text x="24" y="34" className="af-vg-micro">A2A, recorded, permissioned and controllable</text>
+            <text x="24" y="34" className="af-vg-micro">A2A, recorded, permissioned, controllable</text>
           </g>
         )}
 
@@ -272,7 +272,7 @@ function Vignette({ layer, active }: { layer: Layer; active: boolean }) {
             {/* …the vault fills a password field, dot by dot, never the value. */}
             <g>
               <rect x="170" y="54" width="106" height="44" rx="6" fill="var(--color-surface)" stroke={A} strokeWidth="1.4" />
-              <text x="180" y="68" className="af-vg-micro" style={{ fontSize: 8 }}>api-key</text>
+              <text x="180" y="68" className="af-vg-micro">api-key</text>
               {[0, 1, 2, 3, 4, 5, 6, 7].map((d) => (
                 <circle
                   key={d}
@@ -428,10 +428,11 @@ export function ArchitectureStory() {
     >
       <style>{`
         .af-arch[data-enhanced] { height: 900vh; }
-        .af-arch { --slabmix: 52%; --slabbase: #ffffff; --shadowa: 0.14; }
-        :root[data-theme="dark"] .af-arch { --slabmix: 48%; --slabbase: #131211; --shadowa: 0.45; }
+        /* --shadowink mirrors the --shadow-* tokens: canvas-tinted on light, plain on dark. */
+        .af-arch { --slabmix: 52%; --slabbase: var(--t-surface); --shadowa: 0.14; --shadowink: 41 37 33; }
+        :root[data-theme="dark"] .af-arch { --slabmix: 48%; --shadowa: 0.45; --shadowink: 0 0 0; }
         @media (prefers-color-scheme: dark) {
-          :root:not([data-theme="light"]) .af-arch { --slabmix: 48%; --slabbase: #131211; --shadowa: 0.45; }
+          :root:not([data-theme="light"]) .af-arch { --slabmix: 48%; --shadowa: 0.45; --shadowink: 0 0 0; }
         }
         .af-arch[data-enhanced] .af-arch-stage {
           position: sticky; top: 0; height: 100dvh; overflow: clip;
@@ -473,7 +474,7 @@ export function ArchitectureStory() {
             brightness(calc(1 - 0.52 * var(--dim, 0)))
             saturate(calc(1 - 0.55 * var(--dim, 0)))
             blur(calc(var(--dim, 0) * 0.8px));
-          box-shadow: 0 calc(var(--lift, 0) * 18px) calc(var(--lift, 0) * 44px) rgb(0 0 0 / calc(var(--lift, 0) * var(--shadowa, 0.45)));
+          box-shadow: 0 calc(var(--lift, 0) * 18px) calc(var(--lift, 0) * 44px) rgb(var(--shadowink, 41 37 33) / calc(var(--lift, 0) * var(--shadowa, 0.45)));
         }
         /* Chips exist only on the card facing you; tilted slabs stay clean. */
         .af-arch-chips { opacity: calc(var(--lift, 0) * var(--lift, 0)); }
@@ -481,7 +482,7 @@ export function ArchitectureStory() {
         .af-arch [data-arch-layer]::after {
           content: ""; position: absolute; inset: 4% 6%;
           transform: translateZ(-1px);
-          background: radial-gradient(closest-side, rgb(0 0 0 / 0.30), transparent 72%);
+          background: radial-gradient(closest-side, rgb(var(--shadowink, 41 37 33) / 0.30), transparent 72%);
           opacity: calc(var(--explode, 0) * (1 - var(--dim, 0) * 0.5));
           filter: blur(calc(10px + var(--dim, 0) * 6px));
           pointer-events: none;
@@ -494,31 +495,29 @@ export function ArchitectureStory() {
 
         /* ── vignette grammar ── */
         .af-vg-label { font: 600 11px var(--font-plex, sans-serif); fill: var(--color-fg); }
-        .af-vg-micro { font: 500 9.5px var(--font-plex-mono, monospace); fill: var(--color-faint); }
-        .af-vg-tag { font: 700 7.5px var(--font-plex-mono, monospace); fill: var(--color-surface); }
+        .af-vg-micro { font: 500 10.5px var(--font-plex-mono, monospace); fill: var(--color-faint); }
+        .af-vg-tag { font: 600 10.5px var(--font-plex-mono, monospace); fill: var(--color-surface); }
         .af-vg-code { font: 500 13px var(--font-plex-mono, monospace); fill: var(--color-fg); }
         .af-vg [class*="af-vg-"] { animation-play-state: paused; }
         [data-vg] [class*="af-vg-"] { animation-play-state: running; }
         .af-vg-draw   { animation: afvg-draw 2.4s var(--ease-out) infinite; }
         .af-vg-pop    { animation: afvg-pop 2.4s var(--ease-out) infinite; transform-origin: center; }
-        .af-vg-late   { animation: afvg-late 4.8s ease infinite; }
+        .af-vg-late   { animation: afvg-late 4.8s var(--ease-out) infinite; }
         .af-vg-stage  { animation: none; }
-        .af-vg-stagefill { animation: afvg-fill 4.2s ease infinite; }
-        .af-vg-row    { opacity: 0; animation: afvg-row 4.8s ease infinite; }
+        .af-vg-stagefill { animation: afvg-fill 4.2s var(--ease-out) infinite; }
+        .af-vg-row    { opacity: 0; animation: afvg-row 4.8s var(--ease-out) infinite; }
         .af-vg-bar    { animation: afvg-bar 4.8s var(--ease-out) infinite; }
         .af-vg-run    { animation: afvg-dashrun 1.1s linear infinite; }
-        .af-vg-kill   { opacity: 0; animation: afvg-late 4.8s ease infinite; }
+        .af-vg-kill   { opacity: 0; animation: afvg-late 4.8s var(--ease-out) infinite; }
         .af-vg-meter  { width: 0; animation: afvg-meter 4.8s var(--ease-out) infinite; }
-        .af-vg-slide  { animation: afvg-slide 4.2s ease infinite; }
-        .af-vg-wall   { opacity: .35; animation: afvg-wall 4.2s ease infinite; }
-        .af-vg-out    { offset-path: path("M88 68 H 212"); animation: afvg-travel 4.6s ease infinite; }
-        .af-vg-back   { offset-path: path("M212 82 H 88"); animation: afvg-travel 4.6s ease infinite; animation-delay: 2.3s; }
-        .af-vg-route  { offset-path: path("M84 82 C 120 100, 150 106, 190 106"); animation: afvg-travel 3.2s ease infinite; }
+        .af-vg-slide  { animation: afvg-slide 4.2s var(--ease-out) infinite; }
+        .af-vg-wall   { opacity: .35; animation: afvg-wall 4.2s var(--ease-out) infinite; }
+        .af-vg-out    { offset-path: path("M88 68 H 212"); animation: afvg-travel 4.6s var(--ease-out) infinite; }
+        .af-vg-back   { offset-path: path("M212 82 H 88"); animation: afvg-travel 4.6s var(--ease-out) infinite; animation-delay: 2.3s; }
+        .af-vg-route  { offset-path: path("M84 82 C 120 100, 150 106, 190 106"); animation: afvg-travel 3.2s var(--ease-out) infinite; }
         .af-vg-dot { opacity: 0; animation: afvg-dot 4.6s steps(1, end) infinite; }
         .af-vg-caret { opacity: 0; animation: afvg-caret 1s steps(1, end) infinite; }
         [data-vg] .af-vg-caret { opacity: 1; animation: afvg-caret 1.05s steps(1, end) infinite; }
-        .af-vg-secret { animation: afvg-secret 4.2s ease infinite; }
-        .af-vg-masked { opacity: 0; animation: afvg-masked 4.2s ease infinite; }
         @keyframes afvg-draw   { 0% { stroke-dashoffset: 220; } 45%, 100% { stroke-dashoffset: 0; } }
         @keyframes afvg-pop    { 0%, 30% { opacity: 0; transform: scale(.92); } 55%, 100% { opacity: 1; transform: scale(1); } }
         @keyframes afvg-late   { 0%, 55% { opacity: 0; } 75%, 100% { opacity: 1; } }
@@ -532,8 +531,6 @@ export function ArchitectureStory() {
         @keyframes afvg-travel { 0% { offset-distance: 0%; opacity: 0; } 10% { opacity: 1; } 45% { offset-distance: 100%; opacity: 1; } 50%, 100% { offset-distance: 100%; opacity: 0; } }
         @keyframes afvg-dot { 0% { opacity: 0; } 8% { opacity: 1; } 88% { opacity: 1; } 94%, 100% { opacity: 0; } }
         @keyframes afvg-caret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
-        @keyframes afvg-secret { 0%, 40% { opacity: 1; } 55%, 100% { opacity: 0; } }
-        @keyframes afvg-masked { 0%, 40% { opacity: 0; } 55%, 100% { opacity: 1; } }
         @media (prefers-reduced-motion: reduce) {
           .af-vg [class*="af-vg-"] { animation: none !important; opacity: 1 !important; }
         }
@@ -577,8 +574,8 @@ export function ArchitectureStory() {
                       style={{
                         // Truly solid: the slab IS the layer's colour, edge to
                         // edge, with contrasting type, the slide's own grammar.
-                        background: `color-mix(in srgb, var(${layer.token}) var(--slabmix, 100%), var(--slabbase, #131211))`,
-                        borderColor: `color-mix(in srgb, var(${layer.token}) var(--slabmix, 100%), var(--slabbase, #131211))`,
+                        background: `color-mix(in srgb, var(${layer.token}) var(--slabmix, 100%), var(--slabbase, var(--t-surface)))`,
+                        borderColor: `color-mix(in srgb, var(${layer.token}) var(--slabmix, 100%), var(--slabbase, var(--t-surface)))`,
                         color: "var(--color-fg)",
                       }}
                     >
@@ -617,7 +614,7 @@ export function ArchitectureStory() {
                 <span
                   key={a.label}
                   data-on={beat === N || undefined}
-                  className="af-arch-note absolute rounded-sm border border-ok-line bg-ok-bg px-1.5 py-0.5 font-mono text-[9.5px] text-ok"
+                  className="af-arch-note absolute rounded-sm border border-ok-line bg-surface px-1.5 py-0.5 font-mono text-[10.5px] text-ok"
                   style={{ left: a.x, top: a.y }}
                 >
                   {a.label}
@@ -676,7 +673,7 @@ export function ArchitectureStory() {
                 {[-1, ...LAYERS.map((_, i) => i), N].map((b) => (
                   <span
                     key={b}
-                    className={`h-[3px] rounded-full transition-all duration-300 ${
+                    className={`h-[3px] rounded-full transition-all duration-[260ms] ${
                       beat === b ? "w-5 bg-fg" : "w-[10px] bg-line-strong"
                     }`}
                   />

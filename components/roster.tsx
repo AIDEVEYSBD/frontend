@@ -93,7 +93,7 @@ function Hierarchy({ h, harness }: { h: AgentRow["hierarchy"]; harness: string }
 }
 
 const HEAD = (
-  <div className="grid grid-cols-[minmax(150px,1.1fr)_minmax(240px,2.4fr)_150px_120px_90px_70px_70px] items-center gap-4 border-b border-line px-5 py-2">
+  <div className="grid grid-cols-[minmax(150px,1.1fr)_minmax(240px,2.4fr)_150px_120px_90px_70px_70px] items-center gap-4 border-b border-line bg-surface px-5 py-2">
     {["Agent", "Purpose", "Autonomy", "Hierarchy", "Last run", "Runs · 7d", "Pending"].map((h, i) => (
       <span key={h} className={`text-[11.5px] font-semibold text-dim ${i >= 4 ? "text-right" : ""}`}>
         {h}
@@ -147,30 +147,33 @@ export function Roster() {
       <div className="mt-8 flex flex-col rounded-md border border-line bg-surface">
         {(groups ?? []).map((g, gi) => (
           <section key={g.id}>
-            <div className="sticky top-0 z-10 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-line bg-surface px-5 py-2.5">
-              <span className="size-1.5 translate-y-[-2px] rounded-[2px] bg-run" aria-hidden />
-              <span className="font-mono text-[11px] text-ghost">
-                {String(gi + 1).padStart(2, "0")}
-              </span>
-              <Link
-                href={`/builder?load=${encodeURIComponent(g.id)}`}
-                className="focusable rounded-sm text-[13.5px] font-bold text-fg hover:underline"
-              >
-                {g.name}
-              </Link>
-              {g.description && <span className="text-[12px] text-dim">{g.description}</span>}
-              <span className="grow" />
-              <Mono className="whitespace-nowrap">{g.trigger}</Mono>
-              <Mono className="whitespace-nowrap">last run {ago(g.lastRun)}</Mono>
-              <Mono className="whitespace-nowrap">{g.runs7d} in 7d</Mono>
-              {g.pending > 0 && (
-                <Status tone="warn" chip>
-                  {g.pending} awaiting approval
-                </Status>
-              )}
-            </div>
+            {/* Band header and column header pin together, so the columns stay
+                labelled however far down a long band the reader is. */}
+            <div className="sticky top-0 z-10 bg-surface">
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-line px-5 py-2.5">
+                <span className="font-mono text-[11px] text-ghost">
+                  {String(gi + 1).padStart(2, "0")}
+                </span>
+                <Link
+                  href={`/builder?load=${encodeURIComponent(g.id)}`}
+                  className="focusable rounded-sm text-[13.5px] font-semibold text-fg hover:underline"
+                >
+                  {g.name}
+                </Link>
+                {g.description && <span className="text-[12px] text-dim">{g.description}</span>}
+                <span className="grow" />
+                <Mono className="whitespace-nowrap">{g.trigger}</Mono>
+                <Mono className="whitespace-nowrap">last run {ago(g.lastRun)}</Mono>
+                <Mono className="whitespace-nowrap">{g.runs7d} in 7d</Mono>
+                {g.pending > 0 && (
+                  <Status tone="warn" chip>
+                    {g.pending} awaiting approval
+                  </Status>
+                )}
+              </div>
 
-            {HEAD}
+              {HEAD}
+            </div>
 
             {g.agents.map((a) => (
               <div
@@ -198,10 +201,10 @@ export function Roster() {
                 {a.pending > 0 ? (
                   <Link
                     href="/runs"
-                    title="Open runs — a person is the next step"
-                    className="focusable rounded-sm text-right text-[12.5px] font-semibold text-warn tabular-nums hover:underline"
+                    title="Open runs"
+                    className="focusable justify-self-end rounded-sm hover:underline"
                   >
-                    {a.pending}
+                    <Status tone="warn">{a.pending} pending</Status>
                   </Link>
                 ) : (
                   <span className="text-right text-[12.5px] text-ghost tabular-nums">—</span>

@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "./builder/icons";
-import { IconButton, RUN_STATE, Status } from "./ui";
+import { IconButton, Label, RUN_STATE, Status } from "./ui";
+import { Banner } from "./overlays";
 
 /**
  * The registry, as a page.
@@ -126,9 +127,9 @@ export function Workflows() {
         </header>
 
         {error && (
-          <p className="rounded-md border border-err-line bg-err-bg px-3 py-2.5 text-[12.5px] text-err">
+          <Banner tone="err" title="Could not read the registry">
             {error}
-          </p>
+          </Banner>
         )}
 
         {agents?.length === 0 && (
@@ -148,17 +149,18 @@ export function Workflows() {
             return (
               <div key={a.id} className="relative">
                 <button
+                  type="button"
                   onClick={() => router.push(`/builder?load=${encodeURIComponent(a.id)}`)}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     openMenu(a, e.clientX, e.clientY);
                   }}
-                  className={`focusable flex h-full w-full cursor-pointer flex-col gap-3 rounded-lg border bg-surface p-4 text-left transition-[border-color,box-shadow,transform] duration-150 ease-[var(--ease-out)] hover:-translate-y-px hover:elev-2 ${
+                  className={`focusable flex h-full w-full cursor-pointer flex-col gap-3 rounded-lg border bg-surface p-4 text-left transition-[border-color,box-shadow,transform] duration-200 ease-[var(--ease-out)] hover:-translate-y-px hover:elev-2 ${
                     menu?.agent.id === a.id ? "border-line-strong elev-2" : "border-line elev-1"
                   }`}
                 >
                   <div className="flex items-start gap-2.5 pr-8">
-                    <span className="grid size-8 shrink-0 place-items-center rounded-md bg-run-bg text-run">
+                    <span className="grid size-8 shrink-0 place-items-center rounded-md bg-raise text-dim">
                       <Icon name="workflow" size={16} />
                     </span>
                     <div className="flex min-w-0 flex-col gap-0.5">
@@ -284,10 +286,11 @@ function ContextMenu({
     onClick: () => void;
   }) => (
     <button
+      type="button"
       role="menuitem"
       onClick={onClick}
       className={`focusable flex w-full cursor-pointer items-center gap-2.5 rounded-sm px-2 py-1.5 text-left transition-colors ${
-        tone === "err" ? "text-err hover:bg-err-bg" : "text-mist hover:bg-raise hover:text-fg"
+        tone === "err" ? "text-err hover:bg-raise" : "text-mist hover:bg-raise hover:text-fg"
       }`}
     >
       <Icon name={icon} size={13} className={tone === "err" ? "" : "text-faint"} />
@@ -305,9 +308,9 @@ function ContextMenu({
       style={{ position: "fixed", left: at.x, top: at.y }}
       className="af-pop z-50 flex w-[236px] flex-col gap-0.5 rounded-lg border border-line bg-surface p-1.5 elev-3"
     >
-      <span className="truncate px-2 pt-1 pb-1.5 font-mono text-[10px] tracking-[0.08em] text-faint uppercase">
-        {at.agent.name}
-      </span>
+      <div className="truncate px-2 pt-1 pb-1.5">
+        <Label>{at.agent.name}</Label>
+      </div>
       <Item icon="bot" label="Open in Builder" hint="The graph, rebuilt from its cards" onClick={onOpen} />
       <Item icon="pulse" label="Run" hint="Straight into the theater" onClick={onRun} />
       <Item icon="chip" label="Benchmark" hint="Upload and run an eval set against it" onClick={onBenchmark} />

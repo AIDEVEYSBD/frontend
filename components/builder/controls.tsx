@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState, type KeyboardEvent, type ReactNode, type Ref, useId } from "react";
+import { FieldContext, useField } from "../field-context";
+import { IconButton } from "../ui";
 
 export { Pick } from "../select";
 
@@ -27,38 +29,70 @@ export function Row({
   children: ReactNode;
   tight?: boolean;
 }) {
+  // A Row is a field: its label points at the control inside it and its
+  // hint describes that control. Text and Area pick both up through context.
+  const id = useId();
+  const hintId = hint ? `${id}-hint` : undefined;
   return (
-    <div className={`flex flex-col ${tight ? "gap-1" : "gap-1.5"}`}>
-      <span className="text-[12px] font-medium text-mist">{label}</span>
-      {children}
-      {hint && <span className="text-[11px] leading-[1.5] text-faint">{hint}</span>}
-    </div>
+    <FieldContext.Provider value={{ id, describedBy: hintId, invalid: false }}>
+      <div className={`flex flex-col ${tight ? "gap-1" : "gap-1.5"}`}>
+        <label htmlFor={id} className="text-[12px] font-medium text-mist">
+          {label}
+        </label>
+        {children}
+        {hint && (
+          <span id={hintId} className="text-[11px] leading-[1.5] text-faint">
+            {hint}
+          </span>
+        )}
+      </div>
+    </FieldContext.Provider>
   );
 }
 
 export function Text({
   value,
   onChange,
+  onKeyDown,
   placeholder,
   mono = false,
   invalid = false,
+  leading,
+  "aria-label": ariaLabel,
 }: {
   value: string;
   onChange: (v: string) => void;
+  onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void;
   placeholder?: string;
   mono?: boolean;
   invalid?: boolean;
+  /** A glyph inside the leading edge — a search field's magnifier. */
+  leading?: ReactNode;
+  /** Names the control when no visible label sits beside it. */
+  "aria-label"?: string;
 }) {
-  return (
+  const field = useField();
+  const input = (
     <input
+      id={field?.id}
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      onKeyDown={onKeyDown}
       placeholder={placeholder}
+      aria-label={ariaLabel}
+      aria-describedby={field?.describedBy}
       aria-invalid={invalid || undefined}
-      className={`h-8 px-2.5 ${BASE} ${mono ? "font-mono text-[12px]" : ""} ${
+      className={`h-8 ${leading ? "pr-2.5 pl-7" : "px-2.5"} ${BASE} ${mono ? "font-mono text-[12px]" : ""} ${
         invalid ? "border-err focus-visible:border-err focus-visible:ring-err/20" : ""
       }`}
     />
+  );
+  if (!leading) return input;
+  return (
+    <span className="relative block">
+      <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-ghost">{leading}</span>
+      {input}
+    </span>
   );
 }
 
@@ -66,28 +100,51 @@ export function Area({
   value,
   onChange,
   onBlur,
+  onKeyDown,
   placeholder,
   rows = 3,
   mono = false,
   invalid = false,
+  resizable = true,
+  autoFocus = false,
+  spellCheck,
+  inputRef,
+  "aria-label": ariaLabel,
 }: {
   value: string;
   onChange: (v: string) => void;
   onBlur?: () => void;
+  onKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
   placeholder?: string;
   rows?: number;
   mono?: boolean;
   invalid?: boolean;
+  /** Off for a composer that sizes itself to its content. */
+  resizable?: boolean;
+  autoFocus?: boolean;
+  spellCheck?: boolean;
+  /** For callers that measure the element — an auto-growing composer. */
+  inputRef?: Ref<HTMLTextAreaElement>;
+  /** Names the control when no visible label sits beside it. */
+  "aria-label"?: string;
 }) {
+  const field = useField();
   return (
     <textarea
+      id={field?.id}
+      ref={inputRef}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       onBlur={onBlur}
+      onKeyDown={onKeyDown}
       placeholder={placeholder}
       rows={rows}
+      autoFocus={autoFocus}
+      spellCheck={spellCheck}
+      aria-label={ariaLabel}
+      aria-describedby={field?.describedBy}
       aria-invalid={invalid || undefined}
-      className={`resize-y px-2.5 py-1.5 leading-[1.55] ${BASE} ${mono ? "font-mono text-[12px]" : ""} ${
+      className={`${resizable ? "resize-y" : "resize-none"} px-2.5 py-1.5 leading-[1.55] ${BASE} ${mono ? "font-mono text-[12px]" : ""} ${
         invalid ? "border-err focus-visible:border-err focus-visible:ring-err/20" : ""
       }`}
     />
@@ -238,6 +295,7 @@ export function Section({
     <section className="flex flex-col gap-2.5 border-t border-line px-4 py-3 first:border-t-0">
       <header className="-mx-1 flex items-center gap-2">
         <button
+          type="button"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           className="focusable flex min-w-0 grow cursor-pointer items-center gap-2 rounded-sm px-1 py-0.5 text-left transition-colors hover:bg-raise/70"
@@ -256,7 +314,7 @@ export function Section({
           >
             <path d="M9 6l6 6-6 6" />
           </svg>
-          <h3 className="font-mono text-[10px] tracking-[0.14em] text-faint uppercase">{title}</h3>
+          <h3 className="text-[11px] font-medium text-faint">{title}</h3>
           {count !== undefined && (
             <span className="tnum font-mono text-[10px] text-ghost">{count}</span>
           )}
@@ -281,17 +339,16 @@ export function Mini({
   label: string;
   tone?: "neutral" | "err";
 }) {
+  // Destructive rows are solid err from the first click, never a hover tint.
   return (
-    <button
+    <IconButton
+      size="sm"
+      label={label}
       onClick={onClick}
-      aria-label={label}
-      title={label}
-      className={`focusable grid size-6 shrink-0 cursor-pointer place-items-center rounded-sm border border-line transition-colors ${
-        tone === "err" ? "text-faint hover:border-err-line hover:bg-err-bg hover:text-err" : "text-faint hover:bg-raise hover:text-fg"
-      }`}
+      className={`shrink-0 rounded-sm ${tone === "err" ? "!bg-err text-on-solid" : ""}`}
     >
       {children}
-    </button>
+    </IconButton>
   );
 }
 

@@ -142,6 +142,53 @@ const PATHS: Record<string, React.ReactNode> = {
       <path d="m11.5 10.5 8-8M16 5l3 3M13.5 7.5l3 3" />
     </>
   ),
+  // tools & connectors — one glyph per verb, drawn to survive 13px
+  exchange: <path d="M4 8.5h14l-3.5-3.5M20 15.5H6l3.5 3.5" />,
+  pen: (
+    <>
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z" />
+      <path d="m14.5 5.5 3 3" />
+    </>
+  ),
+  server: (
+    <>
+      <rect x="3" y="4" width="18" height="6.5" rx="1.75" />
+      <rect x="3" y="13.5" width="18" height="6.5" rx="1.75" />
+      <circle cx="7" cy="7.25" r="1" fill="currentColor" stroke="none" />
+      <circle cx="7" cy="16.75" r="1" fill="currentColor" stroke="none" />
+    </>
+  ),
+  mail: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="m3 8 9 6 9-6" />
+    </>
+  ),
+  git: (
+    <>
+      <circle cx="6" cy="5" r="2.25" />
+      <circle cx="6" cy="19" r="2.25" />
+      <circle cx="18" cy="8" r="2.25" />
+      <path d="M6 7.25v9.5M18 10.25c0 4-3.5 4.6-6.5 5.2C9 16 6.8 16.3 6 17" />
+    </>
+  ),
+  refresh: (
+    <>
+      <path d="M20 12a8 8 0 1 1-2.35-5.65" />
+      <path d="M20 4v4.5h-4.5" />
+    </>
+  ),
+  // the drag handle: six dots, the affordance every desktop app taught
+  grip: (
+    <>
+      <circle cx="9" cy="6" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="6" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="12" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="12" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="18" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="18" r="1.6" fill="currentColor" stroke="none" />
+    </>
+  ),
   settings: (
     <>
       <circle cx="12" cy="12" r="3" />

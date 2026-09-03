@@ -1,15 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import Link from "next/link";
-import { Button, Mono, Status } from "./ui";
+import { Button, IconButton, Label, Mono, Tag } from "./ui";
 import { Icon } from "./builder/icons";
 import { useModels } from "@/lib/use-models";
 import { Pick } from "./select";
-import { Switch } from "./forms";
+import { Field, Input, Switch, Textarea } from "./forms";
+import { Banner } from "./overlays";
 import { fromDocument, inputKeysOf, type Kind } from "@/lib/spec";
 import { derive, labeledTemplate, INVALID, type Labels, type Matrix, type Reducer } from "@/lib/metrics";
+import { TriangleGlyph, bestOf, logScore } from "./tradeoff";
+import { CAT } from "./charts";
 
 /**
  * Evals: build a benchmark beside an agent, run it, keep the score.
@@ -70,6 +72,11 @@ interface HistoryRow {
   total: number;
   results: CaseResult[];
   matrix?: Matrix | null;
+  summary?: {
+    batch_id?: string; forced?: boolean; compare?: boolean; tier?: "small" | "medium" | "large" | null;
+    avg_ms?: number; tokens?: { in: number; out: number }; model_calls?: number;
+    cost_total?: number | null; cost_per_case?: number | null; incumbent?: string;
+  } | null;
   at: string;
 }
 
@@ -113,6 +120,53 @@ const ago = (iso: string) => {
 
 const slug = (s: string) =>
   s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "benchmark";
+
+/**
+ * A comma-separated list that commits on blur rather than per keystroke, so
+ * a trailing ", " survives typing. The text re-seeds when the committed
+ * value changes underneath it (JSON import, toggling labels).
+ */
+function ListInput({
+  value,
+  onCommit,
+  placeholder,
+}: {
+  value: string;
+  onCommit: (text: string) => void;
+  placeholder?: string;
+}) {
+  const [text, setText] = useState(value);
+  const [seed, setSeed] = useState(value);
+  if (seed !== value) {
+    setSeed(value);
+    setText(value);
+  }
+  return (
+    <div onBlur={() => onCommit(text)}>
+      <Input mono value={text} onChange={setText} placeholder={placeholder} />
+    </div>
+  );
+}
+
+/** A check or cross beside a pass/fail word, so the state survives without colour. */
+function MarkGlyph({ ok }: { ok: boolean }) {
+  return (
+    <svg
+      width="9"
+      height="9"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="mr-1 inline-block -translate-y-px"
+      aria-hidden
+    >
+      {ok ? <path d="M4 13l5 5 11-13" /> : <path d="M6 6l12 12M18 6L6 18" />}
+    </svg>
+  );
+}
 
 /* ── CSV round-trip: template out, filled sheet back in ──
    One row per case; check columns are optional and skip when empty. */
@@ -282,7 +336,7 @@ export function Evals() {
               Pick an agent, describe what a right answer looks like, and every future change to
               that agent can be measured instead of eyeballed.
             </p>
-            <Button size="sm" variant="outline" onClick={() => setBuilding("new")}>
+            <Button size="sm" variant="solid" onClick={() => setBuilding("new")}>
               Build the first one
             </Button>
           </div>
@@ -493,32 +547,28 @@ function SetBuilder({
         <span className="grow" />
         {agent && (
           <>
-            <span title="A spreadsheet with this agent's input columns — fill a row per case, upload it back">
-              <Button
-                size="sm"
-                variant="quiet"
-                onClick={() =>
-                  download(`${agent}-benchmark-template.csv`, csvTemplate(inputKeys, labels ?? undefined), "text/csv")
-                }
-              >
-                CSV template
-              </Button>
-            </span>
-            <span title="The general labeled-benchmark template: label space, positive class, reducer, and cases with expected labels. Fill it, then paste it into Edit as JSON.">
-              <Button
-                size="sm"
-                variant="quiet"
-                onClick={() =>
-                  download(
-                    `${agent}-labeled-benchmark-template.json`,
-                    JSON.stringify(labeledTemplate(agent, inputKeys.map((k) => k.name)), null, 2) + "\n",
-                    "application/json",
-                  )
-                }
-              >
-                Labeled template
-              </Button>
-            </span>
+            <Button
+              size="sm"
+              variant="solid"
+              onClick={() =>
+                download(`${agent}-benchmark-template.csv`, csvTemplate(inputKeys, labels ?? undefined), "text/csv")
+              }
+            >
+              CSV template
+            </Button>
+            <Button
+              size="sm"
+              variant="solid"
+              onClick={() =>
+                download(
+                  `${agent}-labeled-benchmark-template.json`,
+                  JSON.stringify(labeledTemplate(agent, inputKeys.map((k) => k.name)), null, 2) + "\n",
+                  "application/json",
+                )
+              }
+            >
+              Labeled template
+            </Button>
             <input
               ref={csvRef}
               type="file"
@@ -536,14 +586,14 @@ function SetBuilder({
                 e.target.value = "";
               }}
             />
-            <Button size="sm" variant="quiet" onClick={() => csvRef.current?.click()}>
+            <Button size="sm" variant="solid" onClick={() => csvRef.current?.click()}>
               Upload CSV
             </Button>
           </>
         )}
         <Button
           size="sm"
-          variant="quiet"
+          variant="solid"
           onClick={() => {
             setShowJson((v) => !v);
             setJsonText(JSON.stringify({ id: initial?.id, agent, name, model, ...(labels ? { labels } : {}), cases }, null, 2));
@@ -551,24 +601,25 @@ function SetBuilder({
         >
           {showJson ? "Back to the form" : "Edit as JSON"}
         </Button>
-        <Button size="sm" variant="quiet" onClick={() => onDone(null)}>
+        <Button size="sm" variant="solid" tone="err" onClick={() => onDone(null)}>
           Cancel
         </Button>
       </div>
+      {agent && (
+        <p className="text-[11px] leading-[1.5] text-faint">
+          CSV template — a spreadsheet with this agent&apos;s input columns; fill a row per case and upload it
+          back. Labeled template — label space, positive class, reducer, and cases with expected labels; fill it,
+          then paste it into Edit as JSON.
+        </p>
+      )}
 
       {showJson ? (
         <>
-          <textarea
-            value={jsonText}
-            onChange={(e) => setJsonText(e.target.value)}
-            rows={14}
-            spellCheck={false}
-            className="focusable w-full resize-y rounded-md border border-line bg-canvas px-3 py-2.5 font-mono text-[11.5px] leading-[1.6] text-fg"
-          />
+          <Textarea value={jsonText} onChange={setJsonText} rows={14} mono aria-label="Benchmark as JSON" />
           <div className="flex items-center gap-3">
             {error && <span className="text-[11.5px] text-err">{error}</span>}
             <span className="grow" />
-            <Button size="sm" variant="outline" onClick={importJson}>
+            <Button size="sm" variant="solid" onClick={importJson}>
               Apply to the form
             </Button>
           </div>
@@ -577,8 +628,7 @@ function SetBuilder({
         <>
           {/* who and how */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <label className="flex flex-col gap-1">
-              <span className="text-[11px] font-semibold text-dim">Agent under test</span>
+            <Field label="Agent under test">
               <Pick
                 value={agent}
                 onChange={setAgent}
@@ -587,18 +637,11 @@ function SetBuilder({
                   ...agents.map((a) => ({ value: a.id, label: a.name })),
                 ]}
               />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[11px] font-semibold text-dim">Benchmark name</span>
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Disposition accuracy"
-                className="focusable h-8 rounded-md border border-line bg-canvas px-2.5 text-[12.5px] text-fg placeholder:text-ghost"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[11px] font-semibold text-dim">Runs on</span>
+            </Field>
+            <Field label="Benchmark name">
+              <Input value={name} onChange={setName} placeholder="Disposition accuracy" />
+            </Field>
+            <Field label="Runs on">
               <Pick
                 value={model}
                 onChange={setModel}
@@ -607,7 +650,7 @@ function SetBuilder({
                   ...models.map((m) => ({ value: m.id, label: m.label })),
                 ]}
               />
-            </label>
+            </Field>
           </div>
 
           {!agent && (
@@ -630,17 +673,12 @@ function SetBuilder({
 
               {labels && (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <label className="flex flex-col gap-1 sm:col-span-2">
-                    <span className="text-[11px] font-semibold text-dim">Label space, in order</span>
-                    <input
-                      defaultValue={labels.space.join(", ")}
-                      onBlur={(e) => setSpace(e.target.value)}
-                      placeholder="low, medium, high"
-                      className="focusable h-8 rounded-md border border-line bg-canvas px-2.5 font-mono text-[12px] text-fg placeholder:text-ghost"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1">
-                    <span className="text-[11px] font-semibold text-dim">Positive class (for F1)</span>
+                  <div className="sm:col-span-2">
+                    <Field label="Label space, in order">
+                      <ListInput value={labels.space.join(", ")} onCommit={setSpace} placeholder="low, medium, high" />
+                    </Field>
+                  </div>
+                  <Field label="Positive class (for F1)">
                     <Pick
                       value={labels.positive ?? ""}
                       onChange={(v) => patchLabels({ positive: v || undefined })}
@@ -649,9 +687,8 @@ function SetBuilder({
                         ...labels.space.map((s) => ({ value: s, label: s })),
                       ]}
                     />
-                  </label>
-                  <label className="flex flex-col gap-1">
-                    <span className="text-[11px] font-semibold text-dim">Output becomes a label by</span>
+                  </Field>
+                  <Field label="Output becomes a label by">
                     <Pick
                       value={labels.reducer.kind}
                       onChange={(kind) =>
@@ -666,38 +703,33 @@ function SetBuilder({
                       }
                       options={REDUCER_KINDS.map((k) => ({ value: k.value, label: k.label }))}
                     />
-                  </label>
+                  </Field>
                   {(labels.reducer.kind === "field" || labels.reducer.kind === "threshold") && (
-                    <label className="flex flex-col gap-1">
-                      <span className="text-[11px] font-semibold text-dim">Result path</span>
-                      <input
+                    <Field label="Result path">
+                      <Input
+                        mono
                         value={labels.reducer.path}
-                        onChange={(e) => patchLabels({ reducer: { ...labels.reducer, path: e.target.value } as Reducer })}
+                        onChange={(v) => patchLabels({ reducer: { ...labels.reducer, path: v } as Reducer })}
                         placeholder="recorded.disposition"
-                        className="focusable h-8 rounded-md border border-line bg-canvas px-2.5 font-mono text-[12px] text-fg placeholder:text-ghost"
                       />
-                    </label>
+                    </Field>
                   )}
                   {labels.reducer.kind === "threshold" && (
-                    <label className="flex flex-col gap-1">
-                      <span className="text-[11px] font-semibold text-dim">
-                        Cut points ({labels.space.length - 1}, ascending)
-                      </span>
-                      <input
-                        defaultValue={labels.reducer.cuts.join(", ")}
-                        onBlur={(e) =>
+                    <Field label={`Cut points (${labels.space.length - 1}, ascending)`}>
+                      <ListInput
+                        value={labels.reducer.cuts.join(", ")}
+                        onCommit={(text) =>
                           patchLabels({
                             reducer: {
                               kind: "threshold",
                               path: labels.reducer.kind === "threshold" ? labels.reducer.path : "",
-                              cuts: e.target.value.split(",").map((s) => Number(s.trim())).filter((n) => Number.isFinite(n)),
+                              cuts: text.split(",").map((s) => Number(s.trim())).filter((n) => Number.isFinite(n)),
                             },
                           })
                         }
                         placeholder="0.33, 0.66"
-                        className="focusable h-8 rounded-md border border-line bg-canvas px-2.5 font-mono text-[12px] text-fg placeholder:text-ghost"
                       />
-                    </label>
+                    </Field>
                   )}
                   {labels.reducer.kind === "match" && (
                     <div className="flex flex-col gap-1.5 sm:col-span-3">
@@ -707,22 +739,25 @@ function SetBuilder({
                       {labels.space.map((s) => (
                         <div key={s} className="flex items-center gap-2">
                           <Mono className="w-28 shrink-0 truncate text-[11px] text-dim">{s}</Mono>
-                          <input
-                            value={labels.reducer.kind === "match" ? (labels.reducer.patterns[s] ?? "") : ""}
-                            onChange={(e) =>
-                              patchLabels({
-                                reducer: {
-                                  kind: "match",
-                                  patterns: {
-                                    ...(labels.reducer.kind === "match" ? labels.reducer.patterns : {}),
-                                    [s]: e.target.value,
+                          <div className="min-w-0 grow">
+                            <Input
+                              mono
+                              value={labels.reducer.kind === "match" ? (labels.reducer.patterns[s] ?? "") : ""}
+                              onChange={(v) =>
+                                patchLabels({
+                                  reducer: {
+                                    kind: "match",
+                                    patterns: {
+                                      ...(labels.reducer.kind === "match" ? labels.reducer.patterns : {}),
+                                      [s]: v,
+                                    },
                                   },
-                                },
-                              })
-                            }
-                            placeholder={`\\b${s}\\b`}
-                            className="focusable h-8 min-w-0 grow rounded-md border border-line bg-canvas px-2.5 font-mono text-[12px] text-fg placeholder:text-ghost"
-                          />
+                                })
+                              }
+                              placeholder={`\\b${s}\\b`}
+                              aria-label={`Pattern for ${s}`}
+                            />
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -740,20 +775,21 @@ function SetBuilder({
                   <span className="grid size-6 shrink-0 place-items-center rounded-md bg-raise font-mono text-[10.5px] text-dim">
                     {i + 1}
                   </span>
-                  <input
-                    value={c.id}
-                    onChange={(e) => patchCase(i, { id: slug(e.target.value) })}
-                    className="focusable w-44 rounded-md border border-line bg-canvas px-2 py-1 font-mono text-[11px] text-fg"
-                    aria-label="Case id"
-                  />
-                  <input
-                    value={c.note ?? ""}
-                    onChange={(e) => patchCase(i, { note: e.target.value })}
-                    placeholder="What this case proves (shown in results)"
-                    className="focusable min-w-0 grow rounded-md border border-line bg-canvas px-2 py-1 text-[12px] text-fg placeholder:text-ghost"
-                    aria-label="Case note"
-                  />
-                  <button
+                  <div className="w-44 shrink-0">
+                    <Input mono value={c.id} onChange={(v) => patchCase(i, { id: slug(v) })} aria-label="Case id" />
+                  </div>
+                  <div className="min-w-0 grow">
+                    <Input
+                      value={c.note ?? ""}
+                      onChange={(v) => patchCase(i, { note: v })}
+                      placeholder="What this case proves (shown in results)"
+                      aria-label="Case note"
+                    />
+                  </div>
+                  <IconButton
+                    size="sm"
+                    label="Duplicate case"
+                    className="hover:text-fg"
                     onClick={() =>
                       setCases((cs) => [
                         ...cs.slice(0, i + 1),
@@ -761,59 +797,53 @@ function SetBuilder({
                         ...cs.slice(i + 1),
                       ])
                     }
-                    title="Duplicate case"
-                    className="focusable cursor-pointer rounded-sm p-1 text-faint transition-colors hover:text-fg"
                   >
                     <Icon name="layers" size={13} />
-                  </button>
-                  <button
-                    onClick={() => setCases((cs) => cs.filter((_, j) => j !== i))}
-                    title="Remove case"
+                  </IconButton>
+                  <IconButton
+                    size="sm"
+                    label="Remove case"
+                    className="hover:text-err"
                     disabled={cases.length === 1}
-                    className="focusable cursor-pointer rounded-sm p-1 text-faint transition-colors hover:text-err disabled:opacity-30"
+                    onClick={() => setCases((cs) => cs.filter((_, j) => j !== i))}
                   >
                     <Icon name="cross" size={13} />
-                  </button>
+                  </IconButton>
                 </div>
 
                 {/* inputs, derived from the spec */}
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {(inputKeys.length ? inputKeys : [{ name: "input", kind: "string" as Kind }]).map(
                     (k) => (
-                      <label key={k.name} className="flex flex-col gap-1">
-                        <span className="font-mono text-[10px] text-faint">{k.name}</span>
-                        <textarea
+                      <Field key={k.name} label={k.name}>
+                        <Textarea
                           value={String(c.input[k.name] ?? "")}
-                          onChange={(e) =>
-                            patchCase(i, { input: { ...c.input, [k.name]: e.target.value } })
-                          }
+                          onChange={(v) => patchCase(i, { input: { ...c.input, [k.name]: v } })}
                           rows={2}
-                          className="focusable resize-y rounded-md border border-line bg-canvas px-2.5 py-1.5 text-[12px] leading-[1.5] text-fg"
                         />
-                      </label>
+                      </Field>
                     ),
                   )}
                 </div>
 
                 {/* ground truth, when the set is labeled */}
                 {labels && (
-                  <label className="flex items-center gap-2">
-                    <span className="text-[10.5px] font-semibold tracking-wide text-dim uppercase">Expected label</span>
+                  <div className="flex items-center gap-2">
+                    <Label>Expected label</Label>
                     <div className="w-52">
                       <Pick
                         value={c.expected ?? labels.space[0]}
                         onChange={(v) => patchCase(i, { expected: v })}
                         options={labels.space.map((s) => ({ value: s, label: s }))}
+                        aria-label="Expected label"
                       />
                     </div>
-                  </label>
+                  </div>
                 )}
 
                 {/* checks */}
                 <div className="flex flex-col gap-1.5">
-                  <span className="text-[10.5px] font-semibold tracking-wide text-dim uppercase">
-                    {labels ? "Also passes only when" : "Passes when"}
-                  </span>
+                  <Label>{labels ? "Also passes only when" : "Passes when"}</Label>
                   {c.checks.map((ch, j) => (
                     <div key={j} className="flex flex-wrap items-center gap-2">
                       <div className="w-52">
@@ -837,39 +867,46 @@ function SetBuilder({
                       </div>
                       {ch.kind === "field" && (
                         <>
-                          <input
-                            value={ch.path ?? ""}
-                            onChange={(e) =>
-                              patchCase(i, {
-                                checks: c.checks.map((x, y) => (y === j ? { ...x, path: e.target.value } : x)),
-                              })
-                            }
-                            placeholder="result path, e.g. recorded.disposition"
-                            className="focusable w-64 rounded-md border border-line bg-canvas px-2 py-1 font-mono text-[11px] text-fg placeholder:text-ghost"
-                          />
-                          <input
-                            value={String(ch.equals ?? "")}
-                            onChange={(e) =>
-                              patchCase(i, {
-                                checks: c.checks.map((x, y) => (y === j ? { ...x, equals: e.target.value } : x)),
-                              })
-                            }
-                            placeholder="expected value"
-                            className="focusable w-44 rounded-md border border-line bg-canvas px-2 py-1 text-[12px] text-fg placeholder:text-ghost"
-                          />
+                          <div className="w-64">
+                            <Input
+                              mono
+                              value={ch.path ?? ""}
+                              onChange={(v) =>
+                                patchCase(i, {
+                                  checks: c.checks.map((x, y) => (y === j ? { ...x, path: v } : x)),
+                                })
+                              }
+                              placeholder="result path, e.g. recorded.disposition"
+                              aria-label="Result path"
+                            />
+                          </div>
+                          <div className="w-44">
+                            <Input
+                              value={String(ch.equals ?? "")}
+                              onChange={(v) =>
+                                patchCase(i, {
+                                  checks: c.checks.map((x, y) => (y === j ? { ...x, equals: v } : x)),
+                                })
+                              }
+                              placeholder="expected value"
+                              aria-label="Expected value"
+                            />
+                          </div>
                         </>
                       )}
                       {(ch.kind === "contains" || ch.kind === "not_contains") && (
-                        <input
-                          value={ch.value ?? ""}
-                          onChange={(e) =>
-                            patchCase(i, {
-                              checks: c.checks.map((x, y) => (y === j ? { ...x, value: e.target.value } : x)),
-                            })
-                          }
-                          placeholder="text to look for in the result"
-                          className="focusable min-w-0 grow rounded-md border border-line bg-canvas px-2 py-1 text-[12px] text-fg placeholder:text-ghost"
-                        />
+                        <div className="min-w-0 grow">
+                          <Input
+                            value={ch.value ?? ""}
+                            onChange={(v) =>
+                              patchCase(i, {
+                                checks: c.checks.map((x, y) => (y === j ? { ...x, value: v } : x)),
+                              })
+                            }
+                            placeholder="text to look for in the result"
+                            aria-label="Text to look for in the result"
+                          />
+                        </div>
                       )}
                       {ch.kind === "state" && (
                         <div className="w-64">
@@ -884,26 +921,29 @@ function SetBuilder({
                           />
                         </div>
                       )}
-                      <button
+                      <IconButton
+                        size="sm"
+                        label="Remove check"
+                        className="hover:text-err"
+                        disabled={c.checks.length === 1 && !labels}
                         onClick={() =>
                           patchCase(i, { checks: c.checks.filter((_, y) => y !== j) })
                         }
-                        disabled={c.checks.length === 1 && !labels}
-                        title="Remove check"
-                        className="focusable cursor-pointer rounded-sm p-1 text-faint transition-colors hover:text-err disabled:opacity-30"
                       >
                         <Icon name="cross" size={12} />
-                      </button>
+                      </IconButton>
                     </div>
                   ))}
-                  <button
+                  <Button
+                    size="sm"
+                    variant="solid"
+                    className="self-start"
                     onClick={() =>
                       patchCase(i, { checks: [...c.checks, { kind: "contains", value: "" }] })
                     }
-                    className="focusable w-fit cursor-pointer rounded-sm text-[11px] font-medium text-dim transition-colors hover:text-fg"
                   >
-                    + another check
-                  </button>
+                    Add a check
+                  </Button>
                 </div>
               </div>
             ))}
@@ -912,7 +952,7 @@ function SetBuilder({
             <div className="flex items-center gap-3">
               <Button
                 size="sm"
-                variant="outline"
+                variant="solid"
                 onClick={() => setCases((cs) => [...cs, blankCase(cs.length + 1, inputKeys, labels)])}
               >
                 Add a case
@@ -957,6 +997,10 @@ function SetCard({
   const [runError, setRunError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [override, setOverride] = useState("");
+  const [compare, setCompare] = useState(false);
+  const [scope, setScope] = useState<"class" | "below" | "all">("below");
+  const [cmp, setCmp] = useState<CompareResult | null>(null);
+  const [liveModel, setLiveModel] = useState<string | null>(null);
   const { models } = useModels();
 
   const modelLabel = (id: string) =>
@@ -978,11 +1022,17 @@ function SetCard({
   const run = async () => {
     setLive({ done: 0, total: row.n, cases: [] });
     setRunError("");
+    setCmp(null);
+    setLiveModel(null);
     try {
       const res = await fetch("/api/evals/run", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ set_id: row.id, ...(override ? { model: override } : {}) }),
+        body: JSON.stringify({
+          set_id: row.id,
+          ...(override ? { model: override } : {}),
+          ...(compare ? { compare: { scope } } : {}),
+        }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
@@ -1002,8 +1052,15 @@ function SetCard({
           const line = part.split("\n").find((l) => l.startsWith("data: "));
           if (!line) continue;
           const e = JSON.parse(line.slice(6));
-          if (e.type === "case.done") {
+          if (e.type === "model.start") {
+            // A comparison runs the suite once per candidate; the live table
+            // starts over for each so it never mixes two models' cases.
+            setLiveModel(String(e.model));
+            setLive((s) => s && { ...s, done: 0, cases: [] });
+          } else if (e.type === "case.done") {
             setLive((s) => s && { ...s, done: s.done + 1, cases: [...s.cases, e as CaseResult] });
+          } else if (e.type === "compare") {
+            setCmp(e as CompareResult);
           }
         }
       }
@@ -1011,8 +1068,20 @@ function SetCard({
       setRunError((e as Error).message);
     } finally {
       setLive(null);
+      setLiveModel(null);
       onChanged();
     }
+  };
+
+  const useModel = async (id: string) => {
+    const d = await (await fetch(`/api/evals?id=${encodeURIComponent(row.id)}`)).json();
+    if (!d.set) return;
+    await fetch("/api/evals", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ set: { ...d.set, model: id } }),
+    });
+    onChanged();
   };
 
   const score = row.latest;
@@ -1022,6 +1091,7 @@ function SetCard({
   return (
     <section className="overflow-hidden rounded-md border border-line bg-surface">
       <button
+        type="button"
         onClick={onToggle}
         aria-expanded={open}
         className="focusable flex w-full cursor-pointer items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-raise/40"
@@ -1037,7 +1107,7 @@ function SetCard({
           <span className="flex items-center gap-2.5">
             <span className="h-1.5 w-32 overflow-hidden rounded-full bg-raise">
               <span
-                className="block h-full rounded-full bg-run transition-[width] duration-300"
+                className="block h-full rounded-full bg-run transition-[width] duration-[260ms] ease-[var(--ease-out)]"
                 style={{ width: `${(live.done / Math.max(1, live.total)) * 100}%` }}
               />
             </span>
@@ -1081,15 +1151,34 @@ function SetCard({
                 onChange={setOverride}
                 options={[
                   { value: "", label: `Set default — ${modelLabel(row.model)}` },
-                  ...models.map((m) => ({ value: m.id, label: m.label })),
+                  ...models.map((m) => ({ value: m.id, label: m.class ? `${m.label} · ${m.class}` : m.label })),
                 ]}
               />
             </div>
+            <span className="ml-2 flex items-center gap-2">
+              <Switch label="Compare models" checked={compare} onChange={setCompare} disabled={!!live} />
+              {compare && (
+                <div className="w-60">
+                  <Pick
+                    value={scope}
+                    onChange={(v) => setScope(v as "class" | "below" | "all")}
+                    options={[
+                      { value: "class", label: "Same tier as the incumbent" },
+                      { value: "below", label: "Incumbent's tier and one below" },
+                      { value: "all", label: "Every model offered" },
+                    ]}
+                  />
+                </div>
+              )}
+            </span>
             <span className="grow" />
-            <Button size="sm" variant="quiet" onClick={onEdit}>
+            <Button size="sm" variant="solid" onClick={onEdit}>
               Edit
             </Button>
-            <button
+            <Button
+              size="sm"
+              variant="solid"
+              tone="err"
               onClick={async () => {
                 if (!confirmDelete) {
                   setConfirmDelete(true);
@@ -1099,21 +1188,32 @@ function SetCard({
                 await fetch(`/api/evals?id=${encodeURIComponent(row.id)}`, { method: "DELETE" });
                 onChanged();
               }}
-              className={`focusable cursor-pointer rounded-sm text-[11px] transition-colors ${
-                confirmDelete ? "font-semibold text-err" : "text-faint hover:text-err"
-              }`}
             >
               {confirmDelete ? "Click again — history goes too" : "Delete set"}
-            </button>
+            </Button>
           </div>
 
           {runError && (
-            <p className="rounded-md border border-err-line bg-err-bg px-3 py-2 text-[12px] text-err">
-              The benchmark run failed — {runError}
-            </p>
+            <Banner tone="err" title="The benchmark run failed">
+              {runError}
+            </Banner>
           )}
 
+          {live && liveModel && (
+            <p className="text-[11.5px] text-dim">
+              Measuring <span className="font-mono text-fg">{modelLabel(liveModel === "default" ? "" : liveModel)}</span>
+              {compare ? ", every model call pinned to it" : ""}
+            </p>
+          )}
           {live && live.cases.length > 0 && <CaseTable cases={live.cases} />}
+          {!live && (cmp ?? lastComparison(detail?.runs ?? [], detail?.labels?.positive)) && (
+            <ComparePanel
+              cmp={(cmp ?? lastComparison(detail?.runs ?? [], detail?.labels?.positive))!}
+              models={models}
+              onUse={useModel}
+              currentModel={row.model}
+            />
+          )}
 
           {!live && detail?.runs.length ? (
             <div className="flex flex-col gap-3">
@@ -1158,6 +1258,7 @@ function CaseTable({ cases }: { cases: CaseResult[] }) {
       {cases.map((c) => (
         <div key={c.id} className="border-b border-line last:border-b-0">
           <button
+            type="button"
             onClick={() => setOpenCase(openCase === c.id ? null : c.id)}
             className="focusable flex w-full cursor-pointer items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-raise/40"
           >
@@ -1167,7 +1268,10 @@ function CaseTable({ cases }: { cases: CaseResult[] }) {
               <Mono className="hidden shrink-0 text-[10.5px] sm:inline">
                 <span className="text-dim">{c.expected}</span>
                 <span className="text-ghost"> → </span>
-                <span className={c.predicted === c.expected ? "text-ok" : "text-err"}>{c.predicted ?? INVALID}</span>
+                <span className={c.predicted === c.expected ? "text-ok" : "text-err"}>
+                  <MarkGlyph ok={c.predicted === c.expected} />
+                  {c.predicted ?? INVALID}
+                </span>
               </Mono>
             )}
             {c.note && <span className="hidden truncate text-[11px] text-faint sm:inline">{c.note}</span>}
@@ -1186,13 +1290,15 @@ function CaseTable({ cases }: { cases: CaseResult[] }) {
                 </span>
               ))}
               {c.error && <span className="font-mono text-[10.5px] text-err">{c.error}</span>}
-              <Link
+              <Button
+                size="sm"
+                variant="solid"
+                className="mt-1 self-start"
                 href={`/runs?id=${encodeURIComponent(c.run_file)}`}
-                className="focusable mt-1 flex w-fit items-center gap-1.5 rounded-sm text-[11px] font-medium text-dim hover:text-fg"
               >
                 <Icon name="pulse" size={11} />
-                Open the run behind this score →
-              </Link>
+                Open the run behind this score
+              </Button>
             </div>
           )}
         </div>
@@ -1252,8 +1358,8 @@ function ConfusionPanel({ matrix, positive }: { matrix: Matrix; positive?: strin
                             v === 0
                               ? "transparent"
                               : diag
-                                ? `color-mix(in oklab, var(--ok) ${Math.round(a * 100)}%, transparent)`
-                                : `color-mix(in oklab, var(--err) ${Math.round(a * 100)}%, transparent)`,
+                                ? `color-mix(in oklab, var(--t-ok) ${Math.round(a * 100)}%, transparent)`
+                                : `color-mix(in oklab, var(--t-err) ${Math.round(a * 100)}%, transparent)`,
                         }}
                         title={`expected ${matrix.labels[i]}, produced ${cols[j]}: ${v}`}
                       >
@@ -1317,4 +1423,183 @@ function ConfusionPanel({ matrix, positive }: { matrix: Matrix; positive?: strin
       </div>
     </div>
   );
+}
+
+
+/* ═══════════════════ model comparison ═══════════════════ */
+
+interface ModelSummary {
+  model: string;
+  tier: "small" | "medium" | "large" | null;
+  passed: number;
+  total: number;
+  pass_rate: number;
+  headline_f1: number | null;
+  macro_f1: number | null;
+  invalid: number;
+  avg_ms: number;
+  tokens: { in: number; out: number };
+  model_calls: number;
+  cost_total: number | null;
+  cost_per_case: number | null;
+}
+
+interface CompareResult {
+  batch_id: string;
+  incumbent: string;
+  models: ModelSummary[];
+  recommended: string | null;
+  rationale: string;
+  /** Spec digest the comparison measured, so a stale one reads as stale. */
+  digest?: string;
+  at?: string;
+}
+
+const fmtCost = (c: number | null) =>
+  c === null ? "unknown" : c === 0 ? "$0" : c < 0.0005 ? "<$0.001" : c < 0.01 ? `$${c.toFixed(4)}` : `$${c.toFixed(3)}`;
+const fmtMs = (ms: number) => (ms >= 60_000 ? `${(ms / 60_000).toFixed(1)}m` : `${(ms / 1000).toFixed(1)}s`);
+
+/**
+ * The same benchmark, one model at a time, with every model call pinned to
+ * that model. Cost and time are relative to the best candidate on a log
+ * scale, accuracy is the headline metric as measured. The recommendation is
+ * the cheapest model that clears the incumbent's quality within a small
+ * margin with no invalid outputs; it is a recommendation, never a switch.
+ */
+function ComparePanel({
+  cmp,
+  models,
+  onUse,
+  currentModel,
+}: {
+  cmp: CompareResult;
+  models: { id: string; label: string; class?: string }[];
+  onUse: (id: string) => void;
+  currentModel: string;
+}) {
+  const label = (id: string) => models.find((m) => m.id === id)?.label ?? id;
+  const bestCost = bestOf(cmp.models.map((m) => m.cost_per_case));
+  const bestMs = bestOf(cmp.models.map((m) => m.avg_ms));
+  const quality = (m: ModelSummary) => m.headline_f1 ?? m.pass_rate;
+  const rows = [...cmp.models].sort((a, b) => quality(b) - quality(a) || (a.cost_per_case ?? Infinity) - (b.cost_per_case ?? Infinity));
+  return (
+    <div className="flex flex-col overflow-hidden rounded-md border border-line">
+      <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-3 py-2">
+        <span className="text-[12px] font-semibold">Model comparison</span>
+        <span className="text-[11px] text-faint">{cmp.models.length} models, every call pinned, same cases</span>
+        {cmp.digest && <Mono className="text-[10px] text-ghost">spec {cmp.digest.slice(0, 8)}{cmp.at ? ` · ${ago(cmp.at)}` : ""}</Mono>}
+        <span className="grow" />
+        {cmp.recommended && (
+          <span className="text-[11px] text-dim">
+            recommended <span className="font-mono text-fg">{label(cmp.recommended)}</span>
+          </span>
+        )}
+      </div>
+      {rows.map((m, i) => {
+        const color = CAT[i % CAT.length];
+        const score = {
+          accuracy: quality(m),
+          cost: logScore(m.cost_per_case, bestCost),
+          time: logScore(m.avg_ms, bestMs),
+        };
+        const isInc = m.model === cmp.incumbent;
+        const isRec = m.model === cmp.recommended;
+        const stats = [
+          { k: m.headline_f1 !== null ? "F1" : "pass", v: m.headline_f1 !== null ? m.headline_f1.toFixed(3) : `${Math.round(m.pass_rate * 100)}%`, sub: `${m.passed}/${m.total}${m.invalid ? ` · ${m.invalid} no label` : ""}`, s: score.accuracy },
+          { k: "cost / case", v: fmtCost(m.cost_per_case), sub: `${(m.tokens.in / 1000).toFixed(1)}k in · ${(m.tokens.out / 1000).toFixed(1)}k out`, s: score.cost },
+          { k: "avg time", v: fmtMs(m.avg_ms), sub: `${m.model_calls} model calls`, s: score.time },
+        ];
+        return (
+          <div key={m.model} className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-x-3 border-b border-line px-3 py-2.5 last:border-b-0">
+            <TriangleGlyph score={score} color={color} size={88} />
+            <div className="flex min-w-0 flex-col gap-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="size-2 shrink-0 rounded-[2px]" style={{ background: color }} />
+                <span className="min-w-0 truncate font-mono text-[11.5px] font-medium text-fg" title={m.model}>{label(m.model)}</span>
+                {m.tier && <Tag>{m.tier}</Tag>}
+                {isInc && <Tag>incumbent</Tag>}
+                {isRec && <Tag tone="ok">recommended</Tag>}
+                {m.invalid > 0 && <Tag tone="warn">{m.invalid} invalid</Tag>}
+                <span className="grow" />
+                {!isInc && m.model !== currentModel && m.model !== "default" && (
+                  <Button size="sm" variant="quiet" onClick={() => onUse(m.model)}>
+                    Use for this benchmark
+                  </Button>
+                )}
+              </div>
+              {stats.map((row) => (
+                <span key={row.k} className="grid grid-cols-[72px_minmax(0,1fr)_auto] items-center gap-x-2">
+                  <span className="text-[10px] text-faint">{row.k}</span>
+                  <span className="h-1.5 overflow-hidden rounded-full bg-raise">
+                    <span className="block h-full rounded-full" style={{ width: `${Math.round((row.s ?? 0) * 100)}%`, background: row.s === null ? "transparent" : color }} />
+                  </span>
+                  <span className="flex items-baseline gap-1 whitespace-nowrap">
+                    <span className="tnum w-16 text-right text-[11.5px] font-semibold text-fg">{row.v}</span>
+                    <span className="w-28 truncate text-[9.5px] text-ghost">{row.sub}</span>
+                  </span>
+                </span>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+      <p className="border-t border-line px-3 py-2 text-[11px] leading-[1.5] text-dim">{cmp.rationale}</p>
+    </div>
+  );
+}
+
+
+/**
+ * The most recent comparison, rebuilt from history: every run that shares
+ * the latest batch id, one per model. Cost and tokens come from the stored
+ * summary; older rows without one show cost as unknown rather than zero.
+ */
+function lastComparison(runs: HistoryRow[], positive?: string): CompareResult | null {
+  const batches = new Map<string, HistoryRow[]>();
+  for (const r of runs) {
+    const b = r.summary?.batch_id;
+    if (!b || !r.summary?.compare) continue;
+    batches.set(b, [...(batches.get(b) ?? []), r]);
+  }
+  const latest = [...batches.values()].sort((a, b) => new Date(b[0].at).getTime() - new Date(a[0].at).getTime())[0];
+  if (!latest || latest.length < 2) return null;
+  const models: ModelSummary[] = latest.map((r) => {
+    const m = r.matrix ? derive(r.matrix, positive) : null;
+    const durations = (r.results ?? []).map((c) => c.duration_ms);
+    return {
+      model: r.model,
+      tier: r.summary?.tier ?? null,
+      passed: r.passed,
+      total: r.total,
+      pass_rate: r.passed / Math.max(1, r.total),
+      headline_f1: m?.headlineF1 ?? null,
+      macro_f1: m?.macroF1 ?? null,
+      invalid: m?.invalid ?? 0,
+      avg_ms: r.summary?.avg_ms ?? Math.round(durations.reduce((a, b) => a + b, 0) / Math.max(1, durations.length)),
+      tokens: r.summary?.tokens ?? { in: 0, out: 0 },
+      model_calls: r.summary?.model_calls ?? 0,
+      cost_total: r.summary?.cost_total ?? null,
+      cost_per_case: r.summary?.cost_per_case ?? null,
+    };
+  });
+  const incumbent = latest[0].summary?.incumbent ?? models[0].model;
+  const quality = (m: ModelSummary) => m.headline_f1 ?? m.pass_rate;
+  const inc = models.find((m) => m.model === incumbent) ?? models[0];
+  const eligible = models
+    .filter((m) => quality(m) >= quality(inc) - 0.02 && m.invalid === 0 && m.cost_per_case !== null)
+    .sort((a, b) => (a.cost_per_case as number) - (b.cost_per_case as number) || a.avg_ms - b.avg_ms);
+  const best = eligible[0] ?? null;
+  return {
+    batch_id: latest[0].summary?.batch_id ?? "",
+    digest: latest[0].digest,
+    at: latest[0].at,
+    incumbent: inc.model,
+    models,
+    recommended: best?.model ?? null,
+    rationale: best
+      ? best.model === inc.model
+        ? "The incumbent is already the cheapest model that clears the bar."
+        : `${best.model} clears the incumbent's quality within 0.02${inc.cost_per_case && best.cost_per_case !== null ? ` at ${Math.round((1 - best.cost_per_case / inc.cost_per_case) * 100)}% lower cost per case` : ""}.`
+      : "No candidate cleared the incumbent's quality with a known cost; keep the incumbent.",
+  };
 }

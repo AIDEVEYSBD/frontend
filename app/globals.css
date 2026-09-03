@@ -84,6 +84,7 @@
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
+  --radius-xl: 12px;
 
   /* Motion */
   --ease-out: cubic-bezier(0.4, 0, 0.2, 1);
@@ -463,14 +464,16 @@ body {
   animation: af-bar 900ms var(--ease-out) infinite;
 }
 
-/* Reduced motion is an off switch, not a shorter duration. */
+/* Reduced motion is an off switch, not a shorter duration. Animations are
+   removed outright and elements land in their resting state; transitions are
+   removed so state changes snap. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
   }
 }
 
@@ -509,10 +512,6 @@ body {
 
 /* ─────────────── Demo flow ─────────────── */
 
-@keyframes af-halo {
-  0%, 100% { opacity: 0.9; transform: scale(1); }
-  50% { opacity: 0.35; transform: scale(1.03); }
-}
 @keyframes af-notice {
   from { opacity: 0; transform: translateY(10px) scale(0.98); }
   to { opacity: 1; transform: none; }
@@ -522,8 +521,7 @@ body {
   50% { opacity: 1; }
 }
 
-.af-halo { animation: af-halo 1.6s var(--ease-out) infinite; }
-.af-notice { animation: af-notice 320ms var(--ease-spring, cubic-bezier(0.34,1.4,0.64,1)) both; }
+.af-notice { animation: af-notice 260ms var(--ease-out) both; }
 .af-dots > span { animation: af-dots 1s var(--ease-out) infinite; }
 .af-dots > span:nth-child(2) { animation-delay: 140ms; }
 .af-dots > span:nth-child(3) { animation-delay: 280ms; }

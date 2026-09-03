@@ -140,26 +140,22 @@ export function DemoFlow() {
           const state = i < idx ? "done" : i === idx ? "active" : "todo";
           return (
             <div key={s.key} className="flex items-center gap-2">
-              <button
-                onClick={() => i <= idx && setPhase(s.key)}
-                disabled={i > idx}
-                className={`focusable flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1.5 text-[12.5px] transition-colors disabled:cursor-not-allowed ${
-                  state === "active"
-                    ? "border-transparent bg-ink font-semibold text-on-ink"
-                    : state === "done"
-                      ? "border-line text-dim hover:bg-raise"
-                      : "border-dashed border-line text-ghost"
-                }`}
+              <Button
+                size="sm"
+                tone="ink"
+                variant={state === "active" ? "solid" : "quiet"}
+                disabled={state === "todo"}
+                onClick={() => setPhase(s.key)}
               >
                 <span
-                  className={`grid size-4 place-items-center rounded-xs font-mono text-[9.5px] ${
-                    state === "active" ? "bg-on-ink/20" : "bg-raise"
+                  className={`grid size-4 place-items-center rounded-xs font-mono text-[10.5px] ${
+                    state === "active" ? "bg-on-ink/20" : "bg-surface"
                   }`}
                 >
                   {i + 1}
                 </span>
                 {s.label}
-              </button>
+              </Button>
               {i < STEPS.length - 1 && <span className="h-px w-4 bg-line-strong" />}
             </div>
           );
@@ -167,7 +163,7 @@ export function DemoFlow() {
 
         <div className="grow" />
         {phase !== "build" && (
-          <Button size="sm" variant="quiet" onClick={reset}>
+          <Button size="sm" tone="err" variant="solid" onClick={reset}>
             Restart demonstration
           </Button>
         )}
@@ -264,7 +260,7 @@ function AgenticBuilder({ onSend }: { onSend: () => void }) {
 
       <div className="flex min-h-[430px] flex-col gap-3 p-4">
         <div className="flex items-start gap-2.5">
-          <span className="grid size-6 shrink-0 place-items-center rounded-sm border border-line bg-raise text-[9.5px] font-medium text-dim">
+          <span className="grid size-6 shrink-0 place-items-center rounded-sm border border-line bg-raise text-[10.5px] font-medium text-dim">
             SR
           </span>
           <div className="min-h-[92px] grow rounded-md border border-line-strong bg-field px-3 py-2.5 text-[15px] leading-[1.6] text-fg">
@@ -289,23 +285,12 @@ function AgenticBuilder({ onSend }: { onSend: () => void }) {
           <div className="grow" />
 
           {/* The demo stops here on purpose: the next phase needs a real click. */}
-          <span className="relative">
-            {done && (
-              <span className="af-halo pointer-events-none absolute -inset-1.5 rounded-lg border border-run" />
-            )}
-            <Button
-              tone="ink"
-              variant="solid"
-              disabled={!done}
-              onClick={onSend}
-              className="relative"
-            >
-              Send
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M5 12h13M12 5l7 7-7 7" />
-              </svg>
-            </Button>
-          </span>
+          <Button tone="ink" variant="solid" disabled={!done} onClick={onSend}>
+            Send
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h13M12 5l7 7-7 7" />
+            </svg>
+          </Button>
         </div>
 
         {done && (
@@ -434,14 +419,14 @@ function VisualBuilder({ onRun }: { onRun: () => void }) {
               <span className="size-2 shrink-0 rounded-[2px]" style={{ background: CAT[n.c] }} />
               <span className="truncate text-[11.5px] font-medium">{n.label}</span>
             </div>
-            <span className="truncate text-[9.5px] text-faint">{n.kind}</span>
+            <span className="truncate text-[10.5px] text-faint">{n.kind}</span>
 
             {/* Which systems this node actually reaches. */}
             <div className="flex flex-wrap gap-1 border-t border-line pt-1.5">
               {n.tools.map((t) => (
                 <span
                   key={t.name}
-                  className="inline-flex items-center gap-1 rounded-xs border border-line bg-raise px-1 py-px text-[9px] text-dim"
+                  className="inline-flex items-center gap-1 rounded-xs border border-line bg-raise px-1 py-px text-[10.5px] text-dim"
                 >
                   <BrandMark name={t.name} size={9} />
                   {t.name}
@@ -662,7 +647,7 @@ function SourceCite({ id }: { id: string }) {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-label={`Source: ${src.locator}`}
-        className={`focusable ml-0.5 cursor-pointer rounded-[3px] px-1 py-px align-super font-mono text-[9px] transition-colors ${
+        className={`focusable ml-0.5 cursor-pointer rounded-[3px] px-1 py-px align-super font-mono text-[10.5px] transition-colors ${
           open ? "bg-run text-on-solid" : "bg-raise text-run hover:bg-run hover:text-on-solid"
         }`}
       >
@@ -753,7 +738,7 @@ function ResultsPhase() {
           <div className="flex flex-col gap-2 p-3">
             {approved ? (
               <div className="af-swap flex flex-col gap-2">
-                <div className="flex items-start gap-2 rounded-md border border-ok-line bg-ok-bg p-2.5">
+                <div className="flex items-start gap-2 relative overflow-hidden rounded-md border border-line bg-surface p-2.5 pl-3.5 before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-ok">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="mt-px shrink-0 text-ok">
                     <path d="M4 13l5 5 11-13" />
                   </svg>
@@ -764,7 +749,7 @@ function ResultsPhase() {
                     </span>
                   </div>
                 </div>
-                <Button variant="outline" full onClick={() => setApproved(false)}>
+                <Button tone="err" variant="solid" full onClick={() => setApproved(false)}>
                   Reset approval
                 </Button>
               </div>

@@ -76,7 +76,7 @@ export function Ring({
           strokeLinecap="round"
           strokeDasharray={c}
           strokeDashoffset={c * (1 - value)}
-          style={{ transition: "stroke-dashoffset 500ms var(--ease-out)" }}
+          style={{ transition: "stroke-dashoffset 260ms var(--ease-out)" }}
         />
       </svg>
       <span className="tnum absolute font-mono text-[10px] text-dim">

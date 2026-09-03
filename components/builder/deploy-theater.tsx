@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Mono } from "../ui";
+import { Button, IconButton, Mono } from "../ui";
 
 /**
  * The deploy theater: the moment a document becomes part of the estate,
@@ -210,28 +210,24 @@ export function DeployTheater({
       role="dialog"
       aria-modal="true"
       aria-label="Deploying the workflow"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-canvas/94 backdrop-blur-md"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-canvas/94"
     >
       <style>{`
         @keyframes af-dep-dash { to { stroke-dashoffset: 0; } }
-        @keyframes af-dep-pulse {
-          0% { transform: scale(0.55); opacity: 0.55; }
-          100% { transform: scale(1.9); opacity: 0; }
-        }
         @keyframes af-dep-rise { from { transform: translateY(10px); opacity: 0; } to { transform: none; opacity: 1; } }
-        .af-dep-rise { animation: af-dep-rise 380ms var(--ease-out) both; }
+        .af-dep-rise { animation: af-dep-rise 260ms var(--ease-out) both; }
         @media (prefers-reduced-motion: reduce) {
           .af-dep-rise { animation: none; }
         }
       `}</style>
 
-      <div ref={panelRef} className="af-dep-rise flex w-[min(560px,92vw)] flex-col gap-5 rounded-lg border border-line bg-surface p-6 elev-2">
+      <div ref={panelRef} className="af-dep-rise flex w-[min(560px,92vw)] flex-col gap-5 rounded-lg border border-line bg-surface p-6 elev-3">
         {/* progress */}
         <div className="flex items-center gap-2">
           {["Seal", "Validate", "Ship", "Live"].map((s, i) => (
             <div key={s} className="flex grow items-center gap-2">
               <span
-                className={`text-[10.5px] font-semibold tracking-wide uppercase transition-colors duration-300 ${
+                className={`text-[11px] font-medium transition-colors duration-200 ease-[var(--ease-out)] ${
                   act === "refused" && i === 1
                     ? "text-err"
                     : i <= stageIndex
@@ -244,14 +240,16 @@ export function DeployTheater({
               {i < 3 && (
                 <span className="relative h-px grow overflow-hidden rounded bg-line">
                   <span
-                    className="absolute inset-y-0 left-0 bg-fg transition-[width] duration-500 ease-[var(--ease-out)]"
+                    className="absolute inset-y-0 left-0 bg-fg transition-[width] duration-[260ms] ease-[var(--ease-out)]"
                     style={{ width: i < stageIndex ? "100%" : "0%" }}
                   />
                 </span>
               )}
             </div>
           ))}
-          <button
+          <IconButton
+            size="sm"
+            label={muted ? "Unmute" : "Mute"}
             onClick={() => {
               const next = !muted;
               setMuted(next);
@@ -261,15 +259,13 @@ export function DeployTheater({
                 /* fine */
               }
             }}
-            aria-label={muted ? "Unmute" : "Mute"}
-            title={muted ? "Unmute" : "Mute"}
-            className="focusable ml-2 shrink-0 cursor-pointer rounded-sm p-1 text-faint transition-colors hover:text-fg"
+            className="ml-2 shrink-0 rounded-sm"
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               <path d="M11 5 6 9H2v6h4l5 4z" />
               {muted ? <path d="M22 9l-6 6M16 9l6 6" /> : <path d="M15.5 8.5a5 5 0 0 1 0 7M18.4 5.6a9 9 0 0 1 0 12.8" />}
             </svg>
-          </button>
+          </IconButton>
         </div>
 
         {/* stage */}
@@ -285,7 +281,7 @@ export function DeployTheater({
               {/* ACT 1+2 — the document, being sealed and checked */}
               <g
                 style={{
-                  transition: "transform 700ms var(--ease-out), opacity 500ms",
+                  transition: "transform 260ms var(--ease-out), opacity 260ms var(--ease-out)",
                   transform: act === "seal" || act === "validate" ? "translate(0,0)" : "translate(0,26px) scale(0.22)",
                   transformOrigin: "160px 96px",
                   opacity: act === "seal" || act === "validate" ? 1 : 0,
@@ -304,7 +300,7 @@ export function DeployTheater({
                     strokeLinecap="round"
                     strokeDasharray="70"
                     strokeDashoffset={reduce ? 0 : 70}
-                    style={{ animation: reduce ? undefined : `af-dep-dash 480ms var(--ease-out) ${120 + i * 110}ms forwards` }}
+                    style={{ animation: reduce ? undefined : `af-dep-dash 260ms var(--ease-out) ${120 + i * 110}ms forwards` }}
                   />
                 ))}
                 {/* the node graph inside the document lights up during validate */}
@@ -317,7 +313,7 @@ export function DeployTheater({
                       cy={126}
                       r="3.4"
                       fill={act === "validate" ? "var(--color-run)" : "var(--color-line-strong)"}
-                      style={{ transition: `fill 260ms ${i * 140}ms` }}
+                      style={{ transition: `fill 260ms var(--ease-out) ${i * 140}ms` }}
                     />
                   );
                 })}
@@ -326,31 +322,13 @@ export function DeployTheater({
               {/* ACT 3+4 — the container */}
               <g
                 style={{
-                  transition: "transform 700ms var(--ease-out), opacity 420ms",
+                  transition: "transform 260ms var(--ease-out), opacity 260ms var(--ease-out)",
                   transform: act === "ship" || act === "live" ? "translate(0,0)" : "translate(0,18px)",
                   opacity: act === "ship" || act === "live" ? 1 : 0,
                 }}
               >
-                {/* pulse rings once live */}
-                {act === "live" &&
-                  !reduce &&
-                  [0, 1].map((i) => (
-                    <circle
-                      key={i}
-                      cx="160"
-                      cy="132"
-                      r="46"
-                      fill="none"
-                      stroke="var(--color-ok)"
-                      strokeWidth="1.5"
-                      style={{
-                        transformOrigin: "160px 132px",
-                        animation: `af-dep-pulse 2.2s ease-out ${i * 1.1}s infinite`,
-                      }}
-                    />
-                  ))}
-                {/* container body */}
-                <rect x="112" y="106" width="96" height="56" rx="4" fill="var(--color-surface)" stroke={act === "live" ? "var(--color-ok)" : "var(--color-line-strong)"} strokeWidth="1.8" style={{ transition: "stroke 400ms" }} />
+                {/* container body — once live it settles into a static ok stroke */}
+                <rect x="112" y="106" width="96" height="56" rx="4" fill="var(--color-surface)" stroke={act === "live" ? "var(--color-ok)" : "var(--color-line-strong)"} strokeWidth="1.8" style={{ transition: "stroke 260ms var(--ease-out)" }} />
                 {[126, 140, 154, 168, 182, 196].map((x) => (
                   <line key={x} x1={x} y1="112" x2={x} y2="156" stroke="var(--color-line)" strokeWidth="1.2" />
                 ))}
@@ -365,25 +343,25 @@ export function DeployTheater({
                   stroke={act === "live" ? "var(--color-ok)" : "var(--color-line-strong)"}
                   strokeWidth="1.8"
                   style={{
-                    transition: "transform 500ms var(--ease-out) 150ms, stroke 400ms",
+                    transition: "transform 260ms var(--ease-out) 150ms, stroke 260ms var(--ease-out)",
                     transform: act === "ship" && !reduce ? "translateY(-14px)" : "translateY(0)",
                   }}
                 />
                 {/* the runtime label on the box */}
-                <text x="160" y="138" textAnchor="middle" fontFamily="var(--font-plex-mono)" fontSize="9" fill={act === "live" ? "var(--color-ok)" : "var(--color-dim)"} style={{ transition: "fill 400ms" }}>
+                <text x="160" y="138" textAnchor="middle" fontFamily="var(--font-plex-mono)" fontSize="9" fill={act === "live" ? "var(--color-ok)" : "var(--color-dim)"} style={{ transition: "fill 260ms var(--ease-out)" }}>
                   runtime
                 </text>
                 {act === "live" && (
                   <g>
                     <circle cx="204" cy="102" r="7" fill="var(--color-ok)" />
-                    <path d="M200.5 102l2.4 2.4 4.4-4.6" stroke="white" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M200.5 102l2.4 2.4 4.4-4.6" stroke="var(--t-on-solid)" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
                   </g>
                 )}
               </g>
             </svg>
           ) : (
             <div className="flex max-w-[85%] flex-col items-center gap-2.5 text-center">
-              <span className="grid size-9 place-items-center rounded-md bg-err-bg text-err">
+              <span className="grid size-9 place-items-center rounded-md bg-err text-on-solid">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
                   <path d="M6 6l12 12M18 6L6 18" />
                 </svg>
@@ -455,7 +433,8 @@ export function DeployTheater({
             // honest is left to cancel, so the button goes away entirely.
             <Button
               size="sm"
-              variant="quiet"
+              variant="solid"
+              tone="err"
               onClick={() => {
                 abortRef.current?.abort();
                 onClose(false);

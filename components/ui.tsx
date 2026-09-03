@@ -5,7 +5,12 @@ import type { MouseEvent, ReactNode } from "react";
    A tone names a meaning, not a colour. Every component that can carry
    meaning accepts the same six, so a reader learns the vocabulary once. */
 
-export type Tone = "ink" | "run" | "ok" | "warn" | "err" | "queue" | "neutral";
+/**
+ * `media` is the one tone that does not follow the theme: it sits on a
+ * photograph under a fixed dark scrim, so it is the light canvas and ink in
+ * both modes. The Photography section of the design page carves this out.
+ */
+export type Tone = "ink" | "run" | "ok" | "warn" | "err" | "queue" | "neutral" | "media";
 
 const TEXT: Record<Tone, string> = {
   ink: "text-fg",
@@ -15,6 +20,7 @@ const TEXT: Record<Tone, string> = {
   err: "text-err",
   queue: "text-queue",
   neutral: "text-dim",
+  media: "text-[#fbfaf9]",
 };
 
 const DOT: Record<Tone, string> = {
@@ -25,6 +31,7 @@ const DOT: Record<Tone, string> = {
   err: "bg-err",
   queue: "bg-queue",
   neutral: "bg-faint",
+  media: "bg-[#fbfaf9]",
 };
 
 /** Solid fills. Text is the theme's contrasting ground, never a tint. */
@@ -36,16 +43,32 @@ const SOLID: Record<Tone, string> = {
   err: "bg-err text-on-solid",
   queue: "bg-queue text-on-solid",
   neutral: "bg-raise text-fg",
+  media: "bg-[#fbfaf9] text-[#1a1917]",
 };
 
+/** Secondary: a filled surface with a hairline. Never transparent, and the
+ *  hover is a neutral step, never a tone tint. */
 const OUTLINE: Record<Tone, string> = {
-  ink: "border-line-strong text-fg hover:bg-raise",
-  run: "border-run-line text-run hover:bg-run-bg",
-  ok: "border-ok-line text-ok hover:bg-ok-bg",
-  warn: "border-warn-line text-warn hover:bg-warn-bg",
-  err: "border-err-line text-err hover:bg-err-bg",
-  queue: "border-queue-line text-queue hover:bg-queue-bg",
-  neutral: "border-line text-dim hover:bg-raise hover:text-fg",
+  ink: "border-line-strong text-fg",
+  run: "border-run-line text-run",
+  ok: "border-ok-line text-ok",
+  warn: "border-warn-line text-warn",
+  err: "border-err-line text-err",
+  queue: "border-queue-line text-queue",
+  neutral: "border-line text-fg",
+  media: "border-[#fbfaf9]/70 text-[#fbfaf9]",
+};
+
+/** Tertiary: filled on the raise step, text at full contrast for the mode. */
+const QUIET: Record<Tone, string> = {
+  ink: "text-fg",
+  run: "text-run",
+  ok: "text-ok",
+  warn: "text-warn",
+  err: "text-err",
+  queue: "text-queue",
+  neutral: "text-fg",
+  media: "text-[#fbfaf9]",
 };
 
 /* ═══════════════════ Run states ═══════════════════
@@ -120,19 +143,29 @@ export function Button({
   /** Renders as a link with button looks — never a button nested in an anchor. */
   href?: string;
 }) {
+  // Every variant is a solid fill: buttons are never transparent, and the
+  // text always contrasts the mode.
   const look =
     variant === "solid"
       ? `${SOLID[tone]} border border-transparent hover:brightness-[1.08] active:brightness-95`
       : variant === "outline"
-        ? `border bg-transparent ${OUTLINE[tone]} active:brightness-95`
-        : `border border-transparent bg-transparent ${TEXT[tone]} hover:bg-raise`;
+        ? `border bg-surface ${OUTLINE[tone]} hover:bg-raise active:brightness-95`
+        : `border border-transparent bg-raise ${QUIET[tone]} hover:brightness-[1.08] active:brightness-95`;
+  const base = `focusable inline-flex cursor-pointer items-center justify-center font-medium whitespace-nowrap transition-[background-color,border-color,filter,opacity] duration-100 ease-[var(--ease-out)] select-none ${SIZES[size]} ${look} ${full ? "w-full" : ""} ${className}`;
 
   if (href) {
+    // A link with button looks. Disabled or loading, it stops being a link
+    // so the six states hold here too.
+    if (disabled || loading) {
+      return (
+        <span aria-disabled="true" aria-busy={loading || undefined} className={`${base} pointer-events-none opacity-40`}>
+          {loading && <Spinner size={size === "sm" ? 11 : 13} />}
+          {children}
+        </span>
+      );
+    }
     return (
-      <Link
-        href={href}
-        className={`focusable inline-flex cursor-pointer items-center justify-center font-medium whitespace-nowrap transition-[background-color,border-color,filter,opacity] duration-100 ease-[var(--ease-out)] select-none ${SIZES[size]} ${look} ${full ? "w-full" : ""} ${className}`}
-      >
+      <Link href={href} className={base}>
         {children}
       </Link>
     );
@@ -144,7 +177,7 @@ export function Button({
       onClick={onClick}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
-      className={`focusable inline-flex cursor-pointer items-center justify-center font-medium whitespace-nowrap transition-[background-color,border-color,filter,opacity] duration-100 ease-[var(--ease-out)] select-none disabled:pointer-events-none disabled:opacity-40 ${SIZES[size]} ${look} ${full ? "w-full" : ""} ${className}`}
+      className={`${base} disabled:pointer-events-none disabled:opacity-40`}
     >
       {loading && <Spinner size={size === "sm" ? 11 : 13} />}
       {children}
@@ -157,6 +190,8 @@ export function IconButton({
   label,
   tone = "neutral",
   size = "md",
+  disabled = false,
+  loading = false,
   className = "",
   onClick,
 }: {
@@ -164,19 +199,26 @@ export function IconButton({
   label: string;
   tone?: Tone;
   size?: "sm" | "md";
+  disabled?: boolean;
+  loading?: boolean;
   className?: string;
   onClick?: (e: MouseEvent<HTMLButtonElement>) => void;
 }) {
   return (
     <button
+      type="button"
       aria-label={label}
       title={label}
       onClick={onClick}
-      className={`focusable inline-grid cursor-pointer place-items-center rounded-md border border-transparent transition-colors duration-100 hover:bg-raise ${TEXT[tone]} ${
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      className={`focusable inline-grid cursor-pointer place-items-center rounded-md border border-transparent bg-raise transition-[filter,opacity] duration-100 hover:brightness-[1.08] active:brightness-95 disabled:pointer-events-none disabled:opacity-40 ${
+        tone === "neutral" ? "text-fg" : TEXT[tone]
+      } ${
         size === "sm" ? "size-7" : "size-9"
       } ${className}`}
     >
-      {children}
+      {loading ? <Spinner size={size === "sm" ? 11 : 13} /> : children}
     </button>
   );
 }
@@ -285,7 +327,7 @@ export function Meter({ value, tone = "run" }: { value: number; tone?: Tone }) {
       className="block h-1 w-full overflow-hidden rounded-[2px] bg-sunken"
     >
       <span
-        className={`block h-full rounded-[2px] transition-[width] duration-500 ease-[var(--ease-out)] ${DOT[tone]}`}
+        className={`block h-full rounded-[2px] transition-[width] duration-[260ms] ease-[var(--ease-out)] ${DOT[tone]}`}
         style={{ width: `${Math.max(0, Math.min(1, value)) * 100}%` }}
       />
     </span>

@@ -18,10 +18,11 @@ const FILE = path.resolve(process.cwd(), "..", "runtime", "workspace", "config.j
 
 const DEFAULTS = {
   models: [
-    { id: "anthropic/claude-sonnet-4.5", label: "Claude Sonnet 4.5" },
-    { id: "anthropic/claude-haiku-4.5", label: "Claude Haiku 4.5" },
+    { id: "anthropic/claude-sonnet-4.5", label: "Claude Sonnet 4.5", class: "medium" as const },
+    { id: "anthropic/claude-haiku-4.5", label: "Claude Haiku 4.5", class: "small" as const },
   ],
   default_model: "anthropic/claude-sonnet-4.5",
+  class_defaults: { small: "anthropic/claude-haiku-4.5", medium: "anthropic/claude-sonnet-4.5" } as Partial<Record<"small" | "medium" | "large", string>>,
 };
 
 async function read(): Promise<typeof DEFAULTS> {
@@ -44,8 +45,15 @@ export async function GET() {
   return Response.json(await read());
 }
 
+const CLASSES = ["small", "medium", "large"] as const;
+type ModelClass = (typeof CLASSES)[number];
+
 export async function POST(req: Request) {
-  let body: { models?: { id: string; label: string }[]; default_model?: string };
+  let body: {
+    models?: { id: string; label: string; class?: string }[];
+    default_model?: string;
+    class_defaults?: Partial<Record<ModelClass, string>>;
+  };
   try {
     body = await req.json();
   } catch {
@@ -54,14 +62,32 @@ export async function POST(req: Request) {
   if (!Array.isArray(body.models) || body.models.length === 0) {
     return Response.json({ error: "at least one model must stay selected" }, { status: 400 });
   }
+  // A model's class is a capability tier (small / medium / large) the router
+  // and the eval comparison read. It is metadata the operator asserts, never
+  // inferred from the name. The class default is the model a node that asks
+  // for "a small model" actually gets in this deployment.
+  const models = body.models
+    .filter((m) => m?.id)
+    .map((m) => ({
+      id: String(m.id),
+      label: String(m.label || m.id),
+      ...(m.class && (CLASSES as readonly string[]).includes(m.class) ? { class: m.class as ModelClass } : {}),
+    }));
+  const ids = new Set(models.map((m) => m.id));
+  const class_defaults: Partial<Record<ModelClass, string>> = {};
+  for (const c of CLASSES) {
+    const want = body.class_defaults?.[c];
+    if (want && ids.has(want)) class_defaults[c] = want;
+    else {
+      const first = models.find((m) => m.class === c);
+      if (first) class_defaults[c] = first.id;
+    }
+  }
   const config = {
-    models: body.models
-      .filter((m) => m?.id)
-      .map((m) => ({ id: String(m.id), label: String(m.label || m.id) })),
+    models,
     default_model:
-      body.default_model && body.models.some((m) => m.id === body.default_model)
-        ? body.default_model
-        : body.models[0].id,
+      body.default_model && ids.has(body.default_model) ? body.default_model : models[0].id,
+    class_defaults,
   };
   // DB is authoritative; the file is the runtime-side materialised view.
   if (await dbReady()) {

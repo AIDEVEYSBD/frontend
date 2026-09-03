@@ -1,10 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "./ui";
-import { Segmented } from "./forms";
+import { Button, Status } from "./ui";
+import { Checkbox, Input, Segmented } from "./forms";
+import { Banner } from "./overlays";
+import { Skeleton } from "./loaders";
 import { Icon } from "./builder/icons";
-import { Cross, Mini, Row, Text } from "./builder/controls";
+import { Pick } from "./select";
+import { Cross, Row, Text } from "./builder/controls";
 
 /**
  * The factory's configuration: which models it offers, and the keys its
@@ -28,9 +31,13 @@ interface CatalogueModel {
   price_out?: number;
 }
 
+type ModelClass = "small" | "medium" | "large";
+const MODEL_CLASSES: ModelClass[] = ["small", "medium", "large"];
+
 interface Config {
-  models: { id: string; label: string }[];
+  models: { id: string; label: string; class?: ModelClass }[];
   default_model: string;
+  class_defaults?: Partial<Record<ModelClass, string>>;
 }
 
 interface VaultKey {
@@ -193,7 +200,7 @@ function Models() {
           their Bedrock or Foundry deployment instead; specs name a model, never a provider.
           Prices are per million tokens from the gateway&rsquo;s sheet.
         </p>
-        <Text value={query} onChange={setQuery} placeholder="Search the catalogue" />
+        <Text value={query} onChange={setQuery} placeholder="Search the catalogue" aria-label="Search the catalogue" />
         {/* Segmented is uncontrolled by design — the wrapper reads the choice
             off the bubbling click so this page can hold the sort itself. */}
         <div
@@ -207,45 +214,36 @@ function Models() {
           <Segmented options={["Name", "Price", "Context"]} defaultValue="Name" />
         </div>
         {catalogueError && (
-          <p className="rounded-md border border-warn-line bg-warn-bg px-2.5 py-2 text-[11.5px] text-warn">
+          <Banner tone="warn" title="The catalogue could not be read">
             {catalogueError} — the selected list still works; only browsing is unavailable.
-          </p>
+          </Banner>
         )}
       </div>
 
       {lastGuard && (
-        <p className="border-b border-warn-line bg-warn-bg px-4 py-1.5 text-[11.5px] text-warn">
-          At least one model must stay offered.
-        </p>
+        <div className="border-b border-line px-4 py-2.5">
+          <Banner tone="warn" title="At least one model must stay offered." />
+        </div>
       )}
 
       <div className="max-h-[460px] min-h-[200px] overflow-y-auto">
-        {catalogue === null && <p className="px-4 py-6 text-[12px] text-faint">Loading the catalogue…</p>}
+        {catalogue === null && (
+          <div className="px-4 py-4" role="status" aria-label="Loading the catalogue">
+            <Skeleton lines={4} />
+          </div>
+        )}
         {shown.slice(0, 80).map((m) => {
           const on = chosen.has(m.id);
           const isDefault = config?.default_model === m.id;
           return (
             <div
               key={m.id}
-              className={`flex items-center gap-3 border-b border-line/70 px-4 py-2 last:border-b-0 ${
+              className={`flex items-center gap-3 border-b border-line px-4 py-2 last:border-b-0 ${
                 on ? "" : "opacity-75"
               }`}
             >
-              <button
-                role="checkbox"
-                aria-checked={on}
-                onClick={() => toggle(m)}
-                className={`focusable grid size-4 shrink-0 cursor-pointer place-items-center rounded-[3px] border transition-colors ${
-                  on ? "border-fg bg-fg" : "border-line-strong bg-field"
-                }`}
-              >
-                {on && (
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--t-on-ink)" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                    <path d="M20 6L9 17l-5-5" />
-                  </svg>
-                )}
-              </button>
-              <div className="flex min-w-0 grow flex-col">
+              <Checkbox checked={on} onChange={() => toggle(m)} aria-label={`Offer ${m.label}`} />
+              <div className="flex min-w-[120px] grow flex-col">
                 <span className="truncate text-[12.5px] font-medium text-fg">{m.label}</span>
                 <span className="truncate font-mono text-[10.5px] text-faint">{m.id}</span>
               </div>
@@ -261,18 +259,54 @@ function Models() {
                     : `$${m.price.toFixed(2)}/M in`}
                 </span>
               )}
+              {on && (
+                <div className="w-[118px] shrink-0">
+                  <Pick
+                    value={config?.models.find((x) => x.id === m.id)?.class ?? ""}
+                    onChange={(v) =>
+                      config &&
+                      save({
+                        ...config,
+                        models: config.models.map((x) =>
+                          x.id === m.id ? { ...x, ...(v ? { class: v as ModelClass } : { class: undefined }) } : x,
+                        ),
+                      })
+                    }
+                    options={[{ value: "", label: "no tier" }, ...MODEL_CLASSES.map((c) => ({ value: c, label: c }))]}
+                  />
+                </div>
+              )}
+              {on && config?.models.find((x) => x.id === m.id)?.class && (
+                config.class_defaults?.[config.models.find((x) => x.id === m.id)!.class!] === m.id ? (
+                  <span className="shrink-0 rounded-[3px] border border-line-strong px-1 py-px font-mono text-[9px] font-semibold text-dim" title="The model the router picks for this tier">
+                    TIER DEFAULT
+                  </span>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="quiet"
+                    className="shrink-0"
+                    onClick={() =>
+                      config &&
+                      save({
+                        ...config,
+                        class_defaults: { ...(config.class_defaults ?? {}), [config.models.find((x) => x.id === m.id)!.class!]: m.id },
+                      })
+                    }
+                  >
+                    tier default
+                  </Button>
+                )
+              )}
               {on &&
                 (isDefault ? (
                   <span className="shrink-0 rounded-[3px] border border-line-strong px-1 py-px font-mono text-[9px] font-semibold text-dim">
                     DEFAULT
                   </span>
                 ) : (
-                  <button
-                    onClick={() => config && save({ ...config, default_model: m.id })}
-                    className="focusable shrink-0 cursor-pointer font-mono text-[9.5px] text-faint underline decoration-line-strong underline-offset-2 hover:text-fg"
-                  >
+                  <Button size="sm" variant="quiet" className="shrink-0" onClick={() => config && save({ ...config, default_model: m.id })}>
                     make default
-                  </button>
+                  </Button>
                 ))}
             </div>
           );
@@ -297,6 +331,7 @@ function Keys() {
   const [label, setLabel] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     fetch("/api/vault")
@@ -341,13 +376,19 @@ function Keys() {
       </header>
 
       {error && (
-        <div className="border-b border-line bg-err-bg px-4 py-2.5">
-          <p className="text-[12px] whitespace-pre-wrap text-err">{error}</p>
+        <div className="border-b border-line px-4 py-3">
+          <Banner tone="err" title="The vault refused">
+            <span className="whitespace-pre-wrap">{error}</span>
+          </Banner>
         </div>
       )}
 
       <div className="flex flex-col">
-        {keys === null && !error && <p className="px-4 py-6 text-[12px] text-faint">Loading…</p>}
+        {keys === null && !error && (
+          <div className="px-4 py-4" role="status" aria-label="Loading keys">
+            <Skeleton lines={3} />
+          </div>
+        )}
         {keys?.length === 0 && (
           <p className="px-4 py-6 text-[12px] text-faint">
             Nothing yet. Keys set in the environment (<code className="font-mono">*_API_KEY</code>)
@@ -356,7 +397,7 @@ function Keys() {
         )}
         {keys?.map((k) => (
           <div key={k.name} className="flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-b-0">
-            <span className={`size-1.5 shrink-0 rounded-[2px] ${k.set ? "bg-ok" : "bg-err"}`} />
+            <Status tone={k.set ? "ok" : "err"}>{k.set ? "Set" : "Missing"}</Status>
             <div className="flex min-w-0 grow flex-col">
               <div className="flex items-baseline gap-2">
                 <code className="font-mono text-[12.5px] font-semibold text-fg">{k.name}</code>
@@ -365,6 +406,7 @@ function Keys() {
               <span className="truncate text-[10.5px] text-faint">
                 {[
                   k.label,
+                  k.label.startsWith("from $") ? "supplied by the environment — manage it there" : "",
                   k.last_used ? `last used ${k.last_used.slice(0, 10)}` : "",
                   k.used_by?.length
                     ? `read by ${k.used_by.length} workflow${k.used_by.length === 1 ? "" : "s"}`
@@ -375,37 +417,38 @@ function Keys() {
               </span>
             </div>
             {k.label.startsWith("from $") ? (
-              <span className="shrink-0 font-mono text-[9.5px] text-ghost" title="Supplied by the environment; manage it there.">
-                env
-              </span>
+              <span className="shrink-0 font-mono text-[9.5px] text-ghost">env</span>
             ) : (
-              <>
-                {confirming === k.name && (
-                  <span className="shrink-0 text-[10.5px] font-medium text-err">
-                    Click again to remove
-                  </span>
-                )}
-                <Mini
-                  label={confirming === k.name ? `Confirm removing ${k.name}` : `Remove ${k.name}`}
-                  tone="err"
-                  onClick={() => {
-                    if (confirming !== k.name) {
-                      setConfirming(k.name);
-                      return;
-                    }
-                    setConfirming(null);
-                    fetch(`/api/vault?name=${encodeURIComponent(k.name)}`, { method: "DELETE" }).then(refresh);
-                  }}
-                >
-                  <Cross size={10} />
-                </Mini>
-              </>
+              <Button
+                size="sm"
+                variant="solid"
+                tone="err"
+                className="shrink-0"
+                loading={removing === k.name}
+                onClick={async () => {
+                  if (confirming !== k.name) {
+                    setConfirming(k.name);
+                    return;
+                  }
+                  setConfirming(null);
+                  setRemoving(k.name);
+                  try {
+                    await fetch(`/api/vault?name=${encodeURIComponent(k.name)}`, { method: "DELETE" });
+                  } finally {
+                    setRemoving(null);
+                  }
+                  refresh();
+                }}
+              >
+                <Cross size={10} />
+                {confirming === k.name ? "Click again to remove" : "Remove"}
+              </Button>
             )}
           </div>
         ))}
       </div>
 
-      <footer className="flex flex-col gap-2.5 border-t border-line bg-raise/40 px-4 py-4">
+      <footer className="flex flex-col gap-2.5 border-t border-line bg-raise px-4 py-4">
         <div className="grid grid-cols-2 gap-2">
           <Row label="Name" tight hint="What specs will reference.">
             <Text mono value={name} placeholder="tavily" onChange={setName} />
@@ -415,12 +458,14 @@ function Keys() {
           </Row>
         </div>
         <Row label="Value" tight>
-          <input
+          <Input
             type="password"
+            mono
             value={value}
-            onChange={(e) => setValue(e.target.value)}
+            onChange={setValue}
             placeholder="pasted once, shown never"
-            className="h-8 w-full rounded-md border border-line-strong bg-field px-2.5 font-mono text-[12px] text-fg transition-colors placeholder:text-ghost focus:border-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-fg/15"
+            aria-label="Value"
+            autoComplete="off"
           />
         </Row>
         <div className="flex items-center gap-2">

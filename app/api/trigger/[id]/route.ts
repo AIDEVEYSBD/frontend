@@ -1,31 +1,29 @@
-import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile } from "node:fs/promises";
 import { dbReady, query } from "@/lib/server/db";
-import { registerRun } from "@/lib/server/active-runs";
+import { authenticate } from "@/lib/server/keys";
 
 /**
- * The API trigger, made real.
+ * The API trigger: an external system posts an input by agent id.
  *
- * A spec can declare `trigger.kind: api` or `webhook`, which means "another
- * system POSTs the input to this agent's endpoint". This is that endpoint.
- * An external system (a DLP console, a ticketing hook, an emulator standing in
- * for either) posts an input by agent id and gets the run's result back as
- * JSON. No spec in the body, no stream to parse, nothing the caller has to
- * know about the platform beyond the entry node's contract, which GET
- * describes.
+ * Nothing runs inside this request. The input becomes a job on the trigger
+ * queue and the caller gets 202 with a status URL; a worker
+ * (`python3 -m agentfactory worker`) claims it, runs the graph with warm
+ * plugin hosts, and writes the outcome back onto the job. That is what makes
+ * the endpoint a standing intake rather than a function call: a burst of ten
+ * thousand posts is ten thousand rows, drained at whatever rate the workers
+ * and the model provider sustain, and a restart resumes what was claimed.
  *
- * The run is a normal run: same runtime, same journal, same registry, visible
- * on the Runs page and counted by the control plane. Only the transport
- * differs from the builder's streaming route.
+ * Idempotency is by (agent, external_id): the same alert posted twice is one
+ * job, and the second caller is told so. `wait: true` blocks up to two
+ * minutes for callers that want the result in one round trip.
  */
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const ROOT = path.resolve(process.cwd(), "..", "runtime");
-const AGENTS = path.join(ROOT, "workspace", "agents");
 const ID = /^[a-z][a-z0-9-]{0,62}$/;
 
 interface SpecDoc {
@@ -37,10 +35,22 @@ interface SpecDoc {
   };
 }
 
+interface JobRow extends Record<string, unknown> {
+  id: string;
+  agent: string;
+  external_id: string | null;
+  source: string;
+  status: string;
+  attempts: number;
+  run_id: string | null;
+  result: unknown;
+  error: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
 async function loadSpec(id: string): Promise<SpecDoc | null> {
-  // The database is authoritative when it answers; the workspace file is the
-  // same document written through, so a database that dropped after startup
-  // degrades to the file rather than refusing an external system's alert.
   try {
     if (await dbReady()) {
       const rows = await query<{ spec: SpecDoc }>("SELECT spec FROM workflows WHERE id = $1", [id]);
@@ -50,21 +60,32 @@ async function loadSpec(id: string): Promise<SpecDoc | null> {
     /* fall through to the file */
   }
   try {
-    return JSON.parse(await readFile(path.join(AGENTS, `${id}.json`), "utf-8"));
+    return JSON.parse(await readFile(path.join(ROOT, "workspace", "agents", `${id}.json`), "utf-8"));
   } catch {
     return null;
   }
 }
 
-async function defaultModel(): Promise<string> {
-  try {
-    const c = JSON.parse(await readFile(path.join(ROOT, "workspace", "config.json"), "utf-8"));
-    if (c?.default_model) return String(c.default_model);
-  } catch {
-    /* no config yet */
-  }
-  return process.env.AF_MODEL || "anthropic/claude-sonnet-4.5";
+export function jobView(agent: string, j: JobRow) {
+  return {
+    job_id: j.id,
+    agent,
+    status: j.status,
+    external_id: j.external_id,
+    source: j.source,
+    attempts: j.attempts,
+    run_id: j.run_id,
+    result: j.result ?? null,
+    error: j.error ?? null,
+    created_at: j.created_at,
+    started_at: j.started_at,
+    finished_at: j.finished_at,
+    status_url: `/api/trigger/${agent}/jobs/${j.id}`,
+    run_url: j.run_id ? `/runs?id=${encodeURIComponent(j.run_id)}` : null,
+  };
 }
+
+const JOB_COLS = "id, agent, external_id, source, status, attempts, run_id, result, error, created_at, started_at, finished_at";
 
 /** Describe what this trigger accepts: the entry node's declared inputs. */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -78,7 +99,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     name: doc.metadata?.name ?? id,
     trigger: doc.spec?.trigger?.kind ?? "prompt",
     accepts: (entry?.expects ?? []).map((f) => ({ name: f.name, kind: f.kind, required: f.required !== false, note: f.note ?? "" })),
-    usage: `POST /api/trigger/${id} with JSON {"input": {...}}`,
+    usage: `POST /api/trigger/${id} with JSON {"input": {...}, "external_id": "<your id>", "wait": false} and Authorization: Bearer <key>`,
   });
 }
 
@@ -86,7 +107,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   if (!ID.test(id)) return Response.json({ error: "bad id" }, { status: 400 });
 
-  let body: { input?: Record<string, unknown>; model?: string; source?: string };
+  const auth = await authenticate(req, id);
+  if (!auth.ok) return Response.json({ error: auth.error }, { status: auth.status });
+
+  let body: { input?: Record<string, unknown>; external_id?: string; source?: string; model?: string; priority?: number; wait?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -105,73 +129,57 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     );
   }
 
-  const dir = await mkdtemp(path.join(tmpdir(), "af-trigger-"));
-  const specPath = path.join(dir, "spec.json");
-  await writeFile(specPath, JSON.stringify(doc, null, 2));
-  const runsDir = path.join(ROOT, "workspace", "runs");
-  await mkdir(runsDir, { recursive: true });
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const runId = `${id}-${stamp}-${Math.random().toString(36).slice(2, 6)}`;
-  const statePath = path.join(runsDir, `${runId}.json`);
-  const model = body.model || (await defaultModel());
-  const started = Date.now();
+  const externalId = body.external_id ? String(body.external_id).slice(0, 200) : null;
+  const jobId = randomUUID();
+  const priority = Number.isFinite(body.priority) ? Math.max(0, Math.min(9, Number(body.priority))) : 5;
+  const source = String(body.source ?? (auth.mode === "key" ? auth.key?.name ?? "api" : "api")).slice(0, 80);
 
-  const args = ["-m", "agentfactory", "run", "--spec", specPath, "--state", statePath,
-    "--provider", "openrouter", "--model", model, "--input", JSON.stringify(input)];
-  const child = spawn("python3", args, { cwd: ROOT, env: { ...process.env, PYTHONUNBUFFERED: "1" } });
-  registerRun({ id: runId, system: id, startedAt: new Date().toISOString(), child });
+  const inserted = await query<JobRow>(
+    `INSERT INTO trigger_jobs (id, agent, external_id, source, input, model, priority)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (agent, external_id) WHERE external_id IS NOT NULL DO NOTHING
+     RETURNING ${JOB_COLS}`,
+    [jobId, id, externalId, source, JSON.stringify(input), body.model ?? "", priority],
+  );
 
-  let stderr = "";
-  child.stderr.on("data", (b: Buffer) => (stderr += b.toString()));
-  child.stdout.on("data", () => {}); // the journal is written to the state file; the caller gets the record
-
-  const code = await new Promise<number | null>((resolve) => {
-    child.on("close", resolve);
-    child.on("error", () => resolve(-1));
-  });
-
-  let run: { state?: string; result?: unknown; error?: string; journal?: { entries?: { kind: string }[]; duration_ms?: number }; system?: string } | null = null;
-  try {
-    run = JSON.parse(await readFile(statePath, "utf-8"));
-  } catch {
-    run = null;
-  }
-
-  // Join the registry index, exactly as a builder-launched run does.
-  try {
-    if (run && (await dbReady())) {
-      const entries = run.journal?.entries ?? [];
-      await query(
-        `INSERT INTO runs (id, system, state, summary, run, at) VALUES ($1, $2, $3, $4, $5, now())
-         ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, summary = EXCLUDED.summary, run = EXCLUDED.run, at = now()`,
-        [runId, run.system ?? id, run.state ?? "unknown", {
-          duration_ms: run.journal?.duration_ms ?? Date.now() - started,
-          entries: entries.length,
-          model_calls: entries.filter((e) => e.kind === "model.call").length,
-          tool_calls: entries.filter((e) => e.kind === "tool.call").length,
-          denied: entries.filter((e) => e.kind === "denied" || e.kind === "contract.breach").length,
-          source: body.source ?? "api",
-        }, run],
+  let job: JobRow;
+  let duplicate = false;
+  let retried = false;
+  if (inserted.length) {
+    job = inserted[0];
+  } else {
+    const existing = await query<JobRow>(`SELECT ${JOB_COLS} FROM trigger_jobs WHERE agent = $1 AND external_id = $2`, [id, externalId]);
+    if (!existing.length) return Response.json({ error: "could not enqueue" }, { status: 500 });
+    job = existing[0];
+    if (job.status === "failed") {
+      // A failed job is not a delivered one. Posting the same id again is the
+      // caller asking for another attempt, with whatever input it sends now.
+      const requeued = await query<JobRow>(
+        `UPDATE trigger_jobs SET status = 'queued', attempts = 0, error = NULL, result = NULL, run_id = NULL,
+                input = $3, source = $4, priority = $5, started_at = NULL, finished_at = NULL, lease_until = NULL
+         WHERE id = $1 AND agent = $2 RETURNING ${JOB_COLS}`,
+        [job.id, id, JSON.stringify(input), source, priority],
       );
+      job = requeued[0] ?? job;
+      retried = true;
+    } else {
+      duplicate = true;
     }
-  } catch {
-    /* the state file remains the record */
   }
 
-  if (!run) {
-    return Response.json(
-      { run_id: runId, state: "failed", error: stderr.trim().split("\n").slice(-6).join("\n") || `runtime exited ${code}` },
-      { status: 500 },
-    );
+  if (body.wait && !["done", "failed", "suspended"].includes(job.status)) {
+    const deadline = Date.now() + 120_000;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 500));
+      const rows = await query<JobRow>(`SELECT ${JOB_COLS} FROM trigger_jobs WHERE id = $1`, [job.id]);
+      if (rows.length) job = rows[0];
+      if (["done", "failed", "suspended"].includes(job.status)) break;
+    }
   }
-  return Response.json({
-    run_id: runId,
-    agent: id,
-    state: run.state ?? "unknown",
-    result: run.result ?? null,
-    error: run.error ?? null,
-    duration_ms: Date.now() - started,
-    journal_entries: run.journal?.entries?.length ?? 0,
-    run_url: `/runs?id=${encodeURIComponent(runId)}`,
-  });
+
+  const finished = ["done", "failed", "suspended"].includes(job.status);
+  return Response.json(
+    { ...jobView(id, job), duplicate, retried, auth: auth.mode, ...(body.wait && !finished ? { note: "still running after 120s; poll status_url" } : {}) },
+    { status: duplicate || finished ? 200 : 202 },
+  );
 }

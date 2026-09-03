@@ -7,6 +7,8 @@
  * view cannot go garish.
  */
 
+import { Mono } from "./ui";
+
 export const CAT = [
   "var(--t-c1)",
   "var(--t-c2)",
@@ -171,7 +173,7 @@ export function StackedBar({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex gap-2" style={{ height }}>
-        <div className="flex w-8 shrink-0 flex-col justify-between pb-5">
+        <div className="flex w-8 shrink-0 flex-col justify-between pt-3 pb-5">
           {[...ticks].reverse().map((t) => (
             <span key={t} className="tnum font-mono text-[9.5px] text-faint">
               {t >= 1000 ? `${t / 1000}k` : t}
@@ -179,7 +181,7 @@ export function StackedBar({
           ))}
         </div>
 
-        <div className="relative flex grow flex-col">
+        <div className="relative flex grow flex-col pt-3">
           <div className="relative grow">
             {ticks.map((t) => (
               <div
@@ -194,7 +196,14 @@ export function StackedBar({
 
             <div className="absolute inset-0 flex items-end gap-2">
               {data.map((d, di) => (
-                <div key={d.label} className="flex h-full grow flex-col justify-end">
+                <div key={d.label} className="@container relative flex h-full grow flex-col justify-end">
+                  {/* The value rides on the bar's top; it hides where the bar is too narrow to carry it. */}
+                  <span
+                    className="pointer-events-none absolute inset-x-0 hidden pb-0.5 text-center @min-[18px]:block"
+                    style={{ bottom: `${(totals[di] / top) * 100}%` }}
+                  >
+                    <Mono className="text-[10.5px] leading-none text-faint">{totals[di]}</Mono>
+                  </span>
                   <div
                     className="flex w-full flex-col-reverse overflow-hidden rounded-t-[2px]"
                     style={{ height: `${(totals[di] / top) * 100}%` }}
@@ -297,16 +306,23 @@ export function Heatmap({
           <div className="flex grow gap-[3px]">
             {cols.map((c, ci) => {
               const v = values[ri][ci];
+              const strength = v / max;
               return (
                 <span
                   key={c}
                   title={`${r} ${c}: ${v}`}
-                  className="h-4 grow rounded-[2px]"
-                  style={{
-                    background: "var(--t-c2)",
-                    opacity: 0.12 + (v / max) * 0.88,
-                  }}
-                />
+                  className="@container relative h-4 grow overflow-hidden rounded-[2px]"
+                >
+                  <span
+                    className="absolute inset-0"
+                    style={{ background: "var(--t-c2)", opacity: 0.12 + strength * 0.88 }}
+                  />
+                  <span className="relative hidden h-full place-items-center @min-[18px]:grid">
+                    <Mono className={`text-[10.5px] leading-none ${strength > 0.5 ? "text-on-solid" : "text-faint"}`}>
+                      {v}
+                    </Mono>
+                  </span>
+                </span>
               );
             })}
           </div>

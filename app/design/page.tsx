@@ -34,7 +34,7 @@ import {
   Tooltip,
 } from "@/components/overlays";
 import { Indeterminate, Ring, Skeleton, Thinking } from "@/components/loaders";
-import { Dropdown, FilterMenu, ActionMenu } from "@/components/dropdown";
+import { FilterMenu, ActionMenu } from "@/components/dropdown";
 import { Delta, Kpi, Sparkline, BarSpark } from "@/components/data";
 import { DataTable } from "@/components/table";
 import { EngagementDashboard, OperationsDashboard } from "@/components/dashboard";
@@ -695,7 +695,7 @@ function Buttons() {
   return (
     <Section
       title="Buttons"
-      rationale="Solid fills carry the tone with contrasting text, so a consequential action is unmistakable at a glance. Outline and quiet variants exist for everything that has to sit beside one without competing."
+      rationale="Every button is a solid fill with text that contrasts the mode; nothing is transparent. Tone fills mark a consequential action so it is unmistakable at a glance. Outline and quiet variants are filled on the neutral ramp, so they sit beside one without competing."
     >
       <div className="flex flex-col gap-12">
         <div className="flex flex-col gap-5">
@@ -718,7 +718,7 @@ function Buttons() {
         </div>
 
         <div className="flex flex-col gap-5">
-          <Label>Outline — sits beside a solid without competing</Label>
+          <Label>Outline — surface fill with a hairline, beside a solid without competing</Label>
           <div className="flex flex-wrap items-center gap-2.5">
             {TONES.map((t) => (
               <Button key={t.tone} tone={t.tone} variant="outline">
@@ -729,7 +729,7 @@ function Buttons() {
         </div>
 
         <div className="flex flex-col gap-5">
-          <Label>Quiet — tertiary, and dense toolbars</Label>
+          <Label>Quiet — raise fill, for tertiary actions and dense toolbars</Label>
           <div className="flex flex-wrap items-center gap-2.5">
             <Button variant="quiet">Cancel</Button>
             <Button variant="quiet" tone="ink">
@@ -1384,8 +1384,17 @@ function ScrollSpec() {
         </Row>
         <Row label="Never">
           <span className="max-w-[62ch] text-[13px] leading-[1.65] text-dim">
-            Scroll-jacking, parallax, pinned sections, horizontal hijack, or motion tied to
-            cursor position.
+            Inside the product: scroll-jacking, parallax, pinned sections, horizontal hijack,
+            or motion tied to cursor position. A console is operated, not toured.
+          </span>
+        </Row>
+        <Row label="Marketing shell">
+          <span className="max-w-[62ch] text-[13px] leading-[1.65] text-dim">
+            The landing page is the one surface that tells a story, and it may pin a scene
+            while scroll advances it, loop an illustrative vignette, run an editorial hero
+            and lay equal tiles in a grid. Three conditions hold: content ships visible and
+            reads in normal flow without scripting, reduced motion releases every pin and
+            stops every loop, and the accent, type floor and token rules still apply.
           </span>
         </Row>
       </div>
@@ -1406,11 +1415,12 @@ function Dropdowns() {
         <div className="flex flex-wrap items-end gap-4">
           <div className="flex flex-col gap-2">
             <Label>Select — one value</Label>
-            <Dropdown
-              label="Model"
-              options={["claude-fable-5", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4.5"]}
-              width={230}
-            />
+            <div className="w-[230px]">
+              <Select
+                options={["claude-fable-5", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4.5"]}
+                aria-label="Model"
+              />
+            </div>
           </div>
           <div className="flex flex-col gap-2">
             <Label>Filter — many values</Label>

@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Mono, Status, Tag, type Tone } from "./ui";
+import { Button, Mono, Status, Tag, type Tone } from "./ui";
 import { ActionMenu } from "./dropdown";
+import { Checkbox } from "./forms";
 import { Meter } from "./ui";
 
 export type Run = {
@@ -81,6 +82,7 @@ export function DataTable({ compact = false }: { compact?: boolean }) {
         className={`sticky top-0 z-10 bg-raise ${align === "r" ? "text-right" : "text-left"}`}
       >
         <button
+          type="button"
           onClick={() =>
             setSort((s) =>
               s.col === col ? { col, dir: s.dir === "asc" ? "desc" : "asc" } : { col, dir: "asc" },
@@ -113,15 +115,15 @@ export function DataTable({ compact = false }: { compact?: boolean }) {
               {selected.length} selected
             </span>
             <div className="flex items-center gap-1.5">
-              <button className="focusable cursor-pointer rounded-sm px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-surface hover:text-fg">
+              <Button size="sm" variant="quiet">
                 Re-run
-              </button>
-              <button className="focusable cursor-pointer rounded-sm px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-surface hover:text-fg">
+              </Button>
+              <Button size="sm" variant="quiet">
                 Export
-              </button>
-              <button className="focusable cursor-pointer rounded-sm px-2 py-1 text-[12.5px] text-err transition-colors hover:bg-err-bg">
+              </Button>
+              <Button size="sm" variant="solid" tone="err">
                 Abort
-              </button>
+              </Button>
             </div>
           </>
         ) : (
@@ -139,20 +141,12 @@ export function DataTable({ compact = false }: { compact?: boolean }) {
           <thead>
             <tr className="border-b border-line-strong">
               <th className="sticky top-0 z-10 w-9 bg-raise pl-3">
-                <button
-                  role="checkbox"
-                  aria-checked={allOn}
-                  onClick={toggleAll}
-                  className={`focusable grid size-3.5 cursor-pointer place-items-center rounded-xs border transition-colors ${
-                    allOn ? "border-ink bg-ink text-on-ink" : "border-line-strong"
-                  }`}
-                >
-                  {allOn && (
-                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                      <path d="M4 13l5 5 11-13" />
-                    </svg>
-                  )}
-                </button>
+                <Checkbox
+                  checked={allOn}
+                  indeterminate={selected.length > 0 && !allOn}
+                  onChange={toggleAll}
+                  aria-label="Select all runs"
+                />
               </th>
               {head("id", "Run")}
               {head("subject", "Subject")}
@@ -181,20 +175,7 @@ export function DataTable({ compact = false }: { compact?: boolean }) {
                   }`}
                 >
                   <td className={`${cell} pl-3`}>
-                    <button
-                      role="checkbox"
-                      aria-checked={on}
-                      onClick={() => toggle(r.id)}
-                      className={`focusable grid size-3.5 cursor-pointer place-items-center rounded-xs border transition-colors ${
-                        on ? "border-ink bg-ink text-on-ink" : "border-line-strong"
-                      }`}
-                    >
-                      {on && (
-                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                          <path d="M4 13l5 5 11-13" />
-                        </svg>
-                      )}
-                    </button>
+                    <Checkbox checked={on} onChange={() => toggle(r.id)} aria-label={`Select run ${r.id}`} />
                   </td>
                   <td className={cell}>
                     <Mono className="text-[11.5px] text-faint">{r.id}</Mono>

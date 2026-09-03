@@ -9,6 +9,8 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { Spinner } from "./ui";
+import { useField } from "./field-context";
 
 /**
  * `useLayoutEffect` warns when React renders on the server, and this component
@@ -40,19 +42,34 @@ export function Pick<T extends string>({
   onChange,
   options,
   size = "sm",
+  disabled = false,
+  loading = false,
+  invalid,
+  id: givenId,
+  "aria-label": ariaLabel,
 }: {
   value: T;
   onChange: (v: T) => void;
   options: { value: T; label: string }[];
   size?: "sm" | "md";
+  disabled?: boolean;
+  /** The options are still arriving; the trigger shows a spinner and cannot open. */
+  loading?: boolean;
+  invalid?: boolean;
+  id?: string;
+  "aria-label"?: string;
 }) {
+  const field = useField();
+  const bad = invalid ?? field?.invalid ?? false;
+  const inert = disabled || loading;
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const [box, setBox] = useState<{ left: number; top: number; width: number; up: boolean } | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const typed = useRef({ text: "", at: 0 });
-  const id = useId();
+  const listId = useId();
+  const id = givenId ?? field?.id;
 
   const selected = options.find((o) => o.value === value);
   const height = size === "md" ? "h-9" : "h-8";
@@ -112,6 +129,7 @@ export function Pick<T extends string>({
   };
 
   const onKey = (e: React.KeyboardEvent) => {
+    if (inert) return;
     if (!open) {
       if (["Enter", " ", "ArrowDown", "ArrowUp"].includes(e.key)) {
         e.preventDefault();
@@ -169,23 +187,32 @@ export function Pick<T extends string>({
     <>
       <button
         ref={trigger}
+        id={id}
         type="button"
         role="combobox"
         aria-expanded={open}
-        aria-controls={open ? id : undefined}
-        aria-activedescendant={open ? `${id}-${active}` : undefined}
+        aria-controls={open ? listId : undefined}
+        aria-activedescendant={open ? `${listId}-${active}` : undefined}
+        aria-label={ariaLabel}
+        aria-invalid={bad || undefined}
+        aria-describedby={field?.describedBy}
+        aria-busy={loading || undefined}
+        disabled={inert}
         onClick={() => {
           setActive(Math.max(0, options.findIndex((o) => o.value === value)));
           setOpen((v) => !v);
         }}
         onKeyDown={onKey}
-        className={`focusable flex w-full cursor-pointer items-center gap-2 rounded-md border border-line-strong bg-field px-2.5 text-left text-[13px] transition-colors duration-100 hover:border-fg/40 ${height} ${
-          open ? "border-fg" : ""
-        }`}
+        className={`focusable flex w-full cursor-pointer items-center gap-2 rounded-md border bg-field px-2.5 text-left text-[13px] transition-colors duration-100 active:brightness-95 disabled:cursor-not-allowed disabled:bg-raise disabled:text-ghost disabled:hover:border-line-strong ${height} ${
+          bad ? "border-err hover:border-err" : "border-line-strong hover:border-fg/40"
+        } ${open ? "border-fg" : ""}`}
       >
-        <span className={`min-w-0 grow truncate ${selected?.label ? "text-fg" : "text-ghost"}`}>
+        <span className={`min-w-0 grow truncate ${selected?.label && !inert ? "text-fg" : "text-ghost"}`}>
           {selected?.label ?? options[0]?.label ?? ""}
         </span>
+        {loading ? (
+          <span className="shrink-0 text-faint"><Spinner size={11} /></span>
+        ) : (
         <svg
           width="11"
           height="11"
@@ -202,13 +229,14 @@ export function Pick<T extends string>({
         >
           <path d="M6 9l6 6 6-6" />
         </svg>
+        )}
       </button>
 
       {open && box && typeof document !== "undefined"
         ? createPortal(
             <div
               ref={list}
-              id={id}
+              id={listId}
               role="listbox"
               tabIndex={-1}
               onKeyDown={onKey}
@@ -228,7 +256,7 @@ export function Pick<T extends string>({
                 return (
                   <div
                     key={o.value || `blank-${i}`}
-                    id={`${id}-${i}`}
+                    id={`${listId}-${i}`}
                     data-i={i}
                     role="option"
                     aria-selected={isSel}

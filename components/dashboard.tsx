@@ -1,6 +1,6 @@
 import { Button, Label, Mono, Status, Tag, Meter } from "./ui";
-import { Dropdown, FilterMenu, ActionMenu } from "./dropdown";
-import { Segmented } from "./forms";
+import { FilterMenu, ActionMenu } from "./dropdown";
+import { Segmented, Select } from "./forms";
 import { Sparkline, Delta } from "./data";
 import { CAT, Donut, Heatmap, LineChart, RankBar, StackedBar } from "./charts";
 import { DataTable } from "./table";
@@ -95,7 +95,9 @@ export function OperationsDashboard() {
           options={["Meridian Bank DLP", "Nordic Energy NIST", "Halden Group TPRM", "Atlas Health Resilience"]}
           defaultSelected={["Meridian Bank DLP"]}
         />
-        <Dropdown label="Region" options={["All regions", "EMEA", "AMER", "APAC"]} width={160} />
+        <div className="w-[160px]">
+          <Select options={["All regions", "EMEA", "AMER", "APAC"]} aria-label="Region" />
+        </div>
         <Button size="sm" variant="outline">
           Export
         </Button>
@@ -112,6 +114,7 @@ export function OperationsDashboard() {
             {["My engagements", "Escalations only", "Cost outliers"].map((v, i) => (
               <button
                 key={v}
+                type="button"
                 className={`focusable truncate rounded-sm px-2 py-1 text-left text-[12px] transition-colors ${
                   i === 0 ? "bg-raise font-medium text-fg" : "text-dim hover:bg-raise"
                 }`}
@@ -127,6 +130,7 @@ export function OperationsDashboard() {
               {f.items.map(([n, c], i) => (
                 <button
                   key={n as string}
+                  type="button"
                   className="focusable group flex items-center gap-2 rounded-sm px-2 py-1 text-left transition-colors hover:bg-raise"
                 >
                   <span
@@ -257,10 +261,11 @@ export function OperationsDashboard() {
                       <span className="truncate text-[12px] text-mist">{s.n}</span>
                       <Meter value={s.v} tone={s.ok ? "ok" : "warn"} />
                     </div>
-                    <span
-                      className={`tnum font-mono text-[11.5px] ${s.ok ? "text-ok" : "text-warn"}`}
-                    >
-                      {s.t}
+                    <span className="flex items-center gap-2">
+                      <span className={`tnum font-mono text-[11.5px] ${s.ok ? "text-ok" : "text-warn"}`}>
+                        {s.t}
+                      </span>
+                      <Status tone={s.ok ? "ok" : "warn"}>{s.ok ? "met" : "missed"}</Status>
                     </span>
                   </div>
                 ))}

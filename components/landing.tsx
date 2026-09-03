@@ -1,4 +1,3 @@
-import Link from "next/link";
 import Image from "next/image";
 import { Button, Mono, Status, Tag } from "./ui";
 import { CAT } from "./charts";
@@ -28,7 +27,7 @@ export function LandingHeader() {
           <span className="grid size-6 place-items-center rounded-md bg-ink text-on-ink">
             <AFMark size={15} />
           </span>
-          <span className="text-[14px] font-bold tracking-[-0.01em] text-fg">Agent Factory</span>
+          <span className="text-[14px] font-semibold tracking-[-0.01em] text-fg">Agent Factory</span>
         </span>
         <div className="grow" />
         <ThemeToggle />
@@ -270,7 +269,7 @@ export function WorkflowMock() {
               <span className="size-2 shrink-0 rounded-[2px]" style={{ background: CAT[n.c] }} />
               <span className="truncate text-[11px] font-medium">{n.label}</span>
             </div>
-            <span className="truncate text-[9.5px] text-faint">{n.kind}</span>
+            <span className="truncate text-[10.5px] text-faint">{n.kind}</span>
           </div>
         ))}
       </div>
@@ -581,7 +580,7 @@ export function Security() {
                   relevant policy clause, business record or telemetry source.
                 </span>
                 <div className="pt-2">
-                  <Button size="sm" variant="solid" tone="neutral" className="!bg-white !text-[#0a0a09]" href="/runs">
+                  <Button size="sm" variant="solid" tone="media" href="/runs">
                     Review a workflow run
                   </Button>
                 </div>

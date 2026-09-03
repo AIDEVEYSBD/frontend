@@ -3,8 +3,10 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Button, Kbd, Mono, RUN_STATE, Status, Tag } from "./ui";
-import { Thinking } from "./loaders";
+import { Button, IconButton, Kbd, Label, Mono, RUN_STATE, Status, Tag } from "./ui";
+import { Skeleton, Thinking } from "./loaders";
+import { Field, Input, Textarea } from "./forms";
+import { Banner } from "./overlays";
 import { Icon } from "./builder/icons";
 import { Pick } from "./select";
 import { fromDocument, HARNESS, inputKeysOf, toDocument, type AgentSystem, type Kind } from "@/lib/spec";
@@ -170,7 +172,9 @@ function Launcher() {
         </header>
 
         <section className="flex flex-col gap-3">
-          <h2 className="font-mono text-[10px] tracking-[0.14em] text-faint uppercase">Run a workflow</h2>
+          <h2>
+            <Label>Run a workflow</Label>
+          </h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {agents === null &&
               [0, 1, 2].map((i) => (
@@ -192,10 +196,10 @@ function Launcher() {
               <button
                 key={a.id}
                 onClick={() => router.push(`/runs?agent=${encodeURIComponent(a.id)}`)}
-                className="focusable group flex cursor-pointer flex-col gap-2.5 rounded-lg border border-line bg-surface p-4 text-left elev-1 transition-[border-color,box-shadow,transform] duration-150 ease-[var(--ease-out)] hover:-translate-y-px hover:border-line-strong hover:elev-2"
+                className="focusable group flex cursor-pointer flex-col gap-2.5 rounded-lg border border-line bg-surface p-4 text-left elev-1 transition-[border-color,box-shadow,transform] duration-200 ease-[var(--ease-out)] hover:-translate-y-px hover:border-line-strong hover:elev-2"
               >
                 <div className="flex items-center gap-2.5">
-                  <span className="grid size-8 shrink-0 place-items-center rounded-md bg-run-bg text-run">
+                  <span className="grid size-8 shrink-0 place-items-center rounded-md bg-raise text-dim">
                     <Icon name="workflow" size={15} />
                   </span>
                   <span className="min-w-0 truncate text-[13.5px] font-semibold text-fg">{a.name}</span>
@@ -220,7 +224,9 @@ function Launcher() {
 
         <section className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-3">
-            <h2 className="font-mono text-[10px] tracking-[0.14em] text-faint uppercase">Previous runs</h2>
+            <h2>
+              <Label>Previous runs</Label>
+            </h2>
             <span className="grow" />
             {/* Filter by outcome — the list grows without bound. */}
             <div className="flex items-center gap-1">
@@ -243,7 +249,9 @@ function Launcher() {
           </div>
           <div className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
             {history === null && (
-              <p className="animate-pulse px-4 py-5 text-[12px] text-faint">Reading the record…</p>
+              <div role="status" aria-label="Reading the record" className="px-4 py-5">
+                <Skeleton lines={3} />
+              </div>
             )}
             {history?.length === 0 && (
               <p className="px-4 py-5 text-[12px] text-faint">No runs recorded yet.</p>
@@ -502,7 +510,9 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
   if (loadError) {
     return (
       <div className="mx-auto max-w-[720px] px-6 py-10">
-        <p className="rounded-md border border-err-line bg-err-bg px-3 py-2.5 text-[12.5px] text-err">{loadError}</p>
+        <Banner tone="err" title="Could not load the workflow">
+          {loadError}
+        </Banner>
       </div>
     );
   }
@@ -527,42 +537,36 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
             <div className="flex flex-wrap items-end gap-3">
               <div className="min-w-[280px] grow">
                 {system.trigger?.kind === "prompt" ? (
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-[12px] font-medium text-mist">Prompt</span>
-                    <textarea
+                  <Field label="Prompt">
+                    <Textarea
                       rows={2}
                       value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
+                      onChange={setPrompt}
                       placeholder={String(system.trigger.config?.placeholder ?? "What should this run look at?")}
-                      className="w-full resize-y rounded-md border border-line-strong bg-field px-3 py-2 text-[13px] leading-[1.55] text-fg placeholder:text-ghost focus:border-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-fg/15"
                     />
-                  </label>
+                  </Field>
                 ) : jsonMode || !fields.length ? (
-                  <label className="flex flex-col gap-1.5">
+                  <div className="flex flex-col gap-1.5">
                     <span className="flex items-center gap-2 text-[12px] font-medium text-mist">
                       Input
                       {fields.length > 0 && (
-                        <button
-                          onClick={() => setJsonMode(false)}
-                          className="focusable cursor-pointer rounded-sm text-[10.5px] font-normal text-faint hover:text-fg"
-                        >
+                        <Button size="sm" variant="quiet" onClick={() => setJsonMode(false)}>
                           back to fields
-                        </button>
+                        </Button>
                       )}
                     </span>
-                    <textarea
+                    <Textarea
                       rows={3}
                       value={input}
-                      onChange={(e) => {
-                        setInput(e.target.value);
+                      onChange={(v) => {
+                        setInput(v);
                         setError("");
                       }}
-                      aria-invalid={Boolean(error) || undefined}
-                      className={`w-full resize-y rounded-md border bg-field px-3 py-2 font-mono text-[12px] leading-[1.55] text-fg focus:border-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-fg/15 ${
-                        error ? "border-err-line" : "border-line-strong"
-                      }`}
+                      invalid={Boolean(error)}
+                      mono
+                      aria-label="Input as JSON"
                     />
-                  </label>
+                  </div>
                 ) : (
                   <div className="flex flex-col gap-2">
                     <span className="flex items-center gap-2 text-[12px] font-medium text-mist">
@@ -570,12 +574,9 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
                       <span className="text-[10.5px] font-normal text-ghost">
                         fields from the spec itself
                       </span>
-                      <button
-                        onClick={() => setJsonMode(true)}
-                        className="focusable cursor-pointer rounded-sm text-[10.5px] font-normal text-faint hover:text-fg"
-                      >
+                      <Button size="sm" variant="quiet" onClick={() => setJsonMode(true)}>
                         edit as JSON
-                      </button>
+                      </Button>
                     </span>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       {fields.map((f, i) => (
@@ -596,15 +597,12 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
                               ]}
                             />
                           ) : (
-                            <textarea
+                            <Textarea
                               rows={1}
                               value={f.value}
-                              onChange={(e) =>
-                                setFields((fs) =>
-                                  fs.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)),
-                                )
+                              onChange={(v) =>
+                                setFields((fs) => fs.map((x, j) => (j === i ? { ...x, value: v } : x)))
                               }
-                              className="w-full resize-y rounded-md border border-line-strong bg-field px-3 py-1.5 text-[12.5px] leading-[1.5] text-fg focus:border-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-fg/15"
                             />
                           )}
                         </label>
@@ -626,12 +624,9 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
                   options={models.map((m) => ({ value: m.id, label: m.label }))}
                 />
               </div>
-              <button
-                onClick={start}
-                className="focusable h-9 shrink-0 cursor-pointer rounded-md border border-transparent bg-ink px-5 text-[13px] font-medium text-on-ink transition-[filter] hover:brightness-[1.15] active:brightness-95"
-              >
+              <Button tone="ink" variant="solid" onClick={start} className="shrink-0 px-5">
                 Run
-              </button>
+              </Button>
             </div>
           </div>
         ) : null
@@ -645,7 +640,10 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
             </span>
             <span className="grow" />
             <Mono className="tnum text-[11px] text-faint">{clock(Math.max(maxT.current, wallMs))}</Mono>
-            <button
+            <Button
+              tone="err"
+              variant="solid"
+              size="sm"
               onClick={() => {
                 // The real kill switch — SIGTERM to the runtime, which journals
                 // "killed by operator" and persists the run. The stream stays
@@ -666,11 +664,10 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
                   setError("stopped before the runtime registered the run");
                 }
               }}
-              disabled={killing}
-              className="focusable cursor-pointer rounded-sm border border-line px-2 py-1 text-[11.5px] font-medium text-dim transition-colors hover:border-err-line hover:text-err disabled:opacity-50"
+              loading={killing}
             >
               {killing ? "Killing…" : "Kill run"}
-            </button>
+            </Button>
           </div>
         ) : phase === "done" || suspension ? (
           <div className="flex h-11 shrink-0 items-center gap-3 border-t border-line bg-surface px-4">
@@ -679,7 +676,10 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
             <span className="grow" />
             {runCost && <Mono className="tnum text-[11px] text-faint">{runCost}</Mono>}
             <Mono className="tnum text-[11px] text-faint">{clock(maxT.current)}</Mono>
-            <button
+            <Button
+              tone="ink"
+              variant="solid"
+              size="sm"
               onClick={() => {
                 setPhase("setup");
                 setEntries([]);
@@ -692,10 +692,9 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
                 stateFile.current = "";
                 maxT.current = 0;
               }}
-              className="focusable cursor-pointer rounded-sm border border-line px-2 py-1 text-[11.5px] font-medium text-dim transition-colors hover:text-fg"
             >
               Run again
-            </button>
+            </Button>
           </div>
         ) : null
       }
@@ -824,7 +823,9 @@ function ReplayTheater({ id }: { id: string }) {
   if (loadError) {
     return (
       <div className="mx-auto max-w-[720px] px-6 py-10">
-        <p className="rounded-md border border-err-line bg-err-bg px-3 py-2.5 text-[12.5px] text-err">{loadError}</p>
+        <Banner tone="err" title="Could not load the run">
+          {loadError}
+        </Banner>
       </div>
     );
   }
@@ -969,14 +970,19 @@ function Scrubber({
 }) {
   const D = duration || 1;
   const pct = (t / D) * 100;
+  // What the playhead is over, in words — the scrubber's bands and ticks are
+  // too small to label, so the current node and latest event are read here.
+  const here = segments.find((s) => t >= s.from && t < s.to) ?? (t >= D ? segments[segments.length - 1] : undefined);
+  const latest = [...ticks].reverse().find((e) => e.t <= t);
 
   return (
     <div className="flex shrink-0 flex-col gap-2 border-t border-line bg-raise/60 px-4 py-3">
       <div className="flex items-center gap-3">
-        <button
+        <IconButton
+          size="sm"
+          label={playing ? "Pause" : "Play"}
           onClick={() => setPlaying((p) => !p)}
-          aria-label={playing ? "Pause" : "Play"}
-          className="focusable grid size-8 shrink-0 cursor-pointer place-items-center rounded-md bg-ink text-on-ink transition-opacity hover:opacity-90"
+          className="shrink-0"
         >
           {playing ? (
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
@@ -988,29 +994,21 @@ function Scrubber({
               <path d="M8 5.5v13l11-6.5z" />
             </svg>
           )}
-        </button>
+        </IconButton>
 
         <div className="flex items-center gap-1">
-          <button
-            onClick={() => step(-1, marks)}
-            aria-label="Previous node"
-            className="focusable grid size-7 cursor-pointer place-items-center rounded-md text-faint transition-colors hover:bg-raise hover:text-fg"
-          >
+          <IconButton size="sm" label="Previous node" onClick={() => step(-1, marks)}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
               <path d="M17 5.5v13L8 12z" />
               <rect x="5" y="5" width="2" height="14" rx="1" />
             </svg>
-          </button>
-          <button
-            onClick={() => step(1, marks)}
-            aria-label="Next node"
-            className="focusable grid size-7 cursor-pointer place-items-center rounded-md text-faint transition-colors hover:bg-raise hover:text-fg"
-          >
+          </IconButton>
+          <IconButton size="sm" label="Next node" onClick={() => step(1, marks)}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
               <path d="M7 5.5v13L16 12z" />
               <rect x="17" y="5" width="2" height="14" rx="1" />
             </svg>
-          </button>
+          </IconButton>
         </div>
 
         <Mono className="tnum shrink-0 text-[11.5px] text-dim">
@@ -1023,7 +1021,6 @@ function Scrubber({
             {segments.map((s, i) => (
               <span
                 key={`${s.id}-${i}`}
-                title={s.label}
                 className="h-full border-r border-surface last:border-0"
                 style={{
                   width: `${((s.to - s.from) / D) * 100}%`,
@@ -1039,7 +1036,6 @@ function Scrubber({
             {ticks.map((e, i) => (
               <span
                 key={`${e.t}-${i}`}
-                title={e.title}
                 className={`absolute top-0 h-2 w-px ${TICK[e.kind] ?? "bg-faint"} ${
                   t >= e.t ? "opacity-90" : "opacity-25"
                 }`}
@@ -1068,7 +1064,7 @@ function Scrubber({
             <button
               key={`l${m.t}-${i}`}
               onClick={() => seek(m.t)}
-              title={`${m.title} · ${clock(m.t)}`}
+              title="Jump to refusal"
               aria-label={`Jump to ${m.title} at ${clock(m.t)}`}
               className="focusable absolute top-1 z-20 size-2 -translate-x-1/2 cursor-pointer rounded-[2px] bg-err transition-transform hover:scale-150"
               style={{ left: `${(m.t / D) * 100}%` }}
@@ -1092,6 +1088,11 @@ function Scrubber({
       </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+        <span className="min-w-0 max-w-[48ch] truncate text-[11px] text-faint">
+          {here ? here.label : "start"}
+          {latest && <span className="text-ghost"> · </span>}
+          {latest?.title}
+        </span>
         <span className="flex items-center gap-1.5 text-[10.5px] text-faint">
           <Kbd>space</Kbd> play
         </span>
@@ -1155,7 +1156,6 @@ function Theater({
   segments?: { id: string; from: number; to: number }[];
   tNow?: number;
 }) {
-  const router = useRouter();
   const draftId =
     result && typeof result.draft_id === "string" && /^[a-z][a-z0-9-]{0,62}$/.test(result.draft_id)
       ? result.draft_id
@@ -1285,7 +1285,10 @@ function Theater({
             <span className="truncate text-[12px] font-semibold">Artifacts</span>
             <div className="grow" />
             {artifacts.length > 1 && (
-              <button
+              <Button
+                size="sm"
+                variant="quiet"
+                className="shrink-0"
                 onClick={() => {
                   for (const a of artifacts) {
                     const link = document.createElement("a");
@@ -1294,35 +1297,41 @@ function Theater({
                     link.click();
                   }
                 }}
-                className="focusable shrink-0 cursor-pointer rounded-sm text-[10.5px] font-medium text-faint transition-colors hover:text-fg"
               >
                 Download all ({artifacts.length})
-              </button>
+              </Button>
             )}
             <Mono className="shrink-0 text-[11px] text-faint">{artifacts.length} produced</Mono>
           </div>
           <div className="flex min-h-0 grow flex-col gap-3 overflow-y-auto px-4 py-4">
             {suspension && (
-              <p className="rounded-md border border-warn-line bg-warn-bg px-3 py-2.5 text-[12px] leading-[1.55] text-warn">
-                Paused at <Mono className="text-[11px]">{suspension.node}</Mono> — the decision is
-                in the banner above.
-              </p>
+              <div className="relative overflow-hidden rounded-md border border-line bg-surface px-3 py-2.5 pl-4">
+                <span className="absolute inset-y-0 left-0 w-[3px] bg-warn" />
+                <p className="text-[12px] leading-[1.55] text-dim">
+                  Paused at <Mono className="text-[11px]">{suspension.node}</Mono> — the decision is
+                  in the banner above.
+                </p>
+              </div>
             )}
 
             {draftId && finalState === "done" && (
-              <div className="flex flex-col gap-2.5 rounded-md border border-run-line bg-run-bg p-3">
-                <span className="text-[12px] font-semibold text-run">A draft was authored</span>
+              <div className="relative flex flex-col gap-2.5 overflow-hidden rounded-md border border-line bg-surface p-3 pl-4">
+                <span className="absolute inset-y-0 left-0 w-[3px] bg-run" />
+                <span className="text-[12px] font-semibold text-fg">A draft was authored</span>
                 <p className="text-[12px] leading-[1.55] text-mist">
                   The agent designed <code className="font-mono text-[11px]">{draftId}</code> and it
                   passed the deployment parser. It is a draft, not a deployed agent — open it,
                   review every grant and gate, then Save if it holds up.
                 </p>
-                <button
-                  onClick={() => router.push(`/builder?draftId=${encodeURIComponent(draftId)}`)}
-                  className="focusable h-8 w-fit cursor-pointer rounded-md bg-ink px-3.5 text-[12.5px] font-medium text-on-ink transition-[filter] hover:brightness-[1.15]"
+                <Button
+                  tone="ink"
+                  variant="solid"
+                  size="sm"
+                  href={`/builder?draftId=${encodeURIComponent(draftId)}`}
+                  className="self-start"
                 >
                   Open in Builder
-                </button>
+                </Button>
               </div>
             )}
 
@@ -1339,15 +1348,15 @@ function Theater({
             {outputs
               .filter((o) => !o.ok)
               .map((o, i) => (
-                <p key={i} className="rounded-md border border-err-line bg-err-bg px-2.5 py-2 text-[11.5px] text-err">
-                  {o.kind} output failed: {o.error}
-                </p>
+                <Banner key={i} tone="err" title={`${o.kind} output failed`}>
+                  {o.error}
+                </Banner>
               ))}
 
             {error && finalState === "failed" && (
-              <p className="rounded-md border border-err-line bg-err-bg px-2.5 py-2 text-[11.5px] leading-[1.55] text-err">
+              <Banner tone="err" title="The run failed">
                 {error}
-              </p>
+              </Banner>
             )}
           </div>
         </aside>
@@ -1412,18 +1421,21 @@ function ArtifactRow({ a }: { a: { name: string; kind: string; t: number } }) {
             </span>
           </span>
         )}
-        <a
-          href={url}
-          download={a.name}
-          target="_blank"
-          rel="noreferrer"
-          aria-label={`Download ${a.name}`}
-          className="focusable shrink-0 rounded-sm p-1 text-faint transition-colors hover:text-fg"
+        <IconButton
+          size="sm"
+          label={`Download ${a.name}`}
+          className="shrink-0"
+          onClick={() => {
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = a.name;
+            link.click();
+          }}
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
           </svg>
-        </a>
+        </IconButton>
       </div>
       {open && (
         <pre className="max-h-[220px] overflow-auto border-t border-line bg-sunken/30 p-2.5 font-mono text-[10px] leading-[1.6] whitespace-pre-wrap text-mist">
@@ -1448,6 +1460,9 @@ function GateBanner({
   const [by, setBy] = useState("");
   const [note, setNote] = useState("");
   const [needNote, setNeedNote] = useState(false);
+  // Which decision is in flight. The banner unmounts when the resume stream
+  // opens, so this never needs resetting — it only has to stop a second click.
+  const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1459,14 +1474,12 @@ function GateBanner({
       ref={ref}
       role="region"
       aria-label="Approval required"
-      className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2.5 border-b border-warn-line bg-warn-bg px-4 py-3"
+      className="relative flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2.5 overflow-hidden border-b border-line bg-surface px-4 py-3 pl-5"
     >
+      <span className="absolute inset-y-0 left-0 w-[3px] bg-warn" />
       <span className="flex items-center gap-2">
-        <span className="relative flex size-2">
-          <span className="absolute inline-flex size-2 animate-ping rounded-full bg-warn opacity-60" />
-          <span className="relative inline-flex size-2 rounded-full bg-warn" />
-        </span>
-        <span className="text-[13px] font-semibold text-warn">A person decides here</span>
+        <span className="size-2 shrink-0 rounded-full bg-warn" />
+        <span className="text-[13px] font-semibold text-fg">A person decides here</span>
       </span>
       <span className="min-w-0 max-w-[52ch] text-[12.5px] leading-[1.5] text-mist">
         {suspension.prompt}
@@ -1475,45 +1488,57 @@ function GateBanner({
         {suspension.approvers.length ? `asks: ${suspension.approvers.join(", ")}` : "no approver role set"}
       </Mono>
       <span className="grow" />
-      <input
-        value={by}
-        onChange={(e) => setBy(e.target.value)}
-        placeholder="Your name or initials"
-        aria-label="Approver identity — goes to the journal"
-        className="focusable h-8 w-36 rounded-md border border-warn-line bg-surface px-2.5 text-[12px] text-fg placeholder:text-ghost"
-      />
-      <input
-        value={note}
-        onChange={(e) => {
-          setNote(e.target.value);
-          setNeedNote(false);
+      <div className="w-36">
+        <Input
+          value={by}
+          onChange={setBy}
+          placeholder="Your name or initials"
+          aria-label="Approver identity — goes to the journal"
+        />
+      </div>
+      <div className="w-64">
+        <Input
+          value={note}
+          onChange={(v) => {
+            setNote(v);
+            setNeedNote(false);
+          }}
+          placeholder={needNote ? "A rejection needs a reason" : "Reason (goes to the journal)"}
+          aria-label="Decision rationale — goes to the journal"
+          invalid={needNote}
+        />
+      </div>
+      <Button
+        tone="ok"
+        variant="solid"
+        size="sm"
+        loading={busy === "approve"}
+        disabled={busy !== null}
+        onClick={() => {
+          setBusy("approve");
+          onAnswer(true, by, note || "approved in the theater");
         }}
-        placeholder={needNote ? "A rejection needs a reason" : "Reason (goes to the journal)"}
-        aria-label="Decision rationale — goes to the journal"
-        aria-invalid={needNote || undefined}
-        className={`focusable h-8 w-64 rounded-md border bg-surface px-2.5 text-[12px] text-fg placeholder:text-ghost ${
-          needNote ? "border-err-line placeholder:text-err" : "border-warn-line"
-        }`}
-      />
-      <button
-        onClick={() => onAnswer(true, by, note || "approved in the theater")}
-        className="focusable h-8 cursor-pointer rounded-md bg-ok px-3.5 text-[12.5px] font-medium text-on-solid transition-[filter] hover:brightness-110"
       >
         Approve
-      </button>
-      <button
+      </Button>
+      <Button
+        tone="err"
+        variant="solid"
+        size="sm"
+        loading={busy === "reject"}
+        disabled={busy !== null}
         onClick={() => {
           // A rejection with no reason is a rejection nobody can learn from.
           if (!note.trim()) {
             setNeedNote(true);
             return;
           }
+          setBusy("reject");
           onAnswer(false, by, note);
         }}
-        className="focusable h-8 cursor-pointer rounded-md border border-err-line px-3.5 text-[12.5px] font-medium text-err transition-colors hover:bg-err-bg"
       >
         Reject
-      </button>
+      </Button>
     </div>
   );
 }
@@ -1619,20 +1644,22 @@ function TheaterTranscript({ entries, live }: { entries: Entry[]; live: boolean 
 
       {/* Events landing below the fold while scrolled up — say so. */}
       {unseen > 0 && live && (
-        <button
+        <Button
+          size="sm"
+          variant="outline"
+          className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 elev-2"
           onClick={() => {
             const el = scroller.current;
             if (el) el.scrollTop = el.scrollHeight;
             pinned.current = true;
             setUnseen(0);
           }}
-          className="focusable absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 cursor-pointer items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1 text-[11px] font-medium text-dim elev-2 transition-colors hover:text-fg"
         >
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M12 5v14M6 13l6 6 6-6" />
           </svg>
           {unseen} new event{unseen === 1 ? "" : "s"}
-        </button>
+        </Button>
       )}
     </section>
   );
@@ -1728,15 +1755,13 @@ function JournalRow({ e, entries }: { e: Entry; entries: Entry[] }) {
         <div className="flex min-w-0 flex-col gap-1">
           <span className="flex items-center gap-2">
             <span className="text-[10.5px] font-medium text-run">reasoning</span>
-            {e.tainted && (
-              <span
-                title="This model call worked over content authored outside the system — untrusted input, tracked by the taint rules"
-                className="rounded-sm border border-warn-line bg-warn-bg px-1 py-px text-[9px] font-semibold text-warn"
-              >
-                tainted input
-              </span>
-            )}
+            {e.tainted && <Tag tone="warn">tainted input</Tag>}
           </span>
+          {e.tainted && (
+            <span className="text-[11px] text-faint">
+              Worked over content authored outside the system — untrusted input, tracked by the taint rules.
+            </span>
+          )}
           {asJson && !open ? (
             /* A structured decision reads as prose; the raw object is a click away. */
             <div className="flex max-w-[62ch] flex-col gap-1.5">
@@ -1754,12 +1779,9 @@ function JournalRow({ e, entries }: { e: Entry; entries: Entry[] }) {
             </p>
           )}
           {(long || asJson) && (
-            <button
-              onClick={() => setOpen(!open)}
-              className="focusable w-fit cursor-pointer rounded-sm text-[10.5px] font-medium text-faint transition-colors hover:text-fg"
-            >
+            <Button size="sm" variant="quiet" className="self-start" onClick={() => setOpen(!open)}>
               {open ? (asJson ? "show as prose" : "show less") : asJson ? "view raw" : `show all (${(text.length / 1000).toFixed(1)}k chars)`}
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -1832,18 +1854,18 @@ function JournalRow({ e, entries }: { e: Entry; entries: Entry[] }) {
 function CopyButton({ text }: { text: string }) {
   const [done, setDone] = useState(false);
   return (
-    <button
+    <Button
+      size="sm"
+      variant="quiet"
       onClick={() => {
         navigator.clipboard?.writeText(text).then(() => {
           setDone(true);
           setTimeout(() => setDone(false), 1200);
         });
       }}
-      aria-label="Copy"
-      className="focusable cursor-pointer rounded-sm px-1 font-mono text-[9px] tracking-[0.1em] text-faint uppercase transition-colors hover:text-fg"
     >
       {done ? "copied" : "copy"}
-    </button>
+    </Button>
   );
 }
 
@@ -1859,9 +1881,7 @@ function CurlBlock({ tool, args }: { tool: string; args: Record<string, unknown>
   return (
     <div className="flex flex-col gap-1.5">
       <span className="flex items-center gap-2">
-        <span className="font-mono text-[9px] tracking-[0.12em] text-faint uppercase">
-          Request · reconstructed from the journal
-        </span>
+        <Label>Request · reconstructed from the journal</Label>
         <span className="grow" />
         <CopyButton text={text} />
       </span>
@@ -1875,11 +1895,11 @@ function ResponseBlock({ value }: { value: unknown }) {
   return (
     <div className="flex flex-col gap-1.5">
       <span className="flex items-center gap-2">
-        <span className="font-mono text-[9px] tracking-[0.12em] text-faint uppercase">Response</span>
+        <Label>Response</Label>
         <span className="grow" />
         <CopyButton text={text} />
       </span>
-      <pre className="max-h-[240px] overflow-auto rounded-md border border-ok-line/50 bg-ok-bg/30 p-2.5 font-mono text-[10.5px] leading-[1.6] whitespace-pre-wrap text-mist">
+      <pre className="max-h-[240px] overflow-auto rounded-md border border-line bg-sunken/40 p-2.5 font-mono text-[10.5px] leading-[1.6] whitespace-pre-wrap text-mist">
         {text}
       </pre>
     </div>

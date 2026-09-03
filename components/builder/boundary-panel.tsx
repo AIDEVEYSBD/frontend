@@ -82,6 +82,17 @@ export function BoundaryPanel({
             />
           </Row>
         )}
+        {(trigger.kind === "api" || trigger.kind === "webhook") && (
+          <Row
+            label="Endpoint"
+            tight
+            hint={'Standing intake once the agent is saved. The body is {"input": {...}} matching the entry node\'s inputs; GET describes them. Each call runs the whole graph and returns the result.'}
+          >
+            <code className="block truncate rounded-md border border-line bg-canvas px-2.5 py-1.5 font-mono text-[11px] text-fg">
+              POST /api/trigger/{system.id}
+            </code>
+          </Row>
+        )}
       </Section>
 
       <Section

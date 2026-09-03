@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Label, Meter, Panel, type Tone } from "./ui";
+import { Label, Meter, Mono, Panel, type Tone } from "./ui";
 
 /* ═══════════════════ Charts ═══════════════════ */
 
@@ -44,19 +44,12 @@ export function Sparkline({
 
   const line = co.map(([x, y], i) => `${i ? "L" : "M"} ${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
   const last = co[co.length - 1];
-  const id = `sp-${tone}-${points.length}-${Math.round(points[0])}`;
 
   return (
     <svg width={width} height={height} className="overflow-visible" aria-hidden>
       {area && (
         <>
-          <defs>
-            <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={STROKE[tone]} stopOpacity="0.16" />
-              <stop offset="100%" stopColor={STROKE[tone]} stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <path d={`${line} L ${width} ${height} L 0 ${height} Z`} fill={`url(#${id})`} />
+          <path d={`${line} L ${width} ${height} L 0 ${height} Z`} fill={STROKE[tone]} fillOpacity="0.08" />
         </>
       )}
       <path
@@ -238,9 +231,24 @@ export function ChartPanel({
   );
 }
 
+/** One column with its value above it; the value hides where the column is too narrow to carry it. */
+function Column({ value, max, fill, title }: { value: number; max: number; fill: string; title: string }) {
+  return (
+    <div
+      className={`@container relative grow rounded-xs ${fill}`}
+      style={{ height: `${(value / max) * 100}%` }}
+      title={title}
+    >
+      <span className="pointer-events-none absolute inset-x-0 bottom-full hidden pb-0.5 text-center @min-[18px]:block">
+        <Mono className="text-[10.5px] leading-none text-faint">{value}</Mono>
+      </span>
+    </div>
+  );
+}
+
 /**
- * Grouped columns with a baseline. Deliberately axis-light: one value
- * label on hover-height, a baseline rule, and category labels — the rest
+ * Grouped columns with a baseline. Deliberately axis-light: a value
+ * on each column, a baseline rule, and category labels — the rest
  * would be chart junk at this size.
  */
 export function ColumnChart({
@@ -254,20 +262,13 @@ export function ColumnChart({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-end gap-3" style={{ height }}>
+      {/* pt-3 keeps room for the value label above the tallest bar. */}
+      <div className="flex items-end gap-3 pt-3" style={{ height }}>
         {data.map((d) => (
           <div key={d.label} className="flex h-full grow flex-col justify-end gap-1">
             <div className="flex h-full items-end gap-1">
-              <div
-                className="grow rounded-xs bg-fg"
-                style={{ height: `${(d.a / max) * 100}%` }}
-                title={`Completed ${d.a}`}
-              />
-              <div
-                className="grow rounded-xs bg-run"
-                style={{ height: `${(d.b / max) * 100}%` }}
-                title={`Escalated ${d.b}`}
-              />
+              <Column value={d.a} max={max} fill="bg-fg" title={`Completed ${d.a}`} />
+              <Column value={d.b} max={max} fill="bg-run" title={`Escalated ${d.b}`} />
             </div>
           </div>
         ))}

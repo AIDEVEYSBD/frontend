@@ -33,9 +33,8 @@ export const HARNESS: Record<
     use: string;
     /** The mistake people make reaching for it. */
     mistake: string;
-    /** Design-token colour variable, not a Tailwind class. */
+    /** Design-token colour variable (a categorical `--t-cN`), not a Tailwind class. */
     token: string;
-    tint: string;
   }
 > = {
   sequence: {
@@ -46,7 +45,6 @@ export const HARNESS: Record<
     mistake:
       "A step calling a large model with an elaborate prompt is still pre-determined. What matters is whether the run can change what happens next, not whether inference is involved.",
     token: "--t-c2",
-    tint: "--t-queue-bg",
   },
   delegate: {
     name: "Model decides",
@@ -55,8 +53,7 @@ export const HARNESS: Record<
     use: "Open-ended investigation where the next move genuinely depends on what the last one found.",
     mistake:
       "Reaching for this when a fixed plan would do. You buy nondeterminism and pay for it in evals that never settle.",
-    token: "--t-run",
-    tint: "--t-run-bg",
+    token: "--t-c7",
   },
   await: {
     name: "External decision",
@@ -66,7 +63,6 @@ export const HARNESS: Record<
     mistake:
       "Treating these as four different things. They are one mechanic with four bindings — which is also why this is where the runtime's API boundary lives.",
     token: "--t-c9",
-    tint: "--t-err-bg",
   },
 };
 
@@ -164,6 +160,8 @@ export interface Node {
   label?: string;
   persona?: string;
   model?: string;
+  /** A capability tier instead of a model id; the deployment maps it to a model. */
+  model_class?: "small" | "medium" | "large";
   expects?: Field[];
   emits?: Field[];
   steps?: Step[];
@@ -692,6 +690,7 @@ export function toDocument(s: AgentSystem): unknown {
         };
         if (n.persona) d.persona = n.persona;
         if (n.model) d.model = n.model;
+        if (n.model_class) d.model_class = n.model_class;
         if (n.expects?.length) d.expects = n.expects;
         if (n.emits?.length) d.emits = n.emits;
         if (n.harness === "sequence") d.steps = n.steps ?? [];
@@ -797,6 +796,7 @@ export function fromDocument(doc: unknown): AgentSystem {
       label: String(n.label ?? n.id ?? ""),
       ...(n.persona ? { persona: String(n.persona) } : {}),
       ...(n.model ? { model: String(n.model) } : {}),
+      ...(["small", "medium", "large"].includes(String(n.model_class ?? "")) ? { model_class: String(n.model_class) as "small" | "medium" | "large" } : {}),
       expects: fields(n.expects),
       emits: fields(n.emits),
       ...(Array.isArray(n.steps)

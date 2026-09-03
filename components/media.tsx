@@ -39,7 +39,7 @@ export function MediaHero() {
           changing a single system of record.
         </p>
         <div className="pt-1">
-          <Button size="sm" variant="solid" tone="neutral" className="!bg-white !text-[#0a0a09]">
+          <Button size="sm" variant="solid" tone="media">
             Read the case study
           </Button>
         </div>
@@ -71,7 +71,7 @@ export function MediaCard({
           alt={alt}
           fill
           sizes="(max-width: 768px) 100vw, 320px"
-          className="object-cover transition-transform duration-500 ease-[var(--ease-out)] group-hover:scale-[1.03]"
+          className="object-cover transition-transform duration-[260ms] ease-[var(--ease-out)] group-hover:scale-[1.03]"
         />
       </div>
       <div className="flex grow flex-col items-start gap-2 p-3.5">

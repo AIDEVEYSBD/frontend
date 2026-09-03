@@ -13,7 +13,7 @@ import {
   type EventKind,
   type TraceEvent,
 } from "@/lib/trace";
-import { Kbd, Mono, Status, Tag } from "./ui";
+import { Button, IconButton, Kbd, Mono, Status, Tag } from "./ui";
 import { Thinking } from "./loaders";
 
 /* ═══════════════════ Event vocabulary ═══════════════════ */
@@ -489,8 +489,8 @@ function CiteMarker({
         onClick={onToggle}
         aria-expanded={open}
         aria-label={`Source: ${cite.locator}`}
-        className={`focusable ml-0.5 cursor-pointer rounded-[3px] px-1 py-px align-super font-mono text-[9px] transition-colors ${
-          open ? "bg-run text-on-solid" : "bg-raise text-run hover:bg-run hover:text-on-solid"
+        className={`focusable ml-0.5 cursor-pointer rounded-[3px] px-1 py-px align-super font-mono text-[9px] transition-[background-color,color,filter] duration-100 ${
+          open ? "bg-ink text-on-ink" : "bg-raise text-fg hover:brightness-[1.08]"
         }`}
       >
         {id.replace("c", "")}
@@ -522,15 +522,14 @@ function CiteMarker({
 
             <div className="flex items-center justify-between gap-2 border-t border-line pt-2">
               <span className="min-w-0 truncate text-[10.5px] text-faint">{doc.name}</span>
-              <a
-                href="#"
-                className="focusable flex shrink-0 items-center gap-1 rounded-sm text-[11px] font-medium text-fg hover:underline"
-              >
+              {/* The demo trace carries no source URL — the action stays
+                  visible but disabled until a real citation wires one. */}
+              <Button size="sm" variant="quiet" disabled className="shrink-0">
                 Read at source
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                   <path d="M7 17L17 7M9 7h8v8" />
                 </svg>
-              </a>
+              </Button>
             </div>
           </div>,
           document.body,
@@ -559,14 +558,19 @@ function Timeline({
   step: (d: 1 | -1) => void;
 }) {
   const pct = (t / RUN_END) * 100;
+  // What the playhead is over, in words — the scrubber's bands and ticks are
+  // too small to label, so the current node and latest event are read here.
+  const here = NODES.find((n) => t >= n.from && t < n.to) ?? (t >= RUN_END ? NODES[NODES.length - 1] : undefined);
+  const latest = [...EVENTS].reverse().find((e) => e.t <= t);
 
   return (
     <div className="flex shrink-0 flex-col gap-2 border-t border-line bg-raise/60 px-4 py-3">
       <div className="flex items-center gap-3">
-        <button
+        <IconButton
+          size="sm"
+          label={playing ? "Pause" : "Play"}
           onClick={() => setPlaying((p) => !p)}
-          aria-label={playing ? "Pause" : "Play"}
-          className="focusable grid size-8 shrink-0 cursor-pointer place-items-center rounded-md bg-ink text-on-ink transition-opacity hover:opacity-90"
+          className="shrink-0"
         >
           {playing ? (
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
@@ -578,29 +582,21 @@ function Timeline({
               <path d="M8 5.5v13l11-6.5z" />
             </svg>
           )}
-        </button>
+        </IconButton>
 
         <div className="flex items-center gap-1">
-          <button
-            onClick={() => step(-1)}
-            aria-label="Previous event"
-            className="focusable grid size-7 cursor-pointer place-items-center rounded-md text-faint transition-colors hover:bg-raise hover:text-fg"
-          >
+          <IconButton size="sm" label="Previous event" onClick={() => step(-1)}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
               <path d="M17 5.5v13L8 12z" />
               <rect x="5" y="5" width="2" height="14" rx="1" />
             </svg>
-          </button>
-          <button
-            onClick={() => step(1)}
-            aria-label="Next event"
-            className="focusable grid size-7 cursor-pointer place-items-center rounded-md text-faint transition-colors hover:bg-raise hover:text-fg"
-          >
+          </IconButton>
+          <IconButton size="sm" label="Next event" onClick={() => step(1)}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
               <path d="M7 5.5v13L16 12z" />
               <rect x="17" y="5" width="2" height="14" rx="1" />
             </svg>
-          </button>
+          </IconButton>
         </div>
 
         <Mono className="tnum shrink-0 text-[11.5px] text-dim">
@@ -613,7 +609,6 @@ function Timeline({
             {NODES.map((n, i) => (
               <span
                 key={n.id}
-                title={n.label}
                 className="h-full border-r border-surface last:border-0"
                 style={{
                   width: `${((n.to - n.from) / RUN_END) * 100}%`,
@@ -628,7 +623,6 @@ function Timeline({
             {EVENTS.map((e) => (
               <span
                 key={`${e.t}-${e.title}`}
-                title={e.title}
                 className={`absolute top-0 h-2 w-px ${KIND[e.kind].dot} ${
                   t >= e.t ? "opacity-90" : "opacity-25"
                 }`}
@@ -673,6 +667,11 @@ function Timeline({
       </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+        <span className="min-w-0 max-w-[48ch] truncate text-[11px] text-faint">
+          {here ? here.label : "start"}
+          {latest && <span className="text-ghost"> · </span>}
+          {latest?.title}
+        </span>
         <span className="flex items-center gap-1.5 text-[10.5px] text-faint">
           <Kbd>space</Kbd> play
         </span>

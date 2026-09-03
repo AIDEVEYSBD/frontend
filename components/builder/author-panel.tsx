@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Button } from "../ui";
+import { Button, Label } from "../ui";
+import { Banner } from "../overlays";
+import { Thinking } from "../loaders";
+import { Area } from "./controls";
 import { Icon } from "./icons";
 import { TOOL_CARDS } from "@/lib/catalogue";
 import { HARNESS, HARNESS_ORDER } from "@/lib/spec";
@@ -147,17 +150,18 @@ export function AuthorPanel({ onApply }: { onApply: (document: unknown) => void 
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <span className="font-mono text-[10px] tracking-[0.14em] text-ghost uppercase">
-                  Try one
-                </span>
+                <Label>Try one</Label>
                 {STARTERS.map((s) => (
-                  <button
+                  <Button
                     key={s}
+                    size="sm"
+                    variant="outline"
+                    className="w-fit max-w-full"
+                    loading={busy}
                     onClick={() => send(s)}
-                    className="focusable w-fit cursor-pointer rounded-md border border-line bg-surface px-3 py-1.5 text-left text-[12.5px] text-dim transition-colors hover:border-line-strong hover:text-fg"
                   >
                     {s}
-                  </button>
+                  </Button>
                 ))}
               </div>
             </div>
@@ -189,7 +193,7 @@ export function AuthorPanel({ onApply }: { onApply: (document: unknown) => void 
                 {m.draft && (
                   <div className="flex flex-col gap-2.5 rounded-md border border-line bg-surface p-3.5 elev-1">
                     <div className="flex items-center gap-2.5">
-                      <span className="grid size-7 shrink-0 place-items-center rounded-md bg-ok-bg text-ok">
+                      <span className="grid size-7 shrink-0 place-items-center rounded-md bg-ok text-on-solid">
                         <Icon name="workflow" size={14} />
                       </span>
                       <div className="flex min-w-0 flex-col">
@@ -222,20 +226,26 @@ export function AuthorPanel({ onApply }: { onApply: (document: unknown) => void 
           {stopped && !busy && <p className="font-mono text-[10.5px] text-ghost">stopped</p>}
 
           {error && (
-            <div className="flex items-center justify-between gap-3 rounded-md border border-line bg-err-bg px-3 py-2">
-              <p className="text-[12px] text-err">{error}</p>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  const at = thread.map((m) => m.role).lastIndexOf("user");
-                  if (at < 0) return;
-                  send(thread[at].content, thread.slice(0, at));
-                }}
-              >
-                Retry
-              </Button>
-            </div>
+            <Banner
+              tone="err"
+              title="The design request failed"
+              action={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  loading={busy}
+                  onClick={() => {
+                    const at = thread.map((m) => m.role).lastIndexOf("user");
+                    if (at < 0) return;
+                    send(thread[at].content, thread.slice(0, at));
+                  }}
+                >
+                  Retry
+                </Button>
+              }
+            >
+              {error}
+            </Banner>
           )}
 
           <div ref={endRef} />
@@ -251,22 +261,25 @@ export function AuthorPanel({ onApply }: { onApply: (document: unknown) => void 
             }}
             className="flex items-end gap-2"
           >
-            <textarea
-              ref={inputRef}
-              autoFocus
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  send(input);
-                }
-              }}
-              rows={1}
-              placeholder={thread.length ? "Refine the design…" : "An agent that…"}
-              className="focusable min-w-0 grow resize-none rounded-md border border-line bg-canvas px-3 py-2 text-[13px] leading-[1.5] text-fg placeholder:text-ghost"
-            />
-            <Button size="sm" variant="solid" tone="ink" type="submit" disabled={busy || !input.trim()}>
+            <div className="min-w-0 grow">
+              <Area
+                inputRef={inputRef}
+                autoFocus
+                resizable={false}
+                value={input}
+                onChange={setInput}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    send(input);
+                  }
+                }}
+                rows={1}
+                placeholder={thread.length ? "Refine the design…" : "An agent that…"}
+                aria-label="Describe the agent"
+              />
+            </div>
+            <Button size="sm" variant="solid" tone="ink" type="submit" disabled={!input.trim()} loading={busy}>
               Send
             </Button>
           </form>
@@ -292,18 +305,10 @@ function BusyWait({ onStop }: { onStop: () => void }) {
 
   return (
     <div className="flex items-center gap-2.5 text-[12.5px] text-faint">
-      <span className="flex gap-1">
-        {[0, 1, 2].map((d) => (
-          <span
-            key={d}
-            className="size-1.5 animate-pulse rounded-[2px] bg-faint"
-            style={{ animationDelay: `${d * 220}ms` }}
-          />
-        ))}
-      </span>
+      <Thinking height={12} />
       <span className="min-w-0 grow truncate">{STAGES[Math.floor(sec / 4) % STAGES.length]}</span>
       {sec > 8 && <span className="tnum shrink-0 font-mono text-[10.5px] text-ghost">{sec}s</span>}
-      <Button size="sm" variant="outline" onClick={onStop}>
+      <Button size="sm" variant="solid" tone="err" onClick={onStop}>
         Stop
       </Button>
     </div>

@@ -27,7 +27,7 @@ export interface Brand {
 
 /** Products that carry the Microsoft mark — drawn exactly, four squares. */
 const MICROSOFT = new Set([
-  "Dynamics 365", "SharePoint", "Azure Blob", "Outlook", "Teams", "SQL Server",
+  "Microsoft", "Dynamics 365", "SharePoint", "Azure Blob", "Outlook", "Teams", "SQL Server",
   "Entra ID", "Microsoft Purview", "Microsoft Defender", "Microsoft Sentinel",
   "OneDrive", "Power BI", "Azure DevOps",
 ]);
@@ -35,8 +35,17 @@ const MICROSOFT = new Set([
 const MAP = new Map((brands as Brand[]).map((b) => [b.name, b]));
 
 export function brandOf(name: string): Brand {
-  return MAP.get(name) ?? { name, hex: "#6A675E", path: null };
+  return MAP.get(name) ?? { name, hex: "var(--t-fg-4)", path: null };
 }
+
+/** Whether `BrandMark` has something real to draw for this name — a glyph,
+ *  a vendored logo, or the Microsoft squares — rather than a fallback. */
+export function hasBrand(name: string): boolean {
+  return MICROSOFT.has(name) || MAP.has(name);
+}
+
+/** Every name a mark exists for, for callers that match against labels. */
+export const BRAND_NAMES: string[] = [...new Set([...MAP.keys(), ...MICROSOFT])];
 
 export const BRANDS = brands as Brand[];
 

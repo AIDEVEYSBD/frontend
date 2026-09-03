@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { Button, Mono, Tag } from "./ui";
 import { BrandMark } from "./brand";
+import { CAT } from "./charts";
 
 /* ═══════════════════ Per-cloud shape ═══════════════════ */
 
@@ -117,29 +118,26 @@ const CLOUDS: Cloud[] = [
 
 /* ═══════════════════ Topology ═══════════════════ */
 
+/** A box is a kind of thing, not a state — so its marker is categorical,
+    never a semantic hue, and the surface behind the text stays neutral. */
 function Box({
   label,
   note,
-  tone = "neutral",
+  cat,
   brand,
 }: {
   label: string;
   note?: string;
-  tone?: "neutral" | "run" | "ok" | "queue";
+  /** Index into the categorical palette; omit for an unmarked box. */
+  cat?: number;
   brand?: string;
 }) {
-  const ring =
-    tone === "run"
-      ? "border-run-line bg-run-bg"
-      : tone === "ok"
-        ? "border-ok-line bg-ok-bg"
-        : tone === "queue"
-          ? "border-queue-line bg-queue-bg"
-          : "border-line bg-surface";
-
   return (
-    <div className={`flex min-w-0 flex-col justify-center gap-1 rounded-md border px-2.5 py-2 lg:px-3.5 lg:py-3 ${ring}`}>
+    <div className="flex min-w-0 flex-col justify-center gap-1 rounded-md border border-line bg-surface px-2.5 py-2 lg:px-3.5 lg:py-3">
       <div className="flex items-center gap-1.5">
+        {cat !== undefined && (
+          <span className="size-2 shrink-0 rounded-[2px]" style={{ background: CAT[cat % CAT.length] }} aria-hidden />
+        )}
         {brand && <BrandMark name={brand} size={12} />}
         <span className="truncate text-[11.5px] font-medium lg:text-[13px]">{label}</span>
       </div>
@@ -159,14 +157,14 @@ function Topology({ c }: { c: Cloud }) {
           <Mono className="text-[10px] text-ghost">· {c.region}</Mono>
         </span>
 
-        <div className="flex grow flex-col gap-2.5 rounded-md border border-line bg-raise/40 p-2.5 lg:gap-3.5 lg:p-3.5">
+        <div className="flex grow flex-col gap-2.5 rounded-md border border-line bg-raise p-2.5 lg:gap-3.5 lg:p-3.5">
           <Mono className="text-[9.5px] text-faint">{c.network}</Mono>
 
           <div className="grid grow auto-rows-fr grid-cols-2 items-stretch gap-2 sm:grid-cols-4 lg:gap-3">
-            <Box label={c.runtime} note={c.runtimeNote} tone="run" />
-            <Box label={c.model} note={c.modelNote} tone="queue" />
-            <Box label={c.store} note="audit records and artifacts" tone="ok" />
-            <Box label={c.identity} note="static keys not required" />
+            <Box label={c.runtime} note={c.runtimeNote} cat={0} />
+            <Box label={c.model} note={c.modelNote} cat={1} />
+            <Box label={c.store} note="audit records and artifacts" cat={2} />
+            <Box label={c.identity} note="static keys not required" cat={3} />
           </div>
 
           <div className="flex items-center gap-2 rounded-md border border-line bg-surface px-2.5 py-1.5">
@@ -219,11 +217,12 @@ export function DeployPanel() {
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 lg:min-h-[560px]">
       <div className="flex grow flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
-        <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/60 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raise px-3 py-2">
           <div className="flex gap-1">
             {CLOUDS.map((x, n) => (
               <button
                 key={x.key}
+                type="button"
                 onClick={() => setI(n)}
                 aria-pressed={i === n}
                 className={`focusable flex cursor-pointer items-center gap-1.5 rounded-sm px-2 py-1 text-[11.5px] transition-colors ${
@@ -244,6 +243,7 @@ export function DeployPanel() {
             {(["topology", "terraform"] as const).map((t) => (
               <button
                 key={t}
+                type="button"
                 onClick={() => setTab(t)}
                 aria-pressed={tab === t}
                 className={`focusable cursor-pointer rounded-sm px-2 py-1 text-[11.5px] capitalize transition-colors ${
@@ -258,12 +258,9 @@ export function DeployPanel() {
           </div>
 
           {tab === "terraform" && (
-            <button
-              onClick={copy}
-              className="focusable cursor-pointer rounded-sm border border-line px-2 py-1 text-[11px] font-medium text-dim transition-colors hover:text-fg"
-            >
+            <Button size="sm" variant="quiet" onClick={copy}>
               {copied ? "Copied" : "Copy"}
-            </button>
+            </Button>
           )}
         </div>
 
@@ -273,7 +270,7 @@ export function DeployPanel() {
               <Topology c={c} />
             </div>
           ) : (
-            <pre className="overflow-x-auto bg-sunken/40 p-4 font-mono text-[11.5px] leading-[1.65] text-mist">
+            <pre className="overflow-x-auto bg-sunken p-4 font-mono text-[11.5px] leading-[1.65] text-mist">
               {c.tf}
             </pre>
           )}

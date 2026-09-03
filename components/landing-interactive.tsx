@@ -224,10 +224,11 @@ export function Pin({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [p, setP] = useState(0);
+  const reduce = useReducedMotion();
 
   useEffect(() => {
     const el = ref.current;
-    if (!el) return;
+    if (!el || reduce) return;
     let frame = 0;
     const on = () => {
       if (frame) return;
@@ -246,7 +247,16 @@ export function Pin({
       window.removeEventListener("resize", on);
       if (frame) cancelAnimationFrame(frame);
     };
-  }, []);
+  }, [reduce]);
+
+  // Reduced motion releases the pin: the section reads in normal flow.
+  if (reduce) {
+    return (
+      <div ref={ref} className="relative py-10">
+        {children}
+      </div>
+    );
+  }
 
   return (
     <div ref={ref} style={{ height }} className="relative">
@@ -434,7 +444,7 @@ export function LiveCanvas({ interactive = true }: { interactive?: boolean }) {
                   {n.label}
                 </span>
               </div>
-              <span className="truncate text-[9.5px] text-faint">{n.kind}</span>
+              <span className="truncate text-[10.5px] text-faint">{n.kind}</span>
 
               {st === "active" && (
                 <span className="absolute inset-x-0 -bottom-px h-0.5 overflow-hidden rounded-b-md">
@@ -467,7 +477,7 @@ export function BuilderSwitch() {
             key={k}
             onClick={() => setMode(k)}
             aria-pressed={mode === k}
-            className={`focusable cursor-pointer rounded-sm px-3 py-1.5 text-[13px] transition-colors duration-150 ${
+            className={`focusable cursor-pointer rounded-sm px-3 py-1.5 text-[13px] transition-colors duration-100 ${
               mode === k
                 ? "bg-surface font-semibold text-fg shadow-[var(--shadow-1)]"
                 : "font-medium text-faint hover:text-dim"
@@ -585,7 +595,7 @@ export function AgenticBuild() {
 
       <div className="flex min-h-[228px] flex-col gap-3 p-3">
         <div className="flex items-start gap-2.5">
-          <span className="grid size-6 shrink-0 place-items-center rounded-sm border border-line bg-raise text-[9.5px] font-medium text-dim">
+          <span className="grid size-6 shrink-0 place-items-center rounded-sm border border-line bg-raise text-[10.5px] font-medium text-dim">
             SR
           </span>
           <p className="rounded-md border border-line bg-raise/50 px-2.5 py-2 text-[12px] leading-[1.55] text-mist">
@@ -677,30 +687,26 @@ export function IntegrationExplorer() {
           />
         </div>
 
-        <button
+        <Button
+          size="sm"
+          tone="ink"
+          variant={group === null ? "solid" : "quiet"}
           onClick={() => setGroup(null)}
-          className={`focusable cursor-pointer rounded-md border px-2.5 py-1.5 text-[12.5px] transition-colors ${
-            group === null
-              ? "border-transparent bg-ink font-medium text-on-ink"
-              : "border-line text-dim hover:bg-raise"
-          }`}
         >
           All
-        </button>
+        </Button>
 
         {GROUPS.map((g) => (
-          <button
+          <Button
             key={g.name}
+            size="sm"
+            tone="ink"
+            variant={group === g.name ? "solid" : "quiet"}
             onClick={() => setGroup(group === g.name ? null : g.name)}
-            className={`focusable flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12.5px] transition-colors ${
-              group === g.name
-                ? "border-transparent bg-ink font-medium text-on-ink"
-                : "border-line text-dim hover:bg-raise"
-            }`}
           >
             <span className="size-2 rounded-[2px]" style={{ background: CAT[g.c] }} />
             {g.name}
-          </button>
+          </Button>
         ))}
 
         <div className="grow" />
@@ -831,12 +837,13 @@ const HERO_IMAGES = [
 
 export function HeroCarousel() {
   const [idx, setIdx] = useState(0);
+  const reduce = useReducedMotion();
 
   useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (reduce) return;
     const t = setInterval(() => setIdx((i) => (i + 1) % HERO_IMAGES.length), 7000);
     return () => clearInterval(t);
-  }, []);
+  }, [reduce]);
 
   return (
     <>
@@ -849,7 +856,7 @@ export function HeroCarousel() {
             fill
             priority={i === 0}
             sizes="100vw"
-            className={`object-cover [transition:opacity_1.6s_ease,transform_8s_linear] ${
+            className={`object-cover [transition:opacity_1.6s_var(--ease-out),transform_8s_linear] ${
               i === idx ? "scale-[1.06] opacity-100" : "scale-100 opacity-0"
             }`}
           />

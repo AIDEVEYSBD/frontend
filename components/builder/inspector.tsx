@@ -1,14 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BY_NAME } from "@/lib/catalogue";
-import { listConnections } from "@/lib/connections";
-import { useModels } from "@/lib/use-models";
-import { Icon } from "./icons";
+import { BY_NAME, TOOL_BY_ID, toolCardOf } from "@/lib/catalogue";
+import { CONNECTOR_DEFS, listConnections } from "@/lib/connections";
+import { MODEL_CLASSES, useModels } from "@/lib/use-models";
+import type { McpServer } from "@/lib/use-mcp";
+import { ConnectorMark, RiskPill, ToolMark, grantLookOf } from "./marks";
 import {
   HARNESS,
   KINDS,
-  RISK,
   grantsFor,
   taintReaching,
   type AgentSystem,
@@ -19,7 +19,8 @@ import {
   type Step,
 } from "@/lib/spec";
 import type { Action } from "@/lib/builder-store";
-import { Button } from "../ui";
+import { Button, Status } from "../ui";
+import { Banner } from "../overlays";
 import { Area, Check, Cross, CsvText, Mini, Num, Pick, Plus, Row, Section, Text } from "./controls";
 import { BoundaryPanel } from "./boundary-panel";
 
@@ -36,15 +37,24 @@ export function Inspector({
   dispatch,
   selected,
   problems,
+  servers,
+  onSelect,
 }: {
   system: AgentSystem;
   dispatch: (a: Action) => void;
   selected: string | null;
   problems: Problem[];
+  /** Connected MCP servers, so a custom tool's row carries its server's mark. */
+  servers?: McpServer[] | null;
+  /** Lets a listed connection be opened; the shell owns selection. */
+  onSelect?: (id: string) => void;
 }) {
   // Hooks before any return — a component whose hook count depends on what is
   // selected is the exact thing React's rules exist to prevent.
-  const { models } = useModels();
+  const { models, classDefaults } = useModels();
+  // Which node's delete is armed — keyed by id so switching selection mid-arm
+  // can never delete the wrong node.
+  const [armDelete, setArmDelete] = useState<string | null>(null);
 
   if (selected?.startsWith("edge:")) {
     return (
@@ -82,7 +92,16 @@ export function Inspector({
   const meta = HARNESS[node.harness];
   const granted = grantsFor(system, node.id);
   const mine = problems.filter((p) => p.at === node.id);
+  const routes = system.edges.filter((e) => e.source === node.id || e.target === node.id).length;
   const patch = (p: Partial<Node>) => dispatch({ type: "patch-node", id: node.id, patch: p });
+
+  /* Connections pinned beneath this node. The index is the position in the
+     system-wide list — the same id the canvas selects a card by. */
+  const conns = listConnections(system)
+    .map((c, index) => ({ c, index }))
+    .filter(({ c }) => c.attached_to === node.id);
+  const heldCards = new Set(granted.map((t) => toolCardOf(t)?.id));
+  const holdsConnectable = CONNECTOR_DEFS.some((d) => heldCards.has(d.tool));
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
@@ -93,10 +112,7 @@ export function Inspector({
           style={{ background: `var(${meta.token})` }}
         />
         <div className="flex items-center gap-2">
-          <span
-            className="font-mono text-[10px] font-semibold tracking-[0.12em] uppercase"
-            style={{ color: `var(${meta.token})` }}
-          >
+          <span className="text-[11px] font-medium" style={{ color: `var(${meta.token})` }}>
             {meta.name}
           </span>
           <span className="grow" />
@@ -112,27 +128,50 @@ export function Inspector({
         <div className="flex items-center gap-2">
           <span className="font-mono text-[10.5px] text-ghost">{node.id}</span>
           <span className="grow" />
-          <button
-            onClick={() => dispatch({ type: "delete-node", id: node.id })}
-            className="focusable cursor-pointer text-[11px] text-faint transition-colors hover:text-err"
+          <Button
+            size="sm"
+            variant="solid"
+            tone="err"
+            onClick={() => {
+              // One click asks, naming what goes with the node; the second,
+              // within three seconds, deletes.
+              if (armDelete !== node.id) {
+                setArmDelete(node.id);
+                setTimeout(() => setArmDelete((v) => (v === node.id ? null : v)), 3000);
+                return;
+              }
+              setArmDelete(null);
+              dispatch({ type: "delete-node", id: node.id });
+            }}
           >
-            Delete node
-          </button>
+            {armDelete !== node.id
+              ? "Delete node"
+              : routes > 0
+                ? `Delete node and ${routes} route${routes === 1 ? "" : "s"}`
+                : "Delete node and its grants"}
+          </Button>
         </div>
         <p className="text-[11.5px] leading-[1.55] text-faint">{meta.does}</p>
       </div>
 
       {mine.length > 0 && (
-        <div className="flex flex-col gap-2 border-b border-line bg-err-bg/40 px-4 py-3">
-          {mine.map((p, i) => (
-            <div key={i} className="flex flex-col gap-0.5">
-              <span className={`text-[12px] font-semibold ${p.severity === "error" ? "text-err" : "text-warn"}`}>
-                {p.title}
-              </span>
-              <span className="text-[11px] leading-[1.5] text-dim">{p.detail}</span>
-              {p.fix && <span className="text-[11px] leading-[1.5] text-faint">{p.fix}</span>}
-            </div>
-          ))}
+        <div className="border-b border-line px-3 py-3">
+          <Banner
+            tone={mine.some((p) => p.severity === "error") ? "err" : "warn"}
+            title={mine.length === 1 ? mine[0].title : `${mine.length} things to look at`}
+          >
+            <span className="flex flex-col gap-2">
+              {mine.map((p, i) => (
+                <span key={i} className="flex flex-col gap-0.5">
+                  {mine.length > 1 && (
+                    <Status tone={p.severity === "error" ? "err" : "warn"}>{p.title}</Status>
+                  )}
+                  <span className="block text-[11px] leading-[1.5]">{p.detail}</span>
+                  {p.fix && <span className="block text-[11px] leading-[1.5] text-faint">{p.fix}</span>}
+                </span>
+              ))}
+            </span>
+          </Banner>
         </div>
       )}
 
@@ -147,17 +186,26 @@ export function Inspector({
         <div className="flex flex-col gap-1">
           {granted.map((t) => {
             const entry = BY_NAME.get(t);
-            const risk = RISK[entry?.risk ?? "read"];
+            const binding = system.tools.find((x) => x.name === t);
+            const look = grantLookOf(system, t, servers);
+            const about = entry
+              ? `Behind this endpoint: ${entry.behind}`
+              : binding?.summary || `Served by ${look.label}`;
             return (
               <div
                 key={t}
-                className="flex items-center gap-2 rounded-sm border border-line bg-raise px-2 py-1.5"
-                title={entry ? `Behind this endpoint: ${entry.behind}` : undefined}
+                className="flex items-center gap-2 rounded-sm border border-line bg-raise py-1 pr-1 pl-1.5"
               >
-                <span className="min-w-0 grow truncate font-mono text-[11px] text-mist">{t}</span>
-                {entry?.taints && <span className="font-mono text-[9px] font-semibold text-warn">EXT</span>}
-                {entry?.is_sink && <span className="font-mono text-[9px] font-semibold text-err">OUT</span>}
-                <span className="size-1.5 shrink-0 rounded-[2px]" style={{ background: `var(${risk.tone})` }} />
+                {look.mark(18, look.label)}
+                <span className="flex min-w-0 grow flex-col">
+                  <span className="truncate font-mono text-[11px] text-mist">{t}</span>
+                  <span className="truncate text-[10px] leading-[1.4] text-faint" title={about}>
+                    {about}
+                  </span>
+                </span>
+                {look.taints && <Status tone="warn">External input</Status>}
+                {look.sink && <Status tone="err">Acts outside</Status>}
+                <RiskPill risk={look.risk} compact />
                 <Mini label={`Revoke ${t}`} tone="err" onClick={() => dispatch({ type: "revoke", node: node.id, tool: t })}>
                   <Cross size={10} />
                 </Mini>
@@ -182,11 +230,45 @@ export function Inspector({
         <TaintNotice system={system} node={node} granted={granted} />
       </Section>
 
-      {granted.some((t) => t.startsWith("retrieval.")) && (
-        <p className="border-b border-line px-4 py-3 text-[11.5px] leading-[1.55] text-faint">
-          This agent retrieves. What it retrieves <em>from</em> is the connector cards beneath it —
-          drag more in from the Connectors rail, click one to configure it.
-        </p>
+      {/* ── What the tools reach ── */}
+      {(conns.length > 0 || holdsConnectable) && (
+        <Section title="Connections" count={conns.length}>
+          {conns.length === 0 ? (
+            <p className="text-[11.5px] leading-[1.5] text-faint">
+              Nothing attached yet. Drop a connector from the rail onto this node — the agent only
+              ever calls the tool; the connector decides what it reaches.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {conns.map(({ c, index }) => {
+                const off = c.entry.enabled === false;
+                const card = TOOL_BY_ID.get(c.def.tool);
+                return (
+                  <button
+                    key={index}
+                    type="button"
+                    onClick={() => onSelect?.(`conn:${index}`)}
+                    disabled={!onSelect}
+                    title={`${c.def.label} — feeds ${card?.label ?? c.def.tool}.${onSelect ? " Click to configure." : ""}`}
+                    className={`focusable flex items-center gap-2 rounded-sm border border-line bg-raise py-1 pr-1.5 pl-1.5 text-left transition-colors ${
+                      onSelect ? "cursor-pointer hover:border-line-strong hover:bg-surface" : ""
+                    } ${off ? "opacity-55" : ""}`}
+                  >
+                    <ConnectorMark def={c.def} size={18} />
+                    <span className="min-w-0 grow truncate font-mono text-[11px] text-mist">
+                      {String(c.entry.name ?? c.def.label)}
+                    </span>
+                    <span className="shrink-0 font-mono text-[9px] tracking-[0.06em] text-faint uppercase">
+                      {c.def.label}
+                      {off ? " · off" : ""}
+                    </span>
+                    {card && <ToolMark card={card} size={14} title={`Feeds ${card.label}`} />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </Section>
       )}
 
       {/* ── The contract ── */}
@@ -309,13 +391,25 @@ export function Inspector({
             placeholder="What this agent is for, how it should work, and when it should stop."
           />
         </Row>
-        <Row label="Model" hint="The list this factory offers — set on the Configuration page.">
+        <Row
+          label="Model"
+          hint={
+            node.model_class
+              ? `Routed by tier: this deployment's ${node.model_class} model is ${classDefaults[node.model_class] ?? "not set on the Configuration page"}.`
+              : "A model id, or a tier the router resolves per deployment. Tiers are set on the Configuration page."
+          }
+        >
           <Pick
-            value={node.model ?? ""}
-            onChange={(v) => patch({ model: v })}
+            value={node.model ? node.model : node.model_class ? `class:${node.model_class}` : ""}
+            onChange={(v) =>
+              v.startsWith("class:")
+                ? patch({ model: "", model_class: v.slice(6) as "small" | "medium" | "large" })
+                : patch({ model: v, model_class: undefined })
+            }
             options={[
               { value: "", label: "Factory default" },
-              ...models.map((m) => ({ value: m.id, label: m.label })),
+              ...MODEL_CLASSES.map((c) => ({ value: `class:${c}`, label: `Any ${c} model (routed)` })),
+              ...models.map((m) => ({ value: m.id, label: m.class ? `${m.label} · ${m.class}` : m.label })),
             ]}
           />
         </Row>
@@ -346,19 +440,19 @@ function TaintNotice({
 
   if (holdsSink) {
     return (
-      <p className="rounded-md border border-err-line bg-err-bg px-2.5 py-2 text-[11px] leading-[1.55] text-err">
+      <Banner tone="err" title="Outside content reaches a node that acts outside">
         This node acts on the outside world, and its input traces back to content authored elsewhere
         ({upstream.join(", ")}). At runtime those calls are refused, not gated — the injection never
         targets the node that reads, it targets the one that can act.
-      </p>
+      </Banner>
     );
   }
 
   return (
-    <p className="rounded-md border border-warn-line bg-warn-bg px-2.5 py-2 text-[11px] leading-[1.55] text-warn">
+    <Banner tone="warn" title="Input carries outside content">
       Input here derives from content authored outside the system{holdsTaint ? "" : ", upstream"} (
       {upstream.join(", ")}). The mark travels with anything this node produces.
-    </p>
+    </Banner>
   );
 }
 
@@ -472,8 +566,9 @@ function StepsPanel({
       }
     >
       <p className="-mt-0.5 text-[11.5px] leading-[1.5] text-faint">
-        Decided before the run. Nothing this node discovers can add a step. Mark a model step ✳ to
-        spread its returned object across this node&rsquo;s declared fields.
+        Decided before the run. Nothing this node discovers can add a step. A model step marked
+        &ldquo;spread&rdquo; fills this node&rsquo;s declared fields from its returned object
+        instead of nesting it under one name.
       </p>
 
       {steps.map((st, i) => (
@@ -500,14 +595,12 @@ function StepsPanel({
             </div>
             {st.action === "model" && (
               <button
+                type="button"
                 onClick={() =>
                   set(steps.map((s, j) => (j === i ? { ...s, emits: s.emits === "*" ? "" : "*" } : s)))
                 }
-                title={
-                  st.emits === "*"
-                    ? "Spreading: the returned object fills this node's declared fields."
-                    : "Spread the returned object across this node's fields, instead of nesting it under one name."
-                }
+                aria-pressed={st.emits === "*"}
+                title="Spread"
                 className={`focusable flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-sm border px-1.5 font-mono text-[12px] transition-colors ${
                   st.emits === "*"
                     ? "border-line-strong bg-ink text-on-ink"
@@ -680,7 +773,7 @@ function EdgeInspector({
         <Button
           size="sm"
           tone="err"
-          variant="quiet"
+          variant="solid"
           className="self-start"
           onClick={() => dispatch({ type: "delete-edge", index })}
         >
@@ -748,6 +841,8 @@ function RoutePanel({
 /* ═══════════════════ Nothing selected ═══════════════════ */
 
 function SystemPanel({ system, dispatch }: { system: AgentSystem; dispatch: (a: Action) => void }) {
+  // Which gate's remove is armed, by index; auto-disarms after three seconds.
+  const [armGate, setArmGate] = useState<number | null>(null);
   return (
     <div className="flex h-full flex-col overflow-y-auto">
       <BoundaryPanel system={system} dispatch={dispatch} />
@@ -833,17 +928,26 @@ function SystemPanel({ system, dispatch }: { system: AgentSystem; dispatch: (a: 
                 }
               />
             </Row>
-            <button
-              onClick={() =>
+            <Button
+              size="sm"
+              variant="solid"
+              tone="err"
+              className="self-start"
+              onClick={() => {
+                if (armGate !== i) {
+                  setArmGate(i);
+                  setTimeout(() => setArmGate((v) => (v === i ? null : v)), 3000);
+                  return;
+                }
+                setArmGate(null);
                 dispatch({
                   type: "patch-policy",
                   patch: { gates: system.policy.gates.filter((_, j) => j !== i) },
-                })
-              }
-              className="focusable cursor-pointer self-start text-[11px] text-faint transition-colors hover:text-err"
+                });
+              }}
             >
-              Remove gate
-            </button>
+              {armGate === i ? "Remove gate and its approvers" : "Remove gate"}
+            </Button>
           </div>
         ))}
       </Section>
@@ -1038,6 +1142,7 @@ function ConnectorInspector({
   dispatch: (a: Action) => void;
   index: number;
 }) {
+  const [armRemove, setArmRemove] = useState(false);
   const conn = listConnections(system)[index];
 
   if (!conn) {
@@ -1051,27 +1156,34 @@ function ConnectorInspector({
   return (
     <>
       <div className="flex items-center gap-2.5 border-b border-line px-4 py-3.5">
-        <span
-          className="grid size-8 shrink-0 place-items-center rounded-md"
-          style={{ background: `color-mix(in srgb, ${def.hex} 14%, transparent)`, color: def.hex }}
-        >
-          <Icon name={def.icon} size={16} />
-        </span>
+        <ConnectorMark def={def} size={32} />
         <div className="flex min-w-0 grow flex-col">
           <span className="text-[13px] font-semibold text-fg">{def.label}</span>
-          <span className="truncate text-[10.5px] text-faint">
-            feeds {def.tool} under{" "}
-            {system.nodes.find((n) => n.id === conn.attached_to)?.label ?? conn.attached_to ?? "—"}
+          <span className="flex min-w-0 items-center gap-1 truncate text-[10.5px] text-faint">
+            feeds
+            <ToolMark card={def.tool} size={12} />
+            <span className="truncate">
+              {TOOL_BY_ID.get(def.tool)?.label ?? def.tool} under{" "}
+              {system.nodes.find((n) => n.id === conn.attached_to)?.label ?? conn.attached_to ?? "—"}
+            </span>
           </span>
         </div>
-        <button
-          onClick={() =>
-            dispatch({ type: "remove-connection", server: def.server, slot: def.slot, index: conn.index })
-          }
-          className="focusable cursor-pointer text-[11px] text-faint transition-colors hover:text-err"
+        <Button
+          size="sm"
+          variant="solid"
+          tone="err"
+          onClick={() => {
+            if (!armRemove) {
+              setArmRemove(true);
+              setTimeout(() => setArmRemove(false), 3000);
+              return;
+            }
+            setArmRemove(false);
+            dispatch({ type: "remove-connection", server: def.server, slot: def.slot, index: conn.index });
+          }}
         >
-          Remove
-        </button>
+          {armRemove ? "Remove connection and its settings" : "Remove"}
+        </Button>
       </div>
 
       <Section title="Connection">

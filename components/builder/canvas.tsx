@@ -1,19 +1,24 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BY_NAME } from "@/lib/catalogue";
 import { listConnections, type Connection } from "@/lib/connections";
-import { IconButton, Kbd } from "../ui";
+import type { McpServer } from "@/lib/use-mcp";
+import { Button, IconButton, Kbd, Status } from "../ui";
 import { Icon } from "./icons";
+import { ConnectorMark, grantLooks, highestRisk } from "./marks";
 import {
   HARNESS,
   HARNESS_ORDER,
+  RISK,
   grantsFor,
   type AgentSystem,
   type HarnessKind,
   type Problem,
 } from "@/lib/spec";
 import type { HistoryAction } from "@/lib/builder-store";
+
+/** How many identity chips a node footer shows before folding into "+N". */
+const CHIP_MAX = 6;
 
 export const NODE_W = 208;
 export const NODE_H = 96;
@@ -90,6 +95,7 @@ export function Canvas({
   canUndo,
   canRedo,
   apiRef,
+  servers,
 }: {
   system: AgentSystem;
   dispatch: (a: HistoryAction) => void;
@@ -100,6 +106,8 @@ export function Canvas({
   canUndo: boolean;
   canRedo: boolean;
   apiRef?: React.MutableRefObject<CanvasApi | null>;
+  /** Connected MCP servers, for drawing a custom tool's mark by its server. */
+  servers?: McpServer[] | null;
 }) {
   const surface = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
@@ -148,8 +156,11 @@ export function Canvas({
   /* Boundary cards: the trigger sits before the entry; each output sits after
      the node it reads (or the rightmost node, for run-result outputs). */
   const entryNode = byId.get(system.entry);
+  // Every trigger kind is drawn, the API one included: an agent that waits
+  // for another system to post to it starts at that endpoint, and the card is
+  // where the endpoint is shown.
   const triggerCard =
-    system.trigger && system.trigger.kind !== "api" && entryNode
+    system.trigger && entryNode
       ? { x: entryNode.x - SYS_W - 64, y: entryNode.y + NODE_H / 2 - SYS_H / 2 }
       : null;
 
@@ -601,7 +612,7 @@ export function Canvas({
             }
           }
         } else if (sys === "input") {
-          if (!system.trigger || system.trigger.kind === "api") {
+          if (!system.trigger) {
             dispatch({ type: "set-trigger", trigger: { kind: "prompt", config: {} } });
           }
           onSelect("sys:trigger");
@@ -631,11 +642,10 @@ export function Canvas({
     >
       <style>{`
         @keyframes af-node-flash {
-          0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--t-run) 65%, transparent); }
-          70% { box-shadow: 0 0 0 12px color-mix(in srgb, var(--t-run) 0%, transparent); }
-          100% { box-shadow: 0 0 0 0 transparent; }
+          0% { outline: 2px solid var(--t-fg); outline-offset: 3px; }
+          100% { outline: 2px solid transparent; outline-offset: 3px; }
         }
-        .af-node-flash { animation: af-node-flash 550ms var(--ease-out) 2; }
+        .af-node-flash { animation: af-node-flash 200ms var(--ease-out) 1; }
       `}</style>
 
       <div
@@ -726,6 +736,7 @@ export function Canvas({
           return (
             <button
               key={id}
+              type="button"
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
@@ -740,19 +751,11 @@ export function Canvas({
                 boxShadow: isSel ? `0 0 0 1px ${meta.hex}` : undefined,
                 opacity: off ? 0.55 : 1,
               }}
-              className={`absolute flex cursor-pointer items-center gap-2 rounded-md border bg-surface px-2.5 text-left transition-shadow ${
+              className={`focusable absolute flex cursor-pointer items-center gap-2 rounded-md border bg-surface px-2.5 text-left transition-shadow ${
                 isSel ? "elev-2" : "elev-1 border-line hover:border-line-strong"
               }`}
             >
-              <span
-                className="grid size-7 shrink-0 place-items-center rounded-md"
-                style={{
-                  background: `color-mix(in srgb, ${meta.hex} 14%, transparent)`,
-                  color: meta.hex,
-                }}
-              >
-                <Icon name={meta.icon} size={14} />
-              </span>
+              <ConnectorMark def={meta} size={28} />
               <span className="flex min-w-0 flex-col">
                 <span className="truncate text-[11.5px] font-semibold text-fg">
                   {String(c.conn.entry.name ?? meta.label)}
@@ -772,7 +775,12 @@ export function Canvas({
             y={triggerCard.y}
             icon={{ prompt: "prompt", api: "api", cron: "clock", webhook: "webhook" }[system.trigger.kind]}
             title="Input"
-            sub={{ prompt: "User prompt", api: "External API", cron: String(system.trigger.config?.cron || "Schedule"), webhook: "Webhook" }[system.trigger.kind]}
+            sub={{
+              prompt: "User prompt",
+              api: `External API · POST /api/trigger/${system.id}`,
+              cron: String(system.trigger.config?.cron || "Schedule"),
+              webhook: `Webhook · POST /api/trigger/${system.id}`,
+            }[system.trigger.kind]}
             selected={selected === "sys:trigger"}
             onSelect={() => onSelect("sys:trigger")}
           />
@@ -801,6 +809,33 @@ export function Canvas({
           const tools = grantsFor(system, n.id);
           const isEntry = system.entry === n.id;
           const hasOut = system.edges.some((e) => e.source === n.id);
+
+          /* Grants drawn as identities: one chip per tool card or server,
+             so the footer says who this node can reach at a glance. */
+          const looks = grantLooks(system, tools, servers);
+          const shown = looks.length > CHIP_MAX ? looks.slice(0, CHIP_MAX - 1) : looks;
+          const folded = looks.slice(shown.length);
+          const taints = looks.some((l) => l.taints);
+          const sink = looks.some((l) => l.sink);
+          // A node that can act outward wears its risk on its bottom edge —
+          // graded by the riskiest thing it holds, in the same tones the
+          // inspector and the rail use.
+          const riskTone = sink ? RISK[highestRisk(looks.map((l) => l.risk))].tone : null;
+          const ring =
+            isWireTarget || isDropTarget
+              ? `0 0 0 3px color-mix(in srgb, var(${meta.token}) 30%, transparent)`
+              : isSel
+                ? `0 0 0 1px var(${meta.token})`
+                : null;
+          const shadow =
+            [
+              ring,
+              riskTone ? `inset 0 -2px 0 var(${riskTone})` : null,
+              // An inline shadow replaces the elevation class; keep the resting one.
+              riskTone && !ring ? "var(--shadow-1)" : null,
+            ]
+              .filter(Boolean)
+              .join(", ") || undefined;
 
           return (
             <div
@@ -839,12 +874,7 @@ export function Canvas({
                 minHeight: NODE_H,
                 borderColor:
                   isSel || isWireTarget || isDropTarget ? `var(${meta.token})` : undefined,
-                boxShadow:
-                  isWireTarget || isDropTarget
-                    ? `0 0 0 3px color-mix(in srgb, var(${meta.token}) 30%, transparent)`
-                    : isSel
-                      ? `0 0 0 1px var(${meta.token})`
-                      : undefined,
+                boxShadow: shadow,
               }}
               className={`group/node focusable absolute flex cursor-grab flex-col rounded-lg border bg-surface transition-shadow active:cursor-grabbing ${
                 isSel || isWireTarget || isDropTarget
@@ -862,6 +892,7 @@ export function Canvas({
               {isSel && !drag && (
                 <div className="absolute -top-8 right-0 flex items-center gap-px rounded-md border border-line bg-surface p-px elev-2">
                   <button
+                    type="button"
                     onPointerDown={(e) => e.stopPropagation()}
                     onClick={() => dispatch({ type: "duplicate-node", id: n.id })}
                     title="Duplicate (⌘D)"
@@ -873,13 +904,14 @@ export function Canvas({
                     </svg>
                   </button>
                   <button
+                    type="button"
                     onPointerDown={(e) => e.stopPropagation()}
                     onClick={() => {
                       dispatch({ type: "delete-node", id: n.id });
                       onSelect(null);
                     }}
                     title="Delete (⌫)"
-                    className="focusable grid size-6 cursor-pointer place-items-center rounded-sm text-faint transition-colors hover:bg-err-bg hover:text-err"
+                    className="focusable grid size-6 cursor-pointer place-items-center rounded-sm text-faint transition-colors hover:bg-raise hover:text-err"
                   >
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
                       <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
@@ -911,22 +943,38 @@ export function Canvas({
                 )}
               </div>
 
-              <div className="mt-auto flex items-center gap-1.5 border-t border-line px-3 py-1.5 pl-4">
-                {tools.length ? (
-                  <span className="min-w-0 truncate font-mono text-[9.5px] text-dim" title={tools.join("\n")}>
-                    {tools.map((t) => t.split(".")[0]).filter((v, i, a) => a.indexOf(v) === i).join(" · ")}
+              <div className="mt-auto flex items-center gap-1.5 border-t border-line py-1.5 pr-3 pl-4">
+                {/* The marks yield to the boundary flags: a node that reads or
+                    acts outside must say so in full, even if a mark or two is
+                    clipped — the inspector lists every grant anyway. */}
+                {looks.length ? (
+                  <span className="flex min-w-0 items-center gap-[3px] overflow-hidden">
+                    {shown.map((l) => (
+                      <span key={l.key} className="shrink-0">
+                        {l.mark(16, `${l.label}\n${l.names.join("\n")}`)}
+                      </span>
+                    ))}
+                    {folded.length > 0 && (
+                      <span
+                        title={folded.flatMap((l) => l.names).join("\n")}
+                        className="tnum grid h-4 shrink-0 place-items-center rounded-[4px] bg-raise px-1 font-mono text-[9px] text-dim"
+                      >
+                        +{folded.length}
+                      </span>
+                    )}
                   </span>
                 ) : (
                   <span className="font-mono text-[9.5px] text-ghost">no capabilities</span>
                 )}
-                {tools.some((t) => BY_NAME.get(t)?.taints) && (
-                  <span title="Reads content authored outside the system" className="shrink-0 font-mono text-[9px] font-semibold text-warn">
-                    EXT
+                <span className="grow" />
+                {taints && (
+                  <span className="shrink-0">
+                    <Status tone="warn">External input</Status>
                   </span>
                 )}
-                {tools.some((t) => BY_NAME.get(t)?.is_sink) && (
-                  <span title="Acts on the outside world" className="shrink-0 font-mono text-[9px] font-semibold text-err">
-                    OUT
+                {sink && (
+                  <span className="shrink-0">
+                    <Status tone="err">Acts outside</Status>
                   </span>
                 )}
               </div>
@@ -943,8 +991,9 @@ export function Canvas({
               {/* Output port. Drag to wire; click for the picker. Grows on
                   hover because a 3px target is a secret, not an affordance. */}
               <button
+                type="button"
                 aria-label={`Connect from ${n.label || n.id}`}
-                title="Drag to connect — or click to add the next step"
+                title={`Connect from ${n.label || n.id}`}
                 onPointerDown={(e) => {
                   e.stopPropagation();
                   const p = toCanvas(e.clientX, e.clientY);
@@ -977,7 +1026,7 @@ export function Canvas({
       </div>
 
       {dropHint && !dropTarget && (
-        <div className="pointer-events-none absolute top-1/2 left-1/2 z-30 -translate-x-1/2 -translate-y-1/2 rounded-md border border-line bg-surface px-2.5 py-1.5 text-[11.5px] font-medium text-dim elev-2">
+        <div className="af-pop pointer-events-none absolute top-1/2 left-1/2 z-30 -translate-x-1/2 -translate-y-1/2 rounded-md border border-line bg-surface px-2.5 py-1.5 text-[11.5px] font-medium text-dim elev-3">
           Drop on an agent
         </div>
       )}
@@ -1067,7 +1116,7 @@ function Picker({
       style={{ position: "fixed", left, top }}
       className="af-pop z-40 flex w-[236px] flex-col gap-1 rounded-lg border border-line bg-surface p-1.5 elev-3"
     >
-      <span className="px-1.5 pt-0.5 pb-1 font-mono text-[9.5px] tracking-[0.12em] text-faint uppercase">
+      <span className="px-1.5 pt-0.5 pb-1 text-[11px] font-medium text-faint">
         {at.edge !== undefined ? "Insert between" : "What happens next?"}
       </span>
       {HARNESS_ORDER.map((k) => {
@@ -1075,6 +1124,7 @@ function Picker({
         return (
           <button
             key={k}
+            type="button"
             onClick={() => onPick(k)}
             className="focusable relative flex cursor-pointer flex-col gap-0.5 rounded-md py-1.5 pr-2 pl-3 text-left transition-colors hover:bg-raise"
           >
@@ -1232,7 +1282,7 @@ function Wires({
             from.y + NODE_H / 2
           }, ${wire.x - 60} ${wire.y}, ${wire.x} ${wire.y}`}
           fill="none"
-          stroke="var(--t-run)"
+          stroke="var(--t-fg)"
           strokeWidth="1.75"
           strokeDasharray="5 5"
         />
@@ -1270,6 +1320,7 @@ function BoundaryCard({
 }) {
   return (
     <button
+      type="button"
       data-out-index={outIndex}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => {
@@ -1283,7 +1334,7 @@ function BoundaryCard({
         height: SYS_H,
         boxShadow: wireOver ? "0 0 0 3px color-mix(in srgb, var(--t-fg) 30%, transparent)" : undefined,
       }}
-      className={`absolute flex cursor-pointer items-center gap-2.5 rounded-lg border border-dashed bg-surface/85 px-3 text-left transition-[border-color,box-shadow] ${
+      className={`focusable absolute flex cursor-pointer items-center gap-2.5 rounded-lg border border-dashed bg-surface/85 px-3 text-left transition-[border-color,box-shadow] ${
         wireOver
           ? "border-fg elev-2"
           : selected
@@ -1295,7 +1346,7 @@ function BoundaryCard({
         <Icon name={icon} size={14} />
       </span>
       <span className="flex min-w-0 flex-col">
-        <span className="font-mono text-[9px] tracking-[0.1em] text-faint uppercase">{title}</span>
+        <span className="text-[11px] font-medium text-faint">{title}</span>
         <span className="truncate text-[12px] font-semibold text-fg">{sub}</span>
       </span>
     </button>
@@ -1317,6 +1368,7 @@ function Empty({ onPick }: { onPick: (harness: HarnessKind) => void }) {
             return (
               <button
                 key={k}
+                type="button"
                 onClick={() => onPick(k)}
                 className="focusable pointer-events-auto relative flex cursor-pointer items-baseline gap-2.5 rounded-md border border-line bg-surface/70 py-1.5 pr-3 pl-3.5 text-left transition-[border-color,box-shadow] hover:border-line-strong hover:elev-1"
               >
@@ -1355,6 +1407,8 @@ const SHORTCUTS: [string, string][] = [
   ["⌘0", "100%"],
   ["⌘1", "fit"],
   ["Double-click canvas", "add"],
+  ["Drag a port", "connect"],
+  ["Click a port", "add the next step"],
 ];
 
 function Controls({
@@ -1398,9 +1452,7 @@ function Controls({
     <div ref={cluster} className="absolute right-3 bottom-3 flex items-center gap-px rounded-md border border-line bg-surface p-px elev-1">
       {showKeys && (
         <div className="af-pop absolute right-0 bottom-[calc(100%+8px)] flex w-[228px] flex-col gap-1 rounded-lg border border-line bg-surface p-2.5 elev-3">
-          <span className="pb-1 font-mono text-[9.5px] tracking-[0.12em] text-faint uppercase">
-            Gestures
-          </span>
+          <span className="pb-1 text-[11px] font-medium text-faint">Gestures</span>
           {SHORTCUTS.map(([keys, does]) => (
             <span key={keys} className="flex items-center gap-2">
               <Kbd>{keys}</Kbd>
@@ -1409,67 +1461,49 @@ function Controls({
           ))}
         </div>
       )}
-      <button
-        onClick={onUndo}
-        disabled={!canUndo}
-        title="Undo (⌘Z)"
-        aria-label="Undo"
-        className="focusable grid size-7 cursor-pointer place-items-center rounded-sm text-dim transition-colors hover:bg-raise hover:text-fg disabled:cursor-default disabled:opacity-35"
-      >
+      <IconButton label="Undo (⌘Z)" size="sm" onClick={onUndo} disabled={!canUndo} className="rounded-sm">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="M9 14 4 9l5-5" />
           <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
         </svg>
-      </button>
-      <button
-        onClick={onRedo}
-        disabled={!canRedo}
-        title="Redo (⇧⌘Z)"
-        aria-label="Redo"
-        className="focusable grid size-7 cursor-pointer place-items-center rounded-sm text-dim transition-colors hover:bg-raise hover:text-fg disabled:cursor-default disabled:opacity-35"
-      >
+      </IconButton>
+      <IconButton label="Redo (⇧⌘Z)" size="sm" onClick={onRedo} disabled={!canRedo} className="rounded-sm">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="m15 14 5-5-5-5" />
           <path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
         </svg>
-      </button>
+      </IconButton>
       <span className="mx-px h-4 w-px bg-line" />
-      <button
+      <IconButton
+        label="Tidy up — rank the graph left to right"
+        size="sm"
         onClick={tidy}
         disabled={count < 2}
-        title="Tidy up — rank the graph left to right"
-        className="focusable grid size-7 cursor-pointer place-items-center rounded-sm text-dim transition-colors hover:bg-raise hover:text-fg disabled:cursor-default disabled:opacity-35"
+        className="rounded-sm"
       >
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
           <rect x="3" y="4" width="7" height="6" rx="1.5" />
           <rect x="14" y="4" width="7" height="6" rx="1.5" />
           <rect x="8.5" y="14" width="7" height="6" rx="1.5" />
         </svg>
-      </button>
+      </IconButton>
       <span className="mx-px h-4 w-px bg-line" />
-      <button
-        onClick={() => zoomStep(1 / 1.2)}
-        aria-label="Zoom out"
-        title="Zoom out (⌘−)"
-        className="focusable size-7 cursor-pointer rounded-sm text-[15px] leading-none font-medium text-dim transition-colors hover:bg-raise hover:text-fg"
-      >
-        −
-      </button>
-      <button
-        onClick={fit}
-        className="focusable h-7 cursor-pointer rounded-sm px-2 font-mono text-[11px] text-dim transition-colors hover:bg-raise hover:text-fg"
-        title="Fit to view (⌘1)"
-      >
-        {Math.round(zoom * 100)}%
-      </button>
-      <button
-        onClick={() => zoomStep(1.2)}
-        aria-label="Zoom in"
-        title="Zoom in (⌘=)"
-        className="focusable size-7 cursor-pointer rounded-sm text-[15px] leading-none font-medium text-dim transition-colors hover:bg-raise hover:text-fg"
-      >
-        +
-      </button>
+      <IconButton label="Zoom out (⌘−)" size="sm" onClick={() => zoomStep(1 / 1.2)} className="rounded-sm">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+          <path d="M5 12h14" />
+        </svg>
+      </IconButton>
+      {/* The zoom readout is a label, not a glyph, so it takes the text button. */}
+      <span title="Fit to view (⌘1)">
+        <Button size="sm" variant="quiet" onClick={fit} className="tnum rounded-sm font-mono">
+          {Math.round(zoom * 100)}%
+        </Button>
+      </span>
+      <IconButton label="Zoom in (⌘=)" size="sm" onClick={() => zoomStep(1.2)} className="rounded-sm">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+      </IconButton>
       <span className="mx-px h-4 w-px bg-line" />
       <IconButton
         label="Keyboard shortcuts"
@@ -1477,7 +1511,10 @@ function Controls({
         onClick={() => setShowKeys(!showKeys)}
         className="rounded-sm"
       >
-        <span className="text-[12px] font-semibold">?</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-2.9 2.5-2.9 4.5" />
+          <path d="M12 18h.01" />
+        </svg>
       </IconButton>
     </div>
   );

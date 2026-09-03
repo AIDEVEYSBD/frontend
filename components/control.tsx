@@ -2,9 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Mono, Status, Tag } from "./ui";
+import { Button, IconButton, Label, Mono, Status, Tag } from "./ui";
+import { Banner } from "./overlays";
+import { useDismiss } from "./dismiss";
 import { Sparkline } from "./data";
 import { CAT } from "./charts";
+import { TriangleGlyph, bestOf, logScore } from "./tradeoff";
 import { Icon } from "./builder/icons";
 
 /**
@@ -197,6 +200,9 @@ export function Control() {
   const [stack, setStack] = useState<Drill[]>([]);
   const [stageNotice, setStageNotice] = useState<string | null>(null);
   const [deployingId, setDeployingId] = useState<string | null>(null);
+  /* Hover readouts — what a tooltip would have hidden, kept on the page. */
+  const [stageHint, setStageHint] = useState<string | null>(null);
+  const [tickHint, setTickHint] = useState<string | null>(null);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const drill = stack[stack.length - 1] ?? null;
@@ -207,6 +213,8 @@ export function Control() {
     noticeTimer.current = setTimeout(() => setStageNotice(null), 3200);
   }, []);
 
+  const [queue, setQueue] = useState<QueueData | null>(null);
+
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/control");
@@ -216,6 +224,14 @@ export function Control() {
       setError("");
     } catch (e) {
       setError((e as Error).message);
+    }
+    // The trigger queue is its own read: the intake can be healthy while the
+    // estate read is slow, and the other way round.
+    try {
+      const q = await (await fetch("/api/queue")).json();
+      setQueue(q.error ? null : q);
+    } catch {
+      setQueue(null);
     }
   }, []);
 
@@ -300,14 +316,22 @@ export function Control() {
     [router, notice, deployNow, open],
   );
 
+  /* Which kill is in flight: a run id, or "*" for the whole estate. The
+     button that fired it shows the spinner until the request settles. */
+  const [killing, setKilling] = useState<string | null>(null);
   const kill = useCallback(
     async (id?: string) => {
-      await fetch("/api/kill", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(id ? { id } : { all: true }),
-      }).catch(() => {});
-      load();
+      setKilling(id ?? "*");
+      try {
+        await fetch("/api/kill", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(id ? { id } : { all: true }),
+        }).catch(() => {});
+        await load();
+      } finally {
+        setKilling(null);
+      }
     },
     [load],
   );
@@ -348,7 +372,11 @@ export function Control() {
         <span className="grow" />
         <LogExport />
         {t && t.active > 0 && (
-          <button
+          <Button
+            tone="err"
+            variant="solid"
+            size="sm"
+            loading={killing === "*"}
             onClick={() => {
               if (confirmAll) {
                 kill();
@@ -359,13 +387,10 @@ export function Control() {
                 confirmTimer.current = setTimeout(() => setConfirmAll(false), 3000);
               }
             }}
-            className={`focusable flex cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 text-[12px] font-semibold transition-colors ${
-              confirmAll ? "border-err bg-err text-on-solid" : "border-err/40 bg-err-bg text-err hover:border-err"
-            }`}
           >
-            <span className={`size-1.5 rounded-[2px] ${confirmAll ? "bg-on-solid" : "bg-err"}`} />
+            <span className="size-1.5 rounded-[2px] bg-on-solid" />
             {confirmAll ? `Really stop ${t.active} run${t.active === 1 ? "" : "s"}?` : "Kill all runs"}
-          </button>
+          </Button>
         )}
       </div>
 
@@ -410,7 +435,7 @@ export function Control() {
               <span className="text-[10.5px] font-semibold text-dim">Agent</span>
               {LIFECYCLE.map((s) => (
                 <span key={s.id} className="flex flex-col items-center gap-0.5 text-center">
-                  <span className="text-[9.5px] font-semibold tracking-wide text-dim uppercase">{s.label}</span>
+                  <Label>{s.label}</Label>
                   {s.roadmap && <span className="text-[8px] text-ghost">roadmap</span>}
                 </span>
               ))}
@@ -422,12 +447,9 @@ export function Control() {
                   key={a.id}
                   className="grid w-full grid-cols-[minmax(140px,1fr)_repeat(8,minmax(64px,72px))] items-center gap-1 border-b border-line px-4 py-1.5 last:border-b-0 hover:bg-raise/30"
                 >
-                  <button
-                    onClick={() => open({ kind: "agent", id: a.id })}
-                    className="focusable w-fit max-w-full cursor-pointer truncate rounded-sm text-left text-[12px] font-medium text-fg hover:underline"
-                  >
-                    {a.name}
-                  </button>
+                  <Button size="sm" variant="quiet" className="max-w-full justify-self-start" onClick={() => open({ kind: "agent", id: a.id })}>
+                    <span className="min-w-0 truncate">{a.name}</span>
+                  </Button>
                   {LIFECYCLE.map((s, i) => {
                     const on = lit.has(s.id);
                     const prev = i === 0 || lit.has(LIFECYCLE[i - 1].id) || LIFECYCLE[i - 1].roadmap;
@@ -444,9 +466,14 @@ export function Control() {
                     return (
                       <button
                         key={s.id}
+                        type="button"
                         onClick={() => stageAction(a, s.id)}
-                        title={hint}
+                        title={`${a.name} · ${s.label}`}
                         aria-label={`${a.name} — ${hint}`}
+                        onMouseEnter={() => setStageHint(`${a.name} · ${hint}`)}
+                        onMouseLeave={() => setStageHint(null)}
+                        onFocus={() => setStageHint(`${a.name} · ${hint}`)}
+                        onBlur={() => setStageHint(null)}
                         className="focusable flex cursor-pointer items-center justify-center rounded-sm py-1.5 transition-colors hover:bg-raise/70"
                       >
                         <span className={`h-px w-4 ${i === 0 ? "opacity-0" : on && prev ? "bg-ok/60" : "bg-line"}`} />
@@ -471,17 +498,20 @@ export function Control() {
             {!data && <p className="px-4 py-4 text-[12px] text-faint">Reading the registry…</p>}
           </div>
         </div>
+        <p className="truncate border-t border-line px-4 py-1.5 text-[10.5px] text-faint" aria-live="polite">
+          {stageHint ?? "Hover a stage for the record behind it and what a click does."}
+        </p>
       </section>
 
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
         {/* ── The estate ── */}
         <section className="flex h-fit flex-col overflow-hidden rounded-md border border-line bg-surface">
           <PanelHead title="Estate" meta="every agent, its whole record — click a row" />
-          <div className="overflow-x-auto">
+          <div className="max-h-[560px] overflow-auto">
             <div className="min-w-[820px]">
-              <div className="grid grid-cols-[minmax(170px,1.4fr)_96px_120px_130px_86px_86px_72px] items-center gap-3 border-b border-line px-4 py-2">
+              <div className="sticky top-0 z-10 grid grid-cols-[minmax(170px,1.4fr)_96px_120px_130px_86px_86px_72px] items-center gap-3 border-b border-line bg-surface px-4 py-2">
                 {["Agent", "Status", "Benchmark", "Health · last 14", "Avg time", "Spend · 7d", ""].map((h, i) => (
-                  <span key={i} className="text-[11px] font-semibold text-dim">{h}</span>
+                  <span key={i} className={`text-[11px] font-semibold text-dim ${i === 4 || i === 5 ? "text-right" : ""}`}>{h}</span>
                 ))}
               </div>
 
@@ -541,19 +571,24 @@ export function Control() {
                     {a.ticks.map((tk) => (
                       <button
                         key={tk.id}
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           open({ kind: "run", id: tk.id });
                         }}
-                        title={`${tk.state} · ${ago(tk.at)}`}
+                        title="Open run"
                         aria-label={`Run ${tk.state} ${ago(tk.at)}`}
+                        onMouseEnter={() => setTickHint(`${a.name} · run ${tk.state} · ${ago(tk.at)}`)}
+                        onMouseLeave={() => setTickHint(null)}
+                        onFocus={() => setTickHint(`${a.name} · run ${tk.state} · ${ago(tk.at)}`)}
+                        onBlur={() => setTickHint(null)}
                         className={`focusable h-3.5 w-[6px] cursor-pointer rounded-[1.5px] transition-transform hover:scale-y-125 ${DOT_BG[tk.state] ?? "bg-line-strong"}`}
                       />
                     ))}
                   </span>
 
-                  <span className="tnum text-[12.5px] text-mist">{fmtMs(a.avgMs7d)}</span>
-                  <span className="tnum text-[12.5px] text-mist">{fmtCost(a.cost7d)}</span>
+                  <span className="tnum text-right text-[12.5px] text-mist">{fmtMs(a.avgMs7d)}</span>
+                  <span className="tnum text-right text-[12.5px] text-mist">{fmtCost(a.cost7d)}</span>
 
                   <span className="flex justify-end" onClick={(e) => e.stopPropagation()}>
                     <Button size="sm" variant="outline" href={`/runs?agent=${encodeURIComponent(a.id)}`}>
@@ -572,6 +607,9 @@ export function Control() {
               {!data && <p className="px-4 py-6 text-[12.5px] text-faint">Reading the registry…</p>}
             </div>
           </div>
+          <p className="truncate border-t border-line px-4 py-1.5 text-[10.5px] text-faint" aria-live="polite">
+            {tickHint ?? "Health: one tick per run — hover for its state and age, click to open."}
+          </p>
 
           {/* Recent runs fill the column — the estate's pulse, row by row. */}
           <div className="border-t border-line">
@@ -586,6 +624,7 @@ export function Control() {
               {(data?.runs ?? []).slice(0, 10).map((r, i) => (
                 <button
                   key={r.id}
+                  type="button"
                   onClick={() => open({ kind: "run", id: r.id })}
                   className={`focusable flex cursor-pointer items-center gap-2.5 border-b border-line px-4 py-2 text-left transition-colors hover:bg-raise/50 ${
                     i % 2 === 0 ? "sm:border-r" : ""
@@ -618,15 +657,14 @@ export function Control() {
             {(data?.live ?? []).map((r) => (
               <div key={r.id} className="flex items-center gap-3 border-b border-line px-3 py-2.5 last:border-b-0">
                 <button
+                  type="button"
                   onClick={() => open({ kind: "run", id: r.id })}
                   className="focusable flex min-w-0 grow cursor-pointer flex-col text-left"
                 >
                   <span className="truncate text-[12.5px] font-medium text-fg">{r.system}</span>
                   <span className="truncate font-mono text-[10px] text-faint">{r.id} · {ago(r.startedAt)}</span>
                 </button>
-                <Button size="sm" variant="outline" tone="err" onClick={() => kill(r.id)}>
-                  Kill
-                </Button>
+                <KillButton id={r.id} busy={killing === r.id || killing === "*"} onKill={kill} />
               </div>
             ))}
             {!data && <p className="px-3 py-4 text-[12px] text-faint">Reading the process table…</p>}
@@ -654,6 +692,7 @@ export function Control() {
               .map((r) => (
                 <div key={r.id} className="flex items-center gap-3 border-b border-line px-3 py-2.5 last:border-b-0">
                   <button
+                    type="button"
                     onClick={() => open({ kind: "run", id: r.id })}
                     className="focusable flex min-w-0 grow cursor-pointer flex-col text-left"
                   >
@@ -686,6 +725,7 @@ export function Control() {
               ].map((g) => (
                 <button
                   key={g.label}
+                  type="button"
                   onClick={() => open({ kind: "kpi", which: g.drill })}
                   className="focusable flex cursor-pointer flex-col items-center gap-0.5 px-2 py-3 transition-colors hover:bg-raise/50"
                 >
@@ -719,6 +759,17 @@ export function Control() {
           <ModelMix models={data?.models ?? []} onPick={(id) => open({ kind: "model", id })} selected={drill?.kind === "model" ? drill.id : null} />
         </section>
 
+        {/* The intake: what external systems have posted, and who is draining it */}
+        <section className="mb-4 flex break-inside-avoid flex-col overflow-hidden rounded-md border border-line bg-surface">
+          <PanelHead
+            title="Trigger queue"
+            meta="external posts, by agent"
+            pulse={Boolean(queue && Object.values(queue.agents).some((a) => (a.running ?? 0) > 0))}
+            right={<Mono className="text-[10px] text-ghost">{queue ? `${queue.workers.length} worker${queue.workers.length === 1 ? "" : "s"} live` : ""}</Mono>}
+          />
+          <QueuePanel queue={queue} />
+        </section>
+
         {/* The optimizing triangle: cost, accuracy, time. Every model sits
             where its own evidence pulls it. */}
         <section className="mb-4 flex break-inside-avoid flex-col overflow-hidden rounded-md border border-line bg-surface">
@@ -744,6 +795,7 @@ export function Control() {
                     <Icon name={name.endsWith(".json") ? "json" : "file"} size={12} />
                   </span>
                   <button
+                    type="button"
                     onClick={() => open({ kind: "run", id: r.id })}
                     className="focusable flex min-w-0 grow cursor-pointer flex-col text-left"
                   >
@@ -758,7 +810,7 @@ export function Control() {
                     target="_blank"
                     rel="noreferrer"
                     aria-label={`Download ${name}`}
-                    className="focusable shrink-0 rounded-sm p-1 text-faint transition-colors hover:text-fg"
+                    className="focusable inline-grid size-7 shrink-0 cursor-pointer place-items-center rounded-md border border-transparent bg-raise text-fg transition-[filter] duration-100 hover:brightness-[1.08] active:brightness-95"
                   >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
@@ -774,44 +826,12 @@ export function Control() {
           </div>
         </section>
 
-        {/* Model gateway — per-node routing across the estate */}
-        <section className="mb-4 flex break-inside-avoid flex-col overflow-hidden rounded-md border border-line bg-surface">
-          <PanelHead title="Model gateway" meta="per-node routing" />
-          <div className="max-h-[260px] overflow-y-auto">
-            {(data?.routing ?? []).map((r, i) => (
-              <div key={i} className="flex items-center gap-2 border-b border-line px-3 py-1.5 last:border-b-0">
-                <span className="min-w-0 truncate font-mono text-[10px] text-faint">
-                  {r.agent} · <span className="text-mist">{r.node}</span>
-                </span>
-                <span className="grow" />
-                {r.model ? (
-                  <span className="flex shrink-0 items-center gap-1.5">
-                    <span className={`size-1.5 rounded-[2px] ${r.model.startsWith("ollama/") ? "bg-ok" : "bg-run"}`} />
-                    <Mono className="max-w-[140px] truncate text-[9.5px] text-fg">{r.model}</Mono>
-                  </span>
-                ) : (
-                  <span className="shrink-0 text-[9.5px] text-ghost">deployment default</span>
-                )}
-              </div>
-            ))}
-            {data && data.routing.length === 0 && (
-              <p className="px-3 py-4 text-[12px] text-faint">Nothing deployed yet.</p>
-            )}
-          </div>
-          <p className="border-t border-line px-3 py-2 text-[10.5px] leading-[1.5] text-faint">
-            Specs name a model per node, never a provider — the router decides where it runs.
-          </p>
-        </section>
-
         {/* Partner agents — A2A peers, card-pinged live */}
         <section className="mb-4 flex break-inside-avoid flex-col overflow-hidden rounded-md border border-line bg-surface">
           <PanelHead title="Partner agents" meta="A2A peers, card-pinged live" />
           {(data?.peers ?? []).map((p) => (
             <div key={`${p.name}@${p.url}`} className="flex items-center gap-2.5 border-b border-line px-3 py-2.5 last:border-b-0">
-              <span className="relative flex size-2 shrink-0">
-                {p.up && <span className="absolute inline-flex size-2 animate-ping rounded-full bg-ok opacity-50" />}
-                <span className={`relative inline-flex size-2 rounded-full ${p.up ? "bg-ok" : "bg-err"}`} />
-              </span>
+              <span className={`size-2 shrink-0 rounded-full ${p.up ? "bg-ok" : "bg-err"}`} aria-hidden />
               <span className="flex min-w-0 grow flex-col">
                 <span className="truncate text-[12px] font-medium text-fg">{p.title}</span>
                 <span className="truncate font-mono text-[9.5px] text-faint">
@@ -861,19 +881,21 @@ export function Control() {
                   </span>
                 </span>
                 {data.posture.ungated.length > 0 && (
-                  <div className="mt-1 flex flex-col gap-1 rounded-md border border-warn-line bg-warn-bg px-2.5 py-2">
-                    <span className="text-[11px] font-semibold text-warn">
-                      {data.posture.ungated.length} sink{data.posture.ungated.length === 1 ? "" : "s"} without an approval gate
-                    </span>
-                    {data.posture.ungated.slice(0, 4).map((u, i) => (
-                      <button
-                        key={i}
-                        onClick={() => open({ kind: "agent", id: u.agent })}
-                        className="focusable w-fit cursor-pointer rounded-sm font-mono text-[10px] text-mist hover:text-fg"
-                      >
-                        {u.agent} · {u.node} · {u.tool}
-                      </button>
-                    ))}
+                  <div className="mt-1">
+                    <Banner
+                      tone="warn"
+                      title={`${data.posture.ungated.length} sink${data.posture.ungated.length === 1 ? "" : "s"} without an approval gate`}
+                    >
+                      <span className="flex flex-col gap-1 pt-0.5">
+                        {data.posture.ungated.slice(0, 4).map((u, i) => (
+                          <Button key={i} size="sm" variant="quiet" className="max-w-full self-start font-mono" onClick={() => open({ kind: "agent", id: u.agent })}>
+                            <span className="min-w-0 truncate">
+                              {u.agent} · {u.node} · {u.tool}
+                            </span>
+                          </Button>
+                        ))}
+                      </span>
+                    </Banner>
                   </div>
                 )}
               </div>
@@ -920,7 +942,7 @@ export function Control() {
 
       {/* Stage-action feedback — the honest answer, or the receipt. */}
       {stageNotice && (
-        <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-md border border-line bg-surface px-4 py-2 text-[12px] text-fg elev-2">
+        <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-md border border-line bg-surface px-4 py-2 text-[12px] text-fg elev-3 af-pop">
           {stageNotice}
         </div>
       )}
@@ -935,6 +957,7 @@ export function Control() {
           onClose={close}
           onOpen={open}
           onKill={kill}
+          killing={killing}
         />
       )}
     </div>
@@ -953,6 +976,7 @@ function FinOpsPanel({
 }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState("");
+  const [saving, setSaving] = useState(false);
   const remaining = finops?.credits ? finops.credits.total - finops.credits.used : null;
   const spend = finops?.spend7d ?? null;
   const burnPct =
@@ -1002,35 +1026,42 @@ function FinOpsPanel({
               size="sm"
               variant="solid"
               tone="ink"
+              loading={saving}
               onClick={async () => {
                 const n = Number(value);
                 if (!Number.isFinite(n) || n < 0) return;
-                await fetch("/api/control", {
-                  method: "POST",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ budget_usd: n }),
-                }).catch(() => {});
+                setSaving(true);
+                try {
+                  await fetch("/api/control", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ budget_usd: n }),
+                  }).catch(() => {});
+                } finally {
+                  setSaving(false);
+                }
                 setEditing(false);
                 onSaved();
               }}
             >
               Set
             </Button>
-            <Button size="sm" variant="quiet" onClick={() => setEditing(false)}>
+            <Button size="sm" variant="solid" tone="err" disabled={saving} onClick={() => setEditing(false)}>
               Cancel
             </Button>
           </>
         ) : (
           <>
-            <button
+            <Button
+              size="sm"
+              variant="quiet"
               onClick={() => {
                 setValue(finops?.budget != null ? String(finops.budget) : "");
                 setEditing(true);
               }}
-              className="focusable cursor-pointer rounded-sm text-[11px] font-medium text-dim transition-colors hover:text-fg"
             >
               {finops?.budget != null ? "Change budget" : "Set a weekly budget"}
-            </button>
+            </Button>
             <span className="grow" />
             <span className="text-[10px] text-ghost">local models burn $0</span>
           </>
@@ -1044,16 +1075,8 @@ function FinOpsPanel({
     the forwarders are deployment slots and say so. */
 function LogExport() {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", onDown, true);
-    return () => document.removeEventListener("pointerdown", onDown, true);
-  }, [open]);
+  const close = useCallback(() => setOpen(false), []);
+  const ref = useDismiss<HTMLDivElement>(open, close);
 
   return (
     <div ref={ref} className="relative">
@@ -1061,7 +1084,7 @@ function LogExport() {
         Export logs
       </Button>
       {open && (
-        <div className="absolute top-full right-0 z-40 mt-1.5 flex w-72 flex-col overflow-hidden rounded-md border border-line bg-surface elev-2">
+        <div className="absolute top-full right-0 z-40 mt-1.5 flex w-72 flex-col overflow-hidden rounded-md border border-line bg-surface elev-3 af-pop">
           <a
             href="/api/logs"
             download
@@ -1104,6 +1127,49 @@ function LogExport() {
   );
 }
 
+/** A kill switch that names its consequence before it fires: the first click
+    arms it, the second kills, and it disarms itself after three seconds. */
+function KillButton({
+  id,
+  label = "Kill",
+  busy,
+  onKill,
+}: {
+  id: string;
+  label?: string;
+  busy: boolean;
+  onKill: (id: string) => void;
+}) {
+  const [armed, setArmed] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+  return (
+    <Button
+      size="sm"
+      variant="solid"
+      tone="err"
+      loading={busy}
+      onClick={() => {
+        if (timer.current) clearTimeout(timer.current);
+        if (armed) {
+          setArmed(false);
+          onKill(id);
+        } else {
+          setArmed(true);
+          timer.current = setTimeout(() => setArmed(false), 3000);
+        }
+      }}
+    >
+      {armed ? "Click again to kill" : label}
+    </Button>
+  );
+}
+
 function PanelHead({ title, meta, right, pulse }: { title: string; meta?: string; right?: React.ReactNode; pulse?: boolean }) {
   return (
     <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line bg-raise/55 px-3">
@@ -1140,6 +1206,7 @@ function Kpi({
 }) {
   return (
     <button
+      type="button"
       onClick={onOpen}
       aria-pressed={active}
       className={`focusable -mr-px -mb-px flex cursor-pointer flex-col gap-1 border-r border-b border-line px-3 py-2.5 text-left transition-colors ${
@@ -1175,6 +1242,12 @@ function ActivityChart({
   const maxRuns = Math.max(1, ...days.map((d) => d.runs));
   const knownCosts = days.filter((d) => d.cost !== null).map((d) => d.cost as number);
   const maxCost = Math.max(0.01, ...knownCosts);
+  // The day under the pointer, else the picked day: its figures sit in the
+  // footer rather than in a tooltip, so they are on the page for everyone.
+  const [hover, setHover] = useState<string | null>(null);
+  const shown = days.find((d) => d.day === (hover ?? selected)) ?? null;
+  const readout = (d: DayRow) =>
+    `${d.day} · ${d.runs} run${d.runs === 1 ? "" : "s"}${d.cost !== null ? ` · ${fmtCost(d.cost)}` : ""}${d.kills ? ` · ${d.kills} killed` : ""}`;
   return (
     <div className="flex flex-col">
       <div className="relative px-3 pt-4">
@@ -1182,10 +1255,15 @@ function ActivityChart({
           {days.map((d) => (
             <button
               key={d.day}
+              type="button"
               onClick={() => onPick(d.day)}
               aria-pressed={selected === d.day}
-              title={`${d.day}: ${d.runs} run${d.runs === 1 ? "" : "s"}${d.cost !== null ? ` · ${fmtCost(d.cost)}` : ""}${d.kills ? ` · ${d.kills} killed` : ""}`}
-              className="group flex h-full grow cursor-pointer items-end"
+              aria-label={readout(d)}
+              onMouseEnter={() => setHover(d.day)}
+              onMouseLeave={() => setHover(null)}
+              onFocus={() => setHover(d.day)}
+              onBlur={() => setHover(null)}
+              className="group focusable flex h-full grow cursor-pointer items-end"
             >
               <span
                 className={`w-full rounded-t-[2px] transition-colors ${
@@ -1217,6 +1295,9 @@ function ActivityChart({
         </span>
         <span className="font-mono text-[9.5px] text-ghost">today</span>
       </div>
+      <p className="tnum truncate border-t border-line px-3 py-1.5 font-mono text-[10px] text-faint" aria-live="polite">
+        {shown ? readout(shown) : "Hover a day for its runs and cost; click to open them."}
+      </p>
     </div>
   );
 }
@@ -1252,6 +1333,7 @@ function ModelMix({
         {models.map((m) => (
           <button
             key={m.model}
+            type="button"
             onClick={() => onPick(m.model)}
             aria-pressed={selected === m.model}
             className={`focusable -mx-1 flex cursor-pointer items-center gap-2 rounded-sm px-1 py-1.5 text-left transition-colors ${
@@ -1279,6 +1361,7 @@ function Drawer({
   onClose,
   onOpen,
   onKill,
+  killing,
 }: {
   drill: Drill;
   data: ControlData;
@@ -1287,13 +1370,14 @@ function Drawer({
   onClose: () => void;
   onOpen: (d: Drill) => void;
   onKill: (id: string) => void;
+  killing: string | null;
 }) {
-  const { title, body } = renderDrill(drill, data, onOpen, onKill);
+  const { title, body } = renderDrill(drill, data, onOpen, onKill, killing);
   return (
     // A modal over the room: the backdrop is a click target — empty space
     // closes the drill-down, Esc steps back one level.
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-canvas/70 p-4 backdrop-blur-[2px]"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-canvas/70 p-4"
       onClick={onClose}
     >
       <div
@@ -1301,23 +1385,23 @@ function Drawer({
         aria-modal="true"
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[82vh] w-[min(560px,94vw)] flex-col overflow-hidden rounded-lg border border-line bg-surface elev-2"
+        className="flex max-h-[82vh] w-[min(560px,94vw)] flex-col overflow-hidden rounded-lg border border-line bg-surface elev-3 af-pop"
       >
         <div className="flex h-11 shrink-0 items-center gap-2 border-b border-line bg-raise/55 px-3">
           {depth > 1 && (
-            <button onClick={onBack} aria-label="Back" className="focusable cursor-pointer rounded-sm p-1 text-dim transition-colors hover:text-fg">
+            <IconButton size="sm" label="Back" onClick={onBack}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M15 6l-6 6 6 6" />
               </svg>
-            </button>
+            </IconButton>
           )}
           <span className="min-w-0 truncate text-[12.5px] font-semibold text-fg">{title}</span>
           <span className="grow" />
-          <button onClick={onClose} aria-label="Close" className="focusable cursor-pointer rounded-sm p-1 text-dim transition-colors hover:text-fg">
+          <IconButton size="sm" label="Close" onClick={onClose}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" aria-hidden>
               <path d="M6 6l12 12M18 6L6 18" />
             </svg>
-          </button>
+          </IconButton>
         </div>
         <div className="min-h-0 grow overflow-y-auto">{body}</div>
       </div>
@@ -1340,6 +1424,7 @@ function RunList({
       {runs.map((r) => (
         <button
           key={r.id}
+          type="button"
           onClick={() => onOpen({ kind: "run", id: r.id })}
           className="focusable flex cursor-pointer items-center gap-2.5 border-b border-line px-4 py-2.5 text-left transition-colors last:border-b-0 hover:bg-raise/50"
         >
@@ -1372,6 +1457,7 @@ function renderDrill(
   data: ControlData,
   onOpen: (d: Drill) => void,
   onKill: (id: string) => void,
+  killing: string | null,
 ): { title: string; body: React.ReactNode } {
   const runs = data.runs;
 
@@ -1391,9 +1477,7 @@ function renderDrill(
               <Button size="sm" variant="solid" tone="ink" href={`/runs?agent=${encodeURIComponent(l.system)}`}>
                 Open theater
               </Button>
-              <Button size="sm" variant="outline" tone="err" onClick={() => onKill(l.id)}>
-                Kill this run
-              </Button>
+              <KillButton id={l.id} label="Kill this run" busy={killing === l.id || killing === "*"} onKill={onKill} />
             </div>
             <p className="px-4 pb-4 text-[11px] leading-[1.5] text-faint">
               The journal is being written right now; the full record lands here the moment the
@@ -1575,6 +1659,7 @@ function renderDrill(
             {data.agents.map((a) => (
               <button
                 key={a.id}
+                type="button"
                 onClick={() => onOpen({ kind: "agent", id: a.id })}
                 className="focusable flex cursor-pointer items-center gap-2.5 border-b border-line px-4 py-2.5 text-left transition-colors last:border-b-0 hover:bg-raise/50"
               >
@@ -1598,13 +1683,11 @@ function renderDrill(
           <div className="flex flex-col">
             {data.live.map((l) => (
               <div key={l.id} className="flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-b-0">
-                <button onClick={() => onOpen({ kind: "run", id: l.id })} className="focusable flex min-w-0 grow cursor-pointer flex-col text-left">
+                <button type="button" onClick={() => onOpen({ kind: "run", id: l.id })} className="focusable flex min-w-0 grow cursor-pointer flex-col text-left">
                   <span className="truncate text-[12px] font-medium text-fg">{l.system}</span>
                   <span className="truncate font-mono text-[9.5px] text-faint">{ago(l.startedAt)}</span>
                 </button>
-                <Button size="sm" variant="outline" tone="err" onClick={() => onKill(l.id)}>
-                  Kill
-                </Button>
+                <KillButton id={l.id} busy={killing === l.id || killing === "*"} onKill={onKill} />
               </div>
             ))}
           </div>
@@ -1724,15 +1807,6 @@ function cornersOf(models: ModelRow[], runs: RunRow[], agents: AgentRow[]): Corn
   // fastest model scores 1, ten times worse scores 0.5, a hundred times worse
   // scores 0. Halving a bar always means the same thing, and the worst model
   // still has a shape instead of collapsing to a point. Zero (local) is best.
-  const bestOf = (vals: (number | null)[]) => {
-    const pos = vals.filter((v): v is number => v !== null && v > 0);
-    return pos.length ? Math.min(...pos) : null;
-  };
-  const logScore = (v: number | null, best: number | null) => {
-    if (v === null) return null;
-    if (v <= 0 || best === null) return 1;
-    return Math.max(0, Math.min(1, 1 - Math.log10(v / best) / 2));
-  };
   const bestCost = bestOf(raw.map((r) => r.costPerRun));
   const bestMs = bestOf(raw.map((r) => r.avgMs));
   return raw.map((r) => {
@@ -1749,44 +1823,6 @@ function cornersOf(models: ModelRow[], runs: RunRow[], agents: AgentRow[]): Corn
       overall: known.length ? known.reduce((a, b) => a + b, 0) / known.length : 0,
     };
   });
-}
-
-/* One model's profile: the reference triangle, and the shape it actually makes. */
-function TriangleGlyph({ score, color, size = 150 }: { score: Corner["score"]; color: string; size?: number }) {
-  const W = 150, H = 122;
-  const A: [number, number] = [75, 12];
-  const C: [number, number] = [14, 108];
-  const T: [number, number] = [136, 108];
-  const O: [number, number] = [(A[0] + C[0] + T[0]) / 3, (A[1] + C[1] + T[1]) / 3];
-  const toward = (v: [number, number], s: number): [number, number] => [O[0] + (v[0] - O[0]) * s, O[1] + (v[1] - O[1]) * s];
-  const ring = (s: number) => [toward(A, s), toward(C, s), toward(T, s)].map((p) => p.join(",")).join(" ");
-  const pa = toward(A, score.accuracy ?? 0);
-  const pc = toward(C, score.cost ?? 0);
-  const pt = toward(T, score.time ?? 0);
-  const shape = [pa, pc, pt].map((p) => p.join(",")).join(" ");
-  const vertex = (p: [number, number], s: number | null) =>
-    s === null ? (
-      <circle cx={p[0]} cy={p[1]} r={3.5} fill="var(--color-surface)" stroke="var(--t-fg-4)" strokeWidth="1.5" strokeDasharray="2 2" />
-    ) : (
-      <circle cx={p[0]} cy={p[1]} r={3.5} fill={color} stroke="var(--color-surface)" strokeWidth="2" />
-    );
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} width={size} height={(size * H) / W} className="block" aria-hidden>
-      {/* the ideal, as a recessive outline, with thirds for scale */}
-      <polygon points={ring(1 / 3)} fill="none" stroke="var(--t-line)" strokeWidth="1" />
-      <polygon points={ring(2 / 3)} fill="none" stroke="var(--t-line)" strokeWidth="1" />
-      <polygon points={ring(1)} fill="none" stroke="var(--t-fg-4)" strokeWidth="1.2" strokeLinejoin="round" />
-      {/* spokes */}
-      {[A, C, T].map((v, i) => (
-        <line key={i} x1={O[0]} y1={O[1]} x2={v[0]} y2={v[1]} stroke="var(--t-line)" strokeWidth="1" />
-      ))}
-      {/* the model's actual shape */}
-      <polygon points={shape} fill={color} fillOpacity="0.16" stroke={color} strokeWidth="2" strokeLinejoin="round" />
-      {vertex(pa, score.accuracy)}
-      {vertex(pc, score.cost)}
-      {vertex(pt, score.time)}
-    </svg>
-  );
 }
 
 function TradeoffTriangle({
@@ -1906,6 +1942,7 @@ function TradeoffTriangle({
               return (
                 <button
                   key={c.model}
+                  type="button"
                   onClick={() => onPick(c.model)}
                   aria-pressed={isSel}
                   className={`focusable grid cursor-pointer grid-cols-[96px_minmax(0,1fr)] items-center gap-x-3 border-b border-line px-3 py-2.5 text-left transition-colors ${
@@ -1931,7 +1968,7 @@ function TradeoffTriangle({
                         <span className="text-[10px] text-faint">{row.k}</span>
                         <span className="h-1.5 overflow-hidden rounded-full bg-raise">
                           <span
-                            className="block h-full rounded-full transition-[width] duration-300"
+                            className="block h-full rounded-full transition-[width] duration-[260ms] ease-[var(--ease-out)]"
                             style={{ width: `${Math.round((row.s ?? 0) * 100)}%`, background: row.s === null ? "transparent" : color }}
                           />
                         </span>
@@ -1955,5 +1992,80 @@ function TradeoffTriangle({
         </div>
       )}
     </>
+  );
+}
+
+/* ═══════════════════ the trigger queue ═══════════════════ */
+
+interface QueueData {
+  agents: Record<string, { queued?: number; running?: number; done?: number; failed?: number; suspended?: number; oldest_queued?: string | null }>;
+  workers: { name: string; running: number; lease_until: string }[];
+  last_hour: { finished: number; failed: number; avg_ms: number | null };
+}
+
+/**
+ * The intake, as numbers. Depth is the honest measure of "always on": a
+ * queue that grows is a provider or a worker pool that cannot keep up, and
+ * the oldest queued age says how far behind the estate is right now.
+ */
+function QueuePanel({ queue }: { queue: QueueData | null }) {
+  if (!queue) return <p className="px-3 py-4 text-[12px] text-faint">The queue needs the registry database.</p>;
+  const rows = Object.entries(queue.agents);
+  const age = (iso: string | null | undefined) => {
+    if (!iso) return "";
+    const s = (Date.now() - new Date(iso).getTime()) / 1000;
+    return s < 60 ? `${Math.round(s)}s` : s < 3600 ? `${Math.round(s / 60)}m` : `${(s / 3600).toFixed(1)}h`;
+  };
+  return (
+    <div className="flex flex-col">
+      <div className="grid grid-cols-3 divide-x divide-line border-b border-line">
+        {[
+          ["finished · 1h", String(queue.last_hour.finished)],
+          ["failed · 1h", String(queue.last_hour.failed)],
+          ["avg run", fmtMs(queue.last_hour.avg_ms)],
+        ].map(([k, v]) => (
+          <div key={k} className="flex flex-col gap-0.5 px-3 py-2">
+            <span className="text-[10px] text-faint">{k}</span>
+            <span className="tnum text-[16px] leading-none font-semibold">{v}</span>
+          </div>
+        ))}
+      </div>
+      {rows.length === 0 ? (
+        <p className="px-3 py-3 text-[11.5px] text-faint">Nothing posted in the last hour. External systems post to /api/trigger/&lt;agent&gt;.</p>
+      ) : (
+        <div className="flex flex-col">
+          <div className="grid grid-cols-[minmax(0,1fr)_repeat(4,52px)] items-center gap-1 border-b border-line px-3 py-1.5 text-[10px] text-faint">
+            <span>agent</span>
+            <span className="text-right">queued</span>
+            <span className="text-right">running</span>
+            <span className="text-right">done</span>
+            <span className="text-right">failed</span>
+          </div>
+          {rows.map(([agent, a]) => (
+            <div key={agent} className="grid grid-cols-[minmax(0,1fr)_repeat(4,52px)] items-center gap-1 border-b border-line px-3 py-2 text-[11.5px] last:border-b-0">
+              <span className="flex min-w-0 items-baseline gap-2">
+                <span className="truncate font-mono text-[11px] text-fg">{agent}</span>
+                {a.oldest_queued && <span className="shrink-0 text-[10px] text-warn">oldest {age(a.oldest_queued)}</span>}
+              </span>
+              <span className={`tnum text-right ${(a.queued ?? 0) > 0 ? "font-semibold text-warn" : "text-dim"}`}>{a.queued ?? 0}</span>
+              <span className={`tnum text-right ${(a.running ?? 0) > 0 ? "font-semibold text-run" : "text-dim"}`}>{a.running ?? 0}</span>
+              <span className="tnum text-right text-dim">{a.done ?? 0}</span>
+              <span className={`tnum text-right ${(a.failed ?? 0) > 0 ? "font-semibold text-err" : "text-dim"}`}>{a.failed ?? 0}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {queue.workers.length > 0 && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line px-3 py-2">
+          {queue.workers.map((w) => (
+            <span key={w.name} className="flex items-center gap-1.5 text-[10.5px] text-dim">
+              <span className="size-1.5 rounded-[2px] bg-run" />
+              <span className="font-mono">{w.name}</span>
+              <span className="text-faint">{w.running} in flight</span>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

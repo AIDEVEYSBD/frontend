@@ -74,6 +74,40 @@ export function dbReady(): Promise<boolean> {
             at      timestamptz NOT NULL DEFAULT now()
           );
           ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS matrix jsonb;
+          ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS summary jsonb;
+          CREATE TABLE IF NOT EXISTS trigger_jobs (
+            id           text PRIMARY KEY,
+            agent        text NOT NULL,
+            external_id  text,
+            source       text NOT NULL DEFAULT 'api',
+            input        jsonb NOT NULL,
+            model        text NOT NULL DEFAULT '',
+            priority     int  NOT NULL DEFAULT 5,
+            status       text NOT NULL DEFAULT 'queued',
+            attempts     int  NOT NULL DEFAULT 0,
+            max_attempts int  NOT NULL DEFAULT 3,
+            claimed_by   text,
+            lease_until  timestamptz,
+            run_id       text,
+            result       jsonb,
+            error        text,
+            created_at   timestamptz NOT NULL DEFAULT now(),
+            started_at   timestamptz,
+            finished_at  timestamptz
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS trigger_jobs_external
+            ON trigger_jobs (agent, external_id) WHERE external_id IS NOT NULL;
+          CREATE INDEX IF NOT EXISTS trigger_jobs_claim ON trigger_jobs (status, priority, created_at);
+          CREATE TABLE IF NOT EXISTS api_keys (
+            id         text PRIMARY KEY,
+            name       text NOT NULL,
+            agent      text,
+            key_hash   text NOT NULL UNIQUE,
+            prefix     text NOT NULL,
+            created_at timestamptz NOT NULL DEFAULT now(),
+            last_used  timestamptz,
+            revoked_at timestamptz
+          );
           ALTER TABLE workflows ADD COLUMN IF NOT EXISTS deployed_at timestamptz;
           CREATE TABLE IF NOT EXISTS run_metrics (
             id          text PRIMARY KEY,

@@ -28,8 +28,8 @@ export async function GET(req: Request) {
     );
     if (!sets.length) return Response.json({ error: `no eval set "${id}"` }, { status: 404 });
     const runs = await query(
-      `SELECT id, model, digest, passed, total, results, matrix, at FROM eval_runs
-       WHERE set_id = $1 ORDER BY at DESC LIMIT 20`,
+      `SELECT id, model, digest, passed, total, results, matrix, summary, at FROM eval_runs
+       WHERE set_id = $1 ORDER BY at DESC LIMIT 40`,
       [id],
     );
     const set = { ...sets[0], labels: sets[0].labels ?? undefined };

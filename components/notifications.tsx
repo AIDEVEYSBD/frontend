@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Button, Mono, Status, Tag, type Tone } from "./ui";
+import { Button, IconButton, Mono, Status, Tag, type Tone } from "./ui";
 
 /**
  * Notification format.
@@ -165,7 +165,7 @@ export function NoticeCentre() {
 
   return (
     <div className="flex w-full max-w-[440px] flex-col overflow-hidden rounded-lg border border-line bg-surface elev-3">
-      <div className="flex items-center gap-2 border-b border-line bg-raise/60 px-3 py-2">
+      <div className="flex items-center gap-2 border-b border-line bg-raise px-3 py-2">
         <span className="text-[12.5px] font-semibold">Notifications</span>
         {/* Count is a squared marker, not a pill. */}
         <span className="grid h-4 min-w-4 place-items-center rounded-xs bg-ink px-1 font-mono text-[10px] font-medium text-on-ink">
@@ -181,6 +181,7 @@ export function NoticeCentre() {
         {["All", "Needs you", "Runs", "System"].map((f, i) => (
           <button
             key={f}
+            type="button"
             className={`focusable cursor-pointer rounded-sm px-2 py-1 text-[12px] transition-colors ${
               i === 0 ? "bg-raise font-medium text-fg" : "text-faint hover:text-dim"
             }`}
@@ -191,11 +192,11 @@ export function NoticeCentre() {
       </div>
 
       <div className="flex flex-col divide-y divide-line">
-        <span className="bg-raise/40 px-3 py-1 text-[10.5px] font-medium text-faint">Today</span>
+        <span className="bg-raise px-3 py-1 text-[10.5px] font-medium text-faint">Today</span>
         {NOTICES.slice(0, 4).map((n) => (
           <NoticeRow key={n.id} n={n} compact />
         ))}
-        <span className="bg-raise/40 px-3 py-1 text-[10.5px] font-medium text-faint">Earlier</span>
+        <span className="bg-raise px-3 py-1 text-[10.5px] font-medium text-faint">Earlier</span>
         {NOTICES.slice(4).map((n) => (
           <NoticeRow key={n.id} n={n} compact />
         ))}
@@ -214,10 +215,7 @@ export function NoticeCentre() {
 
 export function NoticeBell({ count = 3 }: { count?: number }) {
   return (
-    <button
-      aria-label={`Notifications, ${count} unread`}
-      className="focusable relative grid size-8 cursor-pointer place-items-center rounded-md text-dim transition-colors hover:bg-raise hover:text-fg"
-    >
+    <IconButton label={`Notifications, ${count} unread`} className="relative">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <path d="M18 8a6 6 0 1 0-12 0c0 6-3 7-3 7h18s-3-1-3-7" />
         <path d="M10.5 21a2 2 0 0 0 3 0" />
@@ -227,7 +225,7 @@ export function NoticeBell({ count = 3 }: { count?: number }) {
           {count}
         </span>
       )}
-    </button>
+    </IconButton>
   );
 }
 
@@ -236,7 +234,7 @@ export function NoticeBell({ count = 3 }: { count?: number }) {
 export function DigestEmail() {
   return (
     <div className="flex w-full max-w-[520px] flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
-      <div className="flex flex-col gap-0.5 border-b border-line bg-raise/60 px-4 py-2.5">
+      <div className="flex flex-col gap-0.5 border-b border-line bg-raise px-4 py-2.5">
         <span className="text-[12.5px] font-medium">
           Agent Factory · 3 items need you
         </span>
