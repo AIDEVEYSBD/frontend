@@ -18,10 +18,9 @@ export interface OfferedModel {
 
 export const MODEL_CLASSES: ModelClass[] = ["small", "medium", "large"];
 
-const FALLBACK: OfferedModel[] = [
-  { id: "anthropic/claude-sonnet-4.5", label: "Claude Sonnet 4.5" },
-  { id: "anthropic/claude-haiku-4.5", label: "Claude Haiku 4.5" },
-];
+// Nothing is offered until the Configuration page says so: a model id here
+// is a deployment name on the Foundry resource, and only the resource knows those.
+const FALLBACK: OfferedModel[] = [];
 
 export function useModels(): {
   models: OfferedModel[];
@@ -29,7 +28,7 @@ export function useModels(): {
   classDefaults: Partial<Record<ModelClass, string>>;
 } {
   const [models, setModels] = useState<OfferedModel[]>(FALLBACK);
-  const [defaultModel, setDefaultModel] = useState(FALLBACK[0].id);
+  const [defaultModel, setDefaultModel] = useState("");
   const [classDefaults, setClassDefaults] = useState<Partial<Record<ModelClass, string>>>({});
 
   useEffect(() => {

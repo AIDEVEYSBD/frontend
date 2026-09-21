@@ -110,14 +110,14 @@ export function Workflows() {
   };
 
   return (
-    <div className="min-h-full">
-      <div className="mx-auto flex max-w-[1080px] flex-col gap-7 px-4 py-8 sm:px-6 lg:px-10">
+    <div className="min-h-full" data-hue="blue">
+      <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-7 px-5 py-7">
         <header className="flex items-end gap-4">
           <div className="flex flex-col gap-1.5">
             <h1 className="text-[24px] font-semibold tracking-[-0.02em]">Workflows</h1>
             <p className="max-w-[620px] text-[13.5px] leading-relaxed text-dim">
-              Every saved agent. Open one to see it built from the standard cards, run it, or chain
-              it from another workflow — these are the same specs <code className="font-mono text-[12px]">agent.invoke</code> runs.
+              Review the governed workflow specifications saved in Agent Factory. Open a workflow
+              to examine its design, run it directly or invoke it from another workflow using <code className="font-mono text-[12px]">agent.invoke</code>.
             </p>
           </div>
           <span className="grow" />
@@ -134,15 +134,15 @@ export function Workflows() {
 
         {agents?.length === 0 && (
           <div className="flex flex-col items-start gap-2 rounded-lg border border-dashed border-line-strong px-6 py-10">
-            <p className="text-[14px] font-medium text-fg">Nothing saved yet.</p>
+            <p className="text-[14px] font-medium text-fg">No workflows have been saved.</p>
             <p className="max-w-[480px] text-[12.5px] leading-relaxed text-faint">
-              Build an agent and press Save — it lands here, appears in the builder&rsquo;s
-              Workflows rail, and becomes callable from other workflows.
+              Create and save a workflow in the builder. It will appear here and become available
+              for direct execution or use by other workflows.
             </p>
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {(agents ?? []).map((a) => {
             const last = lastRunOf(a.id);
             const state = last ? (RUN_STATE[last.state] ?? { tone: "neutral" as const, label: last.state }) : null;
@@ -236,6 +236,38 @@ export function Workflows() {
 
 /* ═══════════════════ The menu ═══════════════════ */
 
+/** One row of the card's context menu. Module-level, so it keeps its identity across renders. */
+function MenuItem({
+  icon,
+  label,
+  hint,
+  tone,
+  onClick,
+}: {
+  icon: string;
+  label: string;
+  hint?: string;
+  tone?: "err";
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      className={`focusable flex w-full cursor-pointer items-center gap-2.5 rounded-sm px-2 py-1.5 text-left transition-colors ${
+        tone === "err" ? "text-err hover:bg-raise" : "text-mist hover:bg-raise hover:text-fg"
+      }`}
+    >
+      <Icon name={icon} size={13} className={tone === "err" ? "" : "text-faint"} />
+      <span className="flex min-w-0 flex-col">
+        <span className="text-[12.5px] font-medium">{label}</span>
+        {hint && <span className="text-[10px] leading-tight text-faint">{hint}</span>}
+      </span>
+    </button>
+  );
+}
+
 function ContextMenu({
   at,
   confirming,
@@ -272,35 +304,6 @@ function ContextMenu({
     };
   }, [onClose]);
 
-  const Item = ({
-    icon,
-    label,
-    hint,
-    tone,
-    onClick,
-  }: {
-    icon: string;
-    label: string;
-    hint?: string;
-    tone?: "err";
-    onClick: () => void;
-  }) => (
-    <button
-      type="button"
-      role="menuitem"
-      onClick={onClick}
-      className={`focusable flex w-full cursor-pointer items-center gap-2.5 rounded-sm px-2 py-1.5 text-left transition-colors ${
-        tone === "err" ? "text-err hover:bg-raise" : "text-mist hover:bg-raise hover:text-fg"
-      }`}
-    >
-      <Icon name={icon} size={13} className={tone === "err" ? "" : "text-faint"} />
-      <span className="flex min-w-0 flex-col">
-        <span className="text-[12.5px] font-medium">{label}</span>
-        {hint && <span className="text-[10px] leading-tight text-faint">{hint}</span>}
-      </span>
-    </button>
-  );
-
   return (
     <div
       ref={ref}
@@ -311,12 +314,12 @@ function ContextMenu({
       <div className="truncate px-2 pt-1 pb-1.5">
         <Label>{at.agent.name}</Label>
       </div>
-      <Item icon="bot" label="Open in Builder" hint="The graph, rebuilt from its cards" onClick={onOpen} />
-      <Item icon="pulse" label="Run" hint="Straight into the theater" onClick={onRun} />
-      <Item icon="chip" label="Benchmark" hint="Upload and run an eval set against it" onClick={onBenchmark} />
-      <Item icon="json" label="Export JSON" hint="The spec document itself" onClick={onExport} />
+      <MenuItem icon="bot" label="Open in Builder" hint="The graph, rebuilt from its cards" onClick={onOpen} />
+      <MenuItem icon="pulse" label="Run" hint="Straight into the theater" onClick={onRun} />
+      <MenuItem icon="chip" label="Benchmark" hint="Upload and run an eval set against it" onClick={onBenchmark} />
+      <MenuItem icon="json" label="Export JSON" hint="The spec document itself" onClick={onExport} />
       <div className="my-0.5 h-px bg-line" />
-      <Item
+      <MenuItem
         icon="cross"
         label={confirming ? "Click again to delete" : "Delete"}
         hint={confirming ? "Workflows that chain this will break" : undefined}

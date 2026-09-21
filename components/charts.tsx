@@ -159,11 +159,14 @@ export function StackedBar({
   keys,
   colors,
   height = 170,
+  onPick,
 }: {
   data: { label: string; values: number[] }[];
   keys: string[];
   colors: string[];
   height?: number;
+  /** A bar was clicked: which category, and which series segment if one was hit. */
+  onPick?: (label: string, key?: string) => void;
 }) {
   const totals = data.map((d) => d.values.reduce((a, b) => a + b, 0));
   const max = Math.max(...totals);
@@ -205,13 +208,17 @@ export function StackedBar({
                     <Mono className="text-[10.5px] leading-none text-faint">{totals[di]}</Mono>
                   </span>
                   <div
-                    className="flex w-full flex-col-reverse overflow-hidden rounded-t-[2px]"
+                    className={`flex w-full flex-col-reverse overflow-hidden rounded-t-[2px] ${onPick ? "cursor-pointer hover:brightness-110" : ""}`}
                     style={{ height: `${(totals[di] / top) * 100}%` }}
                     title={`${d.label}: ${totals[di]}`}
+                    onClick={onPick ? () => onPick(d.label) : undefined}
+                    role={onPick ? "button" : undefined}
                   >
                     {d.values.map((v, i) => (
                       <div
                         key={keys[i]}
+                        title={`${d.label} · ${keys[i]}: ${v}`}
+                        onClick={onPick ? (e) => { e.stopPropagation(); onPick(d.label, keys[i]); } : undefined}
                         style={{
                           height: `${(v / totals[di]) * 100}%`,
                           background: colors[i],
@@ -243,8 +250,10 @@ export function StackedBar({
 
 export function RankBar({
   data,
+  onPick,
 }: {
   data: { label: string; value: number; color: string; meta?: string }[];
+  onPick?: (label: string) => void;
 }) {
   const max = Math.max(...data.map((d) => d.value));
   return (
@@ -252,7 +261,9 @@ export function RankBar({
       {data.map((d) => (
         <div
           key={d.label}
-          className="grid grid-cols-[minmax(96px,1fr)_2fr_auto] items-center gap-3 border-b border-line py-2 last:border-0"
+          onClick={onPick ? () => onPick(d.label) : undefined}
+          role={onPick ? "button" : undefined}
+          className={`grid grid-cols-[minmax(96px,1fr)_2fr_auto] items-center gap-3 border-b border-line py-2 last:border-0 ${onPick ? "focusable -mx-1 cursor-pointer rounded-sm px-1 hover:bg-raise/60" : ""}`}
         >
           <span className="truncate text-[12px] text-mist">{d.label}</span>
           <span className="flex h-3.5 items-center">
@@ -351,9 +362,11 @@ export function Heatmap({
 export function Donut({
   data,
   size = 132,
+  onPick,
 }: {
   data: { label: string; value: number; color: string }[];
   size?: number;
+  onPick?: (label: string) => void;
 }) {
   const total = data.reduce((a, d) => a + d.value, 0);
   const r = size / 2 - 9;
@@ -384,13 +397,17 @@ export function Donut({
             strokeWidth="14"
             strokeDasharray={`${frac * c} ${c}`}
             strokeDashoffset={-start * c}
-          />
+            onClick={onPick ? () => onPick(d.label) : undefined}
+            className={onPick ? "cursor-pointer hover:opacity-80" : undefined}
+          >
+            <title>{`${d.label}: ${d.value}`}</title>
+          </circle>
         ))}
       </svg>
 
       <div className="flex min-w-0 flex-col gap-1.5">
         {data.map((d) => (
-          <div key={d.label} className="flex items-center gap-2">
+          <div key={d.label} onClick={onPick ? () => onPick(d.label) : undefined} role={onPick ? "button" : undefined} className={`flex items-center gap-2 ${onPick ? "focusable -mx-1 cursor-pointer rounded-sm px-1 hover:bg-raise/60" : ""}`}>
             <span className="size-2 shrink-0 rounded-[2px]" style={{ background: d.color }} />
             <span className="grow truncate text-[12px] text-mist">{d.label}</span>
             <span className="tnum font-mono text-[11px] text-dim">

@@ -91,8 +91,13 @@ export function DeployTheater({
     }
   });
   const mutedRef = useRef(muted);
-  mutedRef.current = muted;
-  const sound = useMemo(() => makeSound(() => mutedRef.current), []);
+  useEffect(() => {
+    mutedRef.current = muted;
+  }, [muted]);
+  // Built on first use, never during render: the cues read the mute flag
+  // through the ref at play time, from the effects that fire them.
+  const soundRef = useRef<ReturnType<typeof makeSound> | null>(null);
+  const sound = useCallback(() => (soundRef.current ??= makeSound(() => mutedRef.current)), []);
   const reduce = useMemo(
     () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
     [],
@@ -120,11 +125,11 @@ export function DeployTheater({
         .then(async (r) => ({ ok: r.ok, body: await r.json() }))
         .catch((e) => ({ ok: false, body: { error: (e as Error).message } }));
 
-      sound.tick();
+      sound().tick();
       await minDwell(1050);
       if (stop) return;
       setAct("validate");
-      sound.tick();
+      sound().tick();
       await minDwell(1150);
       if (stop) return;
 
@@ -133,16 +138,16 @@ export function DeployTheater({
       if (!ok || body.error) {
         setRefusal(String(body.error ?? "the deploy failed"));
         setAct("refused");
-        sound.refuse();
+        sound().refuse();
         return;
       }
       setAct("ship");
-      sound.thunk();
+      sound().thunk();
       await minDwell(1250);
       if (stop) return;
       setResult(body as Deployed);
       setAct("live");
-      sound.live();
+      sound().live();
     })();
 
     return () => {
@@ -154,11 +159,7 @@ export function DeployTheater({
 
   /* The digest types itself in once known. */
   useEffect(() => {
-    if (act !== "live" || !result?.digest) return;
-    if (reduce) {
-      setTypedDigest(result.digest);
-      return;
-    }
+    if (act !== "live" || !result?.digest || reduce) return;
     let i = 0;
     const id = setInterval(() => {
       i += 1;
@@ -399,7 +400,7 @@ export function DeployTheater({
                 visible on the control plane, running under the journal.
               </p>
               <Mono className="text-[10.5px] text-faint">
-                digest {typedDigest || "…"} · {result.store} ·{" "}
+                digest {(reduce ? result.digest : typedDigest) || "…"} · {result.store} ·{" "}
                 {result.steps.map((s) => `${s.step} ${s.ms}ms`).join(" · ")}
               </Mono>
             </div>

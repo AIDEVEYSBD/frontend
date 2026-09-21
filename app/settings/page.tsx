@@ -2,7 +2,7 @@ import { Settings } from "@/components/settings";
 
 export const metadata = {
   title: "Configuration — Agent Factory",
-  description: "Models this factory offers, and the keys its connectors read.",
+  description: "Manage the models and protected credentials available to Agent Factory.",
 };
 
 export default function SettingsPage() {

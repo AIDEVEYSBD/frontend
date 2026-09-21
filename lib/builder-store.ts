@@ -62,7 +62,7 @@ export type Action =
   | { type: "tool-config"; name: string; config: Record<string, unknown> }
   | { type: "grant-tool-card"; node: string; card: string }
   | { type: "grant-custom-tool"; node: string; tool: Tool }
-  | { type: "add-connection"; tool: string; kind: string; node: string }
+  | { type: "add-connection"; tool: string; kind: string; node: string; name?: string }
   | { type: "patch-connection"; server: string; slot: string; index: number; patch: Record<string, unknown> }
   | { type: "remove-connection"; server: string; slot: string; index: number }
   | { type: "add-workflow-node"; agent: string; name: string; x: number; y: number };
@@ -294,7 +294,7 @@ export function reduce(s: AgentSystem, a: Action): AgentSystem {
     case "add-connection": {
       const def = CONNECTOR_DEF.get(`${a.tool}:${a.kind}`);
       if (!def) return s;
-      let next = reduce(s, { type: "grant-tool-card", node: a.node, card: a.tool });
+      const next = reduce(s, { type: "grant-tool-card", node: a.node, card: a.tool });
       const bindingName = bindingFor(next, def.server);
       if (!bindingName) return next;
       const binding = next.tools.find((t) => t.name === bindingName)!;
@@ -302,7 +302,10 @@ export function reduce(s: AgentSystem, a: Action): AgentSystem {
       const taken = new Set(list.map((x) => String(x.name ?? "")));
       const entry: Record<string, unknown> = {
         ...structuredClone(def.defaults),
-        name: slugify(String(def.defaults.name ?? def.kind), taken),
+        // A vendor card names its connection after the product, so the spec
+        // reads `splunk` rather than `rest-2`. The backend is unchanged: the
+        // name is a label on a configured instance, never a new code path.
+        name: slugify(String(a.name || def.defaults.name || def.kind), taken),
         attached_to: a.node,
       };
       return reduce(next, {

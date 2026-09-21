@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, IconButton, Label, Mono, Status, Tag } from "./ui";
 import { Banner } from "./overlays";
@@ -9,6 +9,18 @@ import { Sparkline } from "./data";
 import { CAT } from "./charts";
 import { TriangleGlyph, bestOf, logScore } from "./tradeoff";
 import { Icon } from "./builder/icons";
+import { SpanDetail, Waterfall, useTrace, type Span } from "./waterfall";
+import { explainControl } from "@/lib/guardrails";
+import { ControlRef, KILL_CONTROL } from "./control-ref";
+import { hueFor } from "@/lib/hue";
+import { usePageFacts } from "./assistant";
+import { ApproveDialog, useGates, type Gate } from "./approve";
+import { soon } from "@/lib/soon";
+import { WindowPick, nextWin, winMs, type Win } from "./window-pick";
+import { Pick } from "./select";
+
+const PERIOD_DAYS = { day: 1, week: 7, month: 30 } as const;
+const PERIOD_LABEL = { day: "day", week: "week", month: "month" } as const;
 
 /**
  * The control plane: everything about the estate, live, and every figure
@@ -56,6 +68,7 @@ interface AgentRow {
   lastState: string | null;
   avgMs7d: number | null;
   cost7d: number | null;
+  unpriced7d?: number;
   tokens7d: number;
   models: string[];
   ticks: { id: string; state: string; at: string }[];
@@ -95,7 +108,24 @@ interface ControlData {
   posture: Posture;
   routing: { agent: string; node: string; model: string | null }[];
   peers: { agent: string; name: string; url: string; up: boolean; title: string; skills: number }[];
-  finops: { credits: { total: number; used: number } | null; budget: number | null; spend7d: number | null };
+  finops: {
+    azure: {
+      configured: boolean;
+      missing: string[];
+      scope: "resource" | "subscription" | null;
+      currency: string | null;
+      mtd: number | null;
+      last7d: number | null;
+      daily: { date: string; cost: number }[];
+      fetchedAt: string | null;
+      error: string | null;
+    };
+    budget: number | null;
+    period: "day" | "week" | "month";
+    budgetState: { since: string; spent: number; unpriced: number; remaining: number | null; exceeded: boolean; used: number | null };
+    spend7d: number | null;
+    unpriced7d?: number;
+  };
   ledger: { entries: number; runs: number; lastWrite: string | null };
   totals: {
     deployed: number;
@@ -104,6 +134,7 @@ interface ControlData {
     pending: number;
     runs7d: number;
     cost7d: number | null;
+    unpriced7d?: number;
     tokens7d: number;
     denials7d: number;
     kills7d: number;
@@ -116,6 +147,87 @@ interface ControlData {
   runs: RunRow[];
   store: string;
   costBasis: string;
+  /** The window every "7d"-shaped figure was actually cut over (client-side). */
+  window: Win;
+  /** The clock the window was cut against. */
+  now: number;
+}
+
+/* ── windows: every time-shaped figure re-cut in the browser from the run ledger ── */
+
+const sumCosts = (xs: (number | null)[]): number | null =>
+  xs.every((x) => x === null) ? null : xs.reduce((a: number, b) => a + (b ?? 0), 0);
+const countUnpriced = (xs: (number | null)[]): number => xs.filter((x) => x === null).length;
+
+/** The estate read, re-cut to a window. Field names keep their "7d" suffix —
+    they are "the window" everywhere below, and the label says which. */
+function rewindow(d: ControlData, now: number, w: Win): ControlData {
+  const since = now - winMs(w);
+  const inWin = (r: RunRow) => new Date(r.at).getTime() >= since;
+  const recent = d.runs.filter(inWin);
+  const agents = d.agents.map((a) => {
+    const mine = recent.filter((r) => r.system === a.id);
+    return {
+      ...a,
+      runs7d: mine.length,
+      avgMs7d: mine.length ? Math.round(mine.reduce((s, r) => s + r.ms, 0) / mine.length) : null,
+      cost7d: sumCosts(mine.map((r) => r.cost)),
+      unpriced7d: countUnpriced(mine.map((r) => r.cost)),
+      tokens7d: mine.reduce((s, r) => s + r.tokens.in + r.tokens.out, 0),
+      models: [...new Set(mine.flatMap((r) => r.models))],
+    };
+  });
+  const oldest = d.runs.length ? Math.min(...d.runs.map((r) => new Date(r.at).getTime())) : now;
+  const nDays = w === "all" ? Math.min(90, Math.max(14, Math.ceil((now - oldest) / 86_400_000) + 1)) : Math.max(14, Math.min(90, Math.round(winMs(w) / 86_400_000)));
+  const days: DayRow[] = [];
+  for (let i = nDays - 1; i >= 0; i--) {
+    const key = new Date(now - i * 86_400_000).toISOString().slice(0, 10);
+    const inDay = d.runs.filter((r) => r.at.slice(0, 10) === key);
+    days.push({
+      day: key,
+      runs: inDay.length,
+      cost: sumCosts(inDay.map((r) => r.cost)),
+      denials: inDay.reduce((s, r) => s + r.denials, 0),
+      kills: inDay.filter((r) => r.state === "killed").length,
+      avgMs: inDay.length ? Math.round(inDay.reduce((s, r) => s + r.ms, 0) / inDay.length) : null,
+      ids: inDay.map((r) => r.id),
+    });
+  }
+  const agg = new Map<string, { in: number; out: number; cost: number | null; runs: Set<string> }>();
+  for (const r of recent) {
+    for (const b of r.byModel ?? []) {
+      const a = agg.get(b.model) ?? { in: 0, out: 0, cost: 0, runs: new Set<string>() };
+      a.in += b.in;
+      a.out += b.out;
+      a.cost = a.cost === null || b.cost === null ? null : a.cost + b.cost;
+      a.runs.add(r.id);
+      agg.set(b.model, a);
+    }
+  }
+  const models: ModelRow[] = [...agg.entries()]
+    .map(([model, a]) => ({ model, local: model === "scripted", tokens: a.in + a.out, in: a.in, out: a.out, cost: a.cost, runs: a.runs.size }))
+    .sort((a, b) => b.tokens - a.tokens);
+  const cost7d = sumCosts(recent.map((r) => r.cost));
+  const unpriced7d = countUnpriced(recent.map((r) => r.cost));
+  return {
+    ...d,
+    agents,
+    days,
+    models,
+    finops: { ...d.finops, spend7d: cost7d, unpriced7d },
+    totals: {
+      ...d.totals,
+      runs7d: recent.length,
+      cost7d,
+      unpriced7d,
+      tokens7d: recent.reduce((s, r) => s + r.tokens.in + r.tokens.out, 0),
+      denials7d: recent.reduce((s, r) => s + r.denials, 0),
+      kills7d: recent.filter((r) => r.state === "killed").length,
+      avgMs7d: recent.length ? Math.round(recent.reduce((s, r) => s + r.ms, 0) / recent.length) : null,
+    },
+    window: w,
+    now,
+  };
 }
 
 type Drill =
@@ -123,7 +235,8 @@ type Drill =
   | { kind: "agent"; id: string }
   | { kind: "day"; day: string }
   | { kind: "model"; id: string }
-  | { kind: "run"; id: string };
+  | { kind: "run"; id: string }
+  | { kind: "span"; run: string; span: Span };
 
 /* ═══════════════════ formatting ═══════════════════ */
 
@@ -192,12 +305,40 @@ const STATE_TONE: Record<string, "ok" | "err" | "warn" | "run" | "queue"> = {
 
 /* ═══════════════════ the page ═══════════════════ */
 
+/** Every refusal and mark on this deployment, with the rule that fired. */
+function useRefusals(active: boolean) {
+  const [rows, setRows] = useState<
+    { control: string; run: string; agent: string; node: string; title: string; detail: string; at: string }[] | null
+  >(null);
+  useEffect(() => {
+    if (!active || rows) return;
+    let stop = false;
+    fetch("/api/guardrails")
+      .then((r) => r.json())
+      .then((d) => !stop && setRows(d.recent ?? []))
+      .catch(() => !stop && setRows([]));
+    return () => {
+      stop = true;
+    };
+  }, [active, rows]);
+  return rows;
+}
+
 export function Control() {
   const router = useRouter();
-  const [data, setData] = useState<ControlData | null>(null);
+  const [raw, setRaw] = useState<ControlData | null>(null);
   const [error, setError] = useState("");
   const [confirmAll, setConfirmAll] = useState(false);
+  // The page window, and per-card overrides (a KPI tile, the activity chart,
+  // the model mix). Changing the page window clears every override.
+  const [win, setWinState] = useState<Win>("7d");
+  const [cardWin, setCardWin] = useState<Partial<Record<string, Win>>>({});
+  const setWin = (w: Win) => {
+    setWinState(w);
+    setCardWin({});
+  };
   const [stack, setStack] = useState<Drill[]>([]);
+  const [answering, setAnswering] = useState<Gate | null>(null);
   const [stageNotice, setStageNotice] = useState<string | null>(null);
   const [deployingId, setDeployingId] = useState<string | null>(null);
   /* Hover readouts — what a tooltip would have hidden, kept on the page. */
@@ -206,6 +347,7 @@ export function Control() {
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const drill = stack[stack.length - 1] ?? null;
+  const { gates, reload: reloadGates } = useGates();
 
   const notice = useCallback((msg: string) => {
     setStageNotice(msg);
@@ -214,13 +356,17 @@ export function Control() {
   }, []);
 
   const [queue, setQueue] = useState<QueueData | null>(null);
+  // The clock the windows are cut against: stamped when the data arrives, so a
+  // render is a pure function of what was loaded and when.
+  const [now, setNow] = useState(0);
 
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/control");
       const d = await res.json();
       if (d.error) throw new Error(String(d.error));
-      setData(d);
+      setRaw(d);
+      setNow(Date.now());
       setError("");
     } catch (e) {
       setError((e as Error).message);
@@ -236,10 +382,19 @@ export function Control() {
   }, []);
 
   useEffect(() => {
-    load();
+    const cancel = soon(load);
     const id = setInterval(load, 4000);
-    return () => clearInterval(id);
+    return () => {
+      cancel();
+      clearInterval(id);
+    };
   }, [load]);
+
+  const data = useMemo(() => (raw ? rewindow(raw, now, win) : null), [raw, now, win]);
+  // A card on its own window gets its own cut of the same ledger.
+  const cut = useCallback((card: string): ControlData | null => (raw && cardWin[card] ? rewindow(raw, now, cardWin[card]!) : data), [raw, now, cardWin, data]);
+  const wf = (card: string): Win => cardWin[card] ?? win;
+  const tile = (card: string, w?: Win) => (w ? setCardWin((c) => ({ ...c, [card]: w })) : setCardWin((c) => ({ ...c, [card]: nextWin(wf(card)) })));
 
   const open = useCallback((d: Drill) => {
     setStack((s) => {
@@ -337,6 +492,16 @@ export function Control() {
   );
 
   const t = data?.totals;
+  usePageFacts(
+    data
+      ? {
+          totals: t,
+          runsInFlight: data.live.map((l) => ({ id: l.id, system: l.system })),
+          gatesAwaiting: (gates ?? []).map((g) => ({ run: g.run, agent: g.agent, node: g.node })),
+          recentRuns: data.runs.slice(0, 8).map((r) => ({ id: r.id, system: r.system, state: r.state, denials: r.denials })),
+        }
+      : null,
+  );
   const statusLine = !data
     ? "reading the estate…"
     : t!.active > 0
@@ -365,11 +530,15 @@ export function Control() {
             </span>
           </div>
           <p className="max-w-[64ch] text-[12.5px] leading-[1.55] text-dim">
-            Every figure on this page is computed from primary records, and every figure opens.
-            Click anything.
+            Monitor deployed workflows, active runs, approvals, performance, cost and control
+            events. Each measure is calculated from platform records and opens to its supporting detail.
           </p>
         </div>
         <span className="grow" />
+        <span className="flex flex-col items-end gap-1">
+          <span className="text-[10px] text-faint">Page window · click a tile&rsquo;s window to override it</span>
+          <WindowPick value={win} onChange={setWin} />
+        </span>
         <LogExport />
         {t && t.active > 0 && (
           <Button
@@ -406,20 +575,20 @@ export function Control() {
         <Kpi label="Awaiting approval" value={t ? String(t.pending) : "…"} sub={t?.pending ? "a person is next" : "no gates open"}
           tone={t?.pending ? "warn" : undefined} active={drill?.kind === "kpi" && drill.which === "pending"}
           onOpen={() => open({ kind: "kpi", which: "pending" })} />
-        <Kpi label="Runs · 7d" value={t ? String(t.runs7d) : "…"} sub="every journal counted"
-          spark={data?.days.map((d) => d.runs)} active={drill?.kind === "kpi" && drill.which === "runs"}
+        <Kpi label="Runs" value={cut("runs")?.totals ? String(cut("runs")!.totals.runs7d) : "…"} sub="every journal counted"
+          win={wf("runs")} onWin={() => tile("runs")} spark={cut("runs")?.days.map((d) => d.runs)} active={drill?.kind === "kpi" && drill.which === "runs"}
           onOpen={() => open({ kind: "kpi", which: "runs" })} />
-        <Kpi label="Spend · 7d" value={t ? fmtCost(t.cost7d) : "…"} sub={t ? `${fmtTokens(t.tokens7d)} tokens` : ""}
-          spark={data?.days.map((d) => d.cost ?? 0)} active={drill?.kind === "kpi" && drill.which === "spend"}
+        <Kpi label="Spend" value={cut("spend")?.totals ? fmtCost(cut("spend")!.totals.cost7d) : "…"} sub={cut("spend")?.totals ? `${fmtTokens(cut("spend")!.totals.tokens7d)} tokens${cut("spend")!.totals.unpriced7d ? ` · ${cut("spend")!.totals.unpriced7d} unpriced` : ""}` : ""}
+          win={wf("spend")} onWin={() => tile("spend")} spark={cut("spend")?.days.map((d) => d.cost ?? 0)} active={drill?.kind === "kpi" && drill.which === "spend"}
           onOpen={() => open({ kind: "kpi", which: "spend" })} />
-        <Kpi label="Avg run time" value={t ? fmtMs(t.avgMs7d) : "…"} sub="wall clock, 7d"
-          spark={data?.days.map((d) => d.avgMs ?? 0)} active={drill?.kind === "kpi" && drill.which === "time"}
+        <Kpi label="Avg run time" value={cut("time")?.totals ? fmtMs(cut("time")!.totals.avgMs7d) : "…"} sub="wall clock"
+          win={wf("time")} onWin={() => tile("time")} spark={cut("time")?.days.map((d) => d.avgMs ?? 0)} active={drill?.kind === "kpi" && drill.which === "time"}
           onOpen={() => open({ kind: "kpi", which: "time" })} />
-        <Kpi label="Guardrail denials" value={t ? String(t.denials7d) : "…"} sub="policy said no"
-          tone={t?.denials7d ? "warn" : undefined} spark={data?.days.map((d) => d.denials)}
+        <Kpi label="Guardrail denials" value={cut("denials")?.totals ? String(cut("denials")!.totals.denials7d) : "…"} sub="click for the rule that fired"
+          win={wf("denials")} onWin={() => tile("denials")} tone={cut("denials")?.totals.denials7d ? "warn" : undefined} spark={cut("denials")?.days.map((d) => d.denials)}
           active={drill?.kind === "kpi" && drill.which === "denials"} onOpen={() => open({ kind: "kpi", which: "denials" })} />
-        <Kpi label="Kills · 7d" value={t ? String(t.kills7d) : "…"} sub="operator decisions"
-          tone={t?.kills7d ? "err" : undefined} spark={data?.days.map((d) => d.kills)}
+        <Kpi label="Kills" value={cut("kills")?.totals ? String(cut("kills")!.totals.kills7d) : "…"} sub="operator decisions"
+          win={wf("kills")} onWin={() => tile("kills")} tone={cut("kills")?.totals.kills7d ? "err" : undefined} spark={cut("kills")?.days.map((d) => d.kills)}
           active={drill?.kind === "kpi" && drill.which === "kills"} onOpen={() => open({ kind: "kpi", which: "kills" })} />
       </div>
 
@@ -510,7 +679,7 @@ export function Control() {
           <div className="max-h-[560px] overflow-auto">
             <div className="min-w-[820px]">
               <div className="sticky top-0 z-10 grid grid-cols-[minmax(170px,1.4fr)_96px_120px_130px_86px_86px_72px] items-center gap-3 border-b border-line bg-surface px-4 py-2">
-                {["Agent", "Status", "Benchmark", "Health · last 14", "Avg time", "Spend · 7d", ""].map((h, i) => (
+                {["Agent", "Status", "Benchmark", "Health · last 14", "Avg time", `Spend · ${win}`, ""].map((h, i) => (
                   <span key={i} className={`text-[11px] font-semibold text-dim ${i === 4 || i === 5 ? "text-right" : ""}`}>{h}</span>
                 ))}
               </div>
@@ -529,7 +698,7 @@ export function Control() {
                   <span className="flex min-w-0 flex-col gap-0.5">
                     <span className="truncate text-[13px] font-semibold text-fg">{a.name}</span>
                     <span className="truncate font-mono text-[10px] text-faint">
-                      {a.id} · {a.nodes} node{a.nodes === 1 ? "" : "s"} · {a.runs7d} run{a.runs7d === 1 ? "" : "s"} 7d
+                      {a.id} · {a.nodes} node{a.nodes === 1 ? "" : "s"} · {a.runs7d} run{a.runs7d === 1 ? "" : "s"} · {win}
                     </span>
                   </span>
 
@@ -701,7 +870,19 @@ export function Control() {
                       paused at {r.suspendedAt || "a gate"} · {ago(r.at)}
                     </span>
                   </button>
-                  <Button size="sm" variant="outline" tone="warn" href={`/runs?agent=${encodeURIComponent(r.system)}`}>
+                  {/* Answering happens here. It used to link to the run page,
+                      which is where a run is *started* — the one place a person
+                      with a gate to answer should never be sent. */}
+                  <Button permission="approve"
+                    size="sm"
+                    variant="outline"
+                    tone="warn"
+                    onClick={() => {
+                      const g = (gates ?? []).find((x) => x.run === r.id);
+                      if (g) setAnswering(g);
+                      else open({ kind: "run", id: r.id });
+                    }}
+                  >
                     Answer
                   </Button>
                 </div>
@@ -721,7 +902,7 @@ export function Control() {
               {[
                 { label: "Denials", value: t?.denials7d ?? 0, tone: t?.denials7d ? "text-warn" : "text-fg", drill: "denials" as const },
                 { label: "Kills", value: t?.kills7d ?? 0, tone: t?.kills7d ? "text-err" : "text-fg", drill: "kills" as const },
-                { label: "Gates answered", value: (data?.runs ?? []).filter((r) => new Date(r.at).getTime() >= Date.now() - 7 * 86_400_000 && r.state === "done").length, tone: "text-fg", drill: "runs" as const },
+                { label: "Gates answered", value: (data?.runs ?? []).filter((r) => new Date(r.at).getTime() >= now - 7 * 86_400_000 && r.state === "done").length, tone: "text-fg", drill: "runs" as const },
               ].map((g) => (
                 <button
                   key={g.label}
@@ -741,7 +922,7 @@ export function Control() {
           </section>
 
           {/* FinOps — the gateway's own balance, and the budget beside the burn */}
-          <FinOpsPanel finops={data?.finops ?? null} onSaved={load} />
+          <FinOpsPanel finops={data?.finops ?? null} window={win} onSaved={load} />
         </div>
       </div>
 
@@ -750,13 +931,18 @@ export function Control() {
           is no void to stretch into. ── */}
       <div className="mt-4 gap-4 md:columns-2 xl:columns-3">
         <section className="mb-4 flex break-inside-avoid flex-col overflow-hidden rounded-md border border-line bg-surface">
-          <PanelHead title="Activity" meta="14 days — click a day" right={<Mono className="text-[10px] text-ghost">{t ? `${fmtCost(t.cost7d)} · 7d` : ""}</Mono>} />
-          <ActivityChart days={data?.days ?? []} selected={drill?.kind === "day" ? drill.day : null} onPick={(day) => open({ kind: "day", day })} />
+          <PanelHead title="Activity" meta={`${cut("activity")?.days.length ?? 14} days — click a day`} right={
+            <span className="flex items-center gap-2">
+              <Mono className="text-[10px] text-ghost">{cut("activity")?.totals ? `${fmtCost(cut("activity")!.totals.cost7d)} · ${wf("activity")}` : ""}</Mono>
+              <WindowPick value={wf("activity")} onChange={(w) => tile("activity", w)} inherited={!cardWin.activity} />
+            </span>
+          } />
+          <ActivityChart days={cut("activity")?.days ?? []} selected={drill?.kind === "day" ? drill.day : null} onPick={(day) => open({ kind: "day", day })} />
         </section>
 
         <section className="mb-4 flex break-inside-avoid flex-col overflow-hidden rounded-md border border-line bg-surface">
-          <PanelHead title="Model mix" meta="7 days — click a model" />
-          <ModelMix models={data?.models ?? []} onPick={(id) => open({ kind: "model", id })} selected={drill?.kind === "model" ? drill.id : null} />
+          <PanelHead title="Model mix" meta={`${wf("mix")} — click a model`} right={<WindowPick value={wf("mix")} onChange={(w) => tile("mix", w)} inherited={!cardWin.mix} />} />
+          <ModelMix models={cut("mix")?.models ?? []} onPick={(id) => open({ kind: "model", id })} selected={drill?.kind === "model" ? drill.id : null} />
         </section>
 
         {/* The intake: what external systems have posted, and who is draining it */}
@@ -767,7 +953,7 @@ export function Control() {
             pulse={Boolean(queue && Object.values(queue.agents).some((a) => (a.running ?? 0) > 0))}
             right={<Mono className="text-[10px] text-ghost">{queue ? `${queue.workers.length} worker${queue.workers.length === 1 ? "" : "s"} live` : ""}</Mono>}
           />
-          <QueuePanel queue={queue} />
+          <QueuePanel queue={queue} now={now} />
         </section>
 
         {/* The optimizing triangle: cost, accuracy, time. Every model sits
@@ -958,6 +1144,21 @@ export function Control() {
           onOpen={open}
           onKill={kill}
           killing={killing}
+          onAnswer={(runId) => {
+            const g = (gates ?? []).find((x) => x.run === runId);
+            if (g) setAnswering(g);
+          }}
+        />
+      )}
+
+      {answering && (
+        <ApproveDialog
+          gate={answering}
+          onClose={() => setAnswering(null)}
+          onAnswered={() => {
+            reloadGates();
+            load();
+          }}
         />
       )}
     </div>
@@ -966,30 +1167,48 @@ export function Control() {
 
 /* ═══════════════════ pieces ═══════════════════ */
 
-/** FinOps: live gateway balance, this week's burn, and a budget to burn against. */
+/** FinOps: what Azure billed for the resource, what the journal says was
+    spent, and a budget to burn against. Billed lags usage by up to a day and
+    is the truth; journalled is tokens times the configured price and is now. */
 function FinOpsPanel({
   finops,
+  window,
   onSaved,
 }: {
   finops: ControlData["finops"] | null;
+  window: Win;
   onSaved: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState("");
+  const [period, setPeriod] = useState<"day" | "week" | "month">("month");
   const [saving, setSaving] = useState(false);
-  const remaining = finops?.credits ? finops.credits.total - finops.credits.used : null;
+  const azure = finops?.azure ?? null;
+  const billed = azure?.configured && azure.error === null ? azure.last7d : null;
+  const cur = azure?.currency ?? "USD";
+  const fmtBilled = (n: number | null) => (n === null ? "—" : `${cur === "USD" ? "$" : `${cur} `}${n.toFixed(2)}`);
   const spend = finops?.spend7d ?? null;
-  const burnPct =
-    finops?.budget && spend !== null ? Math.min(100, (spend / Math.max(0.01, finops.budget)) * 100) : null;
+  // The budget is a rate (so much per period). The window's spend is compared
+  // to the budget scaled to the window: $5 a day is $150 over 30 days, and
+  // an "all time" window is scaled to however many days it actually spans.
+  const state = finops?.budgetState ?? null;
+  const windowDays = window === "all" ? Math.max(1, (Date.now() - new Date(state?.since ?? Date.now()).getTime()) / 86_400_000) : winMs(window) / 86_400_000;
+  const windowBudget = finops?.budget != null && finops.period ? (finops.budget * windowDays) / PERIOD_DAYS[finops.period] : null;
+  const burnPct = windowBudget && spend !== null ? Math.min(100, (spend / Math.max(0.01, windowBudget)) * 100) : null;
+  const usedPct = state?.used != null ? Math.round(state.used * 100) : null;
 
   return (
     <section className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">
-      <PanelHead title="FinOps" meta="live balance · burn vs budget" />
-      <div className="grid grid-cols-3 divide-x divide-line border-b border-line">
+      <PanelHead
+        title="FinOps"
+        meta={azure?.configured ? `Azure billed · ${azure.scope === "resource" ? "Foundry resource" : "subscription"} · burn vs budget` : "journalled burn vs budget"}
+      />
+      <div className="grid grid-cols-4 divide-x divide-line border-b border-line">
         {[
-          { label: "Credits left", value: remaining === null ? "—" : `$${remaining.toFixed(2)}`, tone: remaining !== null && remaining < 2 ? "text-warn" : "text-fg" },
-          { label: "Spend · 7d", value: fmtCost(spend), tone: "text-fg" },
-          { label: "Budget", value: finops?.budget != null ? `$${finops.budget.toFixed(2)}` : "unset", tone: "text-fg" },
+          { label: "Billed · MTD", value: fmtBilled(azure?.configured && azure.error === null ? azure.mtd : null), tone: "text-fg" },
+          { label: "Billed · 7d", value: fmtBilled(billed), tone: "text-fg" },
+          { label: finops?.unpriced7d ? `Journalled · ${window} · ${finops.unpriced7d} unpriced` : `Journalled · ${window}`, value: fmtCost(spend), tone: "text-fg" },
+          { label: finops?.budget != null ? `Budget · per ${PERIOD_LABEL[finops.period]}` : "Budget", value: finops?.budget != null ? `$${finops.budget.toFixed(2)}` : "unset", tone: state?.exceeded ? "text-err" : "text-fg" },
         ].map((x) => (
           <div key={x.label} className="flex flex-col items-center gap-0.5 px-1 py-2.5">
             <span className={`tnum text-[15px] leading-none font-semibold ${x.tone}`}>{x.value}</span>
@@ -997,10 +1216,18 @@ function FinOpsPanel({
           </div>
         ))}
       </div>
-      {burnPct !== null && (
+      {state && finops?.budget != null && (
+        <div className={`flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-b border-line px-3 py-2 text-[10.5px] ${state.exceeded ? "text-err" : "text-faint"}`}>
+          <span className="font-medium">{state.exceeded ? "Budget exhausted · new runs are refused" : `This ${PERIOD_LABEL[finops.period]} so far`}</span>
+          <span className="tnum">{fmtCost(state.spent)} of ${finops.budget.toFixed(2)}{usedPct !== null ? ` · ${usedPct}%` : ""}</span>
+          {state.remaining !== null && !state.exceeded && <span className="tnum">{fmtCost(Math.max(0, state.remaining))} left</span>}
+          {state.unpriced > 0 && <span>{state.unpriced} unpriced run{state.unpriced === 1 ? "" : "s"} not counted</span>}
+        </div>
+      )}
+      {burnPct !== null && windowBudget !== null && (
         <div className="flex flex-col gap-1 px-3 pt-2.5">
           <span className="flex justify-between text-[10px] text-faint">
-            <span>burn vs budget</span>
+            <span>{window} spend vs {fmtCost(windowBudget)} ({`$${finops!.budget!.toFixed(2)} per ${PERIOD_LABEL[finops!.period]}`} scaled to {window})</span>
             <span className="tnum">{burnPct.toFixed(0)}%</span>
           </span>
           <span className="h-1.5 w-full overflow-hidden rounded-full bg-raise">
@@ -1017,11 +1244,15 @@ function FinOpsPanel({
             <input
               value={value}
               onChange={(e) => setValue(e.target.value)}
-              placeholder="weekly budget, USD"
+              placeholder="budget, USD"
               inputMode="decimal"
               autoFocus
-              className="focusable h-7 w-32 rounded-sm border border-line bg-canvas px-2 text-[11.5px] text-fg placeholder:text-ghost"
+              className="focusable h-7 w-28 rounded-sm border border-line bg-canvas px-2 text-[11.5px] text-fg placeholder:text-ghost"
             />
+            <span className="text-[11px] text-faint">per</span>
+            <div className="w-24">
+              <Pick value={period} onChange={setPeriod} options={[{ value: "day", label: "day" }, { value: "week", label: "week" }, { value: "month", label: "month" }]} aria-label="Budget period" />
+            </div>
             <Button
               size="sm"
               variant="solid"
@@ -1035,7 +1266,7 @@ function FinOpsPanel({
                   await fetch("/api/control", {
                     method: "POST",
                     headers: { "content-type": "application/json" },
-                    body: JSON.stringify({ budget_usd: n }),
+                    body: JSON.stringify({ budget_usd: n, period }),
                   }).catch(() => {});
                 } finally {
                   setSaving(false);
@@ -1057,13 +1288,20 @@ function FinOpsPanel({
               variant="quiet"
               onClick={() => {
                 setValue(finops?.budget != null ? String(finops.budget) : "");
+                setPeriod(finops?.period ?? "month");
                 setEditing(true);
               }}
             >
               {finops?.budget != null ? "Change budget" : "Set a weekly budget"}
             </Button>
             <span className="grow" />
-            <span className="text-[10px] text-ghost">local models burn $0</span>
+            <span className="truncate text-[10px] text-ghost" title={azure?.error ?? azure?.missing.join(", ") ?? ""}>
+              {!azure?.configured
+                ? `Azure billing not connected: set ${azure?.missing.join(", ") ?? "the AZURE_* variables"}`
+                : azure.error
+                  ? `Azure Cost Management: ${azure.error}`
+                  : `Azure figures as of ${azure.fetchedAt ? new Date(azure.fetchedAt).toLocaleTimeString() : "now"}; billing lags usage by up to a day`}
+            </span>
           </>
         )}
       </div>
@@ -1149,7 +1387,7 @@ function KillButton({
     [],
   );
   return (
-    <Button
+    <Button permission="run"
       size="sm"
       variant="solid"
       tone="err"
@@ -1172,7 +1410,7 @@ function KillButton({
 
 function PanelHead({ title, meta, right, pulse }: { title: string; meta?: string; right?: React.ReactNode; pulse?: boolean }) {
   return (
-    <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line bg-raise/55 px-3">
+    <div data-hue={hueFor(title)} className="flex h-9 shrink-0 items-center gap-2 border-b border-line bg-raise/55 px-3">
       <span className="text-[12px] font-semibold">{title}</span>
       {pulse && (
         <span className="relative flex size-2">
@@ -1195,6 +1433,8 @@ function Kpi({
   spark,
   active,
   onOpen,
+  win,
+  onWin,
 }: {
   label: string;
   value: string;
@@ -1203,17 +1443,42 @@ function Kpi({
   spark?: number[];
   active: boolean;
   onOpen: () => void;
+  /** The tile's own window; clicking the chip cycles it without opening the drill. */
+  win?: Win;
+  onWin?: () => void;
 }) {
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
       aria-pressed={active}
       className={`focusable -mr-px -mb-px flex cursor-pointer flex-col gap-1 border-r border-b border-line px-3 py-2.5 text-left transition-colors ${
         active ? "bg-raise/80" : "hover:bg-raise/50"
       }`}
     >
-      <span className="truncate text-[10.5px] text-faint">{label}</span>
+      <span className="flex items-center gap-1.5">
+        <span className="truncate text-[10.5px] text-faint">{label}</span>
+        {win && (
+          <button
+            type="button"
+            title="Click to change this tile's window"
+            onClick={(e) => {
+              e.stopPropagation();
+              onWin?.();
+            }}
+            className="focusable rounded-[3px] border border-line bg-canvas px-1 font-mono text-[9px] leading-[14px] text-dim hover:border-line-strong hover:text-fg"
+          >
+            {win}
+          </button>
+        )}
+      </span>
       <span className="flex items-end justify-between gap-2">
         <span
           className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]"
@@ -1226,7 +1491,7 @@ function Kpi({
         )}
       </span>
       <span className="truncate text-[10px] text-ghost">{sub}</span>
-    </button>
+    </div>
   );
 }
 
@@ -1313,7 +1578,7 @@ function ModelMix({
 }) {
   const total = Math.max(1, models.reduce((s, m) => s + m.tokens, 0));
   const localShare = Math.round((models.filter((m) => m.local).reduce((s, m) => s + m.tokens, 0) / total) * 100);
-  if (!models.length) return <p className="px-3 py-4 text-[12px] text-faint">No model calls in the last 7 days.</p>;
+  if (!models.length) return <p className="px-3 py-4 text-[12px] text-faint">No model calls in this window.</p>;
   return (
     <div className="flex flex-col gap-2.5 p-3">
       <div className="flex h-2 w-full gap-px overflow-hidden rounded-full">
@@ -1362,6 +1627,7 @@ function Drawer({
   onOpen,
   onKill,
   killing,
+  onAnswer,
 }: {
   drill: Drill;
   data: ControlData;
@@ -1371,8 +1637,14 @@ function Drawer({
   onOpen: (d: Drill) => void;
   onKill: (id: string) => void;
   killing: string | null;
+  onAnswer: (runId: string) => void;
 }) {
-  const { title, body } = renderDrill(drill, data, onOpen, onKill, killing);
+  // The trace loads beside the drill rather than inside it: renderDrill is a
+  // pure function of what is already known, and a waterfall needs a fetch.
+  const runInView = drill.kind === "run" ? drill.id : drill.kind === "span" ? drill.run : null;
+  const { trace, state: traceState } = useTrace(runInView);
+  const refusals = useRefusals(drill.kind === "kpi" && drill.which === "denials");
+  const { title, body } = renderDrill(drill, data, onOpen, onKill, killing, trace, traceState, refusals, onAnswer);
   return (
     // A modal over the room: the backdrop is a click target — empty space
     // closes the drill-down, Esc steps back one level.
@@ -1458,8 +1730,18 @@ function renderDrill(
   onOpen: (d: Drill) => void,
   onKill: (id: string) => void,
   killing: string | null,
+  trace: import("./waterfall").Trace | null,
+  traceState: "idle" | "loading" | "failed",
+  refusals:
+    | { control: string; run: string; agent: string; node: string; title: string; detail: string; at: string }[]
+    | null,
+  onAnswer: (runId: string) => void,
 ): { title: string; body: React.ReactNode } {
   const runs = data.runs;
+
+  if (drill.kind === "span") {
+    return { title: drill.span.name, body: <SpanDetail span={drill.span} /> };
+  }
 
   if (drill.kind === "run") {
     const r = runs.find((x) => x.id === drill.id);
@@ -1493,6 +1775,19 @@ function renderDrill(
       body: (
         <div className="flex flex-col">
           <Fact k="State" v={<Status tone={STATE_TONE[r.state] ?? "queue"}>{r.state}</Status>} />
+          {r.state === "killed" && <Fact k="Control" v={<ControlRef control={KILL_CONTROL} size="md" />} />}
+          {r.denials > 0 && (
+            <Fact
+              k="Refused by"
+              v={
+                <span className="flex flex-wrap gap-1">
+                  {[...new Set((trace?.spans ?? []).filter((sp) => sp.control && sp.level === "ERROR").map((sp) => String(sp.control)))].map((c) => (
+                    <ControlRef key={c} control={c} size="md" />
+                  ))}
+                </span>
+              }
+            />
+          )}
           {r.suspendedAt && <Fact k="Waiting at" v={<Mono className="text-[10.5px]">{r.suspendedAt}</Mono>} tone="text-warn" />}
           <Fact k="When" v={ago(r.at)} />
           <Fact k="Duration" v={fmtMs(r.ms)} />
@@ -1506,7 +1801,7 @@ function renderDrill(
               <span className="text-[11px] font-semibold text-dim">By model</span>
               {r.byModel.map((b) => (
                 <div key={b.model} className="mt-1.5 flex items-center gap-2">
-                  <span className={`size-1.5 shrink-0 rounded-[2px] ${b.model.startsWith("ollama/") ? "bg-ok" : "bg-run"}`} />
+                  <span className={`size-1.5 shrink-0 rounded-[2px] ${b.model === "scripted" ? "bg-ok" : "bg-run"}`} />
                   <span className="min-w-0 grow truncate font-mono text-[10.5px] text-mist">{b.model}</span>
                   <span className="tnum text-[10.5px] text-dim">{fmtTokens(b.in + b.out)}</span>
                   <span className="tnum w-14 text-right text-[10.5px] text-mist">{fmtCost(b.cost)}</span>
@@ -1514,12 +1809,29 @@ function renderDrill(
               ))}
             </div>
           )}
-          <div className="flex gap-2 px-4 py-3">
+          {/* The trace, where the run already is. Every bar opens the span. */}
+          <div className="border-b border-line">
+            <div className="flex items-center gap-2 px-4 pt-2.5 pb-1">
+              <span className="text-[11px] font-semibold text-dim">Trace</span>
+              <span className="text-[10.5px] text-faint">
+                {traceState === "loading"
+                  ? "reading the journal…"
+                  : traceState === "failed"
+                    ? "no journal for this run"
+                    : "click a span"}
+              </span>
+            </div>
+            {trace && <Waterfall trace={trace} onPick={(sp) => onOpen({ kind: "span", run: r.id, span: sp })} />}
+          </div>
+          <div className="flex flex-wrap gap-2 px-4 py-3">
             <Button size="sm" variant="solid" tone="ink" href={`/runs?id=${encodeURIComponent(r.id)}`}>
               Open in theater
             </Button>
+            <Button size="sm" variant="quiet" href={`/api/observability/export?run=${encodeURIComponent(r.id)}`}>
+              OpenTelemetry payload
+            </Button>
             {r.state === "suspended" && (
-              <Button size="sm" variant="outline" href={`/runs?agent=${encodeURIComponent(r.system)}`}>
+              <Button size="sm" variant="outline" tone="warn" onClick={() => onAnswer(r.id)}>
                 Answer the gate
               </Button>
             )}
@@ -1555,9 +1867,9 @@ function renderDrill(
               a.active > 0 ? <Status tone="run">{a.active} live</Status> : a.deployed_at ? <Status tone="ok">Deployed {ago(a.deployed_at)}</Status> : <Status tone="queue">Saved, not deployed</Status>
             }
           />
-          <Fact k="Runs" v={`${a.runs7d} in 7d · ${a.runsTotal} total`} />
-          <Fact k="Avg time · 7d" v={fmtMs(a.avgMs7d)} />
-          <Fact k="Spend · 7d" v={fmtCost(a.cost7d)} />
+          <Fact k="Runs" v={`${a.runs7d} in ${data.window} · ${a.runsTotal} total`} />
+          <Fact k={`Avg time · ${data.window}`} v={fmtMs(a.avgMs7d)} />
+          <Fact k={`Spend · ${data.window}`} v={fmtCost(a.cost7d)} />
           {a.pending > 0 && <Fact k="Awaiting approval" v={String(a.pending)} tone="text-warn" />}
 
           {a.evals.length > 0 && (
@@ -1581,7 +1893,7 @@ function renderDrill(
               <span className="text-[11px] font-semibold text-dim">Models this agent used</span>
               {[...costByModel.entries()].map(([m, agg]) => (
                 <div key={m} className="mt-1.5 flex items-center gap-2">
-                  <span className={`size-1.5 shrink-0 rounded-[2px] ${m.startsWith("ollama/") ? "bg-ok" : "bg-run"}`} />
+                  <span className={`size-1.5 shrink-0 rounded-[2px] ${m === "scripted" ? "bg-ok" : "bg-run"}`} />
                   <span className="min-w-0 grow truncate font-mono text-[10.5px] text-mist">{m}</span>
                   <span className="tnum text-[10.5px] text-dim">{fmtTokens(agg.tokens)}</span>
                   <span className="tnum w-14 text-right text-[10.5px] text-mist">{fmtCost(agg.cost)}</span>
@@ -1636,9 +1948,9 @@ function renderDrill(
       title: drill.id,
       body: (
         <div className="flex flex-col">
-          <Fact k="Where it runs" v={m?.local ? "this machine — local, $0" : "cloud gateway"} tone={m?.local ? "text-ok" : undefined} />
-          <Fact k="Tokens · 7d" v={m ? `${fmtTokens(m.in)} in · ${fmtTokens(m.out)} out` : "—"} />
-          <Fact k="Cost · 7d" v={fmtCost(m?.cost ?? null)} />
+          <Fact k="Where it runs" v={m?.local ? "no model, $0" : "Azure AI Foundry"} tone={m?.local ? "text-ok" : undefined} />
+          <Fact k={`Tokens · ${data.window}`} v={m ? `${fmtTokens(m.in)} in · ${fmtTokens(m.out)} out` : "—"} />
+          <Fact k={`Cost · ${data.window}`} v={fmtCost(m?.cost ?? null)} />
           <Fact k="Runs that used it" v={String(m?.runs ?? modelRuns.length)} />
           <p className="px-4 pt-3 pb-1 text-[11px] font-semibold text-dim">Runs</p>
           <RunList runs={modelRuns.slice(0, 15)} onOpen={onOpen} empty="No recent runs used this model." />
@@ -1648,8 +1960,8 @@ function renderDrill(
   }
 
   // KPI drills — the records behind the tile.
-  const week = Date.now() - 7 * 86_400_000;
-  const recent = runs.filter((r) => new Date(r.at).getTime() >= week);
+  const since = data.now - winMs(data.window);
+  const recent = runs.filter((r) => new Date(r.at).getTime() >= since);
   switch (drill.which) {
     case "deployed":
       return {
@@ -1670,7 +1982,7 @@ function renderDrill(
                     {a.deployed_at ? `deployed ${ago(a.deployed_at)}` : "saved, not deployed"}
                   </span>
                 </span>
-                <span className="text-[10px] text-ghost">{a.runs7d} runs · 7d</span>
+                <span className="text-[10px] text-ghost">{a.runs7d} runs · {data.window}</span>
               </button>
             ))}
           </div>
@@ -1732,28 +2044,93 @@ function renderDrill(
     }
     case "time": {
       const slowest = [...recent].sort((a, b) => b.ms - a.ms);
-      return { title: "Slowest runs · 7 days", body: <RunList runs={slowest.slice(0, 12)} onOpen={onOpen} empty="No runs in the last week." /> };
-    }
-    case "denials":
+      // An average hides the tail, and the tail is what a person waits through.
+      const sorted = recent.map((r) => r.ms).sort((a, b) => a - b);
+      const at = (p: number) =>
+        sorted.length ? sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1))] : 0;
       return {
-        title: "Guardrail denials · 7 days",
+        title: "Run time · 7 days",
         body: (
-          <RunList
-            runs={recent.filter((r) => r.denials > 0)}
-            onOpen={onOpen}
-            empty="No denials this week — nothing tried to cross a line. Open any run's theater to see the rules standing guard."
-          />
+          <div className="flex flex-col">
+            <Fact k="Median" v={fmtMs(at(50))} />
+            <Fact k="95th percentile" v={fmtMs(at(95))} />
+            <Fact k="99th percentile" v={fmtMs(at(99))} />
+            <Fact k="Slowest" v={fmtMs(sorted[sorted.length - 1] ?? 0)} />
+            <div className="px-4 pt-2.5 pb-1">
+              <span className="text-[11px] font-semibold text-dim">Slowest runs</span>
+            </div>
+            <RunList runs={slowest.slice(0, 12)} onOpen={onOpen} empty="No runs in the last week." />
+          </div>
         ),
       };
+    }
+    case "denials": {
+      const hard = (refusals ?? []).filter((x) => x.control !== "taint" && x.control !== "gate");
+      return {
+        title: "Guardrail denials",
+        body: (
+          <div className="flex flex-col">
+            {refusals === null && (
+              <p className="px-4 py-3 text-[11.5px] text-faint">Reading the journals…</p>
+            )}
+            {refusals !== null && hard.length === 0 && (
+              <p className="px-4 py-4 text-[12px] leading-[1.55] text-faint">
+                Nothing has been refused on this deployment. That is the controls having nothing to
+                stop rather than the controls being off — the Guardrails page shows which are
+                running and how often each has fired.
+              </p>
+            )}
+            {hard.map((x, i) => {
+              const why = explainControl(x.control);
+              return (
+                <button
+                  key={`${x.run}-${i}`}
+                  type="button"
+                  onClick={() => onOpen({ kind: "run", id: x.run })}
+                  className="focusable flex flex-col gap-1 border-b border-line px-4 py-2.5 text-left last:border-0 hover:bg-raise/40"
+                >
+                  <span className="flex flex-wrap items-center gap-2">
+                    <Status tone="err">{why.name}</Status>
+                    <ControlRef control={x.control} />
+                    <span className="min-w-0 grow truncate text-[12px] text-fg">{x.title}</span>
+                  </span>
+                  {/* The rule itself, in full. A denial you have to go and look
+                      up is a denial nobody reviews. */}
+                  {x.detail && <span className="text-[11.5px] leading-[1.5] text-mist">{x.detail}</span>}
+                  <span className="flex items-baseline gap-2 text-[10.5px] text-faint">
+                    <span>{x.agent}</span>
+                    {x.node && <Mono className="text-[10px]">{x.node}</Mono>}
+                    <span className="grow" />
+                    <span>{ago(x.at)}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ),
+      };
+    }
     case "kills":
       return {
         title: "Killed runs · 7 days",
         body: (
-          <RunList
-            runs={recent.filter((r) => r.state === "killed")}
-            onOpen={onOpen}
-            empty="No kills this week. When an operator throws the switch, the journalled decision lands here."
-          />
+          <div className="flex flex-col">
+            <div className="flex flex-col gap-1.5 border-b border-line px-4 py-3">
+              <span className="flex flex-wrap items-center gap-2">
+                <Status tone="err">kill switch</Status>
+                <ControlRef control={KILL_CONTROL} size="md" />
+              </span>
+              <span className="text-[11px] leading-[1.5] text-faint">
+                Every kill is an operator decision the runtime traps, journals and persists as a partial
+                record. The run below is the evidence that control produces.
+              </span>
+            </div>
+            <RunList
+              runs={recent.filter((r) => r.state === "killed")}
+              onOpen={onOpen}
+              empty="No kills this week. When an operator throws the switch, the journalled decision lands here."
+            />
+          </div>
         ),
       };
   }
@@ -2008,12 +2385,12 @@ interface QueueData {
  * queue that grows is a provider or a worker pool that cannot keep up, and
  * the oldest queued age says how far behind the estate is right now.
  */
-function QueuePanel({ queue }: { queue: QueueData | null }) {
+function QueuePanel({ queue, now }: { queue: QueueData | null; now: number }) {
   if (!queue) return <p className="px-3 py-4 text-[12px] text-faint">The queue needs the registry database.</p>;
   const rows = Object.entries(queue.agents);
   const age = (iso: string | null | undefined) => {
     if (!iso) return "";
-    const s = (Date.now() - new Date(iso).getTime()) / 1000;
+    const s = (now - new Date(iso).getTime()) / 1000;
     return s < 60 ? `${Math.round(s)}s` : s < 3600 ? `${Math.round(s / 60)}m` : `${(s / 3600).toFixed(1)}h`;
   };
   return (

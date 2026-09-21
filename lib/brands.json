@@ -830,5 +830,185 @@
     "path": null,
     "domain": "smartsheet.com",
     "img": "/logos/smartsheet.com.png"
+  },
+  {
+    "name": "Amazon Web Services",
+    "hex": "#FF9900",
+    "path": null,
+    "domain": "aws.amazon.com",
+    "img": "/logos/aws.amazon.com.ico"
+  },
+  {
+    "name": "CISA",
+    "hex": "#005288",
+    "path": null,
+    "domain": "cisa.gov",
+    "img": "/logos/cisa.gov.png"
+  },
+  {
+    "name": "Center for Internet Security",
+    "hex": "#0A5C9C",
+    "path": null,
+    "domain": "cisecurity.org",
+    "img": "/logos/cisecurity.org.png"
+  },
+  {
+    "name": "Cloud Security Alliance",
+    "hex": "#E31937",
+    "path": null,
+    "domain": "cloudsecurityalliance.org",
+    "img": "/logos/cloudsecurityalliance.org.svg"
+  },
+  {
+    "name": "European Union",
+    "hex": "#003399",
+    "path": null,
+    "domain": "europa.eu",
+    "img": "/logos/europa.eu.ico"
+  },
+  {
+    "name": "FIRST.org",
+    "hex": "#E4002B",
+    "path": null,
+    "domain": "first.org",
+    "img": "/logos/first.org.png"
+  },
+  {
+    "name": "Forrester",
+    "hex": "#0B5C3A",
+    "path": null,
+    "domain": "forrester.com",
+    "img": "/logos/forrester.com.png"
+  },
+  {
+    "name": "Gartner",
+    "hex": "#002856",
+    "path": null,
+    "domain": "gartner.com",
+    "img": "/logos/gartner.com.svg"
+  },
+  {
+    "name": "Government of India",
+    "hex": "#FF9933",
+    "path": null,
+    "domain": "india.gov.in",
+    "img": "/logos/india.gov.in.png"
+  },
+  {
+    "name": "IDC",
+    "hex": "#0072BC",
+    "path": null,
+    "domain": "idc.com",
+    "img": "/logos/idc.com.png"
+  },
+  {
+    "name": "ISO",
+    "hex": "#E30613",
+    "path": null,
+    "domain": "iso.org",
+    "img": "/logos/iso.org.ico"
+  },
+  {
+    "name": "MITRE",
+    "hex": "#005B94",
+    "path": null,
+    "domain": "mitre.org",
+    "img": "/logos/mitre.org.png"
+  },
+  {
+    "name": "Mandiant, Google Cloud",
+    "hex": "#E60000",
+    "path": null,
+    "domain": "mandiant.com",
+    "img": "/logos/mandiant.com.ico"
+  },
+  {
+    "name": "Monetary Authority of Singapore",
+    "hex": "#003A70",
+    "path": null,
+    "domain": "mas.gov.sg",
+    "img": "/logos/mas.gov.sg.ico"
+  },
+  {
+    "name": "NIST",
+    "hex": "#1F4E79",
+    "path": null,
+    "domain": "nist.gov",
+    "img": "/logos/nist.gov.ico"
+  },
+  {
+    "name": "OWASP",
+    "hex": "#000000",
+    "path": null,
+    "domain": "owasp.org",
+    "img": "/logos/owasp.org.ico"
+  },
+  {
+    "name": "OWASP GenAI Security Project",
+    "hex": "#4B0082",
+    "path": null,
+    "domain": "genai.owasp.org",
+    "img": "/logos/genai.owasp.org.png"
+  },
+  {
+    "name": "PCI Security Standards Council",
+    "hex": "#0067B1",
+    "path": null,
+    "domain": "pcisecuritystandards.org",
+    "img": "/logos/pcisecuritystandards.org.ico"
+  },
+  {
+    "name": "Reserve Bank of India",
+    "hex": "#1B3A6B",
+    "path": null,
+    "domain": "rbi.org.in",
+    "img": "/logos/rbi.org.in.png"
+  },
+  {
+    "name": "SEBI",
+    "hex": "#0B3D91",
+    "path": null
+  },
+  {
+    "name": "US Department of Health and Human Services",
+    "hex": "#005EA2",
+    "path": null,
+    "domain": "hhs.gov",
+    "img": "/logos/hhs.gov.ico"
+  },
+  {
+    "name": "Verizon",
+    "hex": "#CD040B",
+    "path": null,
+    "domain": "verizon.com",
+    "img": "/logos/verizon.com.png"
+  },
+  {
+    "name": "HackerOne",
+    "hex": "#494649",
+    "path": null,
+    "domain": "hackerone.com",
+    "img": "/logos/hackerone.com.ico"
+  },
+  {
+    "name": "Invicti",
+    "hex": "#1A2B6D",
+    "path": null,
+    "domain": "invicti.com",
+    "img": "/logos/invicti.com.png"
+  },
+  {
+    "name": "DigiCert",
+    "hex": "#0174C3",
+    "path": null,
+    "domain": "digicert.com",
+    "img": "/logos/digicert.com.svg"
+  },
+  {
+    "name": "Brinqa",
+    "hex": "#00A3E0",
+    "path": null,
+    "domain": "brinqa.com",
+    "img": "/logos/brinqa.com.png"
   }
 ]

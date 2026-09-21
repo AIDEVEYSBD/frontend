@@ -32,7 +32,11 @@ export type AuthOutcome =
   | { ok: true; mode: "open" | "key"; key?: KeyRow }
   | { ok: false; status: 401 | 403 | 503; error: string };
 
-/** Authenticate a request for one agent. */
+/**
+ * Authenticate a request for one agent. An empty `agent` means the door has
+ * no scope of its own (a read, or a door that learns the agent from the key),
+ * so a scoped key passes and the caller reads `key.agent` to find out whose.
+ */
 export async function authenticate(req: Request, agent: string): Promise<AuthOutcome> {
   if (!(await dbReady())) return { ok: false, status: 503, error: "the registry database is unreachable; the queue needs it" };
   const active = await query<{ n: string }>("SELECT count(*) AS n FROM api_keys WHERE revoked_at IS NULL");
@@ -49,7 +53,7 @@ export async function authenticate(req: Request, agent: string): Promise<AuthOut
   );
   if (!rows.length) return { ok: false, status: 401, error: "unknown or revoked API key" };
   const key = rows[0];
-  if (key.agent && key.agent !== agent) return { ok: false, status: 403, error: `this key is scoped to "${key.agent}"` };
+  if (key.agent && agent && key.agent !== agent) return { ok: false, status: 403, error: `this key is scoped to "${key.agent}"` };
   query("UPDATE api_keys SET last_used = now() WHERE id = $1", [key.id]).catch(() => {});
   return { ok: true, mode: "key", key };
 }

@@ -11,6 +11,7 @@ import {
 import { Button, Mono, Status, Tag } from "./ui";
 import { CAT } from "./charts";
 import { BrandMark, brandOf } from "./brand";
+import { VENDOR_GROUPS } from "@/lib/vendors";
 import Image from "next/image";
 
 /* ═══════════════════ In-view hook ═══════════════════ */
@@ -492,25 +493,25 @@ export function BuilderSwitch() {
         <div className="flex flex-col gap-4">
           <h3 className="text-[19px] leading-[1.2] font-semibold tracking-[-0.02em]">
             {mode === "canvas"
-              ? "Drag harnesses onto a canvas and wire the edges."
-              : "Describe the process. Review the graph it proposes."}
+              ? "Configure the workflow visually."
+              : "Describe the process and review the proposed design."}
           </h3>
           <p className="text-[14px] leading-[1.65] text-mist">
             {mode === "canvas"
-              ? "For the engineer who already knows the process. Branching, parallel fan-out, retries and approval gates are node types, not code you write and maintain."
-              : "For the partner who knows the outcome. Upload the SOP, paste the policy, or record an expert talking it through. It proposes the workflow, writes the eval cases, and shows its work before anything runs."}
+              ? "For teams that know the process detail. Define branching, parallel execution, retries and approval points without writing bespoke orchestration code."
+              : "For process owners who know the required outcome. Provide an SOP, policy, transcript or expert explanation, then review the workflow and evaluation cases before deployment."}
           </p>
           <ul className="flex flex-col gap-2.5 border-t border-line pt-4">
             {(mode === "canvas"
               ? [
-                  ["Typed edges", "A node cannot be wired to one it cannot feed"],
-                  ["Config, not code", "Thresholds, retries and gates are fields"],
-                  ["Versioned", "Every change is a diff you can review and roll back"],
+                  ["Typed contracts", "Inputs and outputs are validated between workflow steps"],
+                  ["Declarative controls", "Thresholds, retries and approval points are configured explicitly"],
+                  ["Version history", "Review changes and retain the specification used for each release"],
                 ]
               : [
-                  ["Reads your documents", "SOPs, policies, transcripts, recordings"],
-                  ["Writes its own evals", "Cases generated from the edge cases it found"],
-                  ["Nothing runs unreviewed", "You approve the graph before it deploys"],
+                  ["Uses source material", "SOPs, policies, transcripts and recorded expertise"],
+                  ["Proposes evaluation cases", "Representative cases reflect identified process conditions"],
+                  ["Requires review", "An authorized person reviews the workflow before deployment"],
                 ]
             ).map(([h, d]) => (
               <li key={h} className="flex gap-2.5">
@@ -639,18 +640,8 @@ export function AgenticBuild() {
 
 /* ═══════════════════ Integration explorer ═══════════════════ */
 
-const GROUPS = [
-  { name: "Detection & response", c: 1, items: ["Microsoft Sentinel", "Microsoft Defender", "Splunk", "CrowdStrike", "SentinelOne", "Palo Alto Networks", "Fortinet", "Cisco", "Check Point", "Trend Micro", "Sophos", "Darktrace", "Elastic", "Sumo Logic"] },
-  { name: "Data protection & network", c: 4, items: ["Microsoft Purview", "Forcepoint", "Zscaler", "Netskope", "Proofpoint", "Mimecast", "Cloudflare", "Akamai", "F5"] },
-  { name: "GRC & audit", c: 5, items: ["ServiceNow", "Archer", "OneTrust", "AuditBoard", "MetricStream", "LogicGate", "Vanta", "Drata", "Hyperproof", "Workiva", "Diligent", "Jira", "Confluence"] },
-  { name: "Identity & secrets", c: 8, items: ["Okta", "Entra ID", "Ping Identity", "Auth0", "SailPoint", "Duo", "CyberArk", "BeyondTrust", "Delinea", "JumpCloud", "1Password", "HashiCorp Vault"] },
-  { name: "Vulnerability & code", c: 2, items: ["Qualys", "Tenable", "Rapid7", "Wiz", "Snyk", "Veracode", "Semgrep", "Checkmarx", "Sonar", "JFrog", "Aqua Security", "Orca Security", "GitHub", "GitLab", "Bitbucket", "Azure DevOps"] },
-  { name: "Third-party risk", c: 6, items: ["BitSight", "SecurityScorecard", "UpGuard", "RiskRecon", "Panorays"] },
-  { name: "Business systems", c: 9, items: ["SAP", "Salesforce", "Oracle", "NetSuite", "Workday", "Dynamics 365", "Coupa", "Concur", "Stripe", "QuickBooks", "Xero", "Bloomberg", "Refinitiv", "Guidewire", "Duck Creek"] },
-  { name: "Documents & data", c: 3, items: ["SharePoint", "OneDrive", "Google Drive", "Box", "Dropbox", "iManage", "DocuSign", "Adobe Sign", "Amazon S3", "Azure Blob", "Snowflake", "Databricks", "BigQuery", "Redshift", "Postgres", "SQL Server", "MongoDB", "Elasticsearch", "Kafka", "Fivetran", "dbt", "Tableau", "Power BI", "Notion"] },
-  { name: "Cloud & DevOps", c: 7, items: ["Google Cloud", "Kubernetes", "Docker", "Terraform", "Ansible", "Jenkins", "CircleCI", "Datadog", "Grafana", "New Relic", "PagerDuty", "UiPath"] },
-  { name: "Communication & ITSM", c: 0, items: ["Outlook", "Gmail", "Slack", "Teams", "Zoom", "Webex", "Zendesk", "Intercom", "Genesys", "Five9", "Twilio", "Asana", "Monday.com", "Smartsheet"] },
-];
+const GROUPS = VENDOR_GROUPS;
+
 
 const ALL = GROUPS.flatMap((g) => g.items.map((i) => ({ name: i, group: g.name, c: g.c })));
 

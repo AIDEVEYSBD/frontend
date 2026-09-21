@@ -1,77 +1,84 @@
 import { discover, envLines, loadServers, saveServers, shellWords, type McpServer } from "@/lib/server/mcp";
+import { permit } from "@/lib/server/auth";
 
 /**
- * Custom tool servers: connect, list, refresh, remove.
+ * The registry of custom MCP servers this deployment has connected.
  *
- * POST starts the server once to discover its tools and refuses to save a
- * server that will not answer — a dead entry in the palette is worse than an
- * honest error. The runtime picks the saved entry up from workspace/mcp.json.
+ * GET lists them with the tools each announced. POST with a label, a command
+ * line and KEY=VALUE env lines starts the server once, completes the MCP
+ * handshake, records the tools it lists and stops it, so the builder shows
+ * exactly what a run will get; POST with an id and `refresh` repeats the
+ * discovery for a server already connected. DELETE removes one. The
+ * registry is written to the database and mirrored to the runtime's
+ * mcp.json, which is the copy the runtime reads.
+ *
+ * The platform's own MCP server, for outside clients, lives at /api/mcp/server.
  */
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const slug = (s: string) =>
-  s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+const ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+function slug(label: string): string {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 64) || "server";
+}
 
 export async function GET() {
-  return Response.json({ servers: await loadServers() });
+  const servers = await loadServers();
+  return Response.json({ servers, count: servers.length });
 }
 
 export async function POST(req: Request) {
-  let body: { id?: string; label?: string; command?: string; args?: string[]; env?: Record<string, string> | string; refresh?: boolean };
+  { const gate = await permit(req, "configure"); if (gate) return gate; }
+  let body: { id?: string; refresh?: boolean; label?: string; command?: string; env?: string | Record<string, string> };
   try {
     body = await req.json();
   } catch {
-    return Response.json({ error: "expected a JSON body" }, { status: 400 });
+    return Response.json({ error: 'expected {"label", "command", "env"} or {"id", "refresh": true}' }, { status: 400 });
   }
-
   const servers = await loadServers();
 
-  // Refresh re-discovers an existing server's tools.
-  if (body.refresh && body.id) {
-    const cur = servers.find((s) => s.id === body.id);
-    if (!cur) return Response.json({ error: `no server "${body.id}"` }, { status: 404 });
+  if (body.id && body.refresh) {
+    const id = String(body.id);
+    const existing = servers.find((s) => s.id === id);
+    if (!existing) return Response.json({ error: `no server "${id}"` }, { status: 404 });
     try {
-      cur.tools = await discover(cur.command, cur.args, cur.env);
-      cur.discovered_at = new Date().toISOString();
+      const tools = await discover(existing.command, existing.args, existing.env);
+      const updated: McpServer = { ...existing, tools, discovered_at: new Date().toISOString() };
+      await saveServers(servers.map((s) => (s.id === id ? updated : s)));
+      return Response.json({ server: updated, tools: tools.length });
     } catch (e) {
-      return Response.json({ error: (e as Error).message }, { status: 422 });
+      return Response.json({ error: (e as Error).message }, { status: 502 });
     }
-    await saveServers(servers);
-    return Response.json({ server: cur });
   }
 
+  const label = String(body.label ?? "").trim();
   const line = String(body.command ?? "").trim();
-  const words = shellWords(line);
-  if (!words.length) return Response.json({ error: "give the command that starts the server" }, { status: 400 });
-  const [command, ...parsedArgs] = words;
-  const args = Array.isArray(body.args) && body.args.length ? body.args.map(String) : parsedArgs;
+  if (!label || !line) return Response.json({ error: "a label and a command line are needed" }, { status: 400 });
+  const [command, ...args] = shellWords(line);
+  if (!command) return Response.json({ error: "the command line is empty" }, { status: 400 });
   const env = typeof body.env === "string" ? envLines(body.env) : (body.env ?? {});
-  const label = String(body.label ?? "").trim() || command.split("/").pop() || "custom";
-  const id = slug(String(body.id ?? "") || label);
-  if (!/^[a-z][a-z0-9-]{0,39}$/.test(id)) return Response.json({ error: "the server id must be kebab-case and start with a letter" }, { status: 400 });
-  const RESERVED = new Set(["retrieval", "web", "records", "events", "code", "engines", "sandbox", "store", "notify", "peers", "documents", "agents", "spec"]);
-  if (RESERVED.has(id)) return Response.json({ error: `"${id}" is a built-in server; choose another id` }, { status: 400 });
+  let id = slug(label);
+  if (!ID.test(id)) id = `server-${Date.now().toString(36)}`;
+  if (servers.some((s) => s.id === id)) id = `${id}-${Date.now().toString(36).slice(-4)}`;
 
-  let tools;
   try {
-    tools = await discover(command, args, env);
+    const tools = await discover(command, args, env);
+    const server: McpServer = { id, label, command, args, env, tools, discovered_at: new Date().toISOString() };
+    await saveServers([...servers, server]);
+    return Response.json({ server, tools: tools.length });
   } catch (e) {
-    return Response.json({ error: (e as Error).message }, { status: 422 });
+    return Response.json({ error: (e as Error).message }, { status: 502 });
   }
-  if (!tools.length) return Response.json({ error: "the server answered but lists no tools" }, { status: 422 });
-
-  const server: McpServer = { id, label, command, args, env, tools, discovered_at: new Date().toISOString() };
-  const next = [...servers.filter((s) => s.id !== id), server];
-  await saveServers(next);
-  return Response.json({ server });
 }
 
 export async function DELETE(req: Request) {
-  const id = new URL(req.url).searchParams.get("id");
+  { const gate = await permit(req, "configure"); if (gate) return gate; }
+  const id = new URL(req.url).searchParams.get("id") ?? "";
   if (!id) return Response.json({ error: "which server?" }, { status: 400 });
   const servers = await loadServers();
+  if (!servers.some((s) => s.id === id)) return Response.json({ error: `no server "${id}"` }, { status: 404 });
   await saveServers(servers.filter((s) => s.id !== id));
-  return Response.json({ removed: true });
+  return Response.json({ removed: id });
 }

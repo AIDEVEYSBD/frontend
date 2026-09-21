@@ -1,5 +1,9 @@
+"use client";
+
 import Link from "next/link";
 import type { MouseEvent, ReactNode } from "react";
+import { useSession } from "@/lib/use-session";
+import type { Permission } from "@/lib/permissions";
 
 /* ═══════════════════ Tone system ═══════════════════
    A tone names a meaning, not a colour. Every component that can carry
@@ -80,6 +84,7 @@ export const RUN_STATE: Record<string, { tone: Tone; label: string }> = {
   failed: { tone: "err", label: "Failed" },
   suspended: { tone: "warn", label: "Awaiting approval" },
   killed: { tone: "err", label: "Killed by operator" },
+  closed: { tone: "neutral", label: "Closed at the gate" },
   running: { tone: "run", label: "Running" },
 };
 
@@ -129,6 +134,7 @@ export function Button({
   onClick,
   type = "button",
   href,
+  permission,
 }: {
   children: ReactNode;
   tone?: Tone;
@@ -142,7 +148,15 @@ export function Button({
   type?: "button" | "submit";
   /** Renders as a link with button looks — never a button nested in an anchor. */
   href?: string;
+  /** The permission this action needs; without it the button is disabled and says why. */
+  permission?: Permission;
 }) {
+  // Role-based access: an action the signed-in person may not take is shown
+  // disabled with the reason, and the API refuses it regardless.
+  const { session, loaded } = useSession();
+  const denied = Boolean(permission && loaded && session && !session.permissions.includes(permission));
+  const why = denied ? `Needs the "${permission}" permission. Your roles: ${session?.appRoles.join(", ") || "none"}.` : undefined;
+  if (denied) disabled = true;
   // Every variant is a solid fill: buttons are never transparent, and the
   // text always contrasts the mode.
   const look =
@@ -158,7 +172,7 @@ export function Button({
     // so the six states hold here too.
     if (disabled || loading) {
       return (
-        <span aria-disabled="true" aria-busy={loading || undefined} className={`${base} pointer-events-none opacity-40`}>
+        <span aria-disabled="true" aria-busy={loading || undefined} title={why} className={`${base} pointer-events-none opacity-40`}>
           {loading && <Spinner size={size === "sm" ? 11 : 13} />}
           {children}
         </span>
@@ -177,6 +191,7 @@ export function Button({
       onClick={onClick}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
+      title={why}
       className={`${base} disabled:pointer-events-none disabled:opacity-40`}
     >
       {loading && <Spinner size={size === "sm" ? 11 : 13} />}

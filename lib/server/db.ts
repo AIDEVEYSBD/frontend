@@ -109,6 +109,76 @@ export function dbReady(): Promise<boolean> {
             revoked_at timestamptz
           );
           ALTER TABLE workflows ADD COLUMN IF NOT EXISTS deployed_at timestamptz;
+          CREATE TABLE IF NOT EXISTS attached_agents (
+            id         text PRIMARY KEY,
+            name       text NOT NULL,
+            mode       text NOT NULL DEFAULT 'sdk',   -- sdk | a2a
+            framework  text NOT NULL DEFAULT '',
+            language   text NOT NULL DEFAULT '',
+            owner      text NOT NULL DEFAULT '',
+            card_url   text NOT NULL DEFAULT '',
+            key_id     text,
+            key_prefix text NOT NULL DEFAULT '',
+            demo       boolean NOT NULL DEFAULT false,
+            created_at timestamptz NOT NULL DEFAULT now(),
+            last_seen  timestamptz
+          );
+          ALTER TABLE attached_agents ADD COLUMN IF NOT EXISTS grants jsonb NOT NULL DEFAULT '[]'::jsonb;
+          ALTER TABLE attached_agents ADD COLUMN IF NOT EXISTS gate_at text NOT NULL DEFAULT '';
+          ALTER TABLE attached_agents ADD COLUMN IF NOT EXISTS injection text NOT NULL DEFAULT 'block';
+          ALTER TABLE attached_agents ADD COLUMN IF NOT EXISTS blocked boolean NOT NULL DEFAULT false;
+          -- Identity: people provisioned from the SSO (keyed on sub, never email), their
+          -- sessions, the auth trail, and the human owner of every non-human identity.
+          -- Created ahead of the SSO integration so the IAM page has its shape; see SSO_PLAN.md.
+          CREATE TABLE IF NOT EXISTS users (
+            sub                text PRIMARY KEY,
+            email              text NOT NULL DEFAULT '',
+            email_verified     boolean NOT NULL DEFAULT false,
+            name               text NOT NULL DEFAULT '',
+            preferred_username text NOT NULL DEFAULT '',
+            org_type           text NOT NULL DEFAULT '',
+            is_ey_employee     boolean NOT NULL DEFAULT false,
+            orgs               jsonb NOT NULL DEFAULT '[]'::jsonb,
+            last_roles         jsonb NOT NULL DEFAULT '[]'::jsonb,
+            last_app_roles     jsonb NOT NULL DEFAULT '[]'::jsonb,
+            first_seen         timestamptz NOT NULL DEFAULT now(),
+            last_seen          timestamptz NOT NULL DEFAULT now(),
+            disabled_at        timestamptz,
+            disabled_by        text
+          );
+          CREATE TABLE IF NOT EXISTS sessions (
+            id                 text PRIMARY KEY,
+            sub                text NOT NULL REFERENCES users(sub) ON DELETE CASCADE,
+            id_token           text NOT NULL,
+            access_token       text NOT NULL,
+            access_expires_at  timestamptz NOT NULL,
+            refresh_token      text,
+            roles              jsonb NOT NULL DEFAULT '[]'::jsonb,
+            app_roles          jsonb NOT NULL DEFAULT '[]'::jsonb,
+            created_at         timestamptz NOT NULL DEFAULT now(),
+            last_seen          timestamptz NOT NULL DEFAULT now(),
+            expires_at         timestamptz NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS sessions_sub ON sessions (sub);
+          CREATE TABLE IF NOT EXISTS auth_events (
+            id       bigserial PRIMARY KEY,
+            at       timestamptz NOT NULL DEFAULT now(),
+            kind     text NOT NULL,
+            sub      text,
+            email    text,
+            detail   jsonb NOT NULL DEFAULT '{}'::jsonb
+          );
+          CREATE TABLE IF NOT EXISTS nhi_owners (
+            kind          text NOT NULL,
+            id            text NOT NULL,
+            owner         text NOT NULL DEFAULT '',
+            owner_sub     text,
+            purpose       text NOT NULL DEFAULT '',
+            review_due_at timestamptz,
+            updated_at    timestamptz NOT NULL DEFAULT now(),
+            updated_by    text NOT NULL DEFAULT '',
+            PRIMARY KEY (kind, id)
+          );
           CREATE TABLE IF NOT EXISTS run_metrics (
             id          text PRIMARY KEY,
             system      text NOT NULL DEFAULT '',

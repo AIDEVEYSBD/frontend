@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { permit, session as whoIs, signer, ssoEnabled } from "@/lib/server/auth";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -51,6 +52,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  { const gate = await permit(req, "configure"); if (gate) return gate; }
   let body: { name?: string; value?: string; label?: string };
   try {
     body = await req.json();
@@ -73,6 +75,7 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  { const gate = await permit(req, "configure"); if (gate) return gate; }
   const name = new URL(req.url).searchParams.get("name")?.trim();
   if (!name) return Response.json({ error: "which key?" }, { status: 400 });
   const out = await vault(["rm", "--name", name]);

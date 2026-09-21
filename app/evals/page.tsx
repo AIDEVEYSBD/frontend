@@ -3,7 +3,7 @@ import { Evals } from "@/components/evals";
 
 export const metadata = {
   title: "Evals — Agent Factory",
-  description: "Upload benchmarks beside your agents; every score is a real, journalled run.",
+  description: "Evaluate workflow quality, cost and execution time using representative, fully recorded runs.",
 };
 
 export default function EvalsPage() {

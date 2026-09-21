@@ -1,5 +1,8 @@
 "use client";
 
+import { Appearance } from "./appearance";
+import { Providers, useConfigChanges } from "./providers";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Status } from "./ui";
 import { Checkbox, Input, Segmented } from "./forms";
@@ -13,7 +16,7 @@ import { Cross, Row, Text } from "./builder/controls";
  * The factory's configuration: which models it offers, and the keys its
  * connectors read.
  *
- * Models: the OpenRouter catalogue is hundreds of entries, and a dropdown with
+ * Models: the Foundry resource's deployments, and a dropdown with
  * hundreds of entries is a way of choosing nothing. Whoever runs this factory
  * picks the short list here; every model picker in the builder shows exactly
  * that list and nothing else.
@@ -29,15 +32,18 @@ interface CatalogueModel {
   context: number;
   price: number;
   price_out?: number;
+  /** Provider id for models offered from an added provider; absent for Foundry deployments. */
+  provider?: string;
 }
 
 type ModelClass = "small" | "medium" | "large";
 const MODEL_CLASSES: ModelClass[] = ["small", "medium", "large"];
 
 interface Config {
-  models: { id: string; label: string; class?: ModelClass }[];
+  models: { id: string; label: string; class?: ModelClass; price_in?: number; price_out?: number; provider?: string }[];
   default_model: string;
   class_defaults?: Partial<Record<ModelClass, string>>;
+  providers?: { id: string; label: string; local?: boolean }[];
 }
 
 interface VaultKey {
@@ -51,15 +57,19 @@ interface VaultKey {
 
 export function Settings() {
   return (
-    <div className="min-h-full">
-      <div className="mx-auto flex max-w-[1080px] flex-col gap-8 px-4 py-8 sm:px-6 lg:px-10">
+    <div className="min-h-full" data-hue="green">
+      <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-8 px-5 py-7">
         <header className="flex flex-col gap-1.5">
           <h1 className="text-[24px] font-semibold tracking-[-0.02em]">Configuration</h1>
           <p className="max-w-[620px] text-[13.5px] leading-relaxed text-dim">
-            What this factory offers to every agent built on it: the models teams may pick from,
-            and the keys connectors read at run time.
+            Manage the providers this factory can reach, the approved models available to workflows, and the
+            protected credentials that connectors resolve at runtime.
           </p>
         </header>
+
+        <Appearance />
+
+        <Providers />
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <Models />
@@ -84,11 +94,15 @@ function Models() {
   const inFlight = useRef(false);
   const queued = useRef<Config | null>(null);
 
-  useEffect(() => {
+  const reloadConfig = useCallback(() => {
     fetch("/api/config")
       .then((r) => r.json())
       .then(setConfig)
       .catch(() => setConfig({ models: [], default_model: "" }));
+  }, []);
+  useConfigChanges(reloadConfig);
+  useEffect(() => {
+    reloadConfig();
     fetch("/api/models")
       .then((r) => r.json())
       .then((d) => {
@@ -99,16 +113,24 @@ function Models() {
         setCatalogueError(String(e));
         setCatalogue([]);
       });
-  }, []);
+  }, [reloadConfig]);
 
   const chosen = useMemo(() => new Set((config?.models ?? []).map((m) => m.id)), [config]);
+  const providerLabel = useCallback((id?: string) => (config?.providers ?? []).find((p) => p.id === id), [config]);
 
   const shown = useMemo(() => {
     if (!catalogue) return [];
+    // Models offered from added providers are not Foundry deployments; they
+    // join the list from the configuration so their tier and price are editable here.
+    const ids = new Set(catalogue.map((m) => m.id));
+    const extra: CatalogueModel[] = (config?.models ?? [])
+      .filter((m) => !ids.has(m.id))
+      .map((m) => ({ id: m.id, label: m.label, context: 0, price: 0, provider: m.provider ?? (m.id === "scripted" ? undefined : "other") }));
+    const all = [...catalogue, ...extra];
     const q = query.trim().toLowerCase();
     const rows = q
-      ? catalogue.filter((m) => m.id.toLowerCase().includes(q) || m.label.toLowerCase().includes(q))
-      : catalogue;
+      ? all.filter((m) => m.id.toLowerCase().includes(q) || m.label.toLowerCase().includes(q))
+      : all;
     const by: Record<string, (a: CatalogueModel, b: CatalogueModel) => number> = {
       Name: (a, b) => a.label.localeCompare(b.label),
       Price: (a, b) => (a.price || 0) - (b.price || 0),
@@ -121,33 +143,35 @@ function Models() {
       const sb = chosen.has(b.id) ? 0 : 1;
       return sa - sb || cmp(a, b) || a.label.localeCompare(b.label);
     });
-  }, [catalogue, query, chosen, sort]);
+  }, [catalogue, config, query, chosen, sort]);
 
   // Writes go out one at a time and a burst of ticks collapses to the latest
   // config — the UI is optimistic, the wire is serialized, last one wins.
-  const push = useCallback(async (next: Config) => {
+  const push = useCallback(async (first: Config) => {
     if (inFlight.current) {
-      queued.current = next;
+      queued.current = first;
       return;
     }
     inFlight.current = true;
+    let next: Config | null = first;
     try {
-      const res = await fetch("/api/config", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(next),
-      });
-      if (res.ok) {
-        setSavedTick(true);
-        setTimeout(() => setSavedTick(false), 1200);
+      // Drain: whatever was queued while a write was in flight goes next, and only the latest.
+      while (next) {
+        const res = await fetch("/api/config", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(next),
+        });
+        if (res.ok) {
+          setSavedTick(true);
+          setTimeout(() => setSavedTick(false), 1200);
+        }
+        next = queued.current;
+        queued.current = null;
       }
     } finally {
       inFlight.current = false;
-      const q = queued.current;
-      queued.current = null;
-      if (q) void push(q);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const save = useCallback(
@@ -170,12 +194,12 @@ function Models() {
     }
     const models = has
       ? config.models.filter((x) => x.id !== m.id)
-      : [...config.models, { id: m.id, label: m.label }];
+      : [...config.models, { id: m.id, label: m.label, ...(m.provider && m.provider !== "other" ? { provider: m.provider } : {}) }];
     save({
       models,
       default_model: models.some((x) => x.id === config.default_model)
         ? config.default_model
-        : models[0].id,
+        : (models[0]?.id ?? ""),
     });
   };
 
@@ -195,10 +219,10 @@ function Models() {
 
       <div className="flex flex-col gap-2.5 border-b border-line px-4 py-3">
         <p className="text-[11.5px] leading-[1.55] text-faint">
-          Pulled live from the OpenRouter catalogue. Tick what this factory offers — every model
-          dropdown in the builder shows exactly this list. At a client, the same list points at
-          their Bedrock or Foundry deployment instead; specs name a model, never a provider.
-          Prices are per million tokens from the gateway&rsquo;s sheet.
+          The deployments on the Foundry resource. Tick
+          what this factory offers; every model dropdown in the builder shows exactly this list, and
+          a spec names a deployment, never a provider. Record the price per million tokens beside
+          each offered model: it is what cost figures and model comparisons are computed from.
         </p>
         <Text value={query} onChange={setQuery} placeholder="Search the catalogue" aria-label="Search the catalogue" />
         {/* Segmented is uncontrolled by design — the wrapper reads the choice
@@ -247,7 +271,14 @@ function Models() {
               <div className="flex min-w-0 items-center gap-3">
                 <Checkbox checked={on} onChange={() => toggle(m)} aria-label={`Offer ${m.label}`} />
                 <div className="flex min-w-0 grow flex-col">
-                  <span className="truncate text-[12.5px] font-medium text-fg" title={m.label}>{m.label}</span>
+                  <span className="flex items-center gap-1.5 truncate text-[12.5px] font-medium text-fg" title={m.label}>
+                    {m.label}
+                    {m.provider && (
+                      <span className={`shrink-0 rounded-[3px] border px-1 py-px font-mono text-[9px] font-semibold ${providerLabel(m.provider)?.local ? "border-ok/40 text-ok" : "border-line-strong text-dim"}`} title="Served by this provider">
+                        {providerLabel(m.provider)?.label ?? m.provider}
+                      </span>
+                    )}
+                  </span>
                   <span className="truncate font-mono text-[10.5px] text-faint" title={m.id}>{m.id}</span>
                 </div>
                 <span className="flex shrink-0 flex-col items-end gap-0.5 text-right">
@@ -303,13 +334,40 @@ function Models() {
                         tier default
                       </Button>
                     ))}
+                  {/* Cost per million tokens, recorded by the operator: Foundry
+                      publishes no sheet, and a blank means unknown, never free. */}
+                  {providerLabel(config?.models.find((x) => x.id === m.id)?.provider)?.local && (
+                    <span className="text-[10px] text-ok">$0 per token · priced by the hour</span>
+                  )}
+                  {!providerLabel(config?.models.find((x) => x.id === m.id)?.provider)?.local && (["price_in", "price_out"] as const).map((k) => (
+                    <label key={k} className="flex items-center gap-1 text-[10px] text-faint">
+                      <span>{k === "price_in" ? "$/M in" : "$/M out"}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={config?.models.find((x) => x.id === m.id)?.[k] ?? ""}
+                        placeholder="?"
+                        onChange={(e) =>
+                          config &&
+                          save({
+                            ...config,
+                            models: config.models.map((x) =>
+                              x.id === m.id ? { ...x, [k]: e.target.value === "" ? undefined : Number(e.target.value) } : x,
+                            ),
+                          })
+                        }
+                        className="focusable h-7 w-16 rounded-md border border-line-strong bg-field px-1.5 font-mono text-[11px] text-fg placeholder:text-ghost"
+                      />
+                    </label>
+                  ))}
                   <span className="grow" />
                   {isDefault ? (
                     <span className="shrink-0 rounded-[3px] border border-line-strong px-1 py-px font-mono text-[9px] font-semibold text-dim">
                       DEFAULT
                     </span>
                   ) : (
-                    <Button size="sm" variant="quiet" className="shrink-0" onClick={() => config && save({ ...config, default_model: m.id })}>
+                    <Button size="sm" variant="quiet" permission="configure" className="shrink-0" onClick={() => config && save({ ...config, default_model: m.id })}>
                       make default
                     </Button>
                   )}
@@ -481,7 +539,7 @@ function Keys() {
             <code className="font-mono">{`\${secret:${name.trim() || "name"}}`}</code>
           </span>
           <span className="grow" />
-          <Button size="sm" variant="solid" tone="ink" onClick={add} loading={busy} disabled={!name.trim() || !value}>
+          <Button size="sm" variant="solid" tone="ink" permission="configure" onClick={add} loading={busy} disabled={!name.trim() || !value}>
             Add key
           </Button>
         </div>

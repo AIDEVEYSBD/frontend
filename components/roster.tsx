@@ -122,13 +122,13 @@ export function Roster() {
   }, []);
 
   return (
-    <div className="mx-auto w-full max-w-[1200px] px-6 py-10">
+    <div className="mx-auto w-full max-w-[1520px] px-5 py-7" data-hue="indigo">
       <div className="flex flex-col gap-1.5">
         <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">Agent roster</h1>
         <p className="max-w-[72ch] text-[13px] leading-[1.6] text-dim">
-          Grouped by workflow, in registry order. Purpose is each agent&rsquo;s own persona or
-          plan; autonomy is derived from what the spec grants — tool risk against approval gates —
-          never typed in; the run columns come from the runtime&rsquo;s own records.
+          Review the agents within each deployed workflow, including their purpose, permitted
+          tools, execution pattern and recent activity. Autonomy is derived from tool risk and
+          approval requirements rather than entered as a subjective rating.
         </p>
       </div>
 
@@ -136,8 +136,7 @@ export function Roster() {
       {!groups && !error && <p className="mt-6 text-[12.5px] text-faint">Reading the registry…</p>}
       {groups && groups.length === 0 && (
         <p className="mt-6 text-[13px] text-faint">
-          Nothing in the registry yet — build a workflow and press Save, and its agents appear
-          here.
+          No agents are registered. Save a workflow in the builder to add its agents to this view.
         </p>
       )}
 

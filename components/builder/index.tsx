@@ -232,8 +232,8 @@ export function Builder() {
         }
       } else {
         try {
-          const c = JSON.parse(payload) as { tool: string; kind: string };
-          dispatch({ type: "add-connection", tool: c.tool, kind: c.kind, node });
+          const c = JSON.parse(payload) as { tool: string; kind: string; name?: string };
+          dispatch({ type: "add-connection", tool: c.tool, kind: c.kind, name: c.name, node });
         } catch {
           /* malformed payload — ignore */
         }
@@ -243,7 +243,7 @@ export function Builder() {
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col" data-hue="blue">
       <header className="relative z-10 flex h-11 shrink-0 items-center gap-3 border-b border-line bg-canvas px-3">
         <div className="relative flex min-w-0 items-center gap-2">
           <span className="truncate text-[13px] font-semibold text-on-grain">{system.name}</span>
@@ -299,6 +299,7 @@ export function Builder() {
             <Button
               size="sm"
               variant="quiet"
+              permission="deploy"
               onClick={async () => {
                 setSaving("busy");
                 try {

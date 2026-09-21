@@ -328,7 +328,11 @@ export function riskOf(name: string): Risk {
  * since nothing is being injected at run time that the builder did not show.
  */
 export function asTool(c: Capability): Tool {
-  const { group: _group, behind: _behind, why: _why, ...tool } = c;
+  // The three card-only fields are peeled off; the rest is the tool as a spec binds it.
+  const { group, behind, why, ...tool } = c;
+  void group;
+  void behind;
+  void why;
   const params = (PARAMS as Record<string, unknown>)[c.name];
   return params ? { ...tool, params: params as Record<string, unknown> } : tool;
 }

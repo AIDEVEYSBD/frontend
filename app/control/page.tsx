@@ -2,7 +2,7 @@ import { Control } from "@/components/control";
 
 export const metadata = {
   title: "Control — Agent Factory",
-  description: "The live control plane: every deployed agent, its activity, spend, benchmarks, and the kill switch.",
+  description: "Monitor deployed workflows, active runs, approvals, performance, cost and control events.",
 };
 
 export default function ControlPage() {

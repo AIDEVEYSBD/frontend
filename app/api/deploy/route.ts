@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { permit, session as whoIs, signer, ssoEnabled } from "@/lib/server/auth";
 import path from "node:path";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
@@ -23,6 +24,7 @@ const DIR = path.join(ROOT, "workspace", "agents");
 const exec = promisify(execFile);
 
 export async function POST(req: Request) {
+  { const gate = await permit(req, "deploy"); if (gate) return gate; }
   let body: { spec?: { metadata?: { id?: string; name?: string; description?: string } } };
   try {
     body = await req.json();

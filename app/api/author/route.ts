@@ -28,24 +28,15 @@ const RUNTIME = path.resolve(process.cwd(), "..", "runtime");
 
 /* ── credentials: the same vault the runtime reads, same overlay order ── */
 
-async function openrouterKey(): Promise<string> {
+async function foundryKey(): Promise<string> {
   try {
-    const vault = JSON.parse(await readFile(path.join(RUNTIME, "workspace", "vault.json"), "utf-8"));
-    const v = vault?.keys?.openrouter?.value;
+    const vault = JSON.parse(await readFile(path.join(path.resolve(process.cwd(), "..", "runtime"), "workspace", "vault.json"), "utf-8"));
+    const v = vault?.keys?.foundry?.value;
     if (typeof v === "string" && v) return v;
   } catch {
-    /* no vault file — fall through to the environment */
+    /* no vault yet */
   }
-  if (process.env.OPENROUTER_API_KEY) return process.env.OPENROUTER_API_KEY;
-  if (process.env.OPEN_ROUTER_API_KEY) return process.env.OPEN_ROUTER_API_KEY;
-  try {
-    const env = await readFile(path.resolve(process.cwd(), "..", ".env"), "utf-8");
-    const m = env.match(/^OPEN_?ROUTER_API_KEY\s*=\s*(.+)$/m);
-    if (m) return m[1].trim().replace(/^["']|["']$/g, "");
-  } catch {
-    /* nothing */
-  }
-  return "";
+  return process.env.FOUNDRY_API_KEY ?? process.env.AZURE_AI_KEY ?? "";
 }
 
 /* ── the reference, introspected from the runtime so it cannot drift ── */
@@ -117,19 +108,11 @@ const PROPOSE_TOOL = {
   },
 };
 
-function systemPrompt(ref: string, fenced: boolean): string {
-  const proposeHow = fenced
-    ? [
-        "- When the design is complete, output the COMPLETE document as a single ```json fenced",
-        "  block (nothing else in that block). It is validated by the deployment parser; if the",
-        "  validator refuses, you will be told the exact field — fix precisely that and output the",
-        "  corrected document again.",
-      ]
-    : [
-        "- Call the propose tool with the COMPLETE document. If it refuses, fix exactly the named",
-        "  field and propose again — do not redesign what already passed.",
-      ];
-  return systemPromptBody(ref, proposeHow);
+function systemPrompt(ref: string): string {
+  return systemPromptBody(ref, [
+    "- Call the propose tool with the COMPLETE document. If it refuses, fix exactly the named",
+    "  field and propose again — do not redesign what already passed.",
+  ]);
 }
 
 function systemPromptBody(ref: string, proposeHow: string[]): string {
@@ -166,7 +149,7 @@ interface Msg {
 }
 
 export async function POST(req: Request) {
-  const key = await openrouterKey();
+  const key = await foundryKey();
 
   let body: { messages?: { role: string; content: string }[]; model?: string };
   try {
@@ -190,7 +173,12 @@ export async function POST(req: Request) {
       /* defaults below */
     }
   }
-  model = model || "anthropic/claude-sonnet-4.5";
+  if (!model) {
+    return Response.json(
+      { error: "No default model is configured. Choose one on the Configuration page or send { model }." },
+      { status: 400 },
+    );
+  }
 
   let ref: string;
   try {
@@ -202,20 +190,12 @@ export async function POST(req: Request) {
     );
   }
 
-  // `ollama/<tag>` models run on the local daemon — free, no key, nothing
-  // leaves the machine. Same wire shape either way, but local reasoning
-  // models choke on native tool-calling with a large system prompt, so they
-  // propose via a fenced JSON block through the SAME validator instead.
-  const isLocal = model.startsWith("ollama/");
-  if (!isLocal && !key) {
-    return Response.json(
-      { error: "No OpenRouter key — add one under Configuration, or pick a local (ollama/…) model." },
-      { status: 503 },
-    );
+  if (!key) {
+    return Response.json({ error: "No Foundry key — set FOUNDRY_API_KEY." }, { status: 503 });
   }
 
   const messages: Msg[] = [
-    { role: "system", content: systemPrompt(ref, isLocal) },
+    { role: "system", content: systemPrompt(ref) },
     ...history.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
   ];
 
@@ -224,10 +204,10 @@ export async function POST(req: Request) {
   const events: { tool: string; ok: boolean; note: string }[] = [];
   let draft: { id: string; document: unknown; nodes: string[]; digest: string } | null = null;
 
-  const endpoint = isLocal
-    ? "http://localhost:11434/v1/chat/completions"
-    : "https://openrouter.ai/api/v1/chat/completions";
-  const wireModel = isLocal ? model.slice("ollama/".length) : model;
+  const endpoint = process.env.FOUNDRY_ENDPOINT ?? "";
+  if (!endpoint) {
+    return Response.json({ error: "No Foundry endpoint — set FOUNDRY_ENDPOINT." }, { status: 503 });
+  }
 
   for (let round = 0; round < 6; round++) {
     let res: globalThis.Response;
@@ -235,27 +215,28 @@ export async function POST(req: Request) {
       res = await fetch(endpoint, {
         method: "POST",
         headers: {
-          ...(isLocal ? {} : { authorization: `Bearer ${key}` }),
+          authorization: `Bearer ${key}`,
+          "api-key": key,
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          model: wireModel,
+          model,
           messages,
-          ...(isLocal ? {} : { tools: [PROPOSE_TOOL] }),
+          tools: [PROPOSE_TOOL],
           max_tokens: 8192,
         }),
-        signal: AbortSignal.timeout(isLocal ? 600_000 : 120_000),
+        signal: AbortSignal.timeout(120_000),
       });
     } catch (e) {
       return Response.json(
-        { error: `${isLocal ? "Ollama" : "OpenRouter"} unreachable — ${(e as Error).message}` },
+        { error: `Foundry unreachable — ${(e as Error).message}` },
         { status: 502 },
       );
     }
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
       return Response.json(
-        { error: `OpenRouter returned ${res.status}${detail ? ` — ${detail.slice(0, 300)}` : ""}` },
+        { error: `Foundry returned ${res.status}${detail ? ` — ${detail.slice(0, 300)}` : ""}` },
         { status: 502 },
       );
     }
@@ -277,18 +258,16 @@ export async function POST(req: Request) {
           {
             role: "user",
             content:
-              "Your reasoning is not shown to the person. Reply with your actual answer now" +
-              (isLocal
-                ? ", or output the complete document in a single ```json block."
-                : ", or call the propose tool with the complete document."),
+              "Your reasoning is not shown to the person. Reply with your actual answer now, " +
+              "or call the propose tool with the complete document.",
           },
         );
         continue;
       }
 
-      // Fenced-protocol proposal (local models): a ```json block containing a
-      // complete document goes through the SAME validator as the tool path.
-      const fence = isLocal ? text.match(/```(?:json)?\s*([\s\S]*?)```/) : null;
+      // A model that answers with a ```json block instead of calling the tool
+      // still goes through the SAME validator as the tool path.
+      const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
       if (fence) {
         let docObj: unknown = null;
         try {

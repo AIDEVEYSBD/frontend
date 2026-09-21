@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { soon } from "./soon";
 import type { Risk, Tool } from "./spec";
 
 /**
@@ -57,8 +58,6 @@ export function useMcp() {
       setServers([]);
     }
   }, []);
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
+  useEffect(() => soon(refresh), [refresh]);
   return { servers, refresh };
 }

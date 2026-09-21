@@ -1,8 +1,10 @@
 import { spawn } from "node:child_process";
+import { permit, session as whoIs, signer, ssoEnabled } from "@/lib/server/auth";
 import path from "node:path";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { dbReady, query } from "@/lib/server/db";
 import { registerRun } from "@/lib/server/active-runs";
+import { budgetGate } from "@/lib/server/budget";
 import { tmpdir } from "node:os";
 
 /**
@@ -25,11 +27,12 @@ export const dynamic = "force-dynamic";
 const ROOT = path.resolve(process.cwd(), "..", "runtime");
 
 export async function POST(req: Request) {
+  { const gate = await permit(req, "run"); if (gate) return gate; }
   let body: {
     spec?: unknown;
     input?: Record<string, unknown>;
     model?: string;
-    provider?: "openrouter" | "scripted";
+    provider?: "foundry" | "scripted";
     answer?: Record<string, unknown>;
     stateFile?: string;
   };
@@ -42,6 +45,13 @@ export async function POST(req: Request) {
 
   if (!body.spec) {
     return Response.json({ error: "no spec supplied" }, { status: 400 });
+  }
+
+  // The budget is a stop, not a chart. A run that would start past it does not start.
+  // Resuming a suspended run with an answer is not a new start and is not held.
+  if (!body.answer) {
+    const over = await budgetGate();
+    if (over) return Response.json({ error: over.error, budget: over.budget }, { status: 402 });
   }
 
   // The spec goes to a file rather than argv: it is large, and a document that
@@ -69,9 +79,9 @@ export async function POST(req: Request) {
     "--state",
     statePath,
     "--provider",
-    body.provider ?? "openrouter",
+    body.provider ?? "foundry",
     "--model",
-    body.model || process.env.AF_MODEL || "anthropic/claude-sonnet-4.5",
+    body.model || process.env.AF_MODEL || "",
     resuming ? "--answer" : "--input",
     JSON.stringify(resuming ? body.answer : (body.input ?? {})),
   ];
@@ -103,6 +113,17 @@ export async function POST(req: Request) {
           open = false; // viewer went away mid-write — the run continues
         }
       };
+
+      // Same reason as the eval stream: a single model call can outlast a
+      // proxy's idle timeout, and a dropped connection reads as a dead run.
+      const beat = setInterval(() => {
+        if (!open) return;
+        try {
+          controller.enqueue(encoder.encode(": keepalive\n\n"));
+        } catch {
+          open = false;
+        }
+      }, 15_000);
 
       send({ type: "opened", stateFile: statePath });
 
@@ -137,6 +158,7 @@ export async function POST(req: Request) {
             `could not start the runtime (${e.message}). ` +
             `Check that python3 is on PATH and that ${ROOT} exists.`,
         });
+        clearInterval(beat);
         try {
           controller.close();
         } catch {
@@ -186,6 +208,7 @@ export async function POST(req: Request) {
           send({ type: "error", message: errors.trim().split("\n").slice(-12).join("\n") });
         }
         send({ type: "closed", code });
+        clearInterval(beat);
         try {
           controller.close();
         } catch {

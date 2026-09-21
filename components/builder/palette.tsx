@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { TOOL_CARDS, TOOL_BY_ID, type ToolCard } from "@/lib/catalogue";
 import { CONNECTOR_DEFS, type ConnectorDef } from "@/lib/connections";
+import { VENDORS, VENDOR_GROUPS, type Vendor } from "@/lib/vendors";
 import { toolOf, type McpServer, type McpTool } from "@/lib/use-mcp";
 import { HARNESS, HARNESS_ORDER, OUTPUT_META, TRIGGER_META, type AgentSystem } from "@/lib/spec";
 import type { HarnessKind } from "@/lib/spec";
@@ -11,6 +12,7 @@ import { Button, IconButton } from "../ui";
 import { Skeleton } from "../loaders";
 import { Area, Row, Text } from "./controls";
 import { ConnectorMark, Grip, RiskPill, ServerMark, Tile, ToolMark, cardRisk, cardVerbs } from "./marks";
+import { BrandMark } from "../brand";
 
 /**
  * The left rail: everything that can land on the canvas. One category shows at
@@ -220,6 +222,35 @@ export function Palette({
     </button>
   );
 
+  /* A vendor from the catalogue. It attaches the backend that product speaks
+     through, named after the product — so the spec reads `splunk` while the
+     runtime still only knows "a log API". Nothing here claims a bespoke
+     integration exists; the card says which backend it lands as. */
+  const vendorCard = (v: Vendor) => {
+    const def = CONNECTOR_DEFS.find((c) => c.tool === v.tool && c.kind === v.kind);
+    const payload = JSON.stringify({ tool: v.tool, kind: v.kind, name: v.slug });
+    return (
+      <button
+        key={v.name}
+        type="button"
+        draggable
+        onDragStart={(e) => dragPayload(e, "connector", payload)}
+        onClick={onGrant ? () => onGrant("connector", payload) : undefined}
+        title={`${v.name} — attaches as ${def?.label ?? v.kind}`}
+        className={`${CARD} py-1.5 pr-6 pl-2.5`}
+      >
+        <span className="grid size-[26px] shrink-0 place-items-center rounded-md bg-raise">
+          <BrandMark name={v.name} size={15} />
+        </span>
+        <span className="flex min-w-0 grow flex-col">
+          <span className="truncate text-[12px] font-medium text-fg">{v.name}</span>
+          <span className="truncate text-[10px] text-faint">via {def?.label ?? v.kind}</span>
+        </span>
+        <Grip />
+      </button>
+    );
+  };
+
   const systemCard = (side: "input" | "output") => {
     const input = side === "input";
     return (
@@ -277,6 +308,8 @@ export function Palette({
 
   const q = query.trim().toLowerCase();
   const hit = (...parts: (string | undefined)[]) => parts.some((p) => p?.toLowerCase().includes(q));
+  const [catalogueOpen, setCatalogueOpen] = useState(false);
+
   const found = q
     ? {
         agents: HARNESS_ORDER.filter((k) => hit(HARNESS[k].name, HARNESS[k].does)),
@@ -285,6 +318,7 @@ export function Palette({
           s.tools.filter((t) => hit(t.name, t.description, s.label, s.id)).map((t) => [s, t] as const),
         ),
         connectors: CONNECTOR_DEFS.filter((c) => hit(c.label, c.blurb, c.tool, c.kind)),
+        vendors: VENDORS.filter((v) => hit(v.name, v.group)),
         system: (["input", "output"] as const).filter((s) =>
           hit(s, ...Object.values(s === "input" ? TRIGGER_META : OUTPUT_META).map((m) => m.label)),
         ),
@@ -365,6 +399,10 @@ export function Palette({
             {found.connectors.length > 0 && (
               <div className="flex flex-col gap-1.5">{found.connectors.map(connectorCard)}</div>
             )}
+            {found.vendors.length > 0 && cap("Catalogue")}
+            {found.vendors.length > 0 && (
+              <div className="flex flex-col gap-1.5">{found.vendors.slice(0, 40).map(vendorCard)}</div>
+            )}
             {found.system.length > 0 && cap("System")}
             {found.system.length > 0 && (
               <div className="flex flex-col gap-1.5">{found.system.map(systemCard)}</div>
@@ -373,7 +411,7 @@ export function Palette({
             {found.workflows.length > 0 && (
               <div className="flex flex-col gap-1.5">{found.workflows.map(workflowCard)}</div>
             )}
-            {found.agents.length + found.tools.length + found.custom.length + found.connectors.length + found.system.length + found.workflows.length === 0 && (
+            {found.agents.length + found.tools.length + found.custom.length + found.connectors.length + found.vendors.length + found.system.length + found.workflows.length === 0 && (
               <p className="text-[11px] text-faint">Nothing matches &ldquo;{query.trim()}&rdquo;.</p>
             )}
           </>
@@ -434,6 +472,53 @@ export function Palette({
                     </div>
                   );
                 })}
+
+                {/* ── The catalogue ──
+                   The same list the site advertises, grouped the same way. A
+                   card here is a named instance of one of the backends above,
+                   not a separate integration, and it says which one it lands
+                   as. Collapsed by default: this rail is for building, and 134
+                   logos would bury the ten things that actually connect. */}
+                <div className="flex flex-col gap-1.5 border-t border-line pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setCatalogueOpen((v) => !v)}
+                    className="focusable flex items-center gap-1.5 rounded-sm text-left"
+                  >
+                    <span
+                      className="grid size-3.5 shrink-0 place-items-center text-dim transition-transform"
+                      style={{ transform: catalogueOpen ? "rotate(90deg)" : "none" }}
+                      aria-hidden
+                    >
+                      <svg viewBox="0 0 16 16" width="9" height="9" fill="none">
+                        <path d="M5.5 3.5 10.5 8l-5 4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </span>
+                    <span className="text-[11px] font-medium text-fg">Catalogue</span>
+                    <span className="text-[10px] text-faint">{VENDORS.length} systems</span>
+                  </button>
+                  <p className="text-[11px] leading-[1.5] text-faint">
+                    Every system we advertise. Each one attaches the backend it speaks through,
+                    named after the product, so a spec reads <span className="font-mono">splunk</span>{" "}
+                    while the agent still only knows the verb.
+                  </p>
+                  {catalogueOpen &&
+                    VENDOR_GROUPS.map((g) => (
+                      <div key={g.name} className="flex flex-col gap-1.5">
+                        <span className="flex items-center gap-1.5 pt-1">
+                          <span
+                            className="size-2 shrink-0 rounded-[3px]"
+                            style={{ background: `var(--t-c${g.c})` }}
+                          />
+                          <span className="text-[11px] font-medium text-faint">{g.name}</span>
+                          <span className="text-[10px] text-ghost">{g.items.length}</span>
+                        </span>
+                        <div className="flex flex-col gap-1.5">
+                          {VENDORS.filter((v) => v.group === g.name).map(vendorCard)}
+                        </div>
+                      </div>
+                    ))}
+                </div>
               </>
             )}
 
@@ -650,7 +735,7 @@ function McpConnect({ onConnected }: { onConnected: () => void }) {
 
   if (!open) {
     return (
-      <Button size="sm" variant="outline" className="self-start" onClick={() => setOpen(true)}>
+      <Button size="sm" variant="outline" permission="configure" className="self-start" onClick={() => setOpen(true)}>
         <Icon name="server" size={13} />
         Connect an MCP server
       </Button>
@@ -693,7 +778,7 @@ function McpConnect({ onConnected }: { onConnected: () => void }) {
           Cancel
         </Button>
         <span className="grow" />
-        <Button size="sm" variant="solid" tone="ink" disabled={busy || !command.trim()} loading={busy} onClick={connect}>
+        <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={busy || !command.trim()} loading={busy} onClick={connect}>
           {busy ? "Discovering tools…" : "Connect"}
         </Button>
       </div>

@@ -203,19 +203,46 @@ export function Canvas({
     [pan.x, pan.y, zoom],
   );
 
+  /* Keep the graph reachable. Panning is free until the last node would leave
+     the viewport, then it stops — scrolling until the canvas is empty looks
+     like the workflow vanished, and the way back is not obvious. A margin of
+     one node's width is left visible on every side so there is always
+     something to grab. */
+  const clampPan = useCallback(
+    (next: { x: number; y: number }, z: number) => {
+      const el = surface.current;
+      if (!el || !system.nodes.length) return next;
+      const rect = el.getBoundingClientRect();
+      const xs = system.nodes.map((n) => n.x);
+      const ys = system.nodes.map((n) => n.y);
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs) + NODE_W;
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys) + NODE_H;
+      // Room for the system cards, which sit outside the node bounds.
+      const pad = 220;
+      const keep = 140;
+      const clamp = (v: number, lo: number, hi: number) => (lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v)));
+      return {
+        x: clamp(next.x, keep - (maxX + pad) * z, rect.width - keep - (minX - pad) * z),
+        y: clamp(next.y, keep - (maxY + pad) * z, rect.height - keep - (minY - pad) * z),
+      };
+    },
+    [system.nodes],
+  );
+
   /* Zoom about an anchor point in viewport coordinates — the wheel handler,
      the +/− buttons and the keyboard all share this one piece of math, so
      every zoom keeps its anchor stationary. */
   const zoomBy = useCallback((factor: number, cx: number, cy: number) => {
     setZoom((z) => {
       const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z * factor));
-      setPan((p) => ({
-        x: cx - ((cx - p.x) / z) * next,
-        y: cy - ((cy - p.y) / z) * next,
-      }));
+      setPan((p) =>
+        clampPan({ x: cx - ((cx - p.x) / z) * next, y: cy - ((cy - p.y) / z) * next }, next),
+      );
       return next;
     });
-  }, []);
+  }, [clampPan]);
 
   const fit = useCallback(() => {
     if (!system.nodes.length || !surface.current) return;
@@ -286,7 +313,7 @@ export function Canvas({
           overOut: outAttr !== undefined ? Number(outAttr) : null,
         });
       } else if (panning) {
-        setPan({ x: e.clientX - panning.x, y: e.clientY - panning.y });
+        setPan(clampPan({ x: e.clientX - panning.x, y: e.clientY - panning.y }, zoom));
       }
     };
 
@@ -326,7 +353,7 @@ export function Canvas({
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
     };
-  }, [drag, wire, panning, toCanvas, dispatch, system.outputs]);
+  }, [drag, wire, panning, toCanvas, dispatch, system.outputs, clampPan, zoom]);
 
   /* ── keyboard: undo, delete, duplicate, nudge, zoom, space-pan ── */
 
@@ -432,13 +459,13 @@ export function Canvas({
         // Keep the point under the cursor stationary while scale changes.
         zoomBy(1 - e.deltaY * 0.01, e.clientX - rect.left, e.clientY - rect.top);
       } else {
-        setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
+        setPan((p) => clampPan({ x: p.x - e.deltaX, y: p.y - e.deltaY }, zoom));
       }
     };
     // React's synthetic wheel handler is passive; preventDefault needs this.
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [zoomBy]);
+  }, [zoomBy, clampPan, zoom]);
 
   /* A cancelled drag (Esc mid-drag) fires dragend without dragleave — this
      keeps the drop ghost from surviving it. */

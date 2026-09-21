@@ -3,7 +3,7 @@ import { Builder } from "@/components/builder";
 
 export const metadata = {
   title: "Builder — Agent Factory",
-  description: "Assemble an agent from the three harnesses and deploy it.",
+  description: "Design and validate governed AI-enabled workflows using controlled execution patterns.",
 };
 
 export default function BuilderPage() {

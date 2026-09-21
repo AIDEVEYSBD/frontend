@@ -2,7 +2,7 @@ import { Runs } from "@/components/runs";
 
 export const metadata = {
   title: "Runs — Agent Factory",
-  description: "Every recorded run: journal, tool traffic, artifacts.",
+  description: "Launch workflows and review their execution journals, tool activity, decisions and outputs.",
 };
 
 export default function RunsPage() {

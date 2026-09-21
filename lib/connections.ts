@@ -162,9 +162,11 @@ export const CONNECTOR_DEFS: ConnectorDef[] = [
       { key: "name", label: "Name", mono: true, hint: "How workflows address this peer.", required: true },
       { key: "url", label: "URL", mono: true, placeholder: "https://agent.vendor.example", required: true,
         hint: "The A2A endpoint. Its card is read from /.well-known/agent.json." },
+      { key: "auth_token", label: "Auth token", mono: true, placeholder: "${secret:peer-token}",
+        hint: "Sent as a bearer token. Use a vault reference so the token never lives in the spec. Unauthenticated peers are accepted and reported as such." },
       { key: "timeout_s", label: "Timeout (s)", kind: "number" },
     ],
-    defaults: { kind: "a2a", name: "peer", url: "", timeout_s: 60 },
+    defaults: { kind: "a2a", name: "peer", url: "", auth_token: "", timeout_s: 60 },
   },
 
   /* ── compute: a team's own engine ── */

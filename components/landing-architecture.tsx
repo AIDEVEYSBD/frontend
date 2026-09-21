@@ -22,107 +22,25 @@ import { Mono } from "./ui";
  *               of real behaviour, never fictional UI.
  */
 
-export interface Layer {
-  id: string;
-  question: string;
-  headline: string;
-  support: string;
-  /** Real, shipped features, the chips drawn on the layer plane. */
-  chips: string[];
-  token: string;
-}
-
-export const LAYERS: Layer[] = [
-  {
-    id: "experience",
-    question: "Who builds the workflows?",
-    headline: "Your teams describe the process. The factory assembles it.",
-    support:
-      "Compose approved harnesses on a visual canvas or describe the process in plain language and let the builder draft it. Every draft passes the same validation as a deployment, so teams ship workflows quickly without unmanaged development.",
-    chips: ["Canvas", "Agent builder", "Deploy theater"],
-    token: "--t-c1",
-  },
-  {
-    id: "lifecycle",
-    question: "How does a workflow reach production?",
-    headline: "Every stage earns its promotion.",
-    support:
-      "Design, benchmark, deployment and monitoring each leave their own stamp, and the registry keeps a live inventory of agents, models and tools. Readiness is shown by record, not asserted, so teams promote work on results rather than assumptions.",
-    chips: ["Registry", "Benchmarks", "Deploy stamps"],
-    token: "--t-c2",
-  },
-  {
-    id: "workplane",
-    question: "What did the agent actually do?",
-    headline: "Every action writes its own record.",
-    support:
-      "Execution journals capture what ran, what was read, what changed and which artifacts were produced, with provenance attached to each step. Any run can be reconstructed in full, whether the question comes from an engineer, a reviewer or a regulator.",
-    chips: ["Journal", "Provenance", "Artifacts"],
-    token: "--t-c3",
-  },
-  {
-    id: "control",
-    question: "How do people stay in control?",
-    headline: "Approval before. Intervention during. Cost visibility throughout.",
-    support:
-      "Higher-risk steps pause at defined gates for human decision, and the decision is recorded with its rationale. Any run can be stopped mid-flight, with the intervention kept in the journal. Budgets and evals are enforced at runtime, not reviewed after the fact.",
-    chips: ["Gates", "Kill switch", "FinOps", "Evals"],
-    token: "--t-warn",
-  },
-  {
-    id: "knowledge",
-    question: "What can an agent reach?",
-    headline: "Access is granted per node, never assumed.",
-    support:
-      "Each node declares the retrieval sources, records and engines it may use, and nothing else is reachable. Untrusted content is tainted at entry and cannot flow into restricted actions until policy clears it.",
-    chips: ["Retrieval", "Records", "Engines", "Taint rules"],
-    token: "--t-c5",
-  },
-  {
-    id: "partners",
-    question: "What about external agents?",
-    headline: "External agents work under the same rules, without exception.",
-    support:
-      "Partner agents connect over A2A, are identified by their agent card and inherit the same journal, permission and taint rules as native harnesses. Their replies stay marked untrusted until validated.",
-    chips: ["A2A discover", "Hand-off", "Tainted replies"],
-    token: "--t-c6",
-  },
-  {
-    id: "models",
-    question: "Where does the reasoning run?",
-    headline: "Each task runs on the model its sensitivity requires.",
-    support:
-      "Nodes state their model requirements and the router decides where execution happens. Sensitive work can be pinned to locally hosted models, routine work sent to frontier models, and the choice is governed by policy and cost rather than by convention.",
-    chips: ["Per-node routing", "Local models", "Frontier models"],
-    token: "--t-c7",
-  },
-  {
-    id: "foundations",
-    question: "What does it all stand on?",
-    headline: "Governance is the foundation, not a feature.",
-    support:
-      "Identity, policy and audit sit beneath every layer, with secrets resolved only at the moment of the call, prompt-injection filtering on every input and a runtime built to run inside your own tenancy.",
-    chips: ["Vault", "Injection filters", "Your tenancy"],
-    token: "--t-c9",
-  },
-];
+import { LAYERS, type Layer } from "@/lib/landing-layers";
+export { LAYERS, type Layer };
 
 export const OPENING = {
-  headline: "An AI agent has just finished a piece of work.",
-  support: "Every step it took, every source it touched and every decision along the way is already on the record.",
+  headline: "An AI-enabled workflow has completed its work.",
+  support: "The platform has recorded the steps performed, the sources used, the controls applied and the decisions made.",
   cue: "Explore the architecture",
 };
 
 export const TURN = {
-  headline: "Autonomy without inspection is unmanaged risk.",
-  support: "Agent Factory is built to be inspected, layer by layer.",
+  headline: "Effective oversight starts with visibility.",
+  support: "Agent Factory is designed to make workflow activity reviewable at every layer.",
 };
 
 export const MERGE = {
-  headline: "One architecture, fully accountable.",
-  support: "Each layer contributes the record, oversight and operational controls that enterprise agents require, whatever the workflow.",
-  final: "Designed to be inspected.",
-  finalSupport: "Deployed in your tenancy. Governed by design.",
+  headline: "One architecture for governed execution.",
+  support: "Each layer contributes the visibility, oversight and operational controls required for enterprise workflows.",
+  final: "Designed for accountable operation.",
+  finalSupport: "Deployed within your environment and governed throughout execution.",
 };
 
 /* ═══════════════════ Vignettes ═══════════════════

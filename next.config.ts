@@ -12,6 +12,8 @@ const runtimeOrigin = process.env.RUNTIME_ORIGIN?.replace(/\/+$/, "");
 
 const nextConfig: NextConfig = {
   devIndicators: false,
+  // The cross-encoder reranker loads ONNX Runtime natively; bundling it breaks the binary.
+  serverExternalPackages: ["@huggingface/transformers", "onnxruntime-node"],
   async rewrites() {
     if (!runtimeOrigin) return [];
     return {

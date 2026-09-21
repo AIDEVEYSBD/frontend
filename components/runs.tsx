@@ -1,6 +1,10 @@
 "use client";
 
+import { CURRENT_USER } from "@/lib/user";
+import { useSession, signerName } from "@/lib/use-session";
+
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { soon } from "@/lib/soon";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, IconButton, Kbd, Label, Mono, RUN_STATE, Status, Tag } from "./ui";
@@ -11,6 +15,9 @@ import { Icon } from "./builder/icons";
 import { Pick } from "./select";
 import { fromDocument, HARNESS, inputKeysOf, toDocument, type AgentSystem, type Kind } from "@/lib/spec";
 import { useModels } from "@/lib/use-models";
+import { SpanDetail, Waterfall, useTrace, type Span } from "./waterfall";
+import { explainControl } from "@/lib/guardrails";
+import { ControlRef, KILL_CONTROL } from "./control-ref";
 
 /**
  * The runs console: where a workflow actually runs.
@@ -161,13 +168,13 @@ function Launcher() {
   }, []);
 
   return (
-    <div className="min-h-full">
-      <div className="mx-auto flex max-w-[1080px] flex-col gap-8 px-4 py-8 sm:px-6 lg:px-10">
+    <div className="min-h-full" data-hue="blue">
+      <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-8 px-5 py-7">
         <header className="flex flex-col gap-1.5">
           <h1 className="text-[24px] font-semibold tracking-[-0.02em]">Runs</h1>
           <p className="max-w-[640px] text-[13.5px] leading-relaxed text-dim">
-            Pick a workflow and run it. Everything happens in the theater — the graph filling in,
-            every call and refusal as it lands, artifacts appearing as they are written.
+            Launch a workflow and follow its execution as it happens. Review each model and tool
+            call, control decision, human approval and output in the resulting run record.
           </p>
         </header>
 
@@ -340,14 +347,15 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
   /* The spec: from the registry, or handed over from the builder as a draft. */
   useEffect(() => {
     if (draft) {
-      try {
-        const raw = sessionStorage.getItem("af-run-draft");
-        if (!raw) throw new Error("no draft was handed over — go back to the builder");
-        setSystem(fromDocument(JSON.parse(raw)));
-      } catch (e) {
-        setLoadError((e as Error).message);
-      }
-      return;
+      return soon(() => {
+        try {
+          const raw = sessionStorage.getItem("af-run-draft");
+          if (!raw) throw new Error("no draft was handed over — go back to the builder");
+          setSystem(fromDocument(JSON.parse(raw)));
+        } catch (e) {
+          setLoadError((e as Error).message);
+        }
+      });
     }
     if (!agentId) return;
     fetch(`/api/agents?id=${encodeURIComponent(agentId)}`)
@@ -359,11 +367,13 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
       .catch((e) => setLoadError((e as Error).message));
   }, [agentId, draft]);
 
-  useEffect(() => {
-    if (!system) return;
+  // A new spec seeds the form during render, so the inputs never show a stale shape for a frame.
+  const [seededFor, setSeededFor] = useState<typeof system>(null);
+  if (system && system !== seededFor) {
+    setSeededFor(system);
     setInput(seedInput(system));
     setFields(inputKeysOf(system).map((k) => ({ ...k, value: "" })));
-  }, [system]);
+  }
   useEffect(() => () => abort.current?.abort(), []);
 
   const consume = useCallback(
@@ -624,7 +634,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
                   options={models.map((m) => ({ value: m.id, label: m.label }))}
                 />
               </div>
-              <Button tone="ink" variant="solid" onClick={start} className="shrink-0 px-5">
+              <Button tone="ink" variant="solid" permission="run" onClick={start} className="shrink-0 px-5">
                 Run
               </Button>
             </div>
@@ -851,6 +861,7 @@ function ReplayTheater({ id }: { id: string }) {
       setup={null}
       segments={segments}
       tNow={playback.t}
+      traceOf={id}
       footer={
         <Scrubber
           t={playback.t}
@@ -1136,6 +1147,7 @@ function Theater({
   onAnswer,
   setup,
   footer,
+  traceOf,
   segments,
   tNow,
 }: {
@@ -1155,6 +1167,8 @@ function Theater({
   /** Replay only: node time-bands + the playhead, for per-node progress. */
   segments?: { id: string; from: number; to: number }[];
   tNow?: number;
+  /** Run id whose trace the theater may show. Absent on a live run. */
+  traceOf?: string;
 }) {
   const draftId =
     result && typeof result.draft_id === "string" && /^[a-z][a-z0-9-]{0,62}$/.test(result.draft_id)
@@ -1180,7 +1194,7 @@ function Theater({
   }, [nodes, entries]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col" data-hue="blue">
       {/* ── header, in the landing theater's grammar ── */}
       <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-surface px-4 py-2.5">
         <div className="flex items-center gap-2 text-[12px]">
@@ -1358,11 +1372,81 @@ function Theater({
                 {error}
               </Banner>
             )}
+            {finalState === "killed" && (
+              <Banner tone="err" title="Killed by operator">
+                <span className="flex flex-col gap-1.5">
+                  <span>{error || "The kill switch was thrown; the runtime trapped it and persisted the partial record."}</span>
+                  <ControlRef control={KILL_CONTROL} size="md" />
+                </span>
+              </Banner>
+            )}
           </div>
         </aside>
       </div>
 
+      {traceOf && <TracePanel runId={traceOf} />}
       {footer}
+    </div>
+  );
+}
+
+/**
+ * The run's trace, in the theater.
+ *
+ * The scrubber says when things happened; this says how long each took and what
+ * it cost, which is the question a reviewer asks second. Collapsed by default:
+ * the stage is the point, and a waterfall permanently open would compete with
+ * it for the same glance.
+ */
+function TracePanel({ runId }: { runId: string }) {
+  const [open, setOpen] = useState(false);
+  const { trace, state } = useTrace(open ? runId : null);
+  const [span, setSpan] = useState<Span | null>(null);
+
+  return (
+    <div className="shrink-0 border-t border-line bg-surface">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="focusable flex w-full items-center gap-2 px-4 py-1.5 text-left hover:bg-raise/40"
+      >
+        <span
+          className="grid size-3.5 shrink-0 place-items-center text-dim transition-transform"
+          style={{ transform: open ? "rotate(90deg)" : "none" }}
+          aria-hidden
+        >
+          <svg viewBox="0 0 16 16" width="9" height="9" fill="none">
+            <path d="M5.5 3.5 10.5 8l-5 4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+        <span className="text-[11.5px] font-medium">Trace</span>
+        <span className="text-[10.5px] text-faint">
+          {open
+            ? state === "loading"
+              ? "reading the journal…"
+              : trace
+                ? `${trace.spans.length} spans · click one`
+                : "no journal for this run"
+            : "where the time and the money went"}
+        </span>
+      </button>
+      {open && trace && (
+        <div className="grid gap-px border-t border-line bg-line lg:grid-cols-[minmax(0,1fr)_300px]">
+          <div className="bg-surface">
+            <Waterfall trace={trace} onPick={(sp) => setSpan(sp)} maxHeight={200} />
+          </div>
+          <div className="max-h-[236px] overflow-y-auto bg-surface">
+            {span ? (
+              <SpanDetail span={span} />
+            ) : (
+              <p className="px-4 py-3 text-[11px] leading-[1.5] text-faint">
+                Pick a span. A faded bar is a duration inferred from the entries around it rather
+                than measured.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1457,7 +1541,8 @@ function GateBanner({
   suspension: Suspension;
   onAnswer: (approved: boolean, by: string, note: string) => void;
 }) {
-  const [by, setBy] = useState("");
+  const { session: me } = useSession();
+  const by = signerName(me, CURRENT_USER.name);
   const [note, setNote] = useState("");
   const [needNote, setNeedNote] = useState(false);
   // Which decision is in flight. The banner unmounts when the resume stream
@@ -1488,14 +1573,10 @@ function GateBanner({
         {suspension.approvers.length ? `asks: ${suspension.approvers.join(", ")}` : "no approver role set"}
       </Mono>
       <span className="grow" />
-      <div className="w-36">
-        <Input
-          value={by}
-          onChange={setBy}
-          placeholder="Your name or initials"
-          aria-label="Approver identity — goes to the journal"
-        />
-      </div>
+      <span className="flex items-center gap-1.5 text-[11px] text-faint">
+        <span className="grid size-5 place-items-center rounded-full bg-ink text-[8.5px] font-semibold text-on-ink">{me?.initials ?? CURRENT_USER.initials}</span>
+        {by}
+      </span>
       <div className="w-64">
         <Input
           value={note}
@@ -1512,7 +1593,7 @@ function GateBanner({
         tone="ok"
         variant="solid"
         size="sm"
-        loading={busy === "approve"}
+        permission="approve" loading={busy === "approve"}
         disabled={busy !== null}
         onClick={() => {
           setBusy("approve");
@@ -1525,7 +1606,7 @@ function GateBanner({
         tone="err"
         variant="solid"
         size="sm"
-        loading={busy === "reject"}
+        permission="approve" loading={busy === "reject"}
         disabled={busy !== null}
         onClick={() => {
           // A rejection with no reason is a rejection nobody can learn from.
@@ -1586,7 +1667,6 @@ function TheaterTranscript({ entries, live }: { entries: Entry[]; live: boolean 
     } else {
       setUnseen((n) => n + 1);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries.length]);
 
   const onScroll = () => {
@@ -1836,6 +1916,55 @@ function JournalRow({ e, entries }: { e: Entry; entries: Entry[] }) {
   }
 
   if (e.kind === "tool.result") return null; // rendered inside its call's card
+
+  /* A guardrail firing is the one entry a reviewer must never have to decode.
+     It says which control refused, the rule in that control's own words, what
+     was attempted, and why the control exists — because "refused" on its own
+     reads as a malfunction rather than the system working. */
+  if (e.kind === "denied" || e.kind === "contract.breach" || e.kind === "taint" || e.kind === "gate.open") {
+    const control = String(e.data?.control ?? (e.kind === "contract.breach" ? "contract.breach" : e.kind));
+    const why = explainControl(control);
+    const refused = e.kind === "denied" || e.kind === "contract.breach";
+    const tool = e.data?.tool ? String(e.data.tool) : "";
+    return (
+      <div className="flex gap-3">
+        <Mono className="w-9 shrink-0 pt-2 text-[10.5px] text-ghost">{clock(e.t)}</Mono>
+        <div className={`min-w-0 grow rounded-md border bg-raise ${refused ? "border-err/40" : "border-warn/40"}`}>
+          <div className="flex flex-col gap-1 px-3 py-2">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className={`size-1.5 shrink-0 rounded-[2px] ${refused ? "bg-err" : "bg-warn"}`} />
+              <span className={`text-[10.5px] font-medium ${refused ? "text-err" : "text-warn"}`}>
+                {refused ? "refused by" : "marked by"}
+              </span>
+              <span className="text-[12.5px] font-medium text-fg">{why.name}</span>
+              <ControlRef control={control} />
+              {tool && <Mono className="text-[10.5px] text-mist">{tool}</Mono>}
+            </span>
+            {/* The rule, in full. Truncating the reason is how a refusal turns
+                into a mystery two weeks later. */}
+            {e.detail && (
+              <span className="text-[11.5px] leading-[1.55] text-fg">{e.detail}</span>
+            )}
+            {why.decides && (
+              <span className="text-[11px] leading-[1.5] text-faint">
+                {why.name} decides: {why.decides}
+              </span>
+            )}
+            {!!e.data?.args && (
+              <details className="pt-0.5">
+                <summary className="focusable cursor-pointer text-[10.5px] text-ghost">
+                  what was attempted
+                </summary>
+                <pre className="mt-1 max-h-40 overflow-auto rounded-sm border border-line bg-canvas px-2 py-1.5 font-mono text-[10px] leading-[1.5] whitespace-pre-wrap text-faint">
+                  {JSON.stringify(e.data.args, null, 2)}
+                </pre>
+              </details>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const k = ROW[e.kind] ?? { dot: "bg-faint", text: "text-dim", label: e.kind };
   return (

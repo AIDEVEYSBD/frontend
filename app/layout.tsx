@@ -19,7 +19,7 @@ const plexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: "Agent Factory",
-  description: "Compose harnesses into agentic systems for professional workflows.",
+  description: "Design, deploy and oversee governed AI-enabled workflows for cyber and risk operations.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -31,6 +31,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <head>
         <InlineScript html={themeScript} />
+        <InlineScript html={`try{var a=localStorage.getItem("af.ui.accent");if(a)document.documentElement.dataset.accent=a;}catch(e){}`} />
       </head>
       <body className="min-h-full font-sans">
         <Chrome>{children}</Chrome>

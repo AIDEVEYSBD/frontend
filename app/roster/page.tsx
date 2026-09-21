@@ -3,7 +3,7 @@ import { Roster } from "@/components/roster";
 export const metadata = {
   title: "Roster — Agent Factory",
   description:
-    "Every deployed agent by workflow: purpose, derived autonomy, hierarchy, and live run activity.",
+    "Review deployed agents by workflow, including their purpose, permissions, control pattern and recent activity.",
 };
 
 export default function RosterPage() {

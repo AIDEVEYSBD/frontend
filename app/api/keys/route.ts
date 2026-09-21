@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { permit, session as whoIs, signer, ssoEnabled } from "@/lib/server/auth";
 import { dbReady, query } from "@/lib/server/db";
 import { hashKey, mintKey, type KeyRow } from "@/lib/server/keys";
 
@@ -16,6 +17,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  { const gate = await permit(req, "configure"); if (gate) return gate; }
   let body: { name?: string; agent?: string | null };
   try {
     body = await req.json();
@@ -38,6 +40,7 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  { const gate = await permit(req, "configure"); if (gate) return gate; }
   const id = new URL(req.url).searchParams.get("id");
   if (!id) return Response.json({ error: "which key?" }, { status: 400 });
   if (!(await dbReady())) return Response.json({ error: "the registry database is unreachable" }, { status: 503 });

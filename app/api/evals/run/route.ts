@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { permit, session as whoIs, signer, ssoEnabled } from "@/lib/server/auth";
 import path from "node:path";
 import { mkdir, readFile } from "node:fs/promises";
 import { dbReady, query } from "@/lib/server/db";
@@ -61,6 +62,7 @@ function candidates(cfg: DeployConfig, incumbent: string, scope: "class" | "belo
 }
 
 export async function POST(req: Request) {
+  { const gate = await permit(req, "run"); if (gate) return gate; }
   let body: { set_id?: string; model?: string; compare?: { scope?: "class" | "below" | "all"; models?: string[] } };
   try {
     body = await req.json();
@@ -107,6 +109,19 @@ export async function POST(req: Request) {
         }
       };
 
+      // A case can run for minutes with nothing to say, and a proxy in front
+      // of this (Cloudflare's edge cuts an idle response at 100s) will drop
+      // the connection long before the first result. A comment line every
+      // fifteen seconds keeps it open; SSE clients ignore it.
+      const beat = setInterval(() => {
+        if (!open) return;
+        try {
+          controller.enqueue(encoder.encode(": keepalive\n\n"));
+        } catch {
+          open = false;
+        }
+      }, 15_000);
+
       send({
         type: "opened", set: set.id, agent: set.agent, total: set.cases.length,
         models: models.map((m) => m.id || "default"), compare: Boolean(body.compare),
@@ -139,7 +154,7 @@ export async function POST(req: Request) {
           "-m", "agentfactory", "run",
           "--spec", specPath,
           "--state", statePath,
-          "--provider", "openrouter",
+          "--provider", "foundry",
           ...(model ? ["--model", model] : []),
           ...(candidate.forced && model ? ["--force-model", model] : []),
           "--input", JSON.stringify(c.input),
@@ -270,6 +285,7 @@ export async function POST(req: Request) {
             : "No candidate cleared the incumbent's quality with a known cost; keep the incumbent.",
         });
       }
+      clearInterval(beat);
       try {
         controller.close();
       } catch {

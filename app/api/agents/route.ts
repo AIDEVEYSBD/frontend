@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { permit, session as whoIs, signer, ssoEnabled } from "@/lib/server/auth";
 import path from "node:path";
 import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
@@ -104,6 +105,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  { const gate = await permit(req, "deploy"); if (gate) return gate; }
   let body: { spec?: SpecDoc };
   try {
     body = await req.json();
@@ -148,6 +150,7 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  { const gate = await permit(req, "deploy"); if (gate) return gate; }
   const id = new URL(req.url).searchParams.get("id");
   if (!id || !/^[a-z][a-z0-9-]{0,62}$/.test(id)) {
     return Response.json({ error: "which agent?" }, { status: 400 });

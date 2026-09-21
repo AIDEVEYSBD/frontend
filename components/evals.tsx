@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { soon } from "@/lib/soon";
 import { useSearchParams } from "next/navigation";
 import { Button, IconButton, Label, Mono, Tag } from "./ui";
 import { Icon } from "./builder/icons";
@@ -292,19 +293,17 @@ export function Evals() {
     }
   }, []);
 
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
+  useEffect(() => soon(refresh), [refresh]);
 
   return (
-    <div className="mx-auto w-full max-w-[1100px] px-6 py-8">
+    <div className="mx-auto w-full max-w-[1520px] px-5 py-7" data-hue="indigo">
       <div className="flex flex-wrap items-end gap-4">
         <div className="flex flex-col gap-1">
           <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">Evals</h1>
           <p className="max-w-[66ch] text-[12.5px] leading-[1.55] text-dim">
-            A benchmark lives beside its agent. Every case is a real run — same runtime, same
-            journal, same guardrails — graded deterministically, and every score is stamped with
-            the spec digest it measured.
+            Evaluate workflow quality using representative cases executed through the production
+            runtime and controls. Results are graded deterministically and linked to the exact
+            workflow specification assessed.
           </p>
         </div>
         <span className="grow" />
@@ -331,10 +330,10 @@ export function Evals() {
         {sets === null && <p className="text-[12.5px] text-faint">Reading the benchmarks…</p>}
         {sets?.length === 0 && !building && (
           <div className="flex flex-col items-start gap-3 rounded-md border border-dashed border-line-strong bg-surface px-5 py-6">
-            <p className="text-[13px] font-medium text-fg">No benchmarks yet.</p>
+            <p className="text-[13px] font-medium text-fg">No evaluations have been created.</p>
             <p className="max-w-[60ch] text-[12px] leading-[1.6] text-dim">
-              Pick an agent, describe what a right answer looks like, and every future change to
-              that agent can be measured instead of eyeballed.
+              Select an agent and define the expected outcomes for representative cases. Future
+              changes can then be assessed against the same evidence-based benchmark.
             </p>
             <Button size="sm" variant="solid" onClick={() => setBuilding("new")}>
               Build the first one
@@ -413,12 +412,15 @@ function SetBuilder({
       .catch(() => setAgents([]));
   }, []);
 
-  /* The agent's spec names its own inputs — derive the case form from it. */
+  /* The agent's spec names its own inputs — derive the case form from it.
+     A change of agent clears the keys during render; the fetch below refills them. */
+  const [keysFor, setKeysFor] = useState(agent);
+  if (agent !== keysFor) {
+    setKeysFor(agent);
+    setInputKeys([]);
+  }
   useEffect(() => {
-    if (!agent) {
-      setInputKeys([]);
-      return;
-    }
+    if (!agent) return;
     let stop = false;
     fetch(`/api/agents?id=${encodeURIComponent(agent)}`)
       .then((r) => r.json())
@@ -1173,7 +1175,7 @@ function SetCard({
       {open && (
         <div className="flex flex-col gap-4 border-t border-line px-4 py-4">
           <div className="flex flex-wrap items-center gap-2.5">
-            <Button size="sm" variant="solid" tone="ink" disabled={!!live || (compare && picked.length < 2)} loading={!!live} onClick={run}>
+            <Button size="sm" variant="solid" tone="ink" permission="run" disabled={!!live || (compare && picked.length < 2)} loading={!!live} onClick={run}>
               {live ? "Measuring…" : compare ? `Compare ${picked.length} models` : "Run the benchmark"}
             </Button>
             <span className="text-[11px] text-faint">on</span>
@@ -1280,7 +1282,7 @@ function SetCard({
                         }))}
                     />
                   </div>
-                  <span className="text-[10.5px] text-faint">the matrix and the cases below are this model's run</span>
+                  <span className="text-[10.5px] text-faint">the matrix and the cases below are this model&rsquo;s run</span>
                 </div>
               )}
               {shownRun?.matrix && (

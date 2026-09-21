@@ -277,12 +277,12 @@ export function DeployPanel() {
         </div>
       </div>
 
-      {/* What an apply actually costs you, in time. */}
+      {/* The operating considerations associated with this deployment pattern. */}
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         {[
-          ["terraform init", "~1 min", "bg-ok"],
-          ["terraform apply", "~14 min", "bg-ok"],
-          ["First workflow available", "same business day", "bg-run"],
+          ["Deployment boundary", "organization-controlled cloud environment", "bg-ok"],
+          ["Infrastructure review", "aligned to approved cloud controls", "bg-ok"],
+          ["Operational readiness", "validated before workflow release", "bg-run"],
         ].map(([step, time, dot]) => (
           <div
             key={step}
@@ -298,9 +298,9 @@ export function DeployPanel() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Tag>Terraform ≥ 1.6</Tag>
-        <Tag>OpenTofu supported</Tag>
-        <Tag>Air-gapped variant available</Tag>
+        <Tag>Illustrative reference architecture</Tag>
+        <Tag>Infrastructure as code</Tag>
+        <Tag>Deployment tailored to the environment</Tag>
       </div>
     </div>
   );

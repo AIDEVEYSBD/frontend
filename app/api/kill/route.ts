@@ -1,4 +1,5 @@
 import { activeRuns, killAll, killRun } from "@/lib/server/active-runs";
+import { permit, session as whoIs, signer, ssoEnabled } from "@/lib/server/auth";
 
 /**
  * The kill switch.
@@ -17,6 +18,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  { const gate = await permit(req, "run"); if (gate) return gate; }
   let body: { id?: string; all?: boolean };
   try {
     body = await req.json();

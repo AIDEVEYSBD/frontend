@@ -45,10 +45,10 @@ export function LandingFooter() {
       <div className="flex w-full flex-col items-start gap-3 border-b border-line px-5 py-10 sm:px-8 lg:flex-row lg:items-center lg:px-12 2xl:px-20">
         <div className="flex flex-col gap-1">
           <span className="text-[16px] font-semibold tracking-[-0.01em]">
-            Interested in a walkthrough?
+            Explore Agent Factory with your team
           </span>
           <span className="text-[12.5px] text-dim">
-            Reach out and we will set one up with your team.
+            See how a priority cyber or risk process can move from design to governed operation.
           </span>
         </div>
         <div className="grow" />
@@ -58,7 +58,7 @@ export function LandingFooter() {
           size="md"
           href="mailto:hello@autogrc.cloud?subject=Agent%20Factory%20walkthrough"
         >
-          Contact us
+          Request a walkthrough
         </Button>
       </div>
       <div className="flex w-full flex-col gap-10 px-5 py-12 sm:px-8 lg:px-12 2xl:px-20">
@@ -95,10 +95,10 @@ export function LandingFooter() {
             <AFMark size={15} />
           </span>
           <span className="text-[12px] text-faint">
-            Agent Factory, an EY Advisory platform
+            Agent Factory | EY
           </span>
           <div className="grow" />
-          <Mono className="text-[11px] text-ghost">SOC 2 Type II · ISO 27001 · ISO 42001</Mono>
+          <Mono className="text-[11px] text-ghost">Governed workflows · Human oversight · Execution provenance</Mono>
         </div>
       </div>
     </footer>
@@ -142,43 +142,43 @@ export function Hero() {
         <div className="flex max-w-[680px] flex-col justify-center gap-7">
 
           <h1 className="max-w-[15ch] text-[clamp(36px,5.4vw,60px)] leading-[1.03] font-semibold tracking-[-0.035em]">
-            Scale cyber and risk operations with trusted AI agents.
+            Transform cyber and risk operations with AI you can govern.
           </h1>
 
           <p className="max-w-[58ch] text-[16px] leading-[1.6] text-mist">
-            Agent Factory helps cyber and GRC teams turn established procedures into
-            governed, production-ready workflows. Compose pre-tested harnesses, connect
-            enterprise systems and deploy within your cloud environment, accelerating
-            outcomes while keeping data and controls in your tenancy.
+            Agent Factory helps organizations turn established cyber and GRC procedures into
+            controlled, production-ready workflows. It brings together AI agents, enterprise
+            data, deterministic tools and human oversight to improve operational capacity while
+            maintaining accountability, traceability and control.
           </p>
 
           <div className="flex flex-wrap items-center gap-3">
             <Button tone="ink" variant="solid" size="lg" href="/builder">
-              Explore the platform
+              Explore Agent Factory
             </Button>
             <Button variant="outline" size="lg" href="/runs">
-              View a workflow run
+              Review a workflow run
             </Button>
           </div>
 
           <div className="flex flex-wrap items-center gap-x-7 gap-y-3 border-t border-line pt-6">
             <div className="flex flex-col gap-0.5">
               <span className="text-[22px] leading-none font-semibold tracking-[-0.02em]">
-                <CountUp to={4} suffix=" days" />
+                <CountUp to={3} />
               </span>
-              <span className="text-[11.5px] text-faint">from triage SOP to production</span>
+              <span className="text-[11.5px] text-faint">execution patterns for controlled workflows</span>
             </div>
             <div className="flex flex-col gap-0.5">
               <span className="text-[22px] leading-none font-semibold tracking-[-0.02em]">
-                <CountUp to={130} suffix="+" />
+                <CountUp to={6} />
               </span>
-              <span className="text-[11.5px] text-faint">systems reachable through connectors</span>
+              <span className="text-[11.5px] text-faint">layers of runtime protection</span>
             </div>
             <div className="flex flex-col gap-0.5">
               <span className="text-[22px] leading-none font-semibold tracking-[-0.02em]">
-                <CountUp to={0} />
+                <CountUp to={1} />
               </span>
-              <span className="text-[11.5px] text-faint">records transferred outside your tenancy</span>
+              <span className="text-[11.5px] text-faint">reviewable record for every run</span>
             </div>
           </div>
         </div>
@@ -290,12 +290,13 @@ export function Builders() {
           <div className="flex flex-col gap-7">
             <Rise className="flex flex-col gap-4">
               <h2 className="max-w-[24ch] text-[clamp(24px,3.2vw,38px)] leading-[1.1] font-semibold tracking-[-0.03em]">
-                Turn documented procedures into governed, auditable workflows.
+                Turn established procedures into governed workflows.
               </h2>
               <p className="max-w-[62ch] text-[15px] leading-[1.6] text-mist">
-                Explore the product through a representative DLP workflow. Define the process
-                in plain language or configure it visually, monitor execution and review the
-                resulting evidence, decisions and source citations.
+                Describe a process in plain language or configure it visually. Agent Factory
+                translates the procedure into a structured workflow with defined inputs,
+                outputs, permissions and review points, then records the evidence and decisions
+                produced during execution.
               </p>
             </Rise>
 
@@ -312,17 +313,17 @@ export function Builders() {
 /* ═══════════════════ Harnesses ═══════════════════ */
 
 const HARNESS_ROWS = [
-  ["Evidence extraction", "extraction", "Typed record + per-field citation", "96.4%", 1],
-  ["Control research", "research", "Findings with source and recency", "91.0%", 2],
-  ["Policy decision", "decision", "Disposition + governing clause", "94.1%", 5],
-  ["Report drafting", "drafting", "Draft + change log", "89.3%", 3],
-  ["Assessment review", "review", "Findings with severity", "98.6%", 4],
-  ["Control mapping", "decision", "Framework crosswalk + rationale", "92.8%", 6],
-  ["Vendor triage", "research", "Risk summary + evidence links", "93.5%", 7],
-  ["Access certification", "review", "Entitlement findings + owner", "95.2%", 9],
-  ["Incident summary", "drafting", "Timeline + affected assets", "90.7%", 0],
-  ["Data classification", "extraction", "Label + matched policy terms", "94.9%", 2],
-  ["Human approval", "gate", "Approval + reviewer identity", "n/a", 8],
+  ["Evidence extraction", "extraction", "Typed record + per-field citation", "Benchmark required", 1],
+  ["Control research", "research", "Findings with source and recency", "Benchmark required", 2],
+  ["Policy decision", "decision", "Disposition + governing clause", "Benchmark required", 5],
+  ["Report drafting", "drafting", "Draft + change log", "Benchmark required", 3],
+  ["Assessment review", "review", "Findings with severity", "Benchmark required", 4],
+  ["Control mapping", "decision", "Framework crosswalk + rationale", "Benchmark required", 6],
+  ["Vendor triage", "research", "Risk summary + evidence links", "Benchmark required", 7],
+  ["Access certification", "review", "Entitlement findings + owner", "Benchmark required", 9],
+  ["Incident summary", "drafting", "Timeline + affected assets", "Benchmark required", 0],
+  ["Data classification", "extraction", "Label + matched policy terms", "Benchmark required", 2],
+  ["Human approval", "gate", "Approval + reviewer identity", "Reviewer decision", 8],
 ] as const;
 
 export function Harnesses() {
@@ -331,16 +332,17 @@ export function Harnesses() {
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:gap-16">
         <Rise className="flex flex-col gap-5">
           <h2 className="text-[clamp(24px,3vw,34px)] leading-[1.12] font-semibold tracking-[-0.03em]">
-            Build on capabilities designed for control and consistency.
+            Combine reusable capabilities with controlled execution patterns.
           </h2>
           <p className="text-[15px] leading-[1.6] text-mist">
-            Each harness is a containerized capability with a defined contract covering
-            inputs, outputs, permitted tools and exception handling. Every harness includes
-            an evaluation suite to support validation before deployment.
+            Reusable capabilities support activities such as evidence extraction, policy
+            analysis and assessment review. Three execution patterns determine whether the
+            next step is defined in advance, selected through inference or dependent on an
+            external decision.
           </p>
           <p className="text-[13px] leading-[1.6] text-dim">
-            Teams can configure and combine measured components without developing and
-            maintaining bespoke agent infrastructure.
+            Each capability has a declared contract for its inputs, outputs and permitted
+            tools, helping teams assemble workflows without rebuilding the underlying runtime.
           </p>
         </Rise>
 
@@ -348,7 +350,7 @@ export function Harnesses() {
           <table className="w-full min-w-[520px] border-collapse text-left">
             <thead>
               <tr className="border-b border-line-strong">
-                {["Harness", "Kind", "Returns", "Pass rate"].map((h) => (
+                {["Capability", "Activity", "Returns", "Validation"].map((h) => (
                   <th key={h} className="pb-2.5 text-[11px] font-medium text-faint">
                     {h}
                   </th>
@@ -380,18 +382,18 @@ export function Harnesses() {
         {[
           {
             title: "Declared contract",
-            body: "Typed inputs and outputs, an explicit tool allowlist and defined exception paths. Nothing outside the contract is reachable at runtime.",
+            body: "Typed inputs and outputs, explicit tool permissions and defined exception paths establish what each capability can receive, use and return.",
             tags: ["inputs", "outputs", "tools", "exceptions"],
           },
           {
             title: "Evaluation before deployment",
-            body: "Every harness ships with its own evaluation suite. Releases that fall below the accepted pass rate do not reach production.",
-            tags: ["214 cases in the library", "threshold gated"],
+            body: "Representative cases help teams assess quality, cost and execution time before promoting a workflow into production.",
+            tags: ["representative cases", "deterministic grading"],
           },
           {
             title: "Versioned releases",
-            body: "Behaviour changes ship as new versions with a changelog. Rollback to any prior version is a single action.",
-            tags: ["semver", "changelog", "rollback"],
+            body: "Version history and deployment records help teams understand what changed, what was tested and which specification produced an outcome.",
+            tags: ["spec digest", "deployment record", "change history"],
           },
         ].map((c) => (
           <div key={c.title} className="flex flex-col gap-2.5 rounded-lg border border-line bg-surface p-4">
@@ -418,27 +420,28 @@ export function Integrations() {
         <Rise className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div className="flex flex-col gap-5">
             <h2 className="max-w-[20ch] text-[clamp(24px,3vw,36px)] leading-[1.12] font-semibold tracking-[-0.03em]">
-              Connect across your existing technology environment.
+              Connect workflows to the systems your teams already use.
             </h2>
             <p className="max-w-[60ch] text-[15px] leading-[1.6] text-mist">
-              MCP-compatible connectors give each harness governed access through declared
-              tool contracts. Use the growing connector library or extend the platform for
-              organization-specific systems and APIs.
+              Declared connector contracts provide governed access to enterprise data, records,
+              tools and services. Each workflow receives only the capabilities and scope required
+              for its purpose, helping organizations extend automation without creating
+              unrestricted access to operational systems.
             </p>
           </div>
 
           <div className="flex gap-8">
             <div className="flex flex-col gap-0.5">
               <span className="text-[26px] leading-none font-semibold tracking-[-0.02em]">
-                <CountUp to={130} suffix="+" />
+                governed
               </span>
-              <span className="text-[11.5px] text-faint">reachable systems</span>
+              <span className="text-[11.5px] text-faint">access through declared contracts</span>
             </div>
             <div className="flex flex-col gap-0.5">
               <span className="text-[26px] leading-none font-semibold tracking-[-0.02em]">
-                weekly
+                extensible
               </span>
-              <span className="text-[11.5px] text-faint">connector release cadence</span>
+              <span className="text-[11.5px] text-faint">for organization-specific systems</span>
             </div>
           </div>
         </Rise>
@@ -458,20 +461,21 @@ export function Deployment() {
       <div className="grid grid-cols-1 items-stretch gap-10 lg:grid-cols-[minmax(0,460px)_minmax(0,1fr)] lg:gap-16">
         <Rise className="flex h-full flex-col gap-5">
           <h2 className="text-[clamp(24px,3vw,34px)] leading-[1.12] font-semibold tracking-[-0.03em]">
-            Deploy in your cloud and operate within your controls.
+            Operate within your technology and control environment.
           </h2>
           <p className="text-[15px] leading-[1.6] text-mist">
-            Terraform modules support deployment to AWS, Azure and Google Cloud. Harnesses
-            run as containers within your account and connect to model providers through your
-            approved endpoints. Operational data remains within your defined environment.
+            Agent Factory is designed for deployment within an organization&rsquo;s cloud
+            environment. Workflows can use approved model endpoints, private data sources and
+            existing operational systems while execution records remain within the
+            organization&rsquo;s defined boundary.
           </p>
 
           <div className="mt-auto flex flex-col gap-2.5 border-t border-line pt-5">
             <Stagger className="flex flex-col gap-3.5">
               {([
-              ["Private networking", "VPC endpoints with no public egress path"],
-              ["Your model provider", "Bedrock, Microsoft Foundry or Vertex under your contract"],
-              ["Audit integration", "Run records and citations written to your designated repository"],
+              ["Controlled connectivity", "Connect workflows through approved network paths and interfaces"],
+              ["Approved model access", "Route tasks to models made available by the organization"],
+              ["Reviewable records", "Retain run activity, decisions and source references for oversight"],
             ] as const).map(([h, d]) => (
               <div key={h} className="flex gap-2.5">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 shrink-0 text-ok">
@@ -499,32 +503,32 @@ export function Deployment() {
         {[
           {
             title: "Build plane",
-            body: "Reusable agent and workflow templates, a data adaptor catalogue and the evaluation harness, provisioned through infrastructure-as-code.",
+            body: "Reusable workflow patterns, connector definitions and evaluation capabilities support consistent design and validation.",
             tags: ["templates", "data adaptors", "IaC"],
           },
           {
             title: "Agent runtime",
-            body: "Ephemeral workers execute under a supervisor with approved tools and session memory, and are deprovisioned when the run completes.",
+            body: "Workers execute workflow specifications using approved models and tools under defined runtime limits and controls.",
             tags: ["ephemeral workers", "orchestrator", "approved tools"],
           },
           {
             title: "Work plane",
-            body: "A durable work registry and immutable execution ledger, with watchdog recovery and provenance history retained for every run.",
+            body: "A durable registry and execution journal retain workflow state, provenance and the evidence associated with each run.",
             tags: ["execution ledger", "watchdog", "provenance"],
           },
           {
             title: "Control plane",
-            body: "Agent identities carry least-privilege entitlements. Policy and guardrail decisions, FinOps quotas and emergency suspension apply across every runtime.",
+            body: "Identity, permissions, policy decisions, human review and operational intervention are applied across workflow execution.",
             tags: ["least privilege", "guardrails", "FinOps", "kill switch"],
           },
           {
             title: "Integration gateway",
-            body: "Traffic in and out passes through a context gateway with input and output sanitization. Standard interfaces connect existing platforms and downstream reporting.",
+            body: "Standard interfaces connect enterprise platforms while controls govern the information and actions that cross each boundary.",
             tags: ["MCP", "A2A", "REST", "webhooks"],
           },
           {
             title: "Model consumption",
-            body: "Requests route per task across your model garden. Sensitive work runs on self-hosted models; frontier models are reached through your approved endpoints.",
+            body: "Model routing can reflect task requirements, data sensitivity, organizational policy, performance and cost.",
             tags: ["model garden", "self-hosted", "frontier endpoints"],
           },
         ].map((c) => (
@@ -551,12 +555,12 @@ export function Security() {
       <div className="flex flex-col gap-12">
         <Rise className="flex flex-col gap-5">
           <h2 className="max-w-[24ch] text-[clamp(24px,3vw,34px)] leading-[1.12] font-semibold tracking-[-0.03em]">
-            Trace decisions and outputs to the evidence that supports them.
+            Trace outcomes to the evidence and decisions behind them.
           </h2>
           <p className="max-w-[62ch] text-[15px] leading-[1.6] text-mist">
-            Harnesses are designed to support claims with citations. Each run produces a
-            reviewable timeline, links statements to source material and routes defined
-            outcomes to an authorized reviewer before release.
+            Agent Factory maintains a reviewable record of workflow execution. Teams can examine
+            which information was used, how it moved through the workflow, where controls were
+            applied and when human judgment affected the outcome.
           </p>
         </Rise>
 
@@ -576,8 +580,8 @@ export function Security() {
                   Review each run with end-to-end traceability
                 </span>
                 <span className="max-w-[46ch] text-[12.5px] leading-[1.5] text-white/75">
-                  Examine the execution timeline and trace each disposition statement to the
-                  relevant policy clause, business record or telemetry source.
+                  Examine the execution timeline and trace an outcome to the relevant policy,
+                  business record, source material and reviewer decision.
                 </span>
                 <div className="pt-2">
                   <Button size="sm" variant="solid" tone="media" href="/runs">
@@ -590,11 +594,11 @@ export function Security() {
 
           <div className="flex flex-col gap-3">
             {[
-              ["SOC 2 Type II", "Independent annual audit"],
-              ["ISO 27001", "Information security"],
-              ["ISO 42001", "AI management systems"],
-              ["GDPR & UK DPA", "Data residency supported through in-tenancy deployment"],
-              ["EU AI Act", "Traceability and human oversight by design"],
+              ["Least-privilege access", "Tools and data scope are assigned to individual workflow steps"],
+              ["Human oversight", "Defined decisions can pause for review by authorized people"],
+              ["Untrusted-content controls", "External content remains identified as it moves through a workflow"],
+              ["Execution provenance", "Sources, tool activity, decisions and outputs are retained in the run record"],
+              ["Operational intervention", "Authorized operators can stop active runs and record the intervention"],
             ].map(([h, d]) => (
               <div
                 key={h}
@@ -624,16 +628,15 @@ export function Closing() {
     <Band className="bg-raise/25">
       <Rise className="flex flex-col items-start gap-7">
         <h2 className="max-w-[18ch] text-[clamp(28px,4vw,44px)] leading-[1.06] font-semibold tracking-[-0.035em]">
-          Explore how a priority workflow can move from design to operation.
+          Explore how Agent Factory can support a priority cyber or risk workflow.
         </h2>
         <p className="max-w-[58ch] text-[15px] leading-[1.6] text-mist">
-          In a focused walkthrough, configure a representative workflow, such as DLP triage,
-          a NIST assessment or third-party review, using existing harnesses, then evaluate it
-          against sample evidence with full visibility into execution and results.
+          Review a representative workflow from design through execution, including its
+          permissions, evaluation results, human review points and final evidence record.
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <Button tone="ink" variant="solid" size="lg" href="/builder">
-            Explore the builder
+            Explore Agent Factory
           </Button>
           <Button variant="outline" size="lg" href="#security">
             Review security and governance

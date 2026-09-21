@@ -858,7 +858,7 @@ function Forms() {
             <Input defaultValue="j.hale@example.com" invalid />
           </Field>
           <Field label="Model" hint="Applies to every harness unless overridden.">
-            <Select options={["claude-fable-5", "claude-opus-5", "claude-sonnet-5"]} />
+            <Select options={["Kimi-K2.7-Code", "gpt-4.1-mini", "Phi-4"]} />
           </Field>
           <Field label="Locked field" hint="Set by the engagement template.">
             <Input defaultValue="EY Advisory — sandbox" disabled />
@@ -1417,7 +1417,7 @@ function Dropdowns() {
             <Label>Select — one value</Label>
             <div className="w-[230px]">
               <Select
-                options={["claude-fable-5", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4.5"]}
+                options={["Kimi-K2.7-Code", "gpt-4.1-mini", "Phi-4", "DeepSeek-V3"]}
                 aria-label="Model"
               />
             </div>

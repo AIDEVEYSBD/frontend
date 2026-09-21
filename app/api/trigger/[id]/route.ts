@@ -3,6 +3,7 @@ import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { dbReady, query } from "@/lib/server/db";
 import { authenticate } from "@/lib/server/keys";
+import { budgetGate } from "@/lib/server/budget";
 
 /**
  * The API trigger: an external system posts an input by agent id.
@@ -127,6 +128,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       { error: `"${id}" is triggered by ${kind}, not by API. Set trigger.kind to "api" or "webhook" in the builder to expose it here.` },
       { status: 409 },
     );
+  }
+
+  // The budget is enforced at the door: a job posted past it is refused with
+  // the figures, so the posting system can retry when the period turns.
+  {
+    const over = await budgetGate();
+    if (over) return Response.json({ error: over.error, budget: over.budget }, { status: 402 });
   }
 
   const externalId = body.external_id ? String(body.external_id).slice(0, 200) : null;
