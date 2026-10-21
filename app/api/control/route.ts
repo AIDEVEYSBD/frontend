@@ -1,6 +1,6 @@
 import { dbReady, query } from "@/lib/server/db";
 import { permit } from "@/lib/server/auth";
-import { activeRuns } from "@/lib/server/active-runs";
+import { backendConfigured, backendFetch } from "@/lib/server/backend";
 import { readRuns, type RunRow } from "@/lib/server/runs";
 import { budgetState, PERIODS, writeBudget, type Period } from "@/lib/server/budget";
 
@@ -20,6 +20,34 @@ import { budgetState, PERIODS, writeBudget, type Period } from "@/lib/server/bud
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** A run row for the wire: the per-call attribution stays behind, FinOps reads it through its own route. */
+function withoutCalls(r: RunRow): Omit<RunRow, "calls"> {
+  const copy: Partial<RunRow> = { ...r };
+  delete copy.calls;
+  return copy as Omit<RunRow, "calls">;
+}
+
+/* ── liveness: the backend's run ledger carries a `live` flag per run ── */
+
+/**
+ * What is in flight right now, asked of the backend on the caller's behalf
+ * (backend/CONTRACT.md `GET /api/runs`, the `live` flag). The console no
+ * longer holds runtime processes, so it has no process table of its own;
+ * without a backend the answer is honestly empty, not guessed from state
+ * files that a crashed run leaves saying "running".
+ */
+async function liveRuns(req: Request): Promise<{ id: string; system: string; startedAt: string }[]> {
+  if (!backendConfigured()) return [];
+  try {
+    const res = await backendFetch(req, "/api/runs", { signal: AbortSignal.timeout(8_000) });
+    if (!res.ok) return [];
+    const d = (await res.json()) as { runs?: { id: string; system: string; started: string; live?: boolean }[] };
+    return (d.runs ?? []).filter((r) => r.live).map((r) => ({ id: r.id, system: r.system, startedAt: r.started }));
+  } catch {
+    return [];
+  }
+}
 
 
 /* ── prices: the operator's per-model figures from the Configuration page ── */
@@ -132,7 +160,7 @@ export async function GET(req: Request) {
     }
   }
 
-  const live = activeRuns();
+  const live = await liveRuns(req);
   const liveBySystem = new Map<string, number>();
   for (const l of live) liveBySystem.set(l.system, (liveBySystem.get(l.system) ?? 0) + 1);
 
@@ -293,7 +321,7 @@ export async function GET(req: Request) {
     days,
     models,
     /** Every recent run, newest first — the substance behind every click. */
-    runs: runs.slice(0, 2000).map(({ calls, ...r }) => r),
+    runs: runs.slice(0, 2000).map((r) => withoutCalls(r)),
     store: db ? "db" : "file (db unreachable)",
     costBasis: `configured price per model × journalled tokens; the scripted provider is zero${assumedPrices().length ? `; list price assumed for ${assumedPrices().join(", ")}` : ""}; any other unpriced model is estimated at the sheet's median rate and counted as estimated`,
   });

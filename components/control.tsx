@@ -18,6 +18,8 @@ import { ApproveDialog, useGates, type Gate } from "./approve";
 import { soon } from "@/lib/soon";
 import { WindowPick, nextWin, winMs, type Win } from "./window-pick";
 import { Pick } from "./select";
+import { api, errorText, type RunRow as LedgerRow } from "@/lib/api/client";
+import { KillDialog } from "./kill-dialog";
 
 const PERIOD_DAYS = { day: 1, week: 7, month: 30 } as const;
 const PERIOD_LABEL = { day: "day", week: "week", month: "month" } as const;
@@ -231,6 +233,20 @@ function rewindow(d: ControlData, now: number, w: Win): ControlData {
   };
 }
 
+/** The backend's view of what is in flight (GET /api/runs, the `live` flag), laid over the estate read. Null leaves the read as it came. */
+function withLive(d: ControlData, rows: LedgerRow[] | null): ControlData {
+  if (rows === null) return d;
+  const live = rows.map((r) => ({ id: r.id, system: r.system, startedAt: r.started }));
+  const bySystem = new Map<string, number>();
+  for (const l of live) bySystem.set(l.system, (bySystem.get(l.system) ?? 0) + 1);
+  return {
+    ...d,
+    live,
+    totals: { ...d.totals, active: live.length },
+    agents: d.agents.map((a) => ({ ...a, active: bySystem.get(a.id) ?? 0 })),
+  };
+}
+
 type Drill =
   | { kind: "kpi"; which: "deployed" | "active" | "pending" | "runs" | "spend" | "time" | "denials" | "kills" }
   | { kind: "agent"; id: string }
@@ -329,7 +345,8 @@ export function Control() {
   const router = useRouter();
   const [raw, setRaw] = useState<ControlData | null>(null);
   const [error, setError] = useState("");
-  const [confirmAll, setConfirmAll] = useState(false);
+  /* The kill switch's question: which run (none means every run in flight), answered with a reason. */
+  const [killAsk, setKillAsk] = useState<{ id?: string } | null>(null);
   // The page window, and per-card overrides (a KPI tile, the activity chart,
   // the model mix). Changing the page window clears every override.
   const [win, setWinState] = useState<Win>("7d");
@@ -345,7 +362,6 @@ export function Control() {
   /* Hover readouts — what a tooltip would have hidden, kept on the page. */
   const [stageHint, setStageHint] = useState<string | null>(null);
   const [tickHint, setTickHint] = useState<string | null>(null);
-  const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const drill = stack[stack.length - 1] ?? null;
   const { gates, reload: reloadGates } = useGates();
@@ -357,6 +373,8 @@ export function Control() {
   }, []);
 
   const [queue, setQueue] = useState<QueueData | null>(null);
+  // What is in flight, from the backend's run ledger; null until it answers.
+  const [liveRows, setLiveRows] = useState<LedgerRow[] | null>(null);
   // The clock the windows are cut against: stamped when the data arrives, so a
   // render is a pure function of what was loaded and when.
   const [now, setNow] = useState(0);
@@ -380,6 +398,13 @@ export function Control() {
     } catch {
       setQueue(null);
     }
+    // Liveness is the backend's: its ledger flags the runs in flight.
+    try {
+      const { data } = await api.GET("/api/runs");
+      setLiveRows(data ? data.runs.filter((r) => r.live) : null);
+    } catch {
+      setLiveRows(null);
+    }
   }, []);
 
   useEffect(() => {
@@ -391,9 +416,10 @@ export function Control() {
     };
   }, [load]);
 
-  const data = useMemo(() => (raw ? rewindow(raw, now, win) : null), [raw, now, win]);
+  const estate = useMemo(() => (raw ? withLive(raw, liveRows) : null), [raw, liveRows]);
+  const data = useMemo(() => (estate ? rewindow(estate, now, win) : null), [estate, now, win]);
   // A card on its own window gets its own cut of the same ledger.
-  const cut = useCallback((card: string): ControlData | null => (raw && cardWin[card] ? rewindow(raw, now, cardWin[card]!) : data), [raw, now, cardWin, data]);
+  const cut = useCallback((card: string): ControlData | null => (estate && cardWin[card] ? rewindow(estate, now, cardWin[card]!) : data), [estate, now, cardWin, data]);
   const wf = (card: string): Win => cardWin[card] ?? win;
   const tile = (card: string, w?: Win) => (w ? setCardWin((c) => ({ ...c, [card]: w })) : setCardWin((c) => ({ ...c, [card]: nextWin(wf(card)) })));
 
@@ -476,21 +502,29 @@ export function Control() {
      button that fired it shows the spinner until the request settles. */
   const [killing, setKilling] = useState<string | null>(null);
   const kill = useCallback(
-    async (id?: string) => {
+    async (reason: string, id?: string) => {
       setKilling(id ?? "*");
+      setKillAsk(null);
       try {
-        await fetch("/api/kill", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(id ? { id } : { all: true }),
-        }).catch(() => {});
+        if (id) {
+          const { data, error, response } = await api.POST("/api/runs/{run_id}/kill", { params: { path: { run_id: id } }, body: { reason } });
+          if (!data) notice(`Kill refused: ${errorText(error, response).slice(0, 120)}`);
+        } else {
+          const { data, error, response } = await api.POST("/api/runs/kill-all", { body: { reason } });
+          if (!data) notice(`Kill refused: ${errorText(error, response).slice(0, 120)}`);
+          else notice(`Kill switch thrown on ${data.killed.length} run${data.killed.length === 1 ? "" : "s"}`);
+        }
         await load();
+      } catch (e) {
+        notice(`Kill failed: ${(e as Error).message.slice(0, 120)}`);
       } finally {
         setKilling(null);
       }
     },
-    [load],
+    [load, notice],
   );
+  /* Every kill button opens the same question; the dialog carries the reason to `kill`. */
+  const askKill = useCallback((id: string) => setKillAsk({ id }), []);
 
   const t = data?.totals;
   usePageFacts(
@@ -542,25 +576,9 @@ export function Control() {
         </span>
         <LogExport />
         {t && t.active > 0 && (
-          <Button
-            tone="err"
-            variant="solid"
-            size="sm"
-            permission="run"
-            loading={killing === "*"}
-            onClick={() => {
-              if (confirmAll) {
-                kill();
-                setConfirmAll(false);
-                if (confirmTimer.current) clearTimeout(confirmTimer.current);
-              } else {
-                setConfirmAll(true);
-                confirmTimer.current = setTimeout(() => setConfirmAll(false), 3000);
-              }
-            }}
-          >
+          <Button tone="err" variant="solid" size="sm" permission="run" loading={killing === "*"} onClick={() => setKillAsk({})}>
             <span className="size-1.5 rounded-[2px] bg-on-solid" />
-            {confirmAll ? `Really stop ${t.active} run${t.active === 1 ? "" : "s"}?` : "Kill all runs"}
+            Kill all runs
           </Button>
         )}
       </div>
@@ -835,7 +853,7 @@ export function Control() {
                   <span className="truncate text-[12.5px] font-medium text-fg">{r.system}</span>
                   <span className="truncate font-mono text-[10px] text-faint">{r.id} · {ago(r.startedAt)}</span>
                 </button>
-                <KillButton id={r.id} busy={killing === r.id || killing === "*"} onKill={kill} />
+                <KillButton id={r.id} busy={killing === r.id || killing === "*"} onKill={askKill} />
               </div>
             ))}
             {!data && <p className="px-3 py-4 text-[12px] text-faint">Reading the process table…</p>}
@@ -1144,12 +1162,27 @@ export function Control() {
           onBack={back}
           onClose={close}
           onOpen={open}
-          onKill={kill}
+          onKill={askKill}
           killing={killing}
           onAnswer={(runId) => {
             const g = (gates ?? []).find((x) => x.run === runId);
             if (g) setAnswering(g);
           }}
+        />
+      )}
+
+      {killAsk && (
+        <KillDialog
+          title={killAsk.id ? "Kill this run?" : "Stop every run in flight?"}
+          what={
+            killAsk.id
+              ? `${(data?.live ?? []).find((l) => l.id === killAsk.id)?.system ?? "run"} · ${killAsk.id}. The backend cancels it before its next model or tool call; the journal records the reason and your name.`
+              : `${t?.active ?? 0} run${t?.active === 1 ? "" : "s"} in flight, in-process and on workers. Each is cancelled before its next model or tool call; every journal records the reason and your name.`
+          }
+          confirm={killAsk.id ? "Kill run" : "Kill all runs"}
+          busy={killing !== null}
+          onClose={() => setKillAsk(null)}
+          onConfirm={(reason) => kill(reason, killAsk.id)}
         />
       )}
 
@@ -1370,8 +1403,8 @@ function LogExport() {
   );
 }
 
-/** A kill switch that names its consequence before it fires: the first click
-    arms it, the second kills, and it disarms itself after three seconds. */
+/** A kill switch that names its consequence before it fires: the click opens
+    the kill dialog, which asks for the reason the journal will carry. */
 function KillButton({
   id,
   label = "Kill",
@@ -1383,32 +1416,9 @@ function KillButton({
   busy: boolean;
   onKill: (id: string) => void;
 }) {
-  const [armed, setArmed] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (timer.current) clearTimeout(timer.current);
-    },
-    [],
-  );
   return (
-    <Button permission="run"
-      size="sm"
-      variant="solid"
-      tone="err"
-      loading={busy}
-      onClick={() => {
-        if (timer.current) clearTimeout(timer.current);
-        if (armed) {
-          setArmed(false);
-          onKill(id);
-        } else {
-          setArmed(true);
-          timer.current = setTimeout(() => setArmed(false), 3000);
-        }
-      }}
-    >
-      {armed ? "Click again to kill" : label}
+    <Button permission="run" size="sm" variant="solid" tone="err" loading={busy} onClick={() => onKill(id)}>
+      {label}
     </Button>
   );
 }

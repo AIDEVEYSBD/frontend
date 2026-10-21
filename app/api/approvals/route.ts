@@ -1,9 +1,9 @@
-import { spawn } from "node:child_process";
 import { permit, session as whoIs, signer, ssoEnabled } from "@/lib/server/auth";
 import path from "node:path";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dbReady, query } from "@/lib/server/db";
 import { authenticate } from "@/lib/server/keys";
+import { backendConfigured, backendFetch, backendMissing } from "@/lib/server/backend";
 
 /**
  * Human gates, answered over the API.
@@ -13,13 +13,14 @@ import { authenticate } from "@/lib/server/keys";
  * somebody answers, the run is suspended and its queue job is parked — which
  * is the point of the control, not a defect.
  *
- * There is no approvals screen in the console yet, so this is how a gate gets
- * answered: GET to see what is waiting and what each run has decided so far,
- * POST to approve or refuse. The answer is delivered to the runtime by the
- * same `resume` path a person at a terminal would use, so the journal records
- * the decision, who made it and when, exactly as it would from any other
- * caller. Nothing here can approve on the run's behalf: `by` is required and
- * is written into the record.
+ * GET lists what is waiting and what each run has decided so far; POST
+ * approves or refuses. A runtime run is resumed by the backend
+ * (`POST /api/runs/{id}/resume`, backend/CONTRACT.md): this route forwards
+ * the answer with the caller's own credentials, so the backend signs it with
+ * the same identity the console saw and `by` is never typed. A run an
+ * attached agent reported over the SDK has no spec to resume; its answer is
+ * written onto the record for the agent to pick up. deploy/vm/hil.py and the
+ * ApproveDialog both post here with the same body as before.
  */
 
 export const runtime = "nodejs";
@@ -27,7 +28,6 @@ export const dynamic = "force-dynamic";
 
 const ROOT = path.resolve(process.cwd(), "..", "runtime");
 const RUNS = path.join(ROOT, "workspace", "runs");
-const AGENTS = path.join(ROOT, "workspace", "agents");
 
 interface JournalEntry { kind: string; node?: string; title?: string; detail?: string; data?: Record<string, unknown> }
 interface RunDoc {
@@ -194,8 +194,78 @@ async function answerSdk(
   return { run: runId, ok: true, state: after.state, error: after.error ?? "", result: null, delivered: "the agent's SDK is polling for this answer" };
 }
 
-/** Deliver one answer to the runtime and report what the run did next. */
+/** The backend's refusal when the workflow's spec moved after the run suspended. */
+const STALE_SPEC = /different version of the spec/i;
+
+/**
+ * A gate the backend will not resume because the spec changed still received
+ * an answer, and a decision somebody signed must not evaporate. The run is
+ * closed with the decision on it rather than left waiting for a resume that
+ * can never happen: the record says who answered, what, and why it could not
+ * go on.
+ */
+async function closeAtGate(
+  runId: string,
+  statePath: string,
+  run: RunDoc,
+  answer: { approved: boolean; by: string; note: string },
+  why: string,
+): Promise<RunDoc> {
+  const at = new Date().toISOString();
+  const closed: RunDoc & Record<string, unknown> = {
+    ...run,
+    state: "closed",
+    error: `Gate ${answer.approved ? "approved" : "refused"} by ${answer.by}; the run could not continue (${why}). Closed at the gate.`,
+    answer: { ...answer, at, continued: false },
+  };
+  const entries = closed.journal?.entries ?? [];
+  entries.push({
+    kind: "gate.answer",
+    node: run.suspension?.node ?? "",
+    title: `${answer.approved ? "Approved" : "Refused"} by ${answer.by}`,
+    detail: answer.note || why,
+    data: { approved: answer.approved, by: answer.by, note: answer.note, at, continued: false, reason: why },
+  });
+  closed.journal = { ...(closed.journal ?? {}), entries };
+  try {
+    await writeFile(statePath, JSON.stringify(closed, null, 2));
+  } catch {
+    return run;
+  }
+  if (await dbReady()) {
+    try {
+      await query(
+        `INSERT INTO runs (id, system, state, summary, run, at) VALUES ($1, $2, $3, $4, $5, now())
+         ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, summary = EXCLUDED.summary, run = EXCLUDED.run, at = now()`,
+        [
+          runId,
+          closed.system ?? "",
+          "closed",
+          JSON.stringify({
+            duration_ms: closed.journal?.duration_ms ?? 0,
+            entries: entries.length,
+            model_calls: entries.filter((e) => e.kind === "model.call").length,
+            tool_calls: entries.filter((e) => e.kind === "tool.call").length,
+            denied: entries.filter((e) => e.kind === "denied" || e.kind === "contract.breach").length,
+            source: `approval by ${answer.by}`,
+          }),
+          JSON.stringify(closed),
+        ],
+      );
+      await query(
+        `UPDATE trigger_jobs SET status = 'failed', error = $2, finished_at = now() WHERE run_id = $1 AND status = 'suspended'`,
+        [runId, closed.error ?? ""],
+      );
+    } catch {
+      /* the run itself is recorded in its state file either way */
+    }
+  }
+  return closed;
+}
+
+/** Deliver one answer and report what the run did next. */
 async function answerOne(
+  req: Request,
   runId: string,
   answer: { approved: boolean; by: string; note: string },
 ): Promise<Record<string, unknown>> {
@@ -214,117 +284,35 @@ async function answerOne(
   // which is polling for it, reads it and carries on — or stops, on a refusal.
   if (run.reported_by?.mode === "sdk" || run.reported_by?.mode === "a2a") return answerSdk(runId, statePath, run, answer);
 
-  const specPath = path.join(AGENTS, `${run.system}.json`);
+  // Everything else resumes on the backend, under the caller's own identity;
+  // the backend writes `by` from that identity, never from this body.
+  let res: Response;
   try {
-    await readFile(specPath);
-  } catch {
-    return { run: runId, ok: false, error: `agent "${run.system}" is not in the registry` };
-  }
-
-  let said = "";
-  const code = await new Promise<number>((resolve) => {
-    const child = spawn(
-      "python3",
-      ["-m", "agentfactory", "resume", "--spec", specPath, "--state", statePath, "--answer", JSON.stringify(answer)],
-      { cwd: ROOT, env: { ...process.env, PYTHONUNBUFFERED: "1" } },
-    );
-    // The journal is written to the state file; the stream only matters when
-    // the runtime refuses, and then its last line says why.
-    child.stdout.on("data", (b: Buffer) => (said = (said + b.toString()).slice(-4000)));
-    child.stderr.on("data", (b: Buffer) => (said = (said + b.toString()).slice(-4000)));
-    child.on("close", (c) => resolve(c ?? 1));
-    child.on("error", () => resolve(1));
-  });
-
-  let after: RunDoc = {};
-  try {
-    after = JSON.parse(await readFile(statePath, "utf-8")) as RunDoc;
-  } catch {
-    /* fall through to the exit code */
-  }
-
-  // The runtime's own explanation, when it printed one.
-  let refusal = "";
-  for (const line of said.split("\n").reverse()) {
-    try {
-      const j = JSON.parse(line) as { type?: string; message?: string };
-      if (j.type === "error" && j.message) { refusal = j.message; break; }
-    } catch {
-      /* not a JSON line */
-    }
-  }
-
-  // A gate the runtime will not resume — typically because the workflow's
-  // spec changed after the run suspended — still received an answer, and a
-  // decision somebody signed must not evaporate. The run is closed with the
-  // decision on it rather than left waiting for a resume that can never
-  // happen: the record says who answered, what, and why it could not go on.
-  if (code !== 0 && after.state === "suspended") {
-    const at = new Date().toISOString();
-    const why = refusal || "the runtime could not resume this run";
-    const closed: RunDoc & Record<string, unknown> = {
-      ...after,
-      state: "closed",
-      error: `Gate ${answer.approved ? "approved" : "refused"} by ${answer.by}; the run could not continue (${why}). Closed at the gate.`,
-      answer: { ...answer, at, continued: false },
-    };
-    const entries = closed.journal?.entries ?? [];
-    entries.push({
-      kind: "gate.answer",
-      node: after.suspension?.node ?? "",
-      title: `${answer.approved ? "Approved" : "Refused"} by ${answer.by}`,
-      detail: answer.note || why,
-      data: { approved: answer.approved, by: answer.by, note: answer.note, at, continued: false, reason: why },
+    res = await backendFetch(req, `/api/runs/${encodeURIComponent(runId)}/resume`, {
+      method: "POST",
+      body: JSON.stringify({ answer: { approved: answer.approved }, note: answer.note }),
     });
-    closed.journal = { ...(closed.journal ?? {}), entries };
-    try {
-      await writeFile(statePath, JSON.stringify(closed, null, 2));
-      after = closed;
-    } catch {
-      /* the DB row below still carries the decision */
-    }
+  } catch (e) {
+    return { run: runId, ok: false, state: "suspended", error: `the backend could not be reached: ${(e as Error).message}` };
   }
-
-  // The record follows the run: the same row the worker would have written,
-  // so the console and the queue agree about what happened.
-  if (await dbReady()) {
-    const entries = after.journal?.entries ?? [];
-    const summary = {
-      duration_ms: after.journal?.duration_ms ?? 0,
-      entries: entries.length,
-      model_calls: entries.filter((e) => e.kind === "model.call").length,
-      tool_calls: entries.filter((e) => e.kind === "tool.call").length,
-      denied: entries.filter((e) => e.kind === "denied" || e.kind === "contract.breach").length,
-      source: `approval by ${answer.by}`,
+  const body = (await res.json().catch(() => ({}))) as { run?: string; state?: string; error?: string };
+  if (res.ok) {
+    return {
+      run: runId,
+      ok: true,
+      state: body.state ?? "running",
+      error: "",
+      result: null,
+      continuing: true,
+      delivered: "the backend resumed the run; its state settles as it runs",
     };
-    try {
-      await query(
-        `INSERT INTO runs (id, system, state, summary, run, at) VALUES ($1, $2, $3, $4, $5, now())
-         ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, summary = EXCLUDED.summary, run = EXCLUDED.run, at = now()`,
-        [runId, after.system ?? run.system ?? "", after.state ?? "unknown", JSON.stringify(summary), JSON.stringify(after)],
-      );
-      await query(
-        `UPDATE trigger_jobs SET status = $2, result = $3, error = $4, finished_at = now()
-         WHERE run_id = $1 AND status = 'suspended'`,
-        [
-          runId,
-          after.state === "done" ? "done" : after.state === "suspended" ? "suspended" : "failed",
-          after.state === "done" ? JSON.stringify(after.result ?? {}) : null,
-          after.error ?? "",
-        ],
-      );
-    } catch {
-      /* the run itself is recorded in its state file either way */
-    }
   }
-
-  return {
-    run: runId,
-    ok: code === 0 && after.state !== "failed",
-    state: after.state ?? "unknown",
-    error: after.error || refusal || "",
-    result: after.state === "done" ? (after.result ?? null) : null,
-  };
+  const why = String(body.error ?? `the backend answered ${res.status}`);
+  if (res.status === 409 && STALE_SPEC.test(why)) {
+    const closed = await closeAtGate(runId, statePath, run, answer, why);
+    return { run: runId, ok: false, state: closed.state ?? "suspended", error: closed.error || why, result: null };
+  }
+  return { run: runId, ok: false, state: run.state, error: why, result: null };
 }
 
 export async function POST(req: Request) {
@@ -348,7 +336,10 @@ export async function POST(req: Request) {
   if (typeof body.approved !== "boolean") {
     return Response.json({ error: "send approved: true or approved: false — a gate is not answered by silence" }, { status: 400 });
   }
+  if (!backendConfigured()) return backendMissing();
   // With sign-in on, the record carries the SSO identity, never a typed name.
+  // The backend signs a resumed run from the forwarded credentials itself;
+  // this `by` is what an SDK record gets and what the response reports.
   const me = await whoIs(req);
   const by = ssoEnabled() && me && me.mode === "sso" ? signer(me) : String(body.by ?? "").trim();
   if (!by) {
@@ -397,7 +388,7 @@ export async function POST(req: Request) {
 
   const answer = { approved: body.approved, by, note };
   const results: Record<string, unknown>[] = [];
-  for (const runId of capped) results.push(await answerOne(runId, answer));
+  for (const runId of capped) results.push(await answerOne(req, runId, answer));
 
   return Response.json({
     answered: results.filter((r) => r.ok).length,

@@ -1,28 +1,39 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, readSessionCookie } from "@/lib/auth-cookie";
+import { upstreamFor } from "@/lib/route-policy";
 
 /**
  * The seam between the console and the control plane.
  *
- * Two deployments share this file and pick a mode from the environment:
+ * Three variables shape it, and every deployment sets some of them:
  *
- *   RUNTIME_ORIGIN set (Vercel): every /api request is proxied to the
+ *   BACKEND_ORIGIN set: the API paths the backend owns (BACKEND_PREFIXES in
+ *   lib/route-policy.ts: /api/runs and /api/healthz for now, more as each
+ *   domain moves) are forwarded there at request time, with the shared
+ *   secret attached and the session cookie forwarded. This happens before,
+ *   and independently of, the RUNTIME_ORIGIN rewrite below. The local
+ *   backend is `http://localhost:8000` (backend/CONTRACT.md).
+ *
+ *   RUNTIME_ORIGIN set (Vercel): every other /api request is proxied to the
  *   control plane behind the tunnel, at request time, with the shared secret
  *   attached. The pages stay same-origin and unchanged.
  *
  *   RUNTIME_KEY set, no origin (the container): every /api request must carry
  *   that secret, except the trigger endpoint, which has its own API keys and
- *   is the one door external systems are meant to use. With neither set the
- *   API is open, which is right for a laptop and wrong for anything public.
+ *   is the one door external systems are meant to use. With neither origin
+ *   nor key set the API is open, which is right for a laptop and wrong for
+ *   anything public.
  *
  * With AUTH_SECRET set, sign-in is on: a page needs a valid session cookie
  * or is sent to /login, and a console API route needs it or answers 401.
  * The cookie is verified here without a database (an HMAC over id and
  * expiry), which is what lets the Vercel side decide before proxying. The
- * machine doors keep their own API keys and stay outside the sign-in.
+ * machine doors keep their own API keys and stay outside the sign-in. The
+ * backend verifies the same cookie again and loads the session itself.
  */
 
 const ORIGIN = process.env.RUNTIME_ORIGIN?.replace(/\/+$/, "") ?? "";
+const BACKEND = process.env.BACKEND_ORIGIN?.replace(/\/+$/, "") ?? "";
 const KEY = process.env.RUNTIME_KEY ?? "";
 const HEADER = "x-runtime-key";
 const AUTH_SECRET = process.env.AUTH_SECRET ?? "";
@@ -66,12 +77,15 @@ export async function proxy(request: NextRequest) {
 
   if (!isApi) return NextResponse.next();
 
-  if (ORIGIN) {
-    const target = new URL(`${pathname}${search}`, `${ORIGIN}/`);
+  // The path router: a backend-owned path to BACKEND_ORIGIN, else everything
+  // to RUNTIME_ORIGIN when that is set. Either way the request's own headers
+  // travel (the session cookie among them) with the runtime key added.
+  const upstream = upstreamFor(pathname, search, { backendOrigin: BACKEND, runtimeOrigin: ORIGIN });
+  if (upstream.to !== "next") {
     const headers = new Headers(request.headers);
     if (KEY) headers.set(HEADER, KEY);
     headers.delete("host");
-    return NextResponse.rewrite(target, { request: { headers } });
+    return NextResponse.rewrite(new URL(upstream.url), { request: { headers } });
   }
 
   if (KEY && !pathname.startsWith("/api/trigger/")) {

@@ -5,19 +5,23 @@ import { Button, Mono, Status } from "./ui";
 import { Field, Textarea } from "./forms";
 import { CURRENT_USER } from "@/lib/user";
 import { useSession, signerName } from "@/lib/use-session";
+import { api, errorText } from "@/lib/api/client";
 
 /**
  * Answering a gate, from the console.
  *
  * A suspended run is a question put to a person, and until this existed the
  * only way to answer one was the command line. The dialog shows what is being
- * signed off — the decision, the score, the evidence hash — then takes an
- * identity and a reason, because an approval nobody signed is not an approval
- * and the record has to say who.
+ * signed off — the decision, the score, the evidence hash — then takes a
+ * reason, because an approval nobody signed is not an approval and the
+ * record has to say who.
  *
- * The identity is the console's operator (lib/user), never typed: until the
- * deployment is behind a sign-in the record says who the console was issued
- * to, which is what the runtime writes and what an auditor reads.
+ * The answer goes to the backend's resume door (`POST /api/runs/{id}/resume`),
+ * which signs it with the session behind the cookie — the identity shown
+ * here is what the record will say, and it is never typed. A gate an
+ * attached agent holds open over the SDK has no run to resume there; the
+ * backend refuses with 409 and the answer goes through the console's
+ * approvals door instead, which writes it onto the record for the agent.
  */
 
 export interface Gate {
@@ -68,9 +72,26 @@ export function ApproveDialog({
   const by = signerName(me, CURRENT_USER.name);
 
   const answer = async (approved: boolean) => {
+    const word = approved ? "Approved" : "Refused";
     setBusy(approved ? "approve" : "refuse");
     setResult(null);
     try {
+      const { data, error, response } = await api.POST("/api/runs/{run_id}/resume", {
+        params: { path: { run_id: gate.run } },
+        body: { answer: { approved }, note: note.trim() },
+      });
+      if (data) {
+        setResult({ ok: true, text: `${word}. The run is continuing (${data.state}); its record settles as it runs.` });
+        onAnswered();
+        return;
+      }
+      if (response.status !== 409) {
+        setResult({ ok: false, text: errorText(error, response) });
+        return;
+      }
+      // 409: not the backend's to resume (an attached agent's gate), or a
+      // refusal with a reason (the spec moved, the run is not suspended).
+      // The approvals door tells those apart and records what it can.
       const res = await fetch("/api/approvals", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -79,18 +100,18 @@ export function ApproveDialog({
       const d = await res.json();
       if (d.error) {
         setResult({ ok: false, text: String(d.error) });
-      } else {
-        const r = (d.results ?? [])[0] ?? {};
-        setResult({
-          ok: Boolean(r.ok) || r.state === "closed",
-          text: r.ok
-            ? `${approved ? "Approved" : "Refused"}. The run continued and settled as ${r.state}.`
-            : r.state === "closed"
-              ? `${approved ? "Approved" : "Refused"} and recorded. ${String(r.error ?? "")}`.trim()
-              : `${approved ? "Approved" : "Refused"}, but the run ended as ${r.state}. ${String(r.error ?? "")}`.trim(),
-        });
-        onAnswered();
+        return;
       }
+      const r = (d.results ?? [])[0] ?? {};
+      setResult({
+        ok: Boolean(r.ok) || r.state === "closed",
+        text: r.ok
+          ? `${word}. ${String(r.delivered ?? `The run is continuing (${r.state}).`)}`
+          : r.state === "closed"
+            ? `${word} and recorded. ${String(r.error ?? "")}`.trim()
+            : `${word}, but the run could not continue. ${String(r.error ?? "")}`.trim(),
+      });
+      onAnswered();
     } catch (e) {
       setResult({ ok: false, text: (e as Error).message });
     } finally {

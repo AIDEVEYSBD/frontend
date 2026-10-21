@@ -1,10 +1,9 @@
 import { spawn } from "node:child_process";
-import { permit, session as whoIs, signer, ssoEnabled } from "@/lib/server/auth";
+import { permit } from "@/lib/server/auth";
 import path from "node:path";
 import { mkdir, readFile } from "node:fs/promises";
 import { dbReady, query } from "@/lib/server/db";
 import { grade, loadSet } from "@/lib/server/evals";
-import { registerRun } from "@/lib/server/active-runs";
 import { derive, emptyMatrix, tally } from "@/lib/metrics";
 import { costOf, priceSheet, usageOf } from "@/lib/server/prices";
 
@@ -161,8 +160,9 @@ export async function POST(req: Request) {
         ];
 
         const outcome = await new Promise<{ state: string; result: unknown; error: string }>((resolve) => {
+          // Still a subprocess until evals move to the backend; until then an
+          // eval's runs are outside the backend's kill switch.
           const child = spawn("python3", args, { cwd: ROOT, env: { ...process.env, PYTHONUNBUFFERED: "1" } });
-          registerRun({ id: `${evalRunId}-${c.id}`, system: set.agent, startedAt: new Date().toISOString(), child });
           let stderr = "";
           child.stderr.on("data", (b: Buffer) => (stderr += b.toString()));
           child.stdout.on("data", () => {}); // journal streams to the state file; we grade the record

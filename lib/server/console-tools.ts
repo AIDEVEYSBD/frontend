@@ -131,7 +131,7 @@ export async function runTool(origin: string, name: string, args: Record<string,
       case "run_record": {
         const id = String(args.id ?? "").trim();
         if (!/^[a-zA-Z0-9._-]+$/.test(id)) return JSON.stringify({ error: "bad run id" });
-        const d = (await readApi(origin, `/api/runs?id=${encodeURIComponent(id)}`)) as Record<string, unknown>;
+        const d = (await readApi(origin, `/api/runs/${encodeURIComponent(id)}`)) as Record<string, unknown>;
         const run = (d.run ?? d) as Record<string, unknown>;
         const journal = run.journal as { entries?: Record<string, unknown>[] } | undefined;
         return clip({

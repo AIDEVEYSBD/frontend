@@ -19,6 +19,8 @@ import { SpanDetail, Waterfall, useTrace, type Span } from "./waterfall";
 import { explainControl } from "@/lib/guardrails";
 import { ControlRef, KILL_CONTROL } from "./control-ref";
 import { RunBoard, ViewSwitch, useRunView, type BoardEdge } from "./run-board";
+import { api, errorText, subscribeRunEvents, type RunEnd, type RunRow } from "@/lib/api/client";
+import { KillDialog } from "./kill-dialog";
 
 /**
  * The runs console: where a workflow actually runs.
@@ -129,14 +131,8 @@ interface SavedAgent {
   nodes: number;
 }
 
-interface RunSummary {
-  id: string;
-  system: string;
-  state: string;
-  at: string;
-  duration_ms: number;
-  denied: number;
-}
+/** A row of the backend's run ledger, as the list shows it. */
+type RunSummary = Pick<RunRow, "id" | "system" | "state" | "at" | "ms" | "denials" | "live">;
 
 const ago = (iso: string) => {
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -162,9 +158,9 @@ function Launcher() {
       .then((r) => r.json())
       .then((d) => setAgents(d.agents ?? []))
       .catch(() => setAgents([]));
-    fetch("/api/runs")
-      .then((r) => r.json())
-      .then((d) => setHistory(d.runs ?? []))
+    api
+      .GET("/api/runs")
+      .then(({ data }) => setHistory(data?.runs ?? []))
       .catch(() => setHistory([]));
   }, []);
 
@@ -277,10 +273,10 @@ function Launcher() {
                   <div className="flex min-w-0 grow flex-col">
                     <span className="truncate text-[13px] font-semibold text-fg">{r.system || r.id}</span>
                     <Mono className="truncate text-[10.5px] text-faint">
-                      {r.id} · {ago(r.at)} · {(r.duration_ms / 1000).toFixed(1)}s
+                      {r.id} · {ago(r.at)} · {(r.ms / 1000).toFixed(1)}s
                     </Mono>
                   </div>
-                  {r.denied > 0 && <Status tone="err">{r.denied} refused</Status>}
+                  {r.denials > 0 && <Status tone="err">{r.denials} refused</Status>}
                   <StateBadge state={r.state} />
                 </button>
               ))}
@@ -328,11 +324,20 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
   const [finalState, setFinalState] = useState("");
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState("");
-  // The run's id, as the route names it on open: what a resume, a kill and
-  // the cost lookup all refer to. The server never says where it lives.
+  // The run's id, as the backend minted it: what a resume, a kill, the event
+  // stream and the cost lookup all refer to.
   const runId = useRef("");
   const abort = useRef<AbortController | null>(null);
+  // Closes the event stream. The backend replays the whole journal on every
+  // (re)connection, so entries are deduplicated by id across legs here.
+  const stop = useRef<(() => void) | null>(null);
+  const seen = useRef(new Set<string>());
+  // Journal time restarts on a resumed leg; an offset folds the legs onto one clock.
+  const legOffset = useRef(0);
+  const lastRaw = useRef(0);
   const maxT = useRef(0);
+  /** The run the kill dialog is asking about, by id; null when it is closed. */
+  const [killAsk, setKillAsk] = useState<string | null>(null);
   // Wall clock: the journal ticks only when entries land; a 40-second tool
   // call must not look like a hang.
   const startedAt = useRef(0);
@@ -346,6 +351,8 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
     const id = setInterval(() => setWallMs(Date.now() - startedAt.current), 1000);
     return () => clearInterval(id);
   }, [phase]);
+  // The journal's clock: the latest folded time on the transcript.
+  const journalMs = useMemo(() => entries.reduce((m, e) => Math.max(m, e.t), 0), [entries]);
 
   /* The spec: from the registry, or handed over from the builder as a draft. */
   useEffect(() => {
@@ -377,94 +384,113 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
     setInput(seedInput(system));
     setFields(inputKeysOf(system).map((k) => ({ ...k, value: "" })));
   }
-  useEffect(() => () => abort.current?.abort(), []);
-
-  const consume = useCallback(
-    async (body: Record<string, unknown>) => {
-      setPhase("live");
-      setError("");
-      setSuspension(null);
-      startedAt.current = Date.now();
-      setWallMs(0);
-      const ctrl = new AbortController();
-      abort.current = ctrl;
-      try {
-        const res = await fetch("/api/run", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
-          signal: ctrl.signal,
-        });
-        if (!res.ok || !res.body) {
-          throw new Error((await res.text().catch(() => "")).slice(0, 300) || `runtime returned ${res.status}`);
-        }
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffered = "";
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffered += decoder.decode(value, { stream: true });
-          const frames = buffered.split("\n\n");
-          buffered = frames.pop() ?? "";
-          for (const frame of frames) {
-            const line = frame.split("\n").find((l) => l.startsWith("data: "));
-            if (!line) continue;
-            let msg: Record<string, unknown>;
-            try {
-              msg = JSON.parse(line.slice(6));
-            } catch {
-              continue;
-            }
-            if (msg.type === "entry") {
-              const e = msg as unknown as Entry;
-              // Fold resumed legs onto one clock.
-              const t = e.t + (e.t + maxT.current < maxT.current ? 0 : 0);
-              const shifted = { ...e, t: e.t < maxT.current ? e.t + maxT.current : e.t };
-              maxT.current = Math.max(maxT.current, shifted.t);
-              setEntries((prev) => [...prev, shifted]);
-              void t;
-            } else if (msg.type === "opened") {
-              runId.current = String(msg.run ?? "");
-            } else if (msg.type === "output") {
-              setOutputs((prev) => [...prev, msg as unknown as OutputRecord]);
-            } else if (msg.type === "end") {
-              const end = msg as { state?: string; error?: string; suspension?: Suspension | null; result?: Record<string, unknown> };
-              if (end.result) setResult(end.result);
-              setFinalState(String(end.state ?? ""));
-              if (end.state === "suspended" && end.suspension) setSuspension(end.suspension);
-              else setPhase("done");
-              if (end.error) setError(String(end.error));
-              const id = runId.current;
-              if (id) {
-                fetch("/api/control")
-                  .then((r) => r.json())
-                  .then((d) => {
-                    const row = (d.runs ?? []).find((x: { id: string }) => x.id === id);
-                    if (!row) return;
-                    setRunCost(
-                      row.cost === null ? "cost —" : row.cost === 0 ? "$0.00" : row.cost < 0.005 ? "<$0.01" : `$${row.cost.toFixed(2)}`,
-                    );
-                  })
-                  .catch(() => {});
-              }
-            } else if (msg.type === "error") {
-              setError(String(msg.message ?? "unknown failure"));
-            }
-          }
-        }
-      } catch (e) {
-        if ((e as Error).name !== "AbortError") {
-          setError((e as Error).message);
-          setPhase("done");
-          setFinalState("failed");
-        }
-      } finally {
-        setPhase((p) => (p === "live" ? p : p));
-      }
+  useEffect(
+    () => () => {
+      abort.current?.abort();
+      stop.current?.();
     },
     [],
   );
+
+  /** The run settled — done, failed, killed — or stopped at a gate. */
+  const settle = useCallback(async (end: RunEnd) => {
+    const id = runId.current;
+    let suspension = end.suspension;
+    let result = end.result;
+    if (end.state === "suspended" && !suspension && id) {
+      // A live stream's end names the state; the gate itself is on the run record.
+      const { data } = await api.GET("/api/runs/{run_id}", { params: { path: { run_id: id } } });
+      suspension = data?.suspension ?? null;
+      if (data?.result && Object.keys(data.result).length) result = data.result;
+    }
+    if (result && Object.keys(result).length) setResult(result);
+    setFinalState(end.state);
+    if (end.state === "suspended" && suspension) {
+      setSuspension({ node: suspension.node, approvers: suspension.approvers ?? [], prompt: suspension.prompt ?? "" });
+    } else {
+      setPhase("done");
+    }
+    if (end.error) setError(end.error);
+    if (id) {
+      fetch("/api/control")
+        .then((r) => r.json())
+        .then((d) => {
+          const row = (d.runs ?? []).find((x: { id: string }) => x.id === id);
+          if (!row) return;
+          setRunCost(
+            row.cost === null ? "cost —" : row.cost === 0 ? "$0.00" : row.cost < 0.005 ? "<$0.01" : `$${row.cost.toFixed(2)}`,
+          );
+        })
+        .catch(() => {});
+    }
+  }, []);
+
+  /** Follow the run's journal from the backend until it ends; a resumed leg joins the same transcript. */
+  const follow = useCallback(
+    (id: string) => {
+      stop.current?.();
+      stop.current = subscribeRunEvents(id, {
+        onEntry: (e) => {
+          if (seen.current.has(e.id)) return;
+          seen.current.add(e.id);
+          if (e.t < lastRaw.current) legOffset.current = maxT.current;
+          lastRaw.current = e.t;
+          const t = e.t + legOffset.current;
+          maxT.current = Math.max(maxT.current, t);
+          setEntries((prev) => [...prev, { ...(e as unknown as Entry), t }]);
+        },
+        onEnd: (end) => void settle(end),
+        onError: async (message) => {
+          // The stream is gone; the run may not be. Its record says.
+          const { data } = await api.GET("/api/runs/{run_id}", { params: { path: { run_id: id } } });
+          if (data && data.state !== "running") {
+            void settle({ state: data.state, error: data.error ?? "", result: data.result ?? {}, suspension: data.suspension ?? null });
+            return;
+          }
+          setError(message);
+          setPhase("done");
+          setFinalState(data?.state ?? "unknown");
+        },
+      });
+    },
+    [settle],
+  );
+
+  /** POST /api/runs, then follow the stream. A saved workflow goes by name; a draft travels as its spec. */
+  const launch = async (parsed: Record<string, unknown>) => {
+    if (!system) return;
+    setPhase("live");
+    setError("");
+    setSuspension(null);
+    startedAt.current = Date.now();
+    setWallMs(0);
+    const ctrl = new AbortController();
+    abort.current = ctrl;
+    try {
+      const { data, error, response } = await api.POST("/api/runs", {
+        body: {
+          ...(agentId && !draft ? { agent: agentId } : { spec: toDocument(system) as Record<string, unknown> }),
+          input: parsed,
+          model: model || defaultModel,
+          provider: "foundry",
+        },
+        signal: ctrl.signal,
+      });
+      if (!data) {
+        setError(errorText(error, response));
+        setPhase("done");
+        setFinalState("failed");
+        return;
+      }
+      runId.current = data.run;
+      follow(data.run);
+    } catch (e) {
+      if ((e as Error).name === "AbortError") return;
+      setError((e as Error).message);
+      setPhase("done");
+      setFinalState("failed");
+    }
+  };
 
   const start = () => {
     if (!system) return;
@@ -507,17 +533,32 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
     setKilling(false);
     runId.current = "";
     maxT.current = 0;
-    consume({ spec: toDocument(system), input: parsed, model: model || defaultModel });
+    seen.current = new Set();
+    legOffset.current = 0;
+    lastRaw.current = 0;
+    stop.current?.();
+    void launch(parsed);
   };
 
-  const answer = (approved: boolean, by: string, note: string) => {
-    if (!system) return;
-    consume({
-      spec: toDocument(system),
-      resume: runId.current,
-      answer: { approved, by: by || "console", note },
-      model: model || defaultModel,
+  /** Answer the gate. The backend signs with the session and resumes; the stream picks up the new leg. */
+  const answer = async (approved: boolean, _by: string, note: string): Promise<boolean> => {
+    const id = runId.current;
+    if (!id) return false;
+    setError("");
+    const { data, error, response } = await api.POST("/api/runs/{run_id}/resume", {
+      params: { path: { run_id: id } },
+      body: { answer: { approved }, note },
     });
+    if (!data) {
+      setError(errorText(error, response));
+      return false;
+    }
+    setSuspension(null);
+    setPhase("live");
+    startedAt.current = Date.now();
+    setWallMs(0);
+    follow(id);
+    return true;
   };
 
   if (loadError) {
@@ -532,6 +573,30 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
   if (!system) return <p className="px-8 py-10 text-[12.5px] text-faint">Loading the workflow…</p>;
 
   return (
+    <>
+      {killAsk && (
+        <KillDialog
+          title="Kill this run?"
+          what={`${system.name} · ${killAsk}. The backend cancels it before its next model or tool call; the journal records the reason and your name.`}
+          onClose={() => setKillAsk(null)}
+          onConfirm={(reason) => {
+            const id = killAsk;
+            setKillAsk(null);
+            setKilling(true);
+            api
+              .POST("/api/runs/{run_id}/kill", { params: { path: { run_id: id } }, body: { reason } })
+              .then(({ data, error, response }) => {
+                if (data) return;
+                setKilling(false);
+                setError(errorText(error, response));
+              })
+              .catch((e: Error) => {
+                setKilling(false);
+                setError(e.message);
+              });
+          }}
+        />
+      )}
     <Theater
       title={system.name}
       subtitle={system.id}
@@ -653,30 +718,24 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
               {killing ? "kill requested — the journal records it in a moment" : "running — every entry lands as the runtime writes it"}
             </span>
             <span className="grow" />
-            <Mono className="tnum text-[11px] text-faint">{clock(Math.max(maxT.current, wallMs))}</Mono>
+            <Mono className="tnum text-[11px] text-faint">{clock(Math.max(journalMs, wallMs))}</Mono>
             <Button
               tone="err"
               variant="solid"
               size="sm"
               permission="run"
               onClick={() => {
-                // The real kill switch — SIGTERM to the runtime, which journals
-                // "killed by operator" and persists the run. The stream stays
-                // open so the kill lands in the transcript in front of you.
-                setKilling(true);
-                const id = runId.current;
-                if (id) {
-                  fetch("/api/kill", {
-                    method: "POST",
-                    headers: { "content-type": "application/json" },
-                    body: JSON.stringify({ id }),
-                  }).catch(() => {});
+                if (runId.current) {
+                  // The real kill switch: the backend cancels the run, which
+                  // journals the reason and who threw it. The stream stays
+                  // open so the kill lands in the transcript in front of you.
+                  setKillAsk(runId.current);
                 } else {
-                  // Nothing registered yet — nothing is running to kill.
+                  // Not started yet — the request is still on its way.
                   abort.current?.abort();
                   setPhase("done");
                   setFinalState("killed");
-                  setError("stopped before the runtime registered the run");
+                  setError("stopped before the backend registered the run");
                 }
               }}
               loading={killing}
@@ -690,7 +749,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
             {error && <span className="min-w-0 truncate text-[11.5px] text-err">{error}</span>}
             <span className="grow" />
             {runCost && <Mono className="tnum text-[11px] text-faint">{runCost}</Mono>}
-            <Mono className="tnum text-[11px] text-faint">{clock(maxT.current)}</Mono>
+            <Mono className="tnum text-[11px] text-faint">{clock(journalMs)}</Mono>
             <Button
               tone="ink"
               variant="solid"
@@ -706,6 +765,10 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
                 setKilling(false);
                 runId.current = "";
                 maxT.current = 0;
+                seen.current = new Set();
+                legOffset.current = 0;
+                lastRaw.current = 0;
+                stop.current?.();
               }}
             >
               Run again
@@ -714,6 +777,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
         ) : null
       }
     />
+    </>
   );
 }
 
@@ -734,17 +798,17 @@ function ReplayTheater({ id }: { id: string }) {
   const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
-    fetch(`/api/runs?id=${encodeURIComponent(id)}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.error) throw new Error(String(d.error));
-        setEntries(normalise(d.run?.journal?.entries ?? []));
+    api
+      .GET("/api/runs/{run_id}", { params: { path: { run_id: id } } })
+      .then(({ data, error, response }) => {
+        if (!data) throw new Error(errorText(error, response));
+        setEntries(normalise((data.journal?.entries ?? []) as unknown as Entry[]));
         setMeta({
-          system: d.run?.system ?? "",
-          runId: d.run?.id ?? "",
-          state: d.run?.state ?? "",
-          error: d.run?.error ?? "",
-          result: d.run?.result ?? null,
+          system: data.system ?? "",
+          runId: data.id ?? "",
+          state: data.state ?? "",
+          error: data.error ?? "",
+          result: data.result ?? null,
         });
       })
       .catch((e) => setLoadError((e as Error).message));
@@ -1193,7 +1257,8 @@ function Theater({
   outputs: OutputRecord[];
   result: Record<string, unknown> | null;
   suspension: Suspension | null;
-  onAnswer: (approved: boolean, by: string, note: string) => void;
+  /** Resolves false when the answer was refused and the gate still stands. */
+  onAnswer: (approved: boolean, by: string, note: string) => void | Promise<boolean>;
   setup: React.ReactNode;
   footer: React.ReactNode;
   /** Replay only: node time-bands + the playhead, for per-node progress. */
@@ -1596,7 +1661,8 @@ function GateBanner({
   onAnswer,
 }: {
   suspension: Suspension;
-  onAnswer: (approved: boolean, by: string, note: string) => void;
+  /** Resolves false when the answer was refused and the gate still stands. */
+  onAnswer: (approved: boolean, by: string, note: string) => void | Promise<boolean>;
 }) {
   const { session: me } = useSession();
   const by = signerName(me, CURRENT_USER.name);
@@ -1652,9 +1718,9 @@ function GateBanner({
         size="sm"
         permission="approve" loading={busy === "approve"}
         disabled={busy !== null}
-        onClick={() => {
+        onClick={async () => {
           setBusy("approve");
-          onAnswer(true, by, note || "approved in the theater");
+          if ((await onAnswer(true, by, note || "approved in the theater")) === false) setBusy(null);
         }}
       >
         Approve
@@ -1665,14 +1731,14 @@ function GateBanner({
         size="sm"
         permission="approve" loading={busy === "reject"}
         disabled={busy !== null}
-        onClick={() => {
+        onClick={async () => {
           // A rejection with no reason is a rejection nobody can learn from.
           if (!note.trim()) {
             setNeedNote(true);
             return;
           }
           setBusy("reject");
-          onAnswer(false, by, note);
+          if ((await onAnswer(false, by, note)) === false) setBusy(null);
         }}
       >
         Reject

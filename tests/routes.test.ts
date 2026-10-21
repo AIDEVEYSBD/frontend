@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { PUBLIC_ROUTES, readPermissionFor } from "@/lib/route-policy";
-import { handlersOf, isMachine, routeFiles } from "./routes";
+import { BACKEND_PREFIXES, PUBLIC_ROUTES, isBackendPath, readPermissionFor } from "@/lib/route-policy";
+import { handlersOf, isMachine, routeFiles, urlOf } from "./routes";
 
 /**
  * Every exported HTTP handler under app/api (and the agent card) is guarded.
@@ -25,6 +25,16 @@ describe("route coverage", () => {
   it("names only real files in PUBLIC_ROUTES", () => {
     for (const file of Object.keys(PUBLIC_ROUTES)) {
       expect(files, `${file} is in PUBLIC_ROUTES but does not exist`).toContain(file);
+    }
+  });
+
+  // A path the backend owns is forwarded by proxy.ts before Next routes it,
+  // so a route file under one would be dead with BACKEND_ORIGIN set and a
+  // different API without it. The run, kill and runs routes went this way.
+  it("has no route file under a backend-owned prefix", () => {
+    expect(BACKEND_PREFIXES.length).toBeGreaterThan(0);
+    for (const file of files) {
+      expect(isBackendPath(urlOf(file)), `${file} answers for ${urlOf(file)}, which BACKEND_PREFIXES (lib/route-policy.ts) hands to the backend`).toBe(false);
     }
   });
 
