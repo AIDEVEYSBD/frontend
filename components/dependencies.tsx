@@ -15,7 +15,6 @@ import {
   KIND_ONE,
   USES_TEXT,
   adjacency,
-  blastAsk,
   blastCountsLine,
   blastIds,
   blastRefusalText,
@@ -437,10 +436,9 @@ function SidePanel({
 
 function Blast({ id, window, byId, onPick, onLit }: { id: string; window: string; byId: Map<string, DepNode>; onPick: (id: string) => void; onLit: (ids: Set<string> | null) => void }) {
   const [state, setState] = useState<{ key: string; blast: BlastRadius | null; error: string; status: number; candidates: string[] }>({ key: "", blast: null, error: "", status: 0, candidates: [] });
-  const ask = blastAsk(id);
   const key = `${id}@${window}`;
   useEffect(() => {
-    if (!ask.ok) return;
+    if (!id) return;
     let stop = false;
     getBlastRadius(id, window)
       .then((b) => {
@@ -459,7 +457,7 @@ function Blast({ id, window, byId, onPick, onLit }: { id: string; window: string
     };
     // onLit is the page's setter, stable in effect; the answer is asked again only for another node or window.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, window, key, ask.ok]);
+  }, [id, window, key]);
 
   const current = state.key === key ? state : null;
   const b = current?.blast ?? null;
@@ -469,9 +467,7 @@ function Blast({ id, window, byId, onPick, onLit }: { id: string; window: string
         <span className="text-[12px] font-semibold">Blast radius</span>
         <span className="text-[10.5px] text-faint">if this fails</span>
       </span>
-      {!ask.ok ? (
-        <p className="px-4 py-2.5 text-[11.5px] leading-[1.55] text-warn">{ask.why}</p>
-      ) : !current ? (
+      {!current ? (
         <p className="px-4 py-2.5 text-[11.5px] text-faint">Asking the backend…</p>
       ) : !b ? (
         <div className="flex flex-col gap-1.5 px-4 py-2.5">

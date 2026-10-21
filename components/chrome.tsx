@@ -25,6 +25,8 @@ const NAV = [
   { href: "/dependencies", label: "Dependencies" },
   { href: "/drift", label: "Drift" },
   { href: "/guardian", label: "Guardian" },
+  { href: "/peers", label: "Peers" },
+  { href: "/breakers", label: "Breakers" },
   { href: "/evals", label: "Evals" },
   { href: "/knowledge", label: "Knowledge" },
   { href: "/guardrails", label: "Controls" },

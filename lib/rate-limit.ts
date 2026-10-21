@@ -1,22 +1,25 @@
-import type { RateLimit } from "./api/l7";
+import type { RateLimit, RateLimitName } from "./api/l7";
 
 /**
  * A rate limit, as the place that started the work says it (lib/api/l7.ts
- * rateLimitOf reads the 429). Pure: the Runs page, the eval runner and the
- * attention queue use these, tests/l7-logic.test.ts holds them.
+ * rateLimitOf reads the 429, typed by the backend as `RateLimitRefusal`;
+ * rateLimitOfRpc reads the A2A door's JSON-RPC 429). Pure: the Runs page,
+ * the eval runner and the attention queue use these,
+ * tests/l7-logic.test.ts holds them.
  */
 
-/** The limit's name in words. */
-export const LIMIT_TEXT: Record<string, string> = {
+/** The limit's name in words, for every limit the backend's document names. */
+export const LIMIT_TEXT: Record<RateLimitName, string> = {
   run_starts_per_minute: "runs started per minute",
   sub_runs_per_minute: "sub-runs per minute",
   enqueues_per_minute: "jobs queued per minute",
   tree_per_minute: "runs, sub-runs and jobs per minute in one tree",
 };
 
-export const limitText = (limit: string): string => LIMIT_TEXT[limit] ?? limit.replace(/_/g, " ");
+/** A limit in words; one a newer backend names reads as itself. */
+export const limitText = (limit: string): string => (Object.hasOwn(LIMIT_TEXT, limit) ? LIMIT_TEXT[limit as RateLimitName] : limit.replace(/_/g, " "));
 
-/** Whose limit ruled: the agent's own, or the tree's (everything one trace set off). */
+/** Whose limit ruled: the agent's own, or the tree's (everything one trace set off; `tree` is "" when the event joined none). */
 export function scopeText(rl: Pick<RateLimit, "scope" | "agent" | "tree">): string {
   return rl.scope === "tree" ? `the tree${rl.tree ? ` ${rl.tree}` : ""}` : `agent ${rl.agent || "unknown"}`;
 }

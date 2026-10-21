@@ -1,4 +1,4 @@
-import type { Figures, KillReceipt, Reached, RunTree, TreeNode } from "./api/l7";
+import type { Figures, KillInfo, KillReceipt, KillRefusal, Reached, RunTree, TreeNode } from "./api/l7";
 import { looksLikeRecordId } from "./api/l5";
 
 /**
@@ -40,6 +40,19 @@ export function figuresLine(f: Figures): string {
   const parts = [fmtUsd(f.cost), `${fmtCount(f.tokens)} tokens`, plural(f.tool_calls, "tool call")];
   if (f.refusals) parts.push(plural(f.refusals, "refusal"));
   return parts.join(" · ");
+}
+
+/**
+ * Whether a record's runs-list row says something its own figures do not:
+ * the row covers the record's whole journal, its in-process sub-runs
+ * folded in, so an orchestrator whose work ran in sub-runs costs nothing
+ * here and something there. Shown beside the node then, so the run page and
+ * the runs list agree; a row that says the same is not repeated.
+ */
+export function listedDiffers(n: Pick<TreeNode, "listed" | "cost" | "tokens" | "tool_calls" | "refusals">): boolean {
+  const l = n.listed;
+  if (!l) return false;
+  return Math.abs(l.cost - n.cost) > 1e-12 || l.tokens !== n.tokens || l.tool_calls !== n.tool_calls || l.refusals !== n.refusals;
 }
 
 /* ═══════════════════ the outline ═══════════════════ */
@@ -217,7 +230,7 @@ export const DELIVERY_TEXT: Record<string, string> = {
   worker: "a worker's run: the kill waits on its row and lands on its next heartbeat",
   sdk: "an attached agent's run: its SDK takes the kill on its next control poll",
   queue: "a queued child job: dead-lettered, so it never starts",
-  // The A2A round's peer tasks, cancelled over A2A (not yet in the contract this console was built against).
+  // The second round's peer tasks: a signed tasks/cancel, as the agent that sent the task, at the registry's URL.
   a2a: "a peer's task: cancelled over A2A, and the peer answered",
   "a2a-refused": "a peer's task: the cancel could not be delivered, or the peer said no",
 };
@@ -229,10 +242,69 @@ export const isRecordReached = (r: Pick<Reached, "kind" | "run">): boolean => r.
 
 /** What a reached entry is, in a word or two. A delivery over A2A is a peer's task, whatever kind a newer backend names it. */
 export function reachedKindLabel(r: Pick<Reached, "kind" | "delivery" | "depth">): string {
-  if (r.delivery.startsWith("a2a")) return "peer task";
+  if (r.kind === "peer_task" || r.delivery.startsWith("a2a")) return "peer task";
   if (r.kind === "sub_run") return "sub-run";
   if (r.kind === "job") return "queued job";
   return r.depth === 0 ? "this run" : "child run";
+}
+
+/**
+ * A peer task's line: the peer and its task, and why the cancel did not
+ * reach it when it did not. The peer's id is the registry's, so the Peers
+ * page names the same one.
+ */
+export function peerTaskLine(r: Pick<Reached, "kind" | "delivery" | "agent" | "peer" | "task_id" | "error" | "state">): string {
+  if (r.kind !== "peer_task" && !r.delivery.startsWith("a2a")) return "";
+  const who = r.peer || r.agent || "a peer";
+  const task = r.task_id ? `task ${r.task_id} at ${who}` : `a task at ${who}`;
+  if (r.delivery === "a2a") {
+    // A delivered cancel whose answer named no state: the backend does not assume it stopped, so a later kill asks again.
+    if (!r.state || r.state === "unknown") return `${task}: the cancel was delivered and the peer named no state; a later kill asks again`;
+    return `${task}: cancelled, the peer answered ${r.state}`;
+  }
+  return `${task}: not cancelled${r.error ? `: ${r.error}` : ""}${r.state ? ` (last seen ${r.state})` : ""}`;
+}
+
+/** What a reached row's state says, beside it: a job's new status, a peer's answer, a run's state when the kill reached it, or (under `already`) its state now. */
+export function reachedStateText(r: Pick<Reached, "kind" | "delivery" | "state" | "kill">): string {
+  const st = r.state || "?";
+  if (r.kill) return `still ${st}`;
+  if (r.kind === "job") return st === "failed" ? "dead-lettered, now failed" : `now ${st}`;
+  if (r.kind === "peer_task" || r.delivery.startsWith("a2a")) {
+    if (r.delivery !== "a2a") return `last seen ${st}`;
+    return st === "unknown" ? "answered without a state" : `answered ${st}`;
+  }
+  return `was ${st}`;
+}
+
+/** An earlier kill in words: `by Ann (runaway tree)`. */
+export function killByText(k: Pick<KillInfo, "by" | "reason"> | null): string {
+  if (!k) return "an earlier kill";
+  return `${k.by ? `by ${k.by}` : "an earlier kill"}${k.reason ? ` (${k.reason})` : ""}`;
+}
+
+/** The earlier kills the `already` rows are stopping on, each once: who and why. */
+function earlierKills(rows: readonly Reached[]): string {
+  const seen = new Map<string, KillInfo | null>();
+  for (const r of rows) seen.set(r.kill ? `${r.kill.by}\u0000${r.kill.reason}` : "", r.kill);
+  return [...seen.values()].map(killByText).join("; ");
+}
+
+const recordsOf = (rows: readonly Reached[]) => rows.filter((r) => r.kind !== "sub_run");
+
+/**
+ * A kill that reached nothing new (409 `KillRefused`), as the console says
+ * it: already being stopped, by whom and why, and how many runs are still
+ * unwinding; or, with nothing in `already`, the backend's own sentence
+ * (nothing in the tree is in flight).
+ */
+export function alreadySummary(refusal: KillRefusal): string {
+  if (!refusal.already.length) return refusal.error || "Nothing in its tree is in flight.";
+  const runs = recordsOf(refusal.already);
+  const subs = refusal.already.length - runs.length;
+  const n = runs.length;
+  const what = `${n} run${n === 1 ? "" : "s"}${subs ? ` and ${subs} sub-run${subs === 1 ? "" : "s"}` : ""}`;
+  return `Already being stopped: an earlier kill ${earlierKills(refusal.already)} reached ${what} in this tree, still stopping at their next checkpoint. Nothing new to reach, so nothing was sent again.`;
 }
 
 /** The reached runs grouped by how the kill reached them, in a stable order. */
@@ -270,7 +342,13 @@ export function killSummary(receipt: KillReceipt): string {
   if (odd) parts.push(`${odd} more`);
   const rest = parts.length ? parts.join(", ") : "nothing else in flight in its tree";
   const by = receipt.kill.by ? ` by ${receipt.kill.by}` : "";
-  if (receipt.delivery === "tree") return `The run itself had already ended (${receipt.state || "settled"}); the kill${by} reached what it set off: ${rest}.`;
+  const stopping = recordsOf(receipt.already).length;
+  const already = receipt.already.length ? ` ${stopping || receipt.already.length} more ${(stopping || receipt.already.length) === 1 ? "is" : "are"} already stopping on an earlier kill ${earlierKills(receipt.already)}, and ${(stopping || receipt.already.length) === 1 ? "was" : "were"} not sent another.` : "";
+  if (receipt.delivery === "tree") {
+    const self = receipt.already.some((r) => r.run === receipt.run);
+    const head = self ? `The run is already stopping on an earlier kill; this kill${by} reached what that kill had not` : `The run itself had already ended (${receipt.state || "settled"}); the kill${by} reached what it set off`;
+    return `${head}: ${rest}.${already}`;
+  }
   const own = receipt.delivery === "in-process" ? "stopped here" : receipt.delivery === "worker" ? "on its worker's next heartbeat" : "on its SDK's next control poll";
-  return `Kill requested${by}: the run ${own}; ${rest}.`;
+  return `Kill requested${by}: the run ${own}; ${rest}.${already}`;
 }

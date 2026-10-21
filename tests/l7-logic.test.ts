@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { attentionOf, operatorOf } from "@/lib/api/l5";
-import { blastOf, depMapOf, killReceiptOf, rateLimitOf, treeNodeOf, treeOf, type RunTree, type TreeNode } from "@/lib/api/l7";
+import { blastOf, depMapOf, killReceiptOf, nodePath, rateLimitOf, treeNodeOf, treeOf, type RunTree, type TreeNode } from "@/lib/api/l7";
 import { byAgentRows, deliveryText, fmtUsd, inFlightNodes, isRecordReached, killSummary, nodeKindLabel, reachedGroups, reachedKindLabel, refusalLine, treeRows, treeSummary } from "@/lib/run-tree";
 import { limitText, rateLimitText, scopeText, secondsLeft, waitText } from "@/lib/rate-limit";
-import { adjacency, blastAsk, blastCountsLine, blastIds, blastRefusalText, drawnEnds, edgeLook, groupByLayer, nameOf, nodeTitle, pathText } from "@/lib/dependencies";
+import { adjacency, blastCountsLine, blastIds, blastRefusalText, drawnEnds, edgeLook, groupByLayer, nameOf, nodeTitle, pathText } from "@/lib/dependencies";
 import { driftVerdict, orderDrift, sideText, statText, thresholdText, windowsLine } from "@/lib/drift";
 import { cadenceText, capText, coverageText, formOf, formProblems, mayText, patchOf } from "@/lib/guardian";
 
@@ -144,8 +144,8 @@ describe("the kill's receipt", () => {
     expect(deliveryText("a2a-cancel")).toBe("delivered: a2a-cancel");
   });
 
-  it("a peer's task a newer backend reaches over A2A: counted, labelled, never linked as a run", () => {
-    // The shape the backend's A2A round (in progress, not yet in openapi.json) answers with: kind peer_task, delivery a2a or a2a-refused.
+  it("a peer's task the kill reaches over A2A: counted, labelled, never linked as a run", () => {
+    // The shape the backend's A2A round answers with (tests/l7b-contract.test.ts holds the captured one): kind peer_task, delivery a2a or a2a-refused.
     const r = killReceiptOf({
       run: "x",
       state: "running",
@@ -256,9 +256,8 @@ describe("the blast radius in words", () => {
     expect([...blastIds(b)].sort()).toEqual(["agent:solo", "application:chat", "model:gpt-4o"]);
   });
 
-  it("what cannot be asked, and refusals in the reader's words", () => {
-    expect(blastAsk("model:openai/gpt-4o")).toMatchObject({ ok: false, why: expect.stringContaining("its id carries a slash") });
-    expect(blastAsk("")).toMatchObject({ ok: false });
+  it("any id is asked, slashes and all, encoded as a path; refusals in the reader's words", () => {
+    expect([nodePath("model:openai/gpt-4o"), nodePath("server:casedesk"), nodePath("tool:a b/c?d")]).toEqual(["model%3Aopenai/gpt-4o", "server%3Acasedesk", "tool%3Aa%20b/c%3Fd"]);
     expect(blastRefusalText(500, "the backend answered 500")).toBe("the backend answered 500");
     expect(blastRefusalText(404, "")).toBe("No such node. The map may have moved since it was read; read it again.");
   });

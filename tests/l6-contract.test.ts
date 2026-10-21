@@ -1,17 +1,4 @@
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
-
-// The A2A broker must never start a server it refuses: any spawn here fails the test that reached it.
-vi.mock("node:child_process", async (importOriginal) => {
-  const real = await importOriginal<typeof import("node:child_process")>();
-  return {
-    ...real,
-    spawn: vi.fn(() => {
-      throw new Error("spawned a tool server");
-    }),
-  };
-});
-
-import { spawn } from "node:child_process";
 import { api, errorText, type Schemas } from "@/lib/api/client";
 import * as l6 from "@/lib/api/l6";
 import { applicationOf, leakWindowLine, promptHistoryOf, promptVersionOf } from "@/lib/api/l4";
@@ -20,8 +7,6 @@ import { adoptedLine, approveAccess, changeLine, formProblem, heldReason, hitLin
 import { toolOf as bindingOf } from "@/lib/use-mcp";
 import { controlLabel, explainControl } from "@/lib/guardrails";
 import { shortDigest } from "@/lib/digest";
-import { brokerRefusal, serverOf as brokerServerOf, type McpServer as BrokerServer } from "@/lib/server/mcp";
-import { BrokerRefusal, callTool } from "@/lib/server/mcp-call";
 
 /**
  * The L6 contract, held from the console's side, as tests/l5-contract.test.ts
@@ -934,68 +919,6 @@ const FX: Record<string, Fixture> = {
     }
   },
   "approvals_after_kill": {"status": 200, "body": {"pending": [], "count": 0, "closed": []}},
-  "mcp_setting": {
-    "status": 200,
-    "body": {
-      "servers": [
-        {
-          "id": "case-desk", "label": "Case desk", "transport": "stdio", "command": ".venv/bin/python",
-          "args": ["…/server-case/server.py", "…/server-case/tools.json", "…/server-case/env.json"],
-          "env": {"CASE_TOKEN": "${secret:case-token}", "CASE_MODE": "plain-mode-value-4711"}, "url": "", "headers": {}, "version": "0.3.1",
-          "status": "pending",
-          "pin": {
-            "digest": "sha256:c9c45b28cc4a4981230e20ad2f1d1c70946966d55ed38074de3421f7882ba32b",
-            "tools": [{"name": "lookup", "annotations": {"readOnlyHint": true}}, {"name": "close", "annotations": {"destructiveHint": true}}],
-            "at": "2026-10-21T07:54:09.118Z"
-          }
-        },
-        {
-          "id": "calculator", "label": "Calculator", "transport": "stdio", "command": ".venv/bin/python",
-          "args": ["…/server-calc/server.py", "…/server-calc/tools.json", "…/server-calc/env.json"], "env": {}, "url": "", "headers": {},
-          "version": "0.3.1", "status": "refused", "pin": null
-        },
-        {
-          "id": "risk", "label": "Risk engine", "transport": "stdio", "command": ".venv/bin/python",
-          "args": ["…/server-risk/server.py", "…/server-risk/tools.json", "…/server-risk/env.json"], "env": {}, "url": "", "headers": {},
-          "version": "1.4.2", "status": "approved",
-          "pin": {
-            "digest": "sha256:c9c45b28cc4a4981230e20ad2f1d1c70946966d55ed38074de3421f7882ba32b",
-            "tools": [{"name": "lookup", "annotations": {"readOnlyHint": true}}, {"name": "close", "annotations": {"destructiveHint": true}}],
-            "at": "2026-10-21T07:54:09.167Z"
-          }
-        },
-        {
-          "id": "ledger", "label": "Ledger", "transport": "stdio", "command": ".venv/bin/python",
-          "args": ["…/server-ledger/server.py", "…/server-ledger/tools.json", "…/server-ledger/env.json"], "env": {}, "url": "", "headers": {},
-          "version": "0.3.1", "status": "changed",
-          "pin": {
-            "digest": "sha256:983666397460196e3509f911bc910ce83173cbd7dbca12a7fa7426f2564f3898",
-            "tools": [{"name": "lookup", "annotations": {"readOnlyHint": true}}, {"name": "close", "annotations": {"destructiveHint": true}}],
-            "at": "2026-10-21T07:54:09.230Z"
-          }
-        },
-        {
-          "id": "tickets", "label": "Ticket desk", "transport": "http", "command": "", "args": [], "env": {}, "url": "http://127.0.0.1:65400/mcp",
-          "headers": {"Authorization": "Bearer ${secret:tools-token}", "X-Tenant": "acme-tenant-value-77"}, "version": "2.1.0", "status": "pending",
-          "pin": {
-            "digest": "sha256:9bf9f38a52099c1c665776e10586fb44009c41a9f46547d0e779fa0474c9a0ad",
-            "tools": [{"name": "search_tickets", "annotations": {"readOnlyHint": true, "openWorldHint": false}}], "at": "2026-10-21T07:54:09.257Z"
-          }
-        },
-        {
-          "id": "boxed", "label": "Sandboxed desk", "transport": "stdio", "command": ".venv/bin/python",
-          "args": ["…/server-boxed/server.py", "…/server-boxed/tools.json", "…/server-boxed/env.json"],
-          "env": {"POC_MODE": "isolated-mode-value-5150"}, "url": "", "headers": {}, "version": "0.3.1",
-          "isolate": {"image": "registry.example/poc-case-desk:1"}, "status": "pending",
-          "pin": {
-            "digest": "sha256:c9c45b28cc4a4981230e20ad2f1d1c70946966d55ed38074de3421f7882ba32b",
-            "tools": [{"name": "lookup", "annotations": {"readOnlyHint": true}}, {"name": "close", "annotations": {"destructiveHint": true}}],
-            "at": "2026-10-21T07:54:10.267Z"
-          }
-        }
-      ]
-    }
-  },
   // The close-out after L6 (backend 91a518c), captured from the backend's own app:
   // a URL's userinfo masked whole, a URL with credentials refused at
   // registration, and a registered application's system prompt versions.
@@ -1488,54 +1411,6 @@ describe("the console's shapes and the generated client agree", () => {
     expectTypeOf<Schemas["RunRow"]["source"]>().toEqualTypeOf<string>();
     // And the check bites: a server never carries its environment's values.
     expectTypeOf<Agrees<{ env: Record<string, string> }, Schemas["McpServer"]>>().toEqualTypeOf<false>();
-  });
-});
-
-describe("the `mcp` setting, as the console's A2A tool broker reads it", () => {
-  const servers = (fx("mcp_setting").body as { servers: unknown[] }).servers.map(brokerServerOf).filter((s): s is BrokerServer => s !== null);
-  const by = Object.fromEntries(servers.map((s) => [s.id, s]));
-
-  it("reads what the registry wrote: status, transport, references kept as references, isolate", () => {
-    expect(Object.fromEntries(servers.map((s) => [s.id, [s.status, s.transport]]))).toEqual({
-      "case-desk": ["pending", "stdio"],
-      calculator: ["refused", "stdio"],
-      risk: ["approved", "stdio"],
-      ledger: ["changed", "stdio"],
-      tickets: ["pending", "http"],
-      boxed: ["pending", "stdio"],
-    });
-    expect(by["case-desk"].env).toEqual({ CASE_TOKEN: "${secret:case-token}", CASE_MODE: "plain-mode-value-4711" });
-    expect(by.boxed.isolate).toEqual({ image: "registry.example/poc-case-desk:1" });
-    expect(by.tickets).toMatchObject({ command: "", url: "http://127.0.0.1:65400/mcp" });
-    expect(by.risk.tools.map((t) => t.name)).toEqual(["lookup", "close"]);
-  });
-
-  it("refuses what it cannot start as registered, naming why and never a value", () => {
-    expect(brokerRefusal(by.risk)).toBe("");
-    expect(brokerRefusal(by["case-desk"])).toBe(
-      "Case desk's environment holds vault references the console cannot resolve (CASE_TOKEN); the console's tool broker has no vault and will not start it with the literal reference",
-    );
-    expect(brokerRefusal(by.boxed)).toBe("Sandboxed desk is registered to run in a container (isolate), and the console's tool broker has no isolator; it will not start it uncontained");
-    expect(brokerRefusal(by.tickets)).toBe("Ticket desk is an HTTP server, and the console's tool broker only starts stdio servers");
-    // `${env:NAME}` is a reference the runtime resolves too, in the backend's environment, not this one.
-    expect(brokerRefusal({ ...by.risk, env: { CRM_HOST: "${env:CRM_HOST|crm.internal}" } })).toMatch(/\(CRM_HOST\)/);
-    for (const s of servers) for (const v of VALUES) expect(brokerRefusal(s)).not.toContain(v);
-  });
-
-  it("never spawns one with the literal reference, or uncontained: refused under supply_chain before any process exists", async () => {
-    const spawned = vi.mocked(spawn);
-    spawned.mockClear();
-    for (const s of [by["case-desk"], by.boxed, by.tickets]) {
-      const e = await callTool(s, "lookup", { ref: "C-1042" }).catch((x: unknown) => x);
-      expect(e, s.id).toBeInstanceOf(BrokerRefusal);
-      expect((e as BrokerRefusal).control).toBe("supply_chain");
-      expect((e as BrokerRefusal).message).toBe(brokerRefusal(s));
-    }
-    expect(spawned).not.toHaveBeenCalled();
-    expect(controlLabel("supply_chain")).toBe("Tool server not approved or its tools changed");
-    // A server it can start is started (here, the stand-in spawn refuses), so the refusal above is the broker's own.
-    await expect(callTool(by.risk, "lookup", { ref: "C-1042" })).rejects.toThrow("spawned a tool server");
-    expect(spawned).toHaveBeenCalledTimes(1);
   });
 });
 

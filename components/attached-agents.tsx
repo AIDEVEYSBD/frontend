@@ -105,8 +105,9 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
   const [confirming, setConfirming] = useState("");
   const [registry, setRegistry] = useState<{ name: string; server: string; label: string; tool: string; description: string; risk: string }[]>([]);
   const [editing, setEditing] = useState("");
-  const [draft, setDraft] = useState<{ grants: string[]; gate_at: AttachedAgent["gate_at"]; injection: AttachedAgent["injection"] }>({ grants: [], gate_at: "", injection: "block" });
+  const [draft, setDraft] = useState<{ grants: string[]; gate_at: AttachedAgent["gate_at"]; injection: AttachedAgent["injection"]; secret_name: string }>({ grants: [], gate_at: "", injection: "block", secret_name: "" });
   const [saving, setSaving] = useState(false);
+  const [policyError, setPolicyError] = useState("");
 
   const shown = (d: Pick<AttachedList, "agents" | "store">) => {
     // The backend measures activity from the run record; the seeded
@@ -129,20 +130,26 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const patch = async (id: string, body: Omit<PolicyPatch, "id">) => {
+  /** Resolves whether the change was taken; a refusal stays on the page (the policy editor's own line when it is open). */
+  const patch = async (id: string, body: Omit<PolicyPatch, "id">): Promise<boolean> => {
     setSaving(true);
+    setPolicyError("");
     try {
       await setAttachedPolicy({ id, ...body });
       await load();
+      return true;
     } catch (e) {
-      setError((e as Error).message);
+      if (editing === id) setPolicyError((e as Error).message);
+      else setError((e as Error).message);
+      return false;
     } finally {
       setSaving(false);
     }
   };
   const openPolicy = (a: AttachedAgent) => {
     setEditing(a.id);
-    setDraft({ grants: a.grants, gate_at: a.gate_at, injection: a.injection });
+    setPolicyError("");
+    setDraft({ grants: a.grants, gate_at: a.gate_at, injection: a.injection, secret_name: a.secret_name ?? "" });
   };
 
   const frameworks = useMemo(
@@ -394,6 +401,20 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
                       <span className="max-w-[240px] truncate font-mono text-[10px] text-ghost">
                         {a.mode === "sdk" ? `${lang ?? "SDK"} · in-process` : a.card_url ? host(a.card_url) : "gateway + broker"}
                       </span>
+                      {(a.mode === "a2a" || a.secret_name) && (
+                        <span
+                          className={`max-w-[240px] truncate text-[10px] ${a.secret_name ? "text-faint" : "text-warn"}`}
+                          title={a.secret_name ? `It signs its A2A requests as ${a.id} with the vault secret named ${a.secret_name}; the value never leaves the vault.` : "No A2A secret: the tasks door does not hear it until its policy names one."}
+                        >
+                          {a.secret_name ? (
+                            <>
+                              signs A2A with <Mono className="text-[10px] text-dim">{a.secret_name}</Mono>
+                            </>
+                          ) : (
+                            "no A2A secret named"
+                          )}
+                        </span>
+                      )}
                     </span>
                   </td>
                   <td className="px-3 py-2.5 whitespace-nowrap">
@@ -479,11 +500,38 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
                             />
                           </span>
                         </label>
-                        <Button size="sm" variant="solid" tone="ink" permission="configure" loading={saving} onClick={async () => { await patch(a.id, draft); setEditing(""); }}>
+                        <label className="flex flex-col gap-1">
+                          <span className="text-[10.5px] text-ghost">A2A secret (vault name)</span>
+                          <input
+                            value={draft.secret_name}
+                            onChange={(e) => setDraft((d) => ({ ...d, secret_name: e.target.value }))}
+                            placeholder={`${a.id}-a2a`}
+                            spellCheck={false}
+                            aria-label="A2A secret, by its vault name"
+                            className={`${control} w-[190px] font-mono text-[11px]`}
+                          />
+                        </label>
+                        <Button
+                          size="sm"
+                          variant="solid"
+                          tone="ink"
+                          permission="configure"
+                          loading={saving}
+                          onClick={async () => {
+                            const body: Omit<PolicyPatch, "id"> = { grants: draft.grants, gate_at: draft.gate_at, injection: draft.injection };
+                            // The secret is sent only when it changed: the door checks the vault holds it, and "" removes it.
+                            if (draft.secret_name.trim() !== (a.secret_name ?? "")) body.secret_name = draft.secret_name.trim();
+                            if (await patch(a.id, body)) setEditing("");
+                          }}
+                        >
                           Save policy
                         </Button>
-                        <Button size="sm" variant="solid" tone="neutral" onClick={() => setEditing("")}>Cancel</Button>
+                        <Button size="sm" variant="solid" tone="err" onClick={() => setEditing("")}>Cancel</Button>
                       </div>
+                      <span className="text-[10.5px] leading-[1.5] text-faint">
+                        The A2A secret is the name the vault holds it under (or <Mono className="text-[10px]">{"${secret:name}"}</Mono>), never the secret itself: the agent signs every A2A request with it as <Mono className="text-[10px]">{a.id}</Mono>, and one name signs for one caller, peer or agent. Leave it empty to remove it.
+                      </span>
+                      {policyError && <span className="text-[11px] text-err">{policyError}</span>}
                       <div className="grid gap-px overflow-hidden rounded-sm border border-line bg-line sm:grid-cols-2 xl:grid-cols-3">
                         {servers.map(([server, label]) => (
                           <div key={server} className="flex flex-col bg-surface">

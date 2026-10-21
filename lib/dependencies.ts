@@ -1,4 +1,4 @@
-import { blastAddressable, type BlastRadius, type DepEdge, type DepKind, type DepMap, type DepNode } from "./api/l7";
+import type { BlastRadius, DepEdge, DepKind, DepMap, DepNode } from "./api/l7";
 
 /**
  * The dependency map as the console lays it out, and a node's blast radius
@@ -206,12 +206,6 @@ export function blastIds(b: Pick<BlastRadius, "node" | "agents" | "applications"
   for (const a of b.agents) for (const id of a.via) out.add(id);
   for (const a of b.applications) if (a.via) out.add(a.via);
   return out;
-}
-
-/** Whether the blast radius can be asked about this node, and if not why. */
-export function blastAsk(id: string): { ok: true } | { ok: false; why: string } {
-  if (blastAddressable(id)) return { ok: true };
-  return { ok: false, why: `The backend cannot be asked about "${id}": its id carries a slash, and the blast-radius door takes the node as one path segment, so the request never reaches it.` };
 }
 
 /** A refusal from the blast-radius door, in the reader's words. A 409's candidates are offered beside it. */

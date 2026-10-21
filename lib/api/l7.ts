@@ -88,8 +88,15 @@ export interface TreeNode {
   error: string;
   /** Its cost includes a model priced at an estimate. */
   estimated: boolean;
-  /** This node and everything under it; the root's equals the rollup. */
+  /** This node and everything under it. The root's is the runs list's rows summed over the records in the tree, which is the rollup. */
   total: Figures;
+  /**
+   * A record's row in the runs list (`GET /api/runs`): its whole journal, so
+   * an orchestrator whose work ran in in-process sub-runs has own figures of
+   * nothing here and a cost there. null for a sub-run or a peer leaf, which
+   * have no row.
+   */
+  listed: Figures | null;
 }
 
 export interface AgentFigures extends Figures {
@@ -107,6 +114,8 @@ export interface RunTree {
   root: string;
   asked: string;
   trace_id: string;
+  /** The backend's sentence on which figure is which: own, total, listed, the rollup. */
+  how: string;
   /** In the backend's order: records as they were found, each followed by its sub-runs and peer leaves. `parent` makes the tree. */
   nodes: TreeNode[];
   rollup: TreeRollup;
@@ -146,6 +155,7 @@ export function treeNodeOf(v: unknown): TreeNode {
     estimated: o.estimated === true,
     // A node with no `total` stands for itself alone.
     total: o.total && typeof o.total === "object" ? figuresOf(o.total) : own,
+    listed: o.listed && typeof o.listed === "object" && !Array.isArray(o.listed) ? figuresOf(o.listed) : null,
   };
 }
 
@@ -159,6 +169,7 @@ export function treeOf(v: unknown): RunTree {
     root: str(o.root) || nodes[0]?.run || "",
     asked: str(o.asked),
     trace_id: str(o.trace_id),
+    how: str(o.how),
     nodes,
     rollup: { ...figuresOf(r), by_agent },
     count: typeof o.count === "number" ? o.count : nodes.length,
@@ -172,13 +183,18 @@ export function treeOf(v: unknown): RunTree {
 export type KillDelivery = Schemas["RunKilled"]["delivery"];
 export const KILL_DELIVERIES: KillDelivery[] = ["in-process", "worker", "sdk", "tree"];
 
-/** What a reached run is: a record, an in-process sub-run (on its parent's cancel), or a queued job (dead-lettered before it started; its `run` is the job's id). */
+/**
+ * What a reached run is: a record, an in-process sub-run (on its parent's
+ * cancel), a queued job (dead-lettered before it started; its `run` is the
+ * job's id), or (the second round) a task a run in the tree handed a peer,
+ * cancelled over A2A (its `run` is `peer:<peer>/<task>`).
+ */
 export type ReachedKind = Schemas["ReachedRun"]["kind"];
-export const REACHED_KINDS: ReachedKind[] = ["run", "sub_run", "job"];
+export const REACHED_KINDS: ReachedKind[] = ["run", "sub_run", "job", "peer_task"];
 
-/** How the kill reached it: in-process, worker (the row a heartbeat reads), sdk (the row and the control poll), shared-cancel (a sub-run, with the run it runs in), queue (dead-lettered). The backend types it a string. */
-export type ReachedDelivery = "in-process" | "worker" | "sdk" | "shared-cancel" | "queue";
-export const REACHED_DELIVERIES: ReachedDelivery[] = ["in-process", "worker", "sdk", "shared-cancel", "queue"];
+/** How the kill reached it: in-process, worker (the row a heartbeat reads), sdk (the row and the control poll), shared-cancel (a sub-run, with the run it runs in), queue (dead-lettered), a2a (a peer's task, cancelled with a signed tasks/cancel the peer answered), a2a-refused (the cancel did not reach it, or the peer said no). The backend types it a string. */
+export type ReachedDelivery = "in-process" | "worker" | "sdk" | "shared-cancel" | "queue" | "a2a" | "a2a-refused";
+export const REACHED_DELIVERIES: ReachedDelivery[] = ["in-process", "worker", "sdk", "shared-cancel", "queue", "a2a", "a2a-refused"];
 
 export interface Reached {
   run: string;
@@ -190,8 +206,16 @@ export interface Reached {
   parent: string | null;
   /** Levels below the run the kill named. */
   depth: number;
-  /** Its state when the kill reached it (a job: `queued`, though it is dead-lettered now). */
+  /** Its state when the kill reached it (a job: `queued`, though it is dead-lettered now; a peer task: the peer's answer to the cancel, or the last state seen when it did not answer). */
   state: string;
+  /** A peer task: the peer it was handed to (the registry's id); null for everything else. */
+  peer: string | null;
+  /** A peer task: its id at the peer; null for everything else. */
+  task_id: string | null;
+  /** A peer task the cancel did not reach (`a2a-refused`): why, in the backend's words (not in the registry, unreachable, a 401, the peer's refusal); null otherwise. */
+  error: string | null;
+  /** Under `already`: the earlier kill that run is still stopping on (who, why, when); null for a run this kill reached. */
+  kill: KillInfo | null;
 }
 
 export interface KillInfo {
@@ -200,6 +224,11 @@ export interface KillInfo {
   at: string;
 }
 
+const killInfoOf = (v: unknown): KillInfo => {
+  const k = obj(v);
+  return { reason: str(k.reason), by: str(k.by), at: str(k.at) };
+};
+
 /** `POST /api/runs/{id}/kill` (202) */
 export interface KillReceipt {
   run: string;
@@ -207,8 +236,23 @@ export interface KillReceipt {
   state: string;
   kill: KillInfo;
   delivery: KillDelivery;
-  /** The run itself (when it was in flight), its open sub-runs, its descendants by parent link and its queued children. */
+  /** The run itself (when it was in flight), its open sub-runs, its descendants by parent link, its queued children, and the tasks they handed peers. */
   reached: Reached[];
+  /** What an earlier kill is still stopping, which this one did not throw at again (each with that kill under `kill`); the answer is `delivery: tree` when something new was reached beside them. */
+  already: Reached[];
+}
+
+/**
+ * `POST /api/runs/{id}/kill` answered 409 `KillRefused`: the kill reached
+ * nothing new. Either everything in flight is already stopping on an
+ * earlier kill (`already` lists it, each with that kill), which is no
+ * failure and reads as "already being stopped", or nothing in the tree is
+ * in flight at all (`already` empty).
+ */
+export interface KillRefusal {
+  /** The backend's sentence: who killed it and that it stops at its next checkpoint, or that nothing is in flight. */
+  error: string;
+  already: Reached[];
 }
 
 export function reachedOf(v: unknown): Reached {
@@ -222,46 +266,66 @@ export function reachedOf(v: unknown): Reached {
     parent: strOrNull(o.parent),
     depth: num(o.depth),
     state: str(o.state),
+    peer: strOrNull(o.peer),
+    task_id: strOrNull(o.task_id),
+    error: strOrNull(o.error),
+    kill: o.kill && typeof o.kill === "object" && !Array.isArray(o.kill) ? killInfoOf(o.kill) : null,
   };
 }
 
+const reachedList = (v: unknown): Reached[] => (Array.isArray(v) ? v : []).map(reachedOf).filter((r) => r.run);
+
 export function killReceiptOf(v: unknown, run = ""): KillReceipt {
   const o = obj(v);
-  const k = obj(o.kill);
   return {
     run: str(o.run) || run,
     state: str(o.state),
-    kill: { reason: str(k.reason), by: str(k.by), at: str(k.at) },
+    kill: killInfoOf(o.kill),
     delivery: pick(o.delivery, KILL_DELIVERIES, "in-process"),
-    reached: (Array.isArray(o.reached) ? o.reached : []).map(reachedOf).filter((r) => r.run),
+    reached: reachedList(o.reached),
+    already: reachedList(o.already),
   };
+}
+
+export function killRefusalBodyOf(v: unknown): KillRefusal {
+  const o = obj(v);
+  return { error: str(o.error), already: reachedList(o.already) };
+}
+
+/**
+ * The 409 of a kill that reached nothing new, or null for any other
+ * refusal. `already` non-empty means the tree is already being stopped,
+ * which the console shows as that rather than as an error.
+ */
+export function killRefusalOf(e: unknown): KillRefusal | null {
+  if (!(e instanceof DoorError) || e.status !== 409) return null;
+  return { error: e.message, already: reachedList(e.body.already) };
 }
 
 /* ═══════════════════ rate limits across agents ═══════════════════ */
 
 /**
  * A 429 from a door that starts work (`POST /api/runs`, the trigger and
- * webhook doors, a live SDK open): which scope ruled (the agent's own
- * limit, or the tree's: everything one trace started in the minute), which
- * limit, what was used against what is allowed, and the seconds until the
- * oldest counted event ages out (`retry_after_s`, also the `Retry-After`
- * header). `tree` is the trace the refused start would have joined; for an
- * agent-scope refusal of a root start it names a trace that never started.
+ * webhook doors, a live SDK open, the worker's sub-run admission): typed by
+ * the backend as `RateLimitRefusal` (the A2A door's JSON-RPC 429 carries the
+ * same figures as `RateLimitFigures` under `error.data`). Which scope ruled
+ * (the agent's own limit, or the tree's: everything one trace started in
+ * the minute), which limit, what was used against what is allowed, and the
+ * seconds until the oldest counted event ages out (`retry_after_s`, also the
+ * `Retry-After` header). `tree` is the trace the event counted in; `""` when
+ * it joins none (a root enqueue, a refused root start).
  */
-export interface RateLimit {
-  /** The backend's sentence, which already says all of it. */
-  error: string;
-  scope: "agent" | "tree";
-  /** run_starts_per_minute, sub_runs_per_minute, enqueues_per_minute, tree_per_minute. */
-  limit: string;
-  used: number;
-  allowed: number;
-  retry_after_s: number;
-  agent: string;
-  tree: string;
-  /** start, sub_run, enqueue. */
-  kind: string;
-}
+export type RateLimitRefusal = Schemas["RateLimitRefusal"];
+export type RateLimitName = RateLimitRefusal["limit"];
+export type RateLimitKind = RateLimitRefusal["kind"];
+export const RATE_LIMIT_NAMES: RateLimitName[] = ["run_starts_per_minute", "sub_runs_per_minute", "enqueues_per_minute", "tree_per_minute"];
+
+export type RateLimit = Pick<RateLimitRefusal, "error" | "scope" | "used" | "allowed" | "retry_after_s" | "agent" | "tree"> & {
+  /** One of RATE_LIMIT_NAMES, or whatever a newer backend names. */
+  limit: RateLimitName | (string & {});
+  /** start, sub_run, enqueue, or whatever a newer backend names. */
+  kind: RateLimitKind | (string & {});
+};
 
 /**
  * The refusal in a 429, or null when the answer is not one. The seconds to
@@ -284,6 +348,17 @@ export function rateLimitOf(status: number, body: unknown, retryAfter?: string |
     tree: str(o.tree),
     kind: str(o.kind),
   };
+}
+
+/**
+ * The A2A door's JSON-RPC 429 (`RpcRateLimited`): the figures under
+ * `error.data`, the sentence in `error.message`. Null when the answer is
+ * not one.
+ */
+export function rateLimitOfRpc(status: number, body: unknown, retryAfter?: string | null): RateLimit | null {
+  if (status !== 429) return null;
+  const e = obj(obj(body).error);
+  return rateLimitOf(429, { ...obj(e.data), error: str(e.message) }, retryAfter);
 }
 
 /* ═══════════════════ the dependency map ═══════════════════ */
@@ -785,8 +860,10 @@ export async function getRunTree(id: string): Promise<RunTree> {
 /**
  * `POST /api/runs/{id}/kill` with `{reason}`: the run where it runs and
  * everything it set off. 202 with the receipt (`delivery: tree` when the
- * run itself had ended and the kill reached what it set off); 409 only when
- * nothing in the tree is in flight.
+ * run itself had ended, or was already stopping, and the kill reached
+ * something new; `already` what an earlier kill is still stopping). 409
+ * `KillRefused` when it reached nothing new: read it with killRefusalOf,
+ * which tells "already being stopped" from "nothing in flight".
  */
 export async function killRun(id: string, reason: string): Promise<KillReceipt> {
   return call("POST", `${runPath(id)}/kill`, { reason }, (j) => killReceiptOf(j, id));
@@ -798,18 +875,18 @@ export async function getDependencies(window = "7d"): Promise<DepMap> {
 }
 
 /**
- * Whether the backend can be asked about a node by its id. The door's
- * `{node}` is one path segment, and the router decodes `%2F` before it
- * routes, so an id with a slash in it (a model like `meta/llama-3-70b`)
- * answers 404 however it is encoded.
+ * A node id as the path the blast-radius door routes: each segment encoded,
+ * the slashes kept (`model:meta/llama-3-70b` → `model%3Ameta/llama-3-70b`).
+ * The door's route is `/{node:path}/blast-radius`, so an id with a slash is
+ * asked like any other.
  */
-export function blastAddressable(id: string): boolean {
-  return Boolean(id) && !id.includes("/");
+export function nodePath(id: string): string {
+  return id.split("/").map(encodeURIComponent).join("/");
 }
 
-/** `GET /api/dependencies/{node}/blast-radius?window=`: 403 for a key scoped to one agent, 404 for no such node, 409 (`candidates`) for a bare name several nodes carry. */
+/** `GET /api/dependencies/{node}/blast-radius?window=`: 403 for a key scoped to one agent, 404 for no such node, 409 (`AmbiguousNode`, its `candidates`) for a bare name several nodes carry. */
 export async function getBlastRadius(node: string, window = "7d"): Promise<BlastRadius> {
-  return call("GET", `/api/dependencies/${encodeURIComponent(node)}/blast-radius?window=${encodeURIComponent(window)}`, undefined, blastOf);
+  return call("GET", `/api/dependencies/${nodePath(node)}/blast-radius?window=${encodeURIComponent(window)}`, undefined, blastOf);
 }
 
 /** The candidates a 409 names, when the blast radius was asked by a bare name several nodes carry. */

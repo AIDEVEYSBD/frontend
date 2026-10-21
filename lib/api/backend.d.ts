@@ -4,6 +4,58 @@
  */
 
 export interface paths {
+    "/.well-known/agent.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The factory's A2A agent card (the saved workflows as skills), served signed to a registered caller */
+        get: operations["agentCard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/a2a": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What the A2A tasks door accepts: the protocol, how to sign, the skills that accept tasks */
+        get: operations["describeA2A"];
+        put?: never;
+        /** The A2A tasks door: JSON-RPC 2.0 tasks/send, tasks/get, tasks/cancel, signed both ways */
+        post: operations["a2aTasks"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/a2a/.well-known/agent.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The same agent card at the tasks door's URL, where a peer registered at /api/a2a reads it */
+        get: operations["a2aAgentCard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/a2a/gateway/v1/{path}": {
         parameters: {
             query?: never;
@@ -16,6 +68,43 @@ export interface paths {
         put?: never;
         /** The gateway under the attached agents' alias */
         post: operations["a2aGatewayCompletion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/a2a/mcp/{agent}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What the tool broker serves this attached agent: its granted tools on approved servers, its gate risk */
+        get: operations["describeBroker"];
+        put?: never;
+        /** The tool broker: MCP JSON-RPC (initialize, tools/list, tools/call) through the agent's grants and gate risk, reaching servers through the runtime */
+        post: operations["brokerRpc"];
+        /** Close the broker session Mcp-Session-Id names */
+        delete: operations["closeBrokerSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/a2a/{path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The A2A doors' descriptions under /api/a2a (the gateway, the broker, the tasks door) */
+        get: operations["describeA2ASubDoor"];
+        put?: never;
+        /** Nothing is posted beneath /api/a2a but the gateway and the broker, which have their own paths */
+        post: operations["a2aNoSuchDoor"];
         delete?: never;
         options?: never;
         head?: never;
@@ -406,6 +495,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/breakers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The estate's breakers: what is open now (served to workers on the claim and the heartbeat), the thresholds, the last openings */
+        get: operations["getBreakers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/breakers/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Close an estate breaker by hand: every worker and every run here may call it again */
+        delete: operations["closeBreaker"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dependencies": {
         parameters: {
             query?: never;
@@ -430,7 +553,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Everything that fails if this node does: agents directly and transitively, runs in flight, applications, with counts */
+        /** Everything that fails if this node does: agents directly and transitively, runs in flight, applications, with counts. The node id may carry slashes, raw or %2F-encoded */
         get: operations["getBlastRadius"];
         put?: never;
         post?: never;
@@ -740,6 +863,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/peers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every registered A2A peer: status, pinned card and digest, the last fetch (secrets by vault name only) */
+        get: operations["listPeers"];
+        put?: never;
+        /** Register a peer: fetch its agent card signed, pin its digest; it waits as pending until a person approves it */
+        post: operations["addPeer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/peers/{peer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a peer from the registry (both records) */
+        delete: operations["deletePeer"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/peers/{peer_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve a peer's pinned agent card; only an approved peer is spoken to or heard (a second person when A2A_TWO_PERSON or MCP_TWO_PERSON is on) */
+        post: operations["approvePeer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/peers/{peer_id}/rescan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fetch a peer's agent card again; a digest that moved from the pin marks it changed (refused until approved again), the approved card kept as previous_card */
+        post: operations["rescanPeer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ports/{name}/health": {
         parameters: {
             query?: never;
@@ -937,7 +1129,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Throw the kill switch on one run and everything it set off; answers every run the kill reached */
+        /** Throw the kill switch on one run and everything it set off; answers every run the kill reached, and those an earlier kill is still stopping */
         post: operations["killRun"];
         delete?: never;
         options?: never;
@@ -1254,6 +1446,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/worker/runs/{run_id}/admit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** A sub-run a worker is about to start inside the run it drives, counted against the agent's and the tree's rate limits; 429 past either */
+        post: operations["admitWorkerSubRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/worker/runs/{run_id}/entries": {
         parameters: {
             query?: never;
@@ -1448,6 +1657,11 @@ export interface components {
         /** AgentQueue */
         AgentQueue: {
             /**
+             * Cancelled
+             * @default 0
+             */
+            cancelled: number;
+            /**
              * Dead
              * @default 0
              */
@@ -1559,6 +1773,16 @@ export interface components {
             updated_at?: string | null;
             /** Version */
             version?: number | null;
+        };
+        /**
+         * AmbiguousNode
+         * @description 409: a bare name more than one node carries; ask again by one of the ids.
+         */
+        AmbiguousNode: {
+            /** Candidates */
+            candidates: string[];
+            /** Error */
+            error: string;
         };
         /** ApplicationChanged */
         ApplicationChanged: {
@@ -1809,6 +2033,11 @@ export interface components {
             p50ms?: number | null;
             /** Runs30D */
             runs30d: number;
+            /**
+             * Secret Name
+             * @default
+             */
+            secret_name: string;
         };
         /** AttachedList */
         AttachedList: {
@@ -2005,6 +2234,70 @@ export interface components {
              */
             uses: "direct" | "transitive" | "called";
         };
+        /** BreakerOpening */
+        BreakerOpening: {
+            /**
+             * Agent
+             * @default
+             */
+            agent: string;
+            /** Calls */
+            calls: number;
+            /**
+             * Closed At
+             * @default
+             */
+            closed_at: string;
+            /** Cooldown S */
+            cooldown_s: number;
+            /** Count */
+            count: number;
+            /** Failures */
+            failures: number;
+            /** Name */
+            name: string;
+            /** Open */
+            open: boolean;
+            /** Opened At */
+            opened_at: string;
+            /**
+             * Run
+             * @default
+             */
+            run: string;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /** Until */
+            until: string;
+            /** Why */
+            why: string;
+            /** Window S */
+            window_s: number;
+        };
+        /** BreakerThresholds */
+        BreakerThresholds: {
+            /** Calls */
+            calls: number;
+            /** Cooldown S */
+            cooldown_s: number;
+            /** Failures */
+            failures: number;
+            /** Window S */
+            window_s: number;
+        };
+        /** BreakersView */
+        BreakersView: {
+            /** Open */
+            open: {
+                [key: string]: string;
+            };
+            /** Openings */
+            openings?: components["schemas"]["BreakerOpening"][];
+            thresholds: components["schemas"]["BreakerThresholds"];
+        };
         /** BudgetRefusal */
         BudgetRefusal: {
             budget: components["schemas"]["BudgetState"];
@@ -2183,6 +2476,8 @@ export interface components {
             agent_cap?: number | null;
             /** Agents */
             agents?: string[] | null;
+            /** Applies */
+            applies?: string[];
             /**
              * Capacity
              * @default 1
@@ -2204,6 +2499,12 @@ export interface components {
             agent: string;
             /** Attempt */
             attempt: number;
+            /** Breakers */
+            breakers?: {
+                [key: string]: string;
+            };
+            /** Delegation */
+            delegation?: string | null;
             /** External Id */
             external_id?: string | null;
             /** Id */
@@ -2672,6 +2973,8 @@ export interface components {
             disabled?: boolean | null;
             /** Error */
             error: string;
+            /** Field */
+            field?: string | null;
             /** Reauth */
             reauth?: boolean | null;
         };
@@ -3268,6 +3571,10 @@ export interface components {
         };
         /** HeartbeatResponse */
         HeartbeatResponse: {
+            /** Breakers */
+            breakers?: {
+                [key: string]: string;
+            };
             /** Job */
             job: string;
             kill?: components["schemas"]["KillInfo"] | null;
@@ -3282,7 +3589,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "queued" | "running" | "done" | "failed" | "suspended";
+            status: "queued" | "running" | "done" | "failed" | "suspended" | "cancelled";
             steer?: components["schemas"]["SteerInfo"] | null;
         };
         /** Hierarchy */
@@ -3438,7 +3745,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "queued" | "running" | "done" | "failed" | "suspended";
+            status: "queued" | "running" | "done" | "failed" | "suspended" | "cancelled";
             /** Status Url */
             status_url: string;
             /**
@@ -3504,7 +3811,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "queued" | "running" | "done" | "failed" | "suspended";
+            status: "queued" | "running" | "done" | "failed" | "suspended" | "cancelled";
             /** Status Url */
             status_url: string;
             /**
@@ -3559,7 +3866,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "queued" | "running" | "done" | "failed" | "suspended";
+            status: "queued" | "running" | "done" | "failed" | "suspended" | "cancelled";
             /** Status Url */
             status_url: string;
             /**
@@ -3660,6 +3967,18 @@ export interface components {
             by: string;
             /** Reason */
             reason: string;
+        };
+        /**
+         * KillRefused
+         * @description 409 from a kill that reaches nothing: nothing in the tree is in
+         *     flight, or everything in flight was already killed and is stopping
+         *     (`already`, as on a kill that did reach something).
+         */
+        KillRefused: {
+            /** Already */
+            already?: components["schemas"]["ReachedRun"][];
+            /** Error */
+            error: string;
         };
         /** LatencyView */
         LatencyView: {
@@ -4256,6 +4575,122 @@ export interface components {
             reason: string;
         };
         /**
+         * Peer
+         * @description A registered peer. The secret is its vault name, never its value.
+         */
+        Peer: {
+            /**
+             * Added At
+             * @default
+             */
+            added_at: string;
+            /**
+             * Added By
+             * @default
+             */
+            added_by: string;
+            /** Adopted */
+            adopted?: {
+                [key: string]: string;
+            } | null;
+            /** Agent */
+            agent: string;
+            /** Approvals */
+            approvals?: components["schemas"]["PeerApproval"][];
+            card?: components["schemas"]["PeerCard"] | null;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            last_fetch?: components["schemas"]["PeerFetch"] | null;
+            previous_card?: components["schemas"]["PeerCard"] | null;
+            /** Secret Name */
+            secret_name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "approved" | "changed";
+            /** Url */
+            url: string;
+        };
+        /** PeerAddRequest */
+        PeerAddRequest: {
+            /** Agent */
+            agent?: string | null;
+            /** Id */
+            id?: string | null;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /** Secret Name */
+            secret_name: string;
+            /** Url */
+            url: string;
+        };
+        /** PeerApproval */
+        PeerApproval: {
+            /** At */
+            at: string;
+            /** By */
+            by: string;
+            /**
+             * Digest
+             * @default
+             */
+            digest: string;
+        };
+        /** PeerCard */
+        PeerCard: {
+            /**
+             * At
+             * @default
+             */
+            at: string;
+            /** Card */
+            card?: {
+                [key: string]: unknown;
+            } | null;
+            /** Digest */
+            digest: string;
+        };
+        /** PeerEnvelope */
+        PeerEnvelope: {
+            peer: components["schemas"]["Peer"];
+        };
+        /**
+         * PeerFetch
+         * @description The last time this registry asked the peer for its card.
+         */
+        PeerFetch: {
+            /** At */
+            at: string;
+            /**
+             * By
+             * @default
+             */
+            by: string;
+            /**
+             * Control
+             * @default
+             */
+            control: string;
+            /**
+             * Digest
+             * @default
+             */
+            digest: string;
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /** Ok */
+            ok: boolean;
+        };
+        /**
          * PeerInfo
          * @description What the journal knows of one task handed to a peer.
          */
@@ -4294,6 +4729,21 @@ export interface components {
             task_id: string;
             /** Tools */
             tools?: string[];
+        };
+        /** PeerRegistry */
+        PeerRegistry: {
+            /** Count */
+            count: number;
+            /** Peers */
+            peers: components["schemas"]["Peer"][];
+            /** Two Person */
+            two_person: boolean;
+        };
+        /** PeerRescanned */
+        PeerRescanned: {
+            /** Changed */
+            changed: boolean;
+            peer: components["schemas"]["Peer"];
         };
         /** PendingGate */
         PendingGate: {
@@ -4414,6 +4864,8 @@ export interface components {
             id: string;
             /** Injection */
             injection?: ("block" | "flag") | null;
+            /** Secret Name */
+            secret_name?: string | null;
         };
         /**
          * PolicyView
@@ -4590,8 +5042,93 @@ export interface components {
             unsupported: number;
         };
         /**
+         * RateLimitFigures
+         * @description L7: which rate limit across agents ruled, and the figures behind it.
+         */
+        RateLimitFigures: {
+            /** Agent */
+            agent: string;
+            /** Allowed */
+            allowed: number;
+            /**
+             * Control
+             * @default rate_limit
+             * @constant
+             */
+            control: "rate_limit";
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "start" | "sub_run" | "enqueue";
+            /**
+             * Limit
+             * @enum {string}
+             */
+            limit: "run_starts_per_minute" | "sub_runs_per_minute" | "enqueues_per_minute" | "tree_per_minute";
+            /** Retry After S */
+            retry_after_s: number;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "agent" | "tree";
+            /**
+             * Tree
+             * @default
+             */
+            tree: string;
+            /** Used */
+            used: number;
+        };
+        /**
+         * RateLimitRefusal
+         * @description 429 `control: rate_limit` from a door past a rate limit across agents
+         *     (`POST /api/runs`, `/api/sdk/runs`, `/api/trigger/{agent}`,
+         *     `/api/webhooks/{agent}`, `/api/worker/runs/{run_id}/admit`), with
+         *     `Retry-After`.
+         */
+        RateLimitRefusal: {
+            /** Agent */
+            agent: string;
+            /** Allowed */
+            allowed: number;
+            /**
+             * Control
+             * @default rate_limit
+             * @constant
+             */
+            control: "rate_limit";
+            /** Error */
+            error: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "start" | "sub_run" | "enqueue";
+            /**
+             * Limit
+             * @enum {string}
+             */
+            limit: "run_starts_per_minute" | "sub_runs_per_minute" | "enqueues_per_minute" | "tree_per_minute";
+            /** Retry After S */
+            retry_after_s: number;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "agent" | "tree";
+            /**
+             * Tree
+             * @default
+             */
+            tree: string;
+            /** Used */
+            used: number;
+        };
+        /**
          * ReachedRun
-         * @description A run (or a queued job) a kill reached (L7).
+         * @description A run (or a queued job, or a peer's task) a kill reached (L7).
          */
         ReachedRun: {
             /** Agent */
@@ -4603,14 +5140,19 @@ export interface components {
              * @default 0
              */
             depth: number;
+            /** Error */
+            error?: string | null;
+            kill?: components["schemas"]["KillInfo"] | null;
             /**
              * Kind
              * @default run
              * @enum {string}
              */
-            kind: "run" | "sub_run" | "job";
+            kind: "run" | "sub_run" | "job" | "peer_task";
             /** Parent */
             parent?: string | null;
+            /** Peer */
+            peer?: string | null;
             /** Run */
             run: string;
             /**
@@ -4623,6 +5165,8 @@ export interface components {
              * @default
              */
             state: string;
+            /** Task Id */
+            task_id?: string | null;
         };
         /**
          * Reference
@@ -4955,6 +5499,36 @@ export interface components {
              */
             trigger: string;
         };
+        /**
+         * RpcRateLimitError
+         * @description A JSON-RPC error: -32000 with the trigger path's refusal under `data`.
+         */
+        RpcRateLimitError: {
+            /**
+             * Code
+             * @default -32000
+             */
+            code: number;
+            data: components["schemas"]["RateLimitFigures"];
+            /** Message */
+            message: string;
+        };
+        /**
+         * RpcRateLimited
+         * @description The tasks door's 429: the agent's or the tree's enqueues per minute
+         *     past their limit, as a JSON-RPC error (signed like every answer), the
+         *     figures under `error.data`, with `Retry-After`.
+         */
+        RpcRateLimited: {
+            error: components["schemas"]["RpcRateLimitError"];
+            /** Id */
+            id?: string | number | null;
+            /**
+             * Jsonrpc
+             * @default 2.0
+             */
+            jsonrpc: string;
+        };
         /** RunJournal */
         RunJournal: {
             /**
@@ -4978,6 +5552,8 @@ export interface components {
         };
         /** RunKilled */
         RunKilled: {
+            /** Already */
+            already?: components["schemas"]["ReachedRun"][];
             /**
              * Delivery
              * @enum {string}
@@ -5225,6 +5801,11 @@ export interface components {
             asked: string;
             /** Count */
             count: number;
+            /**
+             * How
+             * @default cost, tokens, tool_calls, refusals: the node's own entries only, so nothing is counted twice; listed: what a record's row in the runs list shows (its whole journal, its in-process sub-runs folded in; null for a sub-run or a peer leaf); total: the node and everything under it. The root's total and the rollup are the runs list's rows summed over the records in the tree
+             */
+            how: string;
             /** Nodes */
             nodes: components["schemas"]["TreeNode"][];
             rollup: components["schemas"]["TreeRollup"];
@@ -5705,6 +6286,36 @@ export interface components {
             removed?: string[];
         };
         /**
+         * SubRunAdmitRequest
+         * @description L7: a worker asking before it starts a sub-run inside a run it
+         *     drives, so the sub-run counts against the agent's and the tree's rate
+         *     limits as an in-process one here does.
+         */
+        SubRunAdmitRequest: {
+            /** Agent */
+            agent: string;
+            /**
+             * Kind
+             * @default sub_run
+             * @constant
+             */
+            kind: "sub_run";
+        };
+        /** SubRunAdmitted */
+        SubRunAdmitted: {
+            /**
+             * Admitted
+             * @default true
+             */
+            admitted: boolean;
+            /** Agent */
+            agent: string;
+            /** Kind */
+            kind: string;
+            /** Tree */
+            tree: string;
+        };
+        /**
          * Suspension
          * @description What the run is waiting for, as the runtime's `Suspension` serialises
          *     (L5): the shape of the answer it collects, the typed fields, the items a
@@ -5965,6 +6576,7 @@ export interface components {
              * @enum {string}
              */
             link: "root" | "parent" | "trace" | "journal";
+            listed?: components["schemas"]["Figures"] | null;
             /** Parent */
             parent?: string | null;
             peer?: components["schemas"]["PeerInfo"] | null;
@@ -6401,6 +7013,243 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    agentCard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    describeA2A: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    a2aTasks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    id?: string | number | null;
+                    /** @enum {string} */
+                    jsonrpc: "2.0";
+                    /** @enum {string} */
+                    method: "tasks/send" | "tasks/get" | "tasks/cancel";
+                    params?: Record<string, never>;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Payment Required */
+            402: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Past a rate limit across agents: the JSON-RPC error, with `Retry-After` */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RpcRateLimited"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    a2aAgentCard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     a2aGatewayDescribe: {
         parameters: {
             query?: never;
@@ -6485,6 +7334,262 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    describeBroker: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    brokerRpc: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    closeBrokerSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    describeA2ASubDoor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    a2aNoSuchDoor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
             };
         };
     };
@@ -8313,6 +9418,91 @@ export interface operations {
             };
         };
     };
+    getBreakers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BreakersView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    closeBreaker: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     getDependencies: {
         parameters: {
             query?: {
@@ -8421,13 +9611,13 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Conflict */
+            /** @description A bare name several nodes carry: ask by one of `candidates` */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["AmbiguousNode"];
                 };
             };
         };
@@ -8899,7 +10089,7 @@ export interface operations {
                     "application/json": components["schemas"]["GuardianView"];
                 };
             };
-            /** @description Bad Request */
+            /** @description A limit that does not fit, in words, naming it under `field` */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -9926,6 +11116,303 @@ export interface operations {
             };
         };
     };
+    listPeers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PeerRegistry"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    addPeer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PeerAddRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PeerEnvelope"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    deletePeer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                peer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    approvePeer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                peer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PeerEnvelope"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    rescanPeer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                peer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PeerRescanned"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     portHealth: {
         parameters: {
             query?: never;
@@ -10438,13 +11925,13 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Too Many Requests */
+            /** @description Past a rate limit across agents (`control: rate_limit`), with `Retry-After` */
             429: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["RateLimitRefusal"];
                 };
             };
             /** @description Service Unavailable */
@@ -10716,13 +12203,13 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Conflict */
+            /** @description Nothing to kill: nothing in the tree is in flight, or everything in flight is already stopping on an earlier kill (`already`) */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["KillRefused"];
                 };
             };
         };
@@ -11070,13 +12557,13 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Too Many Requests */
+            /** @description Past a rate limit across agents (`control: rate_limit`), with `Retry-After` */
             429: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["RateLimitRefusal"];
                 };
             };
         };
@@ -11558,13 +13045,13 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Too Many Requests */
+            /** @description Past a rate limit across agents (`control: rate_limit`), with `Retry-After` */
             429: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["RateLimitRefusal"];
                 };
             };
             /** @description Service Unavailable */
@@ -11903,13 +13390,13 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Too Many Requests */
+            /** @description Past a rate limit across agents (`control: rate_limit`), with `Retry-After` */
             429: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["RateLimitRefusal"];
                 };
             };
             /** @description Service Unavailable */
@@ -12110,6 +13597,95 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    admitWorkerSubRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubRunAdmitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubRunAdmitted"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Past a rate limit across agents (`control: rate_limit`), with `Retry-After` */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitRefusal"];
                 };
             };
             /** @description Service Unavailable */

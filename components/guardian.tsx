@@ -11,9 +11,9 @@ import { soon } from "@/lib/soon";
 import { useModels } from "@/lib/use-models";
 import { useSession } from "@/lib/use-session";
 import { listAgents } from "@/lib/api/l2";
-import { auditLine } from "@/lib/api/l5";
+import { DoorError, auditLine } from "@/lib/api/l5";
 import { getGuardian, listGuardianActions, setGuardian, type GuardianAction, type GuardianView } from "@/lib/api/l7";
-import { cadenceText, capText, coverageText, formOf, formProblems, mayText, outcomeText, patchOf, verdictText, type GuardianForm } from "@/lib/guardian";
+import { cadenceText, capText, coverageText, formOf, formProblems, mayText, outcomeText, patchOf, refusedField, verdictText, type GuardianField, type GuardianForm } from "@/lib/guardian";
 
 /**
  * The guardian (phase L7): a supervisory model the backend runs over each
@@ -57,6 +57,8 @@ export function Guardian() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState("");
   const [saveError, setSaveError] = useState("");
+  /** The limit the door refused, in its own words (`400 {error, field}`), marked on the form until it is edited. */
+  const [refused, setRefused] = useState<{ field: GuardianField; error: string } | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   /** Read by the poll: a form being edited is not overwritten by the next read. */
   const dirtyRef = useRef(false);
@@ -94,8 +96,11 @@ export function Guardian() {
     setDirty(true);
     setSaved("");
     setSaveError("");
+    setRefused(null);
   };
   const problems = form ? formProblems(form) : {};
+  /** A field's problem: the form's own first, else the door's refusal of it. */
+  const problemOf = (field: GuardianField): string | undefined => (problems as Partial<Record<string, string>>)[field] ?? (refused?.field === field ? refused.error : undefined);
   const patch = view && form ? patchOf(view, form) : {};
   const changed = Object.keys(patch);
 
@@ -110,7 +115,12 @@ export function Guardian() {
       setDirty(false);
       setSaved(`Saved: ${changed.join(", ")}${auditLine(v.audit_id)}.`);
     } catch (e) {
-      setSaveError((e as Error).message);
+      // A 400 names the limit it refused: mark it on the form, in the door's words.
+      const field = e instanceof DoorError && e.status === 400 ? refusedField(e.field) : null;
+      if (field && field !== "body") {
+        setRefused({ field, error: (e as Error).message });
+        setSaveError(`Not saved: ${field.replace(/_/g, " ")} is marked above.`);
+      } else setSaveError((e as Error).message);
     } finally {
       setSaving(false);
     }
@@ -157,6 +167,7 @@ export function Guardian() {
               {!editable && <p className="text-[11.5px] text-warn">Changing the guardian&rsquo;s limits needs the configure permission; these are shown as set.</p>}
               <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
                 <Switch label={form.enabled ? "On: it judges the runs it covers" : "Off: it judges no run"} checked={form.enabled} onChange={(on) => edit({ enabled: on })} disabled={!editable} />
+                {problemOf("enabled") && <span className="text-[11px] text-err">{problemOf("enabled")}</span>}
                 <span className="text-[11.5px] text-faint">Watching {coverageText({ enabled: form.enabled, agents: form.allAgents ? "*" : form.agents })}.</span>
               </div>
 
@@ -168,8 +179,8 @@ export function Guardian() {
                   </span>
                   {!form.allAgents && (
                     <>
-                      <ChipEditor values={form.agents} onChange={(v) => edit({ agents: v })} disabled={!editable} placeholder="Agent ids, Enter after each" invalid={Boolean(problems.agents)} />
-                      {problems.agents && <span className="text-[11px] text-err">{problems.agents}</span>}
+                      <ChipEditor values={form.agents} onChange={(v) => edit({ agents: v })} disabled={!editable} placeholder="Agent ids, Enter after each" invalid={Boolean(problemOf("agents"))} />
+                      {problemOf("agents") && <span className="text-[11px] text-err">{problemOf("agents")}</span>}
                       {editable && known.filter((k) => !form.agents.includes(k)).length > 0 && (
                         <span className="flex flex-wrap items-center gap-1">
                           <span className="text-[10.5px] text-ghost">add</span>
@@ -191,28 +202,29 @@ export function Guardian() {
                   <Checkbox label="Hold a run at its next gate" checked={form.hold} onChange={(on) => edit({ hold: on })} disabled={!editable} />
                   <Checkbox label="Block a run (kill it and what it set off)" checked={form.block} onChange={(on) => edit({ block: on })} disabled={!editable} />
                   <span className="text-[11px] text-faint">It may {mayText([...(form.hold ? (["hold"] as const) : []), ...(form.block ? (["block"] as const) : [])])}.</span>
+                  {problemOf("may") && <span className="text-[11px] text-err">{problemOf("may")}</span>}
                 </div>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                <Field label="Model" hint="what it judges with">
+                <Field label="Model" error={problemOf("model")} hint="what it judges with">
                   <Pick value={form.model} onChange={(v) => edit({ model: v })} options={modelOptions} disabled={!editable} />
                 </Field>
-                <Field label="Acts per hour, at most" error={problems.max_actions_per_hour} hint="past it, verdicts are raised for a person">
+                <Field label="Acts per hour, at most" error={problemOf("max_actions_per_hour")} hint="past it, verdicts are raised for a person">
                   <Input type="number" value={form.max_actions_per_hour} onChange={(v) => edit({ max_actions_per_hour: v })} disabled={!editable} />
                 </Field>
-                <Field label="Minimum confidence" error={problems.min_confidence} hint="0 to 1; under it, only attention">
+                <Field label="Minimum confidence" error={problemOf("min_confidence")} hint="0 to 1; under it, only attention">
                   <Input type="number" value={form.min_confidence} onChange={(v) => edit({ min_confidence: v })} disabled={!editable} />
                 </Field>
-                <Field label="Judge every … new entries" error={problems.every_entries} hint="or after the seconds below">
+                <Field label="Judge every … new entries" error={problemOf("every_entries")} hint="or after the seconds below">
                   <Input type="number" value={form.every_entries} onChange={(v) => edit({ every_entries: v })} disabled={!editable} />
                 </Field>
-                <Field label="… or after seconds" error={problems.every_s} hint="with at least one new entry">
+                <Field label="… or after seconds" error={problemOf("every_s")} hint="with at least one new entry">
                   <Input type="number" value={form.every_s} onChange={(v) => edit({ every_s: v })} disabled={!editable} />
                 </Field>
               </div>
 
-              <Field label="Rubric" error={problems.rubric} hint="what it judges a trajectory against, besides the run's own goal">
+              <Field label="Rubric" error={problemOf("rubric")} hint="what it judges a trajectory against, besides the run's own goal">
                 <Textarea rows={3} value={form.rubric} onChange={(v) => edit({ rubric: v })} disabled={!editable} placeholder="Triage only: never move money, never send case data outside the firm." />
               </Field>
 

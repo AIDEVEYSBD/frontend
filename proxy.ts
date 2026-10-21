@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, readSessionCookie } from "@/lib/auth-cookie";
-import { isMachineDoor, isOpenPage, upstreamFor } from "@/lib/route-policy";
+import { isMachineDoor, isOpenPage, isPassthroughPath, upstreamFor } from "@/lib/route-policy";
+import { passthrough } from "@/lib/passthrough";
 
 /**
  * The seam between the console and the control plane.
@@ -13,14 +14,20 @@ import { isMachineDoor, isOpenPage, upstreamFor } from "@/lib/route-policy";
  *   worker doors, the applications register with its gateway, retrieval and
  *   chatbot doors, the attention, fleet, lockdown and external answer doors,
  *   the MCP registry (not the platform's own MCP server at /api/mcp/server,
- *   which stays here), the SDK door, the ports' health doors, and the
- *   health check) are forwarded
+ *   which stays here), the SDK door, the ports' health doors, the L7 doors
+ *   (the dependency map, drift, the guardian, the peer registry, the
+ *   estate's breakers, and the A2A doors with the agent card at
+ *   /.well-known/agent.json), and the health check) are forwarded
  *   there at request time, with the shared secret attached and the session
  *   cookie forwarded. This happens before, and independently of, the
  *   RUNTIME_ORIGIN rewrite below. The local backend is `http://localhost:8000`
  *   (backend/CONTRACT.md). Without BACKEND_ORIGIN those paths have no
  *   answer here: the console serves pages and the domains that have not
  *   moved yet (frontend/README.md lists them).
+ *
+ *   The A2A doors (PASSTHROUGH_DOORS) are signed end to end, so they are
+ *   not rewritten: lib/passthrough.ts sends the path, query, body and
+ *   headers on as received and the signed answer back as sent, uncompressed.
  *
  *   RUNTIME_ORIGIN set (Vercel): every other /api request is proxied to the
  *   control plane behind the tunnel, at request time, with the shared secret
@@ -49,15 +56,16 @@ const INTERNAL_HEADER = "x-internal-auth";
 const PUBLIC_ORIGIN = (process.env.NEXT_PUBLIC_ORIGIN ?? process.env.PUBLIC_ORIGIN ?? "https://agentfactory.autogrc.cloud").replace(/\/+$/, "");
 
 // The doors a machine opens with an API key (or, for a webhook, the spec's
-// own secret; for the external answer door, the signed link token), so the
-// cookie gate never stands in front of them: the backend's trigger, webhook
-// and worker doors, the L4 gateway, retrieval and chatbot doors (application
-// keys), the L5 answer door, the L6 SDK door (an attached agent's scoped
-// key), and the console's A2A and platform-MCP doors. The list is
-// MACHINE_DOORS in lib/route-policy.ts, so
-// tests/proxy.test.ts holds it. Sign-in itself is open too, or nobody could
-// start; so is the external answer page, which is where that token is used
-// (OPEN_PAGES and OPEN_PREFIXES there, held by the same test).
+// own secret; for the external answer door, the signed link token; for the
+// A2A doors, a signature under a shared secret), so the cookie gate never
+// stands in front of them: the backend's trigger, webhook and worker doors,
+// the L4 gateway, retrieval and chatbot doors (application keys), the L5
+// answer door, the L6 SDK door (an attached agent's scoped key), the L7 A2A
+// doors and the agent card at the root, and the console's platform-MCP door.
+// The list is MACHINE_DOORS in lib/route-policy.ts, so tests/proxy.test.ts
+// holds it. Sign-in itself is open too, or nobody could start; so is the
+// external answer page, which is where that token is used (OPEN_PAGES and
+// OPEN_PREFIXES there, held by the same test).
 
 const machineDoor = isMachineDoor;
 
@@ -65,7 +73,7 @@ export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const isApi = pathname.startsWith("/api/");
 
-  if (AUTH_SECRET && !(isApi && machineDoor(pathname)) && request.headers.get(INTERNAL_HEADER) !== AUTH_SECRET) {
+  if (AUTH_SECRET && !machineDoor(pathname) && request.headers.get(INTERNAL_HEADER) !== AUTH_SECRET) {
     const open = !isApi && isOpenPage(pathname);
     if (!open) {
       const cookie = await readSessionCookie(request.cookies.get(SESSION_COOKIE)?.value, AUTH_SECRET);
@@ -88,13 +96,16 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  if (!isApi) return NextResponse.next();
-
   // The path router: a backend-owned path to BACKEND_ORIGIN, else everything
   // to RUNTIME_ORIGIN when that is set. Either way the request's own headers
-  // travel (the session cookie among them) with the runtime key added.
+  // travel (the session cookie among them) with the runtime key added. The
+  // agent card is the one page path that is routed; every other page is
+  // served here.
   const upstream = upstreamFor(pathname, search, { backendOrigin: BACKEND, runtimeOrigin: ORIGIN });
+  if (!isApi && upstream.to === "next") return NextResponse.next();
   if (upstream.to !== "next") {
+    // A2A is signed end to end: forwarded byte for byte, never rewritten.
+    if (isPassthroughPath(pathname)) return passthrough(request, upstream.url, { key: KEY, keyHeader: HEADER });
     const headers = new Headers(request.headers);
     if (KEY) headers.set(HEADER, KEY);
     headers.delete("host");

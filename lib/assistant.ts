@@ -68,6 +68,18 @@ export const PAGES: Record<string, PageInfo> = {
       "The guardian: a supervisory model that reads each covered run's trajectory against the run's goal and a rubric. Its limits are a person's: which agents it watches, whether it may hold a run at its next gate or block it, an hourly cap, a confidence floor, its model and cadence. Outside its limits it only raises attention. The page lists every verdict it acted on or raised, with the reason and the model.",
     suggested: ["What may the guardian do on its own?", "Why was a verdict only raised for a person?", "How is the hourly cap counted?"],
   },
+  "/peers": {
+    title: "Peers",
+    shows:
+      "The A2A peer registry: other parties' agents this factory hands tasks to and hears tasks from. Registering fetches the peer's agent card signed under a secret the two sides share and pins it by digest; the peer stays pending, neither spoken to nor heard, until a person approves the card (a second person when two-person approval is on). A rescan that finds another card marks the peer changed and refuses it both ways until someone approves again, showing the approved digest against the new one and the skills that moved. A card that could not be fetched is kept with the fetch's error. The secret is shown by its vault name only.",
+    suggested: ["Why is this peer refused?", "What changed on this peer's card?", "How do two factories register each other?"],
+  },
+  "/breakers": {
+    title: "Breakers",
+    shows:
+      "The estate's circuit breakers, per sink tool and per peer: past the calls threshold within the window, or after the failures threshold in a row, counted across every run, a breaker opens for its cooldown; every worker is served it and every run is refused the call, then one call is let through. The page shows what is open now and when each closes on its own, the thresholds, and the recent openings with the run that tripped each; a person with configure may close one by hand.",
+    suggested: ["Why did this breaker open?", "What happens to runs while a breaker is open?", "When does a breaker close on its own?"],
+  },
   "/evals": {
     title: "Evals",
     shows: "Evaluation suites that execute labelled cases through the production runtime, score outcomes deterministically and compare candidate models using quality, cost and execution time.",

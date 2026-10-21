@@ -17,6 +17,7 @@ import { STATUS_META } from "@/lib/mcp-registry";
 import { Pick } from "./select";
 import { soon } from "@/lib/soon";
 import type { AttachedAgent } from "@/lib/attached";
+import { JOB_STATUS_META, queueTotals } from "@/lib/queue";
 
 /**
  * Configuration: everything this factory is set up with, in one place.
@@ -869,10 +870,10 @@ export function Configuration() {
             </div>
             <div className="flex flex-col bg-surface">
               <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">Queue</span>
-              {Object.entries(data?.queue ?? {}).map(([k, v]) => (
-                <span key={k} className="flex items-center justify-between border-b border-line px-4 py-2 last:border-0">
-                  <span className="text-[11.5px] text-faint">{k}</span>
-                  <span className="tnum text-[12px]">{v}</span>
+              {queueTotals({ all: data?.queue ?? {} }, Object.keys(data?.queue ?? {}).length > 0).map((q) => (
+                <span key={q.status} className="flex items-center justify-between border-b border-line px-4 py-2 last:border-0" title={JOB_STATUS_META[q.status as keyof typeof JOB_STATUS_META]?.means}>
+                  <span className="text-[11.5px] text-faint">{q.label}</span>
+                  <span className="tnum text-[12px]">{q.count}</span>
                 </span>
               ))}
               {data && Object.keys(data.queue).length === 0 && (

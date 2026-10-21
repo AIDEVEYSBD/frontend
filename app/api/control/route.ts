@@ -3,6 +3,9 @@ import { permit } from "@/lib/server/auth";
 import { backendConfigured, backendFetch } from "@/lib/server/backend";
 import { readRuns, type RunRow } from "@/lib/server/runs";
 import { budgetState, PERIODS, writeBudget, type Period } from "@/lib/server/budget";
+import { peerRegistryOf } from "@/lib/api/l7b";
+import { skillsOf } from "@/lib/peers";
+import type { PartnerPeer } from "@/lib/peers";
 
 /**
  * The control plane's one read: everything about the estate, computed from
@@ -57,38 +60,65 @@ import { azureSpend } from "@/lib/server/azure-spend";
 
 /* ── FinOps: what Azure billed for the resource, and the budget set here ── */
 
-/* ── Partner agents: every A2A peer in the estate, card-pinged live ── */
+/* ── Partner agents: every A2A peer the estate names, as the peer registry holds it ── */
 
-let peerCache: { at: number; rows: { agent: string; name: string; url: string; up: boolean; title: string; skills: number }[] } | null = null;
+/**
+ * The peers a workflow names (its `peers` bindings' config) and the peers
+ * the registry holds (backend/CONTRACT.md "The peer registry"), as one list.
+ * Since phase L7 (second round) a peer is spoken to only from the registry,
+ * signed, and only once a person approved its pinned card, whatever URL a
+ * spec carries; the console never fetches a peer's card itself (an unsigned
+ * read is refused by every signed peer). A peer a spec names that the
+ * registry does not hold is listed `unregistered`: the runtime refuses it.
+ * Without a registry to read, the names are listed `unknown`.
+ */
+type PeerRow = PartnerPeer;
 
-async function pingPeers(
+async function partnerPeers(
+  req: Request,
   specs: { id: string; spec: { spec?: { tools?: { config?: { peers?: { name?: string; url?: string }[] } }[] } } }[],
-): Promise<NonNullable<typeof peerCache>["rows"]> {
-  if (peerCache && Date.now() - peerCache.at < 60_000) return peerCache.rows;
-  const found = new Map<string, { agent: string; name: string; url: string }>();
+): Promise<PeerRow[]> {
+  const named = new Map<string, { url: string; agents: Set<string> }>();
   for (const s of specs) {
     for (const t of s.spec?.spec?.tools ?? []) {
       for (const p of t?.config?.peers ?? []) {
-        if (p?.url) found.set(`${p.name}@${p.url}`, { agent: s.id, name: String(p.name ?? "peer"), url: String(p.url) });
+        const name = String(p?.name ?? "");
+        if (!name) continue;
+        const had = named.get(name) ?? { url: String(p?.url ?? ""), agents: new Set<string>() };
+        had.agents.add(s.id);
+        named.set(name, had);
       }
     }
   }
-  const rows = await Promise.all(
-    [...found.values()].map(async (p) => {
-      try {
-        const res = await fetch(p.url.replace(/\/$/, "") + "/.well-known/agent.json", {
-          signal: AbortSignal.timeout(1_500),
-        });
-        if (!res.ok) throw new Error(String(res.status));
-        const card = await res.json();
-        return { ...p, up: true, title: String(card.name ?? p.name), skills: (card.skills ?? []).length };
-      } catch {
-        return { ...p, up: false, title: p.name, skills: 0 };
-      }
-    }),
-  );
-  peerCache = { at: Date.now(), rows };
-  return rows;
+  let registry: ReturnType<typeof peerRegistryOf> | null = null;
+  if (backendConfigured()) {
+    try {
+      const res = await backendFetch(req, "/api/peers", { signal: AbortSignal.timeout(5_000) });
+      if (res.ok) registry = peerRegistryOf(await res.json());
+    } catch {
+      registry = null;
+    }
+  }
+  const rows: PeerRow[] = [];
+  for (const p of registry?.peers ?? []) {
+    const uses = named.get(p.id);
+    const card = p.card?.card ?? null;
+    rows.push({
+      name: p.id,
+      title: (card && typeof card.name === "string" && card.name) || p.label,
+      url: p.url,
+      agent: uses ? [...uses.agents].join(", ") : "",
+      status: p.status,
+      skills: skillsOf(p.card).length,
+      fetched: p.last_fetch?.ok ?? Boolean(p.card),
+    });
+  }
+  for (const [name, n] of named) {
+    if (registry?.peers.some((p) => p.id === name)) continue;
+    rows.push({ name, title: name, url: n.url, agent: [...n.agents].join(", "), status: registry ? "unregistered" : "unknown", skills: 0, fetched: false });
+  }
+  const order = ["changed", "unregistered", "pending", "unknown", "approved"];
+  return rows.sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || a.name.localeCompare(b.name));
 }
 
 export async function GET(req: Request) {
@@ -282,7 +312,7 @@ export async function GET(req: Request) {
   const budgetNow = await budgetState();
   const budget = budgetNow.budget_usd;
 
-  const peers = await pingPeers(specRows);
+  const peers = await partnerPeers(req, specRows);
 
   const recent = runs.filter(inWeek);
   return Response.json({

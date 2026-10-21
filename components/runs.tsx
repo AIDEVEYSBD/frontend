@@ -26,9 +26,9 @@ import { exitText, sandboxLine, sandboxOfEntry, sandboxRunOf, SANDBOX_TOOL } fro
 import { RunSourceTag } from "./run-source";
 import { SandboxOutput, SandboxSummary } from "./sandbox-result";
 import { KillDialog } from "./kill-dialog";
-import { KillReceiptView, RunTreePanel } from "./run-tree";
+import { KillAlreadyView, KillReceiptView, RunTreePanel } from "./run-tree";
 import { RateLimitNote, useRetryReady } from "./rate-limit";
-import { killRun, rateLimitOf, type KillReceipt, type RateLimit } from "@/lib/api/l7";
+import { killRefusalOf, killRun, rateLimitOf, type KillReceipt, type KillRefusal, type RateLimit } from "@/lib/api/l7";
 import { LineageDrawer } from "./lineage";
 import { ApproveDialog } from "./approve";
 import { SteerPanel } from "./steer";
@@ -366,6 +366,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
   const [killAsk, setKillAsk] = useState<string | null>(null);
   /** What the kill reached: the run and its whole tree (L7). */
   const [receipt, setReceipt] = useState<KillReceipt | null>(null);
+  const [already, setAlready] = useState<KillRefusal | null>(null);
   /** A start refused for a rate limit (429): nothing started; the form stays, with the limit and a countdown. */
   const [limited, setLimited] = useState<{ limit: RateLimit; at: number } | null>(null);
   const retry = useRetryReady(limited?.limit ?? null, limited?.at ?? 0);
@@ -616,11 +617,15 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
             const id = killAsk;
             setKillAsk(null);
             setKilling(true);
+            setAlready(null);
             killRun(id, reason)
               .then((r) => setReceipt(r))
               .catch((e: Error) => {
                 setKilling(false);
-                setError(e.message);
+                // Everything in flight is already stopping on an earlier kill: that, not an error.
+                const refusal = killRefusalOf(e);
+                if (refusal?.already.length) setAlready(refusal);
+                else setError(e.message);
               });
           }}
         />
@@ -641,7 +646,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
       suspension={suspension}
       onAnswered={answered}
       runLive={phase === "live" && !suspension}
-      notice={receipt ? <KillReceiptView receipt={receipt} onDismiss={() => setReceipt(null)} /> : null}
+      notice={receipt ? <KillReceiptView receipt={receipt} onDismiss={() => setReceipt(null)} /> : already ? <KillAlreadyView refusal={already} onDismiss={() => setAlready(null)} /> : null}
       steer={liveRunId && phase === "live" && !suspension ? <SteerPanel runId={liveRunId} /> : null}
       setup={
         phase === "setup" ? (
@@ -1103,6 +1108,7 @@ function FollowTheater({
   const [killed, setKilled] = useState<Schemas["KillInfo"] | null>(pendingKill);
   /** What the kill reached: the run and its whole tree (L7). */
   const [receipt, setReceipt] = useState<KillReceipt | null>(null);
+  const [already, setAlready] = useState<KillRefusal | null>(null);
   const stop = useRef<(() => void) | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const entries = useMemo(() => normalise(raw), [raw]);
@@ -1199,6 +1205,7 @@ function FollowTheater({
           onConfirm={(reason) => {
             setKillAsk(false);
             setKilling(true);
+            setAlready(null);
             killRun(id, reason)
               .then((r) => {
                 setKilled(r.kill);
@@ -1206,7 +1213,10 @@ function FollowTheater({
               })
               .catch((e: Error) => {
                 setKilling(false);
-                setError(e.message);
+                // Everything in flight is already stopping on an earlier kill: that, not an error.
+                const refusal = killRefusalOf(e);
+                if (refusal?.already.length) setAlready(refusal);
+                else setError(e.message);
               });
           }}
         />
@@ -1228,7 +1238,7 @@ function FollowTheater({
         suspension={suspension}
         onAnswered={answered}
         runLive={running}
-        notice={receipt ? <KillReceiptView receipt={receipt} onDismiss={() => setReceipt(null)} /> : null}
+        notice={receipt ? <KillReceiptView receipt={receipt} onDismiss={() => setReceipt(null)} /> : already ? <KillAlreadyView refusal={already} onDismiss={() => setAlready(null)} /> : null}
         steer={offer.show ? <SteerPanel runId={id} holdBlocked={offer.hold.allowed ? undefined : offer.hold.reason} /> : null}
         setup={null}
         footer={

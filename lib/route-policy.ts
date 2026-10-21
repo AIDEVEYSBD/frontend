@@ -1,13 +1,15 @@
 /**
  * Which API routes may answer without a signed-in person.
  *
- * Every handler under app/api (and the agent card) is one of three things:
- * a console route, which calls permit() with the permission it needs as its
- * first act; a machine door, which authenticates an API key (authenticate or
- * admit from lib/server); or one of the few routes below, open because they
- * are how a person gets a session in the first place, or how a peer
- * discovers the factory. tests/routes.test.ts holds every handler to that,
- * so a new route cannot ship unguarded by accident.
+ * Every handler under app/api is one of three things: a console route,
+ * which calls permit() with the permission it needs as its first act; a
+ * machine door, which authenticates an API key (authenticate from
+ * lib/server/keys.ts); or one of the few routes below, open because they are
+ * how a person gets a session in the first place. tests/routes.test.ts holds
+ * every handler to that, so a new route cannot ship unguarded by accident.
+ * The factory's agent card was the one open route outside app/api; since
+ * phase L7 (second round) the backend serves it, signed, to a registered
+ * caller only (BACKEND_PATHS below).
  *
  * Paths are relative to frontend/.
  */
@@ -17,16 +19,16 @@ export const PUBLIC_ROUTES: Record<string, string> = {
   "app/api/auth/callback/route.ts": "the identity provider's return leg; this is where the session is created",
   "app/api/auth/logout/route.ts": "ends whatever session the cookie names; without one there is nothing to end",
   "app/api/auth/session/route.ts": "answers who is signed in, or 401; the console's first question on every page",
-  "app/.well-known/agent.json/route.ts": "the factory's A2A agent card: discovery is public by design, and it carries only deployed workflow names",
 };
 
 /**
  * Route files that are machine doors: API keys, never sessions. The trigger,
- * webhook and worker doors, and since phase L6 the SDK door, are the
- * backend's (BACKEND_PREFIXES below), so no route file answers for them
- * here; proxy.ts still exempts their URLs from the cookie gate.
+ * webhook and worker doors, since phase L6 the SDK door and since phase L7
+ * (second round) the A2A doors, are the backend's (BACKEND_PREFIXES below),
+ * so no route file answers for them here; proxy.ts still exempts their URLs
+ * from the cookie gate. The platform's own MCP server is the one left.
  */
-export const MACHINE_ROUTE_PREFIXES = ["app/api/a2a/", "app/api/mcp/server/"];
+export const MACHINE_ROUTE_PREFIXES = ["app/api/mcp/server/"];
 
 /**
  * Reads gated above "view", by file prefix. Every other GET is a viewer's to
@@ -62,7 +64,14 @@ export const STRICT_READS: Record<string, string> = { "app/api/iam/": "iam" };
  * agent (`/api/drift`) and the guardian (`/api/guardian`, with its actions
  * beneath it); the run tree (`/api/runs/{id}/tree`) and the kill that
  * reaches it travel with `/api/runs`. Every one is a console door behind
- * the cookie.
+ * the cookie. Phase L7 (second round) the A2A doors, whole (`/api/a2a`: the
+ * signed tasks door and the card beneath it, the tool broker at
+ * `/api/a2a/mcp/{agent}`, the model gateway alias at `/api/a2a/gateway/...`),
+ * which are machine doors and are forwarded byte for byte
+ * (PASSTHROUGH_DOORS); the peer registry (`/api/peers`, with its approve and
+ * rescan doors beneath it) and the estate's breakers (`/api/breakers`, with
+ * the close beneath it), console doors behind the cookie. The agent card at
+ * the root is the backend's too, outside `/api` (BACKEND_PATHS).
  */
 export const BACKEND_PREFIXES = [
   "/api/runs",
@@ -95,7 +104,36 @@ export const BACKEND_PREFIXES = [
   "/api/dependencies",
   "/api/drift",
   "/api/guardian",
+  "/api/a2a",
+  "/api/peers",
+  "/api/breakers",
 ];
+
+/**
+ * Paths the backend owns outside `/api` (phase L7, second round): the
+ * factory's agent card at the well-known path, where a peer reads it signed
+ * (the backend also serves it beneath the tasks door, at
+ * `/api/a2a/.well-known/agent.json`). Exact paths: nothing else under
+ * `/.well-known` is the backend's.
+ */
+export const BACKEND_PATHS = ["/.well-known/agent.json"];
+
+/**
+ * The A2A doors, which proxy.ts forwards byte for byte (lib/passthrough.ts)
+ * rather than rewrites: everything under `/api/a2a` and the card at the
+ * root. A2A is signed end to end: a request's signature covers its method,
+ * its raw path and query, its body and its x-af-* headers, and the answer's
+ * x-af-signature covers its status and body, so the path, query, body and
+ * headers go on as received and the answer comes back as sent, never
+ * re-encoded or compressed on the way. An entry matches itself and anything
+ * beneath it.
+ */
+export const PASSTHROUGH_DOORS = ["/api/a2a", "/.well-known/agent.json"];
+
+/** Whether proxy.ts forwards a path byte for byte (an A2A door), not by a rewrite. */
+export function isPassthroughPath(pathname: string): boolean {
+  return PASSTHROUGH_DOORS.some((d) => pathname === d || pathname.startsWith(`${d}/`));
+}
 
 /**
  * The doors a machine opens with an API key (or, for a webhook, the spec's
@@ -103,12 +141,15 @@ export const BACKEND_PREFIXES = [
  * the backend's trigger, webhook and worker doors; the L4 gateway, retrieval
  * and chatbot doors (application keys); the backend's SDK door (phase L6),
  * which an attached agent opens with the key scoped to it and where a
- * console session is refused; the console's A2A and platform-MCP doors; the
- * external answer door, which an outside participant opens with the signed
- * link token in its path (phase L5).
- * Sign-in itself is open too, or nobody could start. An entry ending in "/"
- * matches anything beneath it; a bare entry matches itself and anything
- * beneath it.
+ * console session is refused; the backend's A2A doors (phase L7, second
+ * round: the signed tasks door, the broker and the gateway alias with an
+ * attached agent's scoped key) and the agent card at the root, which a peer
+ * reads signed; the console's platform-MCP door; the external answer door,
+ * which an outside participant opens with the signed link token in its path
+ * (phase L5). Sign-in itself is open too, or nobody could start. An entry
+ * ending in "/" matches anything beneath it; a bare entry matches itself and
+ * anything beneath it. The peer registry and the breakers are a person's
+ * (configure), so they are not here.
  */
 export const MACHINE_DOORS = [
   "/api/trigger/",
@@ -123,6 +164,7 @@ export const MACHINE_DOORS = [
   "/api/mcp/server",
   "/api/auth/",
   "/api/answer/",
+  "/.well-known/agent.json",
 ];
 
 /** Whether a URL path is a machine door: exempt from the session cookie, guarded by its own key. */
@@ -159,8 +201,9 @@ export function isOpenPage(pathname: string): boolean {
  */
 export const CONSOLE_UNDER_BACKEND = ["/api/author/chat", "/api/mcp/server"];
 
-/** Whether a URL path is one the backend owns: the prefix itself, or anything beneath it, less the console's named exceptions. */
+/** Whether a URL path is one the backend owns: the prefix itself, or anything beneath it, less the console's named exceptions; or one of its exact paths outside `/api`. */
 export function isBackendPath(pathname: string): boolean {
+  if (BACKEND_PATHS.includes(pathname)) return true;
   if (CONSOLE_UNDER_BACKEND.includes(pathname)) return false;
   return BACKEND_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
@@ -168,17 +211,22 @@ export function isBackendPath(pathname: string): boolean {
 export type Upstream = { to: "backend"; url: string } | { to: "runtime"; url: string } | { to: "next" };
 
 /**
- * Where proxy.ts sends an API request. Pure: the environment comes in as
- * arguments so the decision can be tested without one.
+ * Where proxy.ts sends an API request (or one of the backend's paths outside
+ * `/api`, the agent card). Pure: the environment comes in as arguments so
+ * the decision can be tested without one.
  *
  * - A backend-owned path goes to BACKEND_ORIGIN when that is set, whatever
  *   RUNTIME_ORIGIN says.
  * - Otherwise, with RUNTIME_ORIGIN set (the Vercel console), every API path
- *   goes to the control plane behind the tunnel.
- * - Otherwise the request is answered by this Next server.
+ *   and the agent card go to the control plane behind the tunnel.
+ * - Otherwise the request is answered by this Next server; every other page
+ *   path always is.
+ *
+ * The URL is the origin with the path and query concatenated as received:
+ * never decoded, never rebuilt from parts.
  */
 export function upstreamFor(pathname: string, search: string, env: { backendOrigin?: string; runtimeOrigin?: string }): Upstream {
-  if (!pathname.startsWith("/api/")) return { to: "next" };
+  if (!pathname.startsWith("/api/") && !BACKEND_PATHS.includes(pathname)) return { to: "next" };
   const backend = (env.backendOrigin ?? "").replace(/\/+$/, "");
   const runtime = (env.runtimeOrigin ?? "").replace(/\/+$/, "");
   if (backend && isBackendPath(pathname)) return { to: "backend", url: `${backend}${pathname}${search}` };

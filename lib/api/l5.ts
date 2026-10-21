@@ -225,10 +225,10 @@ export class DoorError extends Error {
 
 /* ═══════════════════ operating the estate ═══════════════════ */
 
-export type AttentionKind = "gate" | "refusal" | "budget" | "dead_letter" | "health" | "drift" | "guardian" | "side_channel";
-const ATTENTION_KINDS: AttentionKind[] = ["gate", "refusal", "budget", "dead_letter", "health", "drift", "guardian", "side_channel"];
-/** The kinds L7 added: the fleet read as a system (drift per agent, the guardian's verdicts, two agents coordinating through a shared store). */
-export const L7_ATTENTION_KINDS: AttentionKind[] = ["drift", "guardian", "side_channel"];
+export type AttentionKind = "gate" | "refusal" | "budget" | "dead_letter" | "health" | "drift" | "guardian" | "side_channel" | "breaker";
+const ATTENTION_KINDS: AttentionKind[] = ["gate", "refusal", "budget", "dead_letter", "health", "drift", "guardian", "side_channel", "breaker"];
+/** The kinds L7 added: the fleet read as a system (drift per agent, the guardian's verdicts, two agents coordinating through a shared store, an estate breaker that opened). */
+export const L7_ATTENTION_KINDS: AttentionKind[] = ["drift", "guardian", "side_channel", "breaker"];
 
 /**
  * What a row's one button does, derived from the backend's action: answer
@@ -239,9 +239,11 @@ export const L7_ATTENTION_KINDS: AttentionKind[] = ["drift", "guardian", "side_c
  * the guardian could not act on names the door a person would use, the
  * kill (`kill`: the kill dialog, its reason filled in from the guardian's)
  * or the steer's hold (`hold`); a drift opens the agent's drift page; an
- * act of the guardian and a side channel open the run.
+ * act of the guardian and a side channel open the run. An estate breaker
+ * still open names its close (`close`: `DELETE /api/breakers/{name}`, a
+ * person with configure); one that has closed opens the Breakers page.
  */
-export type AttentionActionKind = "answer" | "replay" | "check" | "open" | "kill" | "hold";
+export type AttentionActionKind = "answer" | "replay" | "check" | "open" | "kill" | "hold" | "close";
 
 export interface AttentionAction {
   kind: AttentionActionKind;
@@ -559,22 +561,27 @@ export function rankOf(severity: number, ageS: number): number {
 /**
  * Whether a run id names a record a run page can open. The engine names an
  * in-process sub-run `<agent>-sub-<10 hex>` and a worker's runtime by a
- * path, and neither is a record: an attention item that points into a
- * sub-run (a side channel read there) names it all the same.
+ * path, and neither is a record (a kill's receipt can name one).
  */
 export function looksLikeRecordId(id: string): boolean {
   return /^[a-z0-9][A-Za-z0-9._-]{0,120}$/.test(id) && !/-sub-[0-9a-f]{10}$/.test(id);
 }
 
-/** The run an item's Open goes to: its own run when that is a record, else the first linked run that is. */
+/**
+ * The run an item's Open goes to: its own run, else the first it links.
+ * Every run an attention item names is a record since the backend's L7
+ * polish (a side channel read inside an in-process sub-run names the record
+ * holding it, the sub-run under `data`).
+ */
 export function openableRun(item: Pick<AttentionItem, "run" | "runs">): string | null {
-  return [item.run ?? "", ...item.runs].find((r) => r && looksLikeRecordId(r)) ?? null;
+  return item.run || item.runs[0] || null;
 }
 
 /** L7 kinds: the console's page or lever for the backend's door. */
 function l7Action(kind: AttentionKind, method: string, path: string, agent: string): { kind: AttentionActionKind; href?: string } {
   if (method === "POST" && /\/api\/runs\/[^/]+\/kill$/.test(path)) return { kind: "kill" };
   if (method === "POST" && /\/api\/runs\/[^/]+\/steer$/.test(path)) return { kind: "hold" };
+  if (kind === "breaker") return method === "DELETE" && /^\/api\/breakers\/./.test(path) ? { kind: "close" } : { kind: "open", href: "/breakers" };
   if (kind === "drift") {
     const named = /[?&]agent=([^&]+)/.exec(path)?.[1];
     let who = agent;
@@ -749,8 +756,9 @@ export function operatorOf(e: { kind: string; title?: string; detail?: string; d
 /**
  * The guardian's note on a run it acted on: "Guardian: held at the next
  * gate" or "Guardian: blocked the run", with the reason, the confidence, the
- * model and where the act was delivered. The note carries no clock of its
- * own (`at` is ""); the journal's does.
+ * model and where the act was delivered, and since the backend's L7 polish
+ * the wall clock it acted at (`data.at`, ISO 8601; a journal entry's `t` is
+ * only the run's own clock). An older note has none (`at` is "").
  */
 function guardianNoteOf(title: string, detail: string, d: Record<string, unknown>): OperatorAction {
   const act = str(d.action) || str(d.verdict);
@@ -883,11 +891,17 @@ export async function submitExternalAnswer(token: string, answer: Answer, note: 
   return call("POST", `/api/answer/${encodeURIComponent(token)}`, { answer, note }, (j) => resultOf(j, ""));
 }
 
-/** `GET /api/attention`: ranked, each row with the action that clears it. */
+/**
+ * `GET /api/attention`: ranked, each row with the action that clears it.
+ * An id is one row: the backend instance that tripped an estate breaker
+ * lists its opening twice (from the shared row and from its own memory),
+ * so a repeated id keeps its first, highest-ranked, row.
+ */
 export async function listAttention(): Promise<AttentionItem[]> {
   return call("GET", "/api/attention", undefined, (j) => {
     const o = obj(j);
-    return (Array.isArray(o.items) ? o.items : []).map(attentionOf);
+    const seen = new Set<string>();
+    return (Array.isArray(o.items) ? o.items : []).map(attentionOf).filter((item) => !seen.has(item.id) && Boolean(seen.add(item.id)));
   });
 }
 

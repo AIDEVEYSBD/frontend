@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMachineRoute, isPublicRoute } from "@/lib/route-policy";
@@ -26,11 +26,16 @@ export interface Handler {
   guard: Guard;
 }
 
-/** Every route file, as a path relative to frontend/ with forward slashes. */
+/**
+ * Every route file, as a path relative to frontend/ with forward slashes:
+ * under app/api, and under app/.well-known should one come back (the agent
+ * card was one until the backend took it in phase L7).
+ */
 export function routeFiles(): string[] {
   const out: string[] = [];
   for (const dir of ["app/api", "app/.well-known"]) {
     const base = path.join(FRONTEND, dir);
+    if (!existsSync(base)) continue;
     for (const rel of readdirSync(base, { recursive: true }) as string[]) {
       if (path.basename(rel) === "route.ts") out.push(path.join(dir, rel).split(path.sep).join("/"));
     }

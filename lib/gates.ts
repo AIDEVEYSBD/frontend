@@ -393,6 +393,7 @@ export const ATTENTION_LABEL: Record<AttentionItem["kind"], string> = {
   drift: "drift",
   guardian: "guardian",
   side_channel: "side channel",
+  breaker: "breaker",
 };
 
 export const ACTION_LABEL: Record<AttentionItem["action"]["kind"], string> = {
@@ -402,6 +403,7 @@ export const ACTION_LABEL: Record<AttentionItem["action"]["kind"], string> = {
   open: "Open",
   kill: "Kill…",
   hold: "Hold",
+  close: "Close breaker",
 };
 
 /**
@@ -429,4 +431,54 @@ export function orderAttention(items: readonly AttentionItem[]): AttentionItem[]
 /** The one verb that clears a row, as the button reads. */
 export function attentionVerb(item: AttentionItem): string {
   return ACTION_LABEL[item.action.kind];
+}
+
+/** One end of a side channel: the agent, the record it ran in, and the in-process sub-run inside that record when the read or write happened there. */
+export interface ChannelEnd {
+  agent: string;
+  run: string;
+  sub_run: string | null;
+}
+
+export interface SideChannel {
+  writer: ChannelEnd;
+  reader: ChannelEnd;
+  /** Every sub-run involved, at most 20. */
+  sub_runs: string[];
+  reads: number;
+  refused: number;
+  /** A tainted value crossed. */
+  tainted: boolean;
+  keys: string[];
+  both_ways: boolean;
+}
+
+const s_ = (v: unknown): string => (typeof v === "string" ? v : "");
+const n_ = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+const o_ = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+const end = (v: unknown): ChannelEnd => {
+  const e = o_(v);
+  return { agent: s_(e.agent), run: s_(e.run), sub_run: s_(e.sub_run) || null };
+};
+
+/** A side channel's two ends and what crossed, from the item's `data`; null for any other kind. */
+export function sideChannelOf(item: Pick<AttentionItem, "kind" | "data">): SideChannel | null {
+  if (item.kind !== "side_channel" || !item.data) return null;
+  const d = item.data;
+  return {
+    writer: end(d.writer),
+    reader: end(d.reader),
+    sub_runs: Array.isArray(d.sub_runs) ? d.sub_runs.map(s_).filter(Boolean) : [],
+    reads: n_(d.reads),
+    refused: n_(d.refused),
+    tainted: d.tainted === true,
+    keys: Array.isArray(d.keys) ? d.keys.map(s_).filter(Boolean) : [],
+    both_ways: d.both_ways === true,
+  };
+}
+
+/** When a drift was first seen (the item ages from then); null for any other kind, or a backend that does not say. */
+export function driftFirstSeen(item: Pick<AttentionItem, "kind" | "data">): string | null {
+  if (item.kind !== "drift") return null;
+  return s_(item.data?.first_seen) || null;
 }

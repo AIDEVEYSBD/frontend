@@ -7,10 +7,12 @@ import { Button, Mono, Status, Tag } from "./ui";
 import { KillDialog } from "./kill-dialog";
 import { hueFor } from "@/lib/hue";
 import { soon } from "@/lib/soon";
-import { clearAttention, listAttention, looksLikeRecordId, openableRun, portHealthLine, steerRun, type AttentionItem, type PortHealth } from "@/lib/api/l5";
-import { killRun, rateLimitOfError } from "@/lib/api/l7";
-import { ATTENTION_LABEL, HOLDS_LABEL, URGENT_SEVERITY, attentionVerb, countdown, orderAttention } from "@/lib/gates";
-import { killSummary } from "@/lib/run-tree";
+import { clearAttention, listAttention, openableRun, portHealthLine, steerRun, type AttentionItem, type PortHealth } from "@/lib/api/l5";
+import { killRefusalOf, killRun, rateLimitOfError } from "@/lib/api/l7";
+import { closeBreaker } from "@/lib/api/l7b";
+import { breakerOfAttention, breakerTarget } from "@/lib/breakers";
+import { ATTENTION_LABEL, HOLDS_LABEL, URGENT_SEVERITY, attentionVerb, countdown, driftFirstSeen, orderAttention, sideChannelOf, type ChannelEnd } from "@/lib/gates";
+import { alreadySummary, killSummary } from "@/lib/run-tree";
 import { rateLimitText } from "@/lib/rate-limit";
 import { useNow } from "./gate-form";
 
@@ -28,13 +30,17 @@ import { useNow } from "./gate-form";
  * A failing port's row re-reads that port's own check (`GET
  * /api/ports/{name}/health`) and keeps what it answered under the row.
  *
- * L7 adds three kinds. Drift opens the agent's drift page. The guardian's
- * acts open the run; a verdict it could not act on offers the lever a
- * person would pull, the kill (its dialog filled in with the guardian's
- * reason, still the person's to change) or the hold at the next gate. A
- * side channel links both agents and both runs; a reader inside an
- * in-process sub-run is named by the sub-run's id, which is no record, so
- * that one is shown and not linked.
+ * L7 adds three kinds. Drift opens the agent's drift page, and ages from
+ * when the drift was first seen. The guardian's acts open the run; a
+ * verdict it could not act on offers the lever a person would pull, the
+ * kill (its dialog filled in with the guardian's reason, still the
+ * person's to change) or the hold at the next gate. A side channel links
+ * both agents and both records; a read or write inside an in-process
+ * sub-run names the record holding it, and the sub-run is mentioned beside
+ * it. An estate breaker that opened (the
+ * second round) is red while it is open, with its close on the row (the
+ * configure permission; the next call goes through on every worker), and
+ * opens the Breakers page once it has closed.
  */
 
 const KIND_TONE: Record<AttentionItem["kind"], "warn" | "err" | "queue" | "run"> = {
@@ -46,27 +52,55 @@ const KIND_TONE: Record<AttentionItem["kind"], "warn" | "err" | "queue" | "run">
   drift: "warn",
   guardian: "err",
   side_channel: "warn",
+  breaker: "err",
 };
 
-/** The agents and runs an L7 item links, under its title: each run a link when it is a record. */
+const RunLink = ({ run }: { run: string }) => (
+  <Link href={`/runs?id=${encodeURIComponent(run)}`} className="focusable rounded-sm font-mono text-dim hover:underline">
+    {run}
+  </Link>
+);
+
+/** One end of a side channel: who, in which record, and the sub-run inside it when there was one. */
+function ChannelEndLine({ end, verb }: { end: ChannelEnd; verb: string }) {
+  return (
+    <span className="inline-flex min-w-0 flex-wrap items-center gap-x-1">
+      <span className="text-faint">
+        {end.agent || "an agent"} {verb} in
+      </span>
+      {end.run ? <RunLink run={end.run} /> : <span className="text-ghost">a run not on the record</span>}
+      {end.sub_run && (
+        <span className="font-mono text-ghost" title="An in-process sub-run inside that record: it has no record of its own; its entries are in the record's journal.">
+          (sub-run {end.sub_run})
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** The agents and records an L7 item links, under its title: a side channel's two ends, a drift's first sighting, every other item's runs. */
 export function AttentionLinks({ item }: { item: AttentionItem }) {
+  const channel = sideChannelOf(item);
+  if (channel) {
+    return (
+      <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px]">
+        <ChannelEndLine end={channel.writer} verb="wrote" />
+        <span className="text-ghost">·</span>
+        <ChannelEndLine end={channel.reader} verb="read" />
+      </span>
+    );
+  }
+  const first = driftFirstSeen(item);
   const agents = item.agents.length > 1 ? item.agents : [];
   const runs = item.runs.length > 1 || (item.runs.length === 1 && item.runs[0] !== item.run) ? item.runs : [];
-  if (!agents.length && !runs.length) return null;
+  if (!agents.length && !runs.length && !first) return null;
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px]">
-      {agents.length > 0 && <span className="text-faint">{item.kind === "side_channel" ? `${agents[0]} wrote · ${agents.slice(1).join(", ")} read` : agents.join(", ")}</span>}
-      {runs.map((r) =>
-        looksLikeRecordId(r) ? (
-          <Link key={r} href={`/runs?id=${encodeURIComponent(r)}`} className="focusable rounded-sm font-mono text-dim hover:underline">
-            {r}
-          </Link>
-        ) : (
-          <span key={r} className="font-mono text-ghost" title="An in-process sub-run: it has no record of its own; its entries are in its parent's journal.">
-            {r} (sub-run)
-          </span>
-        ),
-      )}
+      {first && <span className="text-faint">drifting since first seen {first.replace("T", " ").replace(/\.\d+Z$|Z$/, " UTC")}</span>}
+      {agents.length > 0 && <span className="text-faint">{agents.join(", ")}</span>}
+      {runs.map((r) => (
+        <RunLink key={r} run={r} />
+      ))}
     </span>
   );
 }
@@ -144,6 +178,23 @@ export function AttentionPanel({
       setKillAsk(item);
       return;
     }
+    if (a.kind === "close") {
+      const name = breakerOfAttention(item);
+      if (!name) return onNotice(a.says || item.title);
+      setBusy(item.id);
+      try {
+        await closeBreaker(name);
+        const t = breakerTarget(name);
+        onNotice(`Closed the estate's breaker on ${t.kind === "peer" ? `the peer ${t.label}` : t.label}: every worker and every run may call it again. It opens again on the next run of calls or failures.`);
+        reload();
+      } catch (e) {
+        onNotice(refusedText(item, e));
+        reload();
+      } finally {
+        setBusy(null);
+      }
+      return;
+    }
     if (a.kind === "hold") {
       if (!item.run) return onNotice(a.says || item.title);
       setBusy(item.id);
@@ -196,7 +247,9 @@ export function AttentionPanel({
               onNotice(killSummary(r));
               reload();
             } catch (e) {
-              onNotice(refusedText(item, e));
+              const refusal = killRefusalOf(e);
+              onNotice(refusal?.already.length ? alreadySummary(refusal) : refusedText(item, e));
+              reload();
             } finally {
               setBusy(null);
               setKillAsk(null);
@@ -264,8 +317,10 @@ export function AttentionPanel({
                 <Button
                   size="sm"
                   variant={it.action.kind === "open" ? "outline" : "solid"}
-                  tone={it.action.kind === "answer" || it.action.kind === "hold" ? "warn" : it.action.kind === "kill" ? "err" : it.action.kind === "replay" ? "ink" : "neutral"}
-                  permission={it.action.kind === "answer" ? "approve" : it.action.kind === "replay" || it.action.kind === "kill" || it.action.kind === "hold" ? "run" : undefined}
+                  tone={it.action.kind === "answer" || it.action.kind === "hold" ? "warn" : it.action.kind === "kill" ? "err" : it.action.kind === "replay" || it.action.kind === "close" ? "ink" : "neutral"}
+                  permission={
+                    it.action.kind === "answer" ? "approve" : it.action.kind === "close" ? "configure" : it.action.kind === "replay" || it.action.kind === "kill" || it.action.kind === "hold" ? "run" : undefined
+                  }
                   loading={busy === it.id}
                   onClick={() => act(it)}
                 >
@@ -276,7 +331,7 @@ export function AttentionPanel({
           );
         })}
         {items && items.length === 0 && !error && (
-          <p className="px-3 py-3 text-[12px] text-faint">Nothing waiting. Gates, stopped runs, budget breaches, dead letters, failing health, drift, the guardian&rsquo;s verdicts and agents coordinating through a shared store land here with the action that clears them.</p>
+          <p className="px-3 py-3 text-[12px] text-faint">Nothing waiting. Gates, stopped runs, budget breaches, dead letters, failing health, drift, the guardian&rsquo;s verdicts, agents coordinating through a shared store and estate breakers that opened land here with the action that clears them.</p>
         )}
       </div>
     </section>

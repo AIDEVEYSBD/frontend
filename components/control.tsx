@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, IconButton, Label, Mono, Status, Tag } from "./ui";
 import { Banner } from "./overlays";
@@ -21,10 +22,12 @@ import { Pick } from "./select";
 import { Checkbox } from "./forms";
 import { api, errorText, type RunRow as LedgerRow } from "@/lib/api/client";
 import { deployAgent, readQueue, type QueueSummary } from "@/lib/api/l2";
+import { JOB_STATUS_META, countOf } from "@/lib/queue";
+import { partnerStatus, type PartnerPeer } from "@/lib/peers";
 import { auditLine, inFlight, type RunRowL5 } from "@/lib/api/l5";
 import { KillDialog } from "./kill-dialog";
-import { killRun } from "@/lib/api/l7";
-import { killSummary } from "@/lib/run-tree";
+import { killRefusalOf, killRun } from "@/lib/api/l7";
+import { alreadySummary, killSummary } from "@/lib/run-tree";
 import { RunSourceTag } from "./run-source";
 import { runSourceOf } from "@/lib/api/l6";
 import { AttentionPanel } from "./attention";
@@ -125,7 +128,7 @@ interface Posture {
 interface ControlData {
   posture: Posture;
   routing: { agent: string; node: string; model: string | null }[];
-  peers: { agent: string; name: string; url: string; up: boolean; title: string; skills: number }[];
+  peers: PartnerPeer[];
   finops: {
     azure: {
       configured: boolean;
@@ -545,7 +548,9 @@ export function Control() {
           try {
             notice(killSummary(await killRun(id, reason)));
           } catch (e) {
-            notice(`Kill refused: ${(e as Error).message.slice(0, 120)}`);
+            // Everything in flight already stopping on an earlier kill is that, not a refusal.
+            const refusal = killRefusalOf(e);
+            notice(refusal?.already.length ? alreadySummary(refusal) : `Kill refused: ${(e as Error).message.slice(0, 120)}`);
           }
         } else {
           const { data, error, response } = await api.POST("/api/runs/kill-all", { body: { reason } });
@@ -1188,31 +1193,33 @@ export function Control() {
           </div>
         </section>
 
-        {/* Partner agents — A2A peers, card-pinged live */}
+        {/* Partner agents — A2A peers, as the peer registry holds them */}
         <section className="mb-4 flex break-inside-avoid flex-col overflow-hidden rounded-md border border-line bg-surface">
-          <PanelHead title="Partner agents" meta="A2A peers, card-pinged live" />
-          {(data?.peers ?? []).map((p) => (
-            <div key={`${p.name}@${p.url}`} className="flex items-center gap-2.5 border-b border-line px-3 py-2.5 last:border-b-0">
-              <span className={`size-2 shrink-0 rounded-full ${p.up ? "bg-ok" : "bg-err"}`} aria-hidden />
-              <span className="flex min-w-0 grow flex-col">
-                <span className="truncate text-[12px] font-medium text-fg">{p.title}</span>
-                <span className="truncate font-mono text-[9.5px] text-faint">
-                  {p.url} · used by {p.agent}
+          <PanelHead title="Partner agents" meta="A2A peers, from the registry" />
+          {(data?.peers ?? []).map((p) => {
+            const st = partnerStatus(p);
+            return (
+              <Link key={`${p.name}@${p.url}`} href={`/peers#peer-${encodeURIComponent(p.name)}`} className="focusable flex items-center gap-2.5 border-b border-line px-3 py-2.5 transition-colors last:border-b-0 hover:bg-raise/50">
+                <span className={`size-2 shrink-0 rounded-full ${st.tone === "ok" ? "bg-ok" : st.tone === "warn" ? "bg-warn" : st.tone === "err" ? "bg-err" : "bg-line-strong"}`} aria-hidden />
+                <span className="flex min-w-0 grow flex-col">
+                  <span className="truncate text-[12px] font-medium text-fg">{p.title}</span>
+                  <span className="truncate font-mono text-[9.5px] text-faint">
+                    {p.name} · {p.url || "no URL"}
+                    {p.agent ? ` · used by ${p.agent}` : ""}
+                  </span>
                 </span>
-              </span>
-              <span className="shrink-0 text-[10px] text-ghost">
-                {p.up ? `${p.skills} skill${p.skills === 1 ? "" : "s"}` : "unreachable"}
-              </span>
-            </div>
-          ))}
+                <span className={`shrink-0 text-[10px] ${st.tone === "err" ? "text-err" : st.tone === "warn" ? "text-warn" : "text-ghost"}`}>{st.text}</span>
+              </Link>
+            );
+          })}
           {data && data.peers.length === 0 && (
             <p className="px-3 py-4 text-[12px] leading-[1.55] text-faint">
-              No external agents configured. Drop an A2A connector on any workflow and the peer
-              appears here with a live status.
+              No peer is registered or named by a workflow. Register one on the Peers page: its card is pinned and nothing is sent to it until a person
+              approves it.
             </p>
           )}
           <p className="border-t border-line px-3 py-2 text-[10.5px] leading-[1.5] text-faint">
-            Their answers arrive marked untrusted — the same taint rules as every other boundary.
+            Spoken to only once registered and approved, signed both ways. Their answers arrive marked untrusted — the same taint rules as every other boundary.
           </p>
         </section>
 
@@ -2624,15 +2631,18 @@ function QueuePanel({ queue, now }: { queue: QueueData | null; now: number }) {
         <p className="px-3 py-3 text-[11.5px] text-faint">Nothing posted in the last hour. External systems post to /api/trigger/&lt;agent&gt;.</p>
       ) : (
         <div className="flex flex-col">
-          <div className="grid grid-cols-[minmax(0,1fr)_repeat(4,52px)] items-center gap-1 border-b border-line px-3 py-1.5 text-[10px] text-faint">
+          <div className="grid grid-cols-[minmax(0,1fr)_repeat(5,52px)] items-center gap-1 border-b border-line px-3 py-1.5 text-[10px] text-faint">
             <span>agent</span>
             <span className="text-right">queued</span>
             <span className="text-right">running</span>
             <span className="text-right">done</span>
             <span className="text-right">failed</span>
+            <span className="text-right" title={JOB_STATUS_META.cancelled.means}>
+              cancelled
+            </span>
           </div>
           {rows.map(([agent, a]) => (
-            <div key={agent} className="grid grid-cols-[minmax(0,1fr)_repeat(4,52px)] items-center gap-1 border-b border-line px-3 py-2 text-[11.5px] last:border-b-0">
+            <div key={agent} className="grid grid-cols-[minmax(0,1fr)_repeat(5,52px)] items-center gap-1 border-b border-line px-3 py-2 text-[11.5px] last:border-b-0">
               <span className="flex min-w-0 items-baseline gap-2">
                 <span className="truncate font-mono text-[11px] text-fg">{agent}</span>
                 {a.oldest_queued && <span className="shrink-0 text-[10px] text-warn">oldest {age(a.oldest_queued)}</span>}
@@ -2641,6 +2651,9 @@ function QueuePanel({ queue, now }: { queue: QueueData | null; now: number }) {
               <span className={`tnum text-right ${(a.running ?? 0) > 0 ? "font-semibold text-run" : "text-dim"}`}>{a.running ?? 0}</span>
               <span className="tnum text-right text-dim">{a.done ?? 0}</span>
               <span className={`tnum text-right ${(a.failed ?? 0) > 0 ? "font-semibold text-err" : "text-dim"}`}>{a.failed ?? 0}</span>
+              <span className="tnum text-right text-dim" title={JOB_STATUS_META.cancelled.means}>
+                {countOf(a, "cancelled")}
+              </span>
             </div>
           ))}
         </div>

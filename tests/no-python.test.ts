@@ -13,14 +13,14 @@ import { FRONTEND } from "./routes";
  * lib/ starts a Python process. This reads every source file and fails on
  * the first that does, so the habit cannot creep back one route at a time.
  *
- * The A2A tool broker (lib/server/mcp-call.ts) still spawns a registered
- * tool server by the command its registration names, to make one call; the
- * registry itself, discovery included, is the backend's since phase L6, and
- * so is the SDK door (`/api/sdk`), whose run records the console used to
- * write itself. The command is the registration's, never a hard-coded
- * interpreter, and the broker refuses, before anything is spawned, a server
- * it cannot start as registered (an `isolate` it has no container for, an
- * environment still holding `${secret:…}` references it has no vault for).
+ * The last process the console started was the A2A tool broker's: it
+ * spawned a registered tool server to make one call. The registry itself,
+ * discovery included, is the backend's since phase L6, and so is the SDK
+ * door (`/api/sdk`), whose run records the console used to write itself;
+ * since phase L7 (second round) the broker is the backend's too, reaching
+ * tool servers through the runtime (pins checked on every connection,
+ * secrets from the vault, isolation, the egress decision), so nothing here
+ * starts a process at all.
  */
 
 function sources(dir: string): string[] {
@@ -48,8 +48,9 @@ describe("no python3 subprocess in the console", () => {
     expect(files.filter((f) => f.startsWith("app/api/sdk/"))).toEqual([]);
   });
 
-  it("starts processes in one place only, the A2A tool broker", () => {
-    expect(files.filter((f) => CHILD_PROCESS.test(readFileSync(path.join(FRONTEND, f), "utf-8")))).toEqual(["lib/server/mcp-call.ts"]);
+  it("starts no process anywhere: the A2A tool broker, the last that did, is the backend's", () => {
+    expect(files.filter((f) => CHILD_PROCESS.test(readFileSync(path.join(FRONTEND, f), "utf-8")))).toEqual([]);
+    expect(files.filter((f) => f.startsWith("app/api/a2a/") || f === "lib/server/mcp-call.ts")).toEqual([]);
   });
 
   for (const file of files) {

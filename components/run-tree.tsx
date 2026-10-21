@@ -6,8 +6,9 @@ import { Button, RUN_STATE, Status, Tag, type Tone } from "./ui";
 import { KillDialog } from "./kill-dialog";
 import { RunSourceTag } from "./run-source";
 import { DoorError } from "@/lib/api/l5";
-import { getRunTree, killRun, type KillReceipt, type RunTree, type TreeNode } from "@/lib/api/l7";
+import { getRunTree, killRefusalOf, killRun, type KillReceipt, type KillRefusal, type Reached, type RunTree, type TreeNode } from "@/lib/api/l7";
 import {
+  alreadySummary,
   byAgentRows,
   deliveryText,
   figuresLine,
@@ -15,11 +16,15 @@ import {
   fmtUsd,
   inFlightNodes,
   isRecordReached,
+  killByText,
   killSummary,
+  listedDiffers,
   nodeHref,
   nodeKindLabel,
   nodeLinkText,
+  peerTaskLine,
   reachedKindLabel,
+  reachedStateText,
   refusalLine,
   treeRows,
   treeSummary,
@@ -130,13 +135,59 @@ function NodeRow({ row }: { row: TreeRow }) {
             with {row.descendants} under it: {fmtUsd(n.total.cost)} · {fmtCount(n.total.tokens)} tokens{n.total.refusals ? ` · ${n.total.refusals} refusal${n.total.refusals === 1 ? "" : "s"}` : ""}
           </span>
         )}
+        {n.listed && listedDiffers(n) && (
+          <span className="tnum font-mono text-[10.5px] text-faint" title="This record's row in the runs list: its whole journal, its in-process sub-runs folded in">
+            in the runs list: {figuresLine(n.listed)}
+          </span>
+        )}
         {n.error && <span className="w-full truncate pl-0.5 text-[10.5px] text-err" title={n.error}>{n.error}</span>}
       </div>
     </div>
   );
 }
 
-/** Whom a kill reached and how: the receipt `POST /api/runs/{id}/kill` answers. */
+/** One row a kill reached, or (under `already`) one an earlier kill is still stopping. */
+function ReachedRow({ r }: { r: Reached }) {
+  const peerTask = r.kind === "peer_task" || r.delivery.startsWith("a2a");
+  const peer = r.peer || r.agent;
+  return (
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b border-line/70 px-4 py-1.5 last:border-b-0" style={{ paddingLeft: 16 + Math.min(6, r.depth) * 16 }}>
+      <Tag tone={r.kind === "sub_run" ? "queue" : r.kind === "job" ? "warn" : peerTask ? (r.delivery === "a2a" ? "run" : "err") : "neutral"}>{reachedKindLabel(r)}</Tag>
+      {peerTask && peer ? (
+        <Link href={`/peers#peer-${encodeURIComponent(peer)}`} className="focusable rounded-sm text-[12px] font-medium text-fg hover:underline" title={`${peer} in the peer registry`}>
+          {peer}
+        </Link>
+      ) : (
+        <span className="text-[12px] font-medium text-fg">{r.agent || "—"}</span>
+      )}
+      {isRecordReached(r) ? (
+        <Link href={`/runs?id=${encodeURIComponent(r.run)}`} className="focusable min-w-0 truncate rounded-sm font-mono text-[10.5px] text-dim hover:underline">
+          {r.run}
+        </Link>
+      ) : (
+        <span className="tnum font-mono min-w-0 truncate text-[10.5px] text-faint" title={r.run}>
+          {r.kind === "job" ? `job ${r.run}` : peerTask && r.task_id ? `task ${r.task_id}` : r.run}
+        </span>
+      )}
+      <span className="min-w-0 grow text-[11px] text-faint">{r.kill ? `stopping on the kill ${killByText(r.kill)}${r.kill.at ? ` at ${r.kill.at.replace("T", " ").replace(/\.\d+Z$|Z$/, " UTC")}` : ""}` : deliveryText(r.delivery)}</span>
+      <span className="tnum font-mono text-[10px] text-ghost">{reachedStateText(r)}</span>
+      {peerTask && r.delivery !== "a2a" && !r.kill && (
+        <span className="w-full min-w-0 text-[10.5px] leading-[1.45] break-words text-err" title={peerTaskLine(r)}>
+          {r.error || "the peer did not confirm the cancel"}
+        </span>
+      )}
+    </li>
+  );
+}
+
+/**
+ * Whom a kill reached and how: the receipt `POST /api/runs/{id}/kill`
+ * answers. A task a run in the tree handed a peer is a row of its own
+ * (`peer_task`): the peer by its registry id, linked to the Peers page, the
+ * task's id at the peer, and, when the signed cancel did not reach it, why.
+ * What an earlier kill is still stopping (`already`) is listed apart, with
+ * that kill: nothing was thrown at it again.
+ */
 export function KillReceiptView({ receipt, onDismiss }: { receipt: KillReceipt; onDismiss?: () => void }) {
   return (
     <div className="flex flex-col border-t border-err/40 bg-surface">
@@ -150,22 +201,50 @@ export function KillReceiptView({ receipt, onDismiss }: { receipt: KillReceipt; 
           </Button>
         )}
       </div>
+      {receipt.already.length > 0 && (
+        <div className="flex flex-col border-t border-line">
+          <span className="px-4 pt-1.5 text-[10.5px] text-faint">Already stopping on an earlier kill, not sent another</span>
+          <ul className="max-h-[120px] overflow-y-auto">
+            {receipt.already.map((r) => (
+              <ReachedRow key={`already:${r.kind}:${r.run}`} r={r} />
+            ))}
+          </ul>
+        </div>
+      )}
       {receipt.reached.length > 0 && (
         <ul className="max-h-[180px] overflow-y-auto border-t border-line">
           {receipt.reached.map((r) => (
-            <li key={`${r.kind}:${r.run}`} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b border-line/70 px-4 py-1.5 last:border-b-0" style={{ paddingLeft: 16 + Math.min(6, r.depth) * 16 }}>
-              <Tag tone={r.kind === "sub_run" ? "queue" : r.kind === "job" ? "warn" : "neutral"}>{reachedKindLabel(r)}</Tag>
-              <span className="text-[12px] font-medium text-fg">{r.agent || "—"}</span>
-              {isRecordReached(r) ? (
-                <Link href={`/runs?id=${encodeURIComponent(r.run)}`} className="focusable min-w-0 truncate rounded-sm font-mono text-[10.5px] text-dim hover:underline">
-                  {r.run}
-                </Link>
-              ) : (
-                <span className="tnum font-mono min-w-0 truncate text-[10.5px] text-faint">{r.kind === "job" ? `job ${r.run}` : r.run}</span>
-              )}
-              <span className="min-w-0 grow text-[11px] text-faint">{deliveryText(r.delivery)}</span>
-              <span className="tnum font-mono text-[10px] text-ghost">was {r.state || "?"}</span>
-            </li>
+            <ReachedRow key={`${r.kind}:${r.run}`} r={r} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A kill that reached nothing new (409 `KillRefused`): the tree is already
+ * being stopped. Shown as that, never as an error: who killed it and why,
+ * and what is still unwinding.
+ */
+export function KillAlreadyView({ refusal, onDismiss }: { refusal: KillRefusal; onDismiss?: () => void }) {
+  return (
+    <div className="flex flex-col border-t border-warn/50 bg-surface">
+      <div className="flex flex-wrap items-center gap-2 px-4 py-2">
+        <Status tone="warn">Already being stopped</Status>
+        <span className="min-w-0 grow text-[11.5px] leading-[1.5] text-dim" title={refusal.error}>
+          {alreadySummary(refusal)}
+        </span>
+        {onDismiss && (
+          <Button size="sm" variant="solid" tone="neutral" onClick={onDismiss}>
+            Dismiss
+          </Button>
+        )}
+      </div>
+      {refusal.already.length > 0 && (
+        <ul className="max-h-[180px] overflow-y-auto border-t border-line">
+          {refusal.already.map((r) => (
+            <ReachedRow key={`${r.kind}:${r.run}`} r={r} />
           ))}
         </ul>
       )}
@@ -200,8 +279,8 @@ export function RunTreeBody({ tree, footer }: { tree: RunTree; footer?: React.Re
         {tree.truncated && <p className="px-4 py-1.5 text-[11px] text-warn">The tree has more than {tree.count} nodes; the rest are left out.</p>}
       </div>
       <div className="flex min-w-0 flex-col bg-surface">
-        <div className="flex flex-col gap-0.5 border-b border-line px-4 py-2">
-          <span className="text-[11px] font-semibold text-dim">Rolled up to the orchestrator</span>
+        <div className="flex flex-col gap-0.5 border-b border-line px-4 py-2" title={tree.how || undefined}>
+          <span className="text-[11px] font-semibold text-dim">Rolled up to the orchestrator{tree.how ? " · as the runs list shows them" : ""}</span>
           <span className="tnum font-mono text-[11px] text-fg">{figuresLine(tree.rollup)}</span>
           <span className={`text-[11px] ${tree.rollup.refusals ? "text-err" : "text-faint"}`}>{refusalLine(tree)}</span>
         </div>
@@ -242,6 +321,7 @@ export function RunTreePanel({ runId, live }: { runId?: string; live: boolean })
   const [killAsk, setKillAsk] = useState(false);
   const [killing, setKilling] = useState(false);
   const [receipt, setReceipt] = useState<KillReceipt | null>(null);
+  const [already, setAlready] = useState<KillRefusal | null>(null);
   const [killError, setKillError] = useState("");
   if (!runId) return null;
   // Open by itself when there is a tree to show; a run alone stays a line.
@@ -254,19 +334,26 @@ export function RunTreePanel({ runId, live }: { runId?: string; live: boolean })
       {killAsk && tree && (
         <KillDialog
           title={tree.asked === tree.root ? "Kill what is still running in this tree?" : "Kill this run and what it set off?"}
-          what={`${moving.length} node${moving.length === 1 ? " is" : "s are"} still in flight under ${tree.asked}. The kill reaches every descendant where it runs: sub-runs on the run's cancel, child runs here, on their worker or through their SDK, and queued children are dead-lettered. A run waiting at a gate is not killed.`}
+          what={`${moving.length} node${moving.length === 1 ? " is" : "s are"} still in flight under ${tree.asked}. The kill reaches every descendant where it runs: sub-runs on the run's cancel, child runs here, on their worker or through their SDK, queued children are dead-lettered, and tasks handed to peers are cancelled over A2A, signed. A run waiting at a gate is not killed.`}
           confirm="Kill the tree"
           onClose={() => setKillAsk(false)}
           onConfirm={(reason) => {
             setKillAsk(false);
             setKilling(true);
             setKillError("");
+            setAlready(null);
             killRun(tree.asked, reason)
               .then((r) => {
                 setReceipt(r);
                 reload();
               })
-              .catch((e) => setKillError((e as Error).message))
+              .catch((e) => {
+                const refusal = killRefusalOf(e);
+                if (refusal?.already.length) {
+                  setAlready(refusal);
+                  reload();
+                } else setKillError((e as Error).message);
+              })
               .finally(() => setKilling(false));
           }}
         />
@@ -304,6 +391,7 @@ export function RunTreePanel({ runId, live }: { runId?: string; live: boolean })
         />
       )}
       {receipt && <KillReceiptView receipt={receipt} onDismiss={() => setReceipt(null)} />}
+      {already && <KillAlreadyView refusal={already} onDismiss={() => setAlready(null)} />}
     </div>
   );
 }

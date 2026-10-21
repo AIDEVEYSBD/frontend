@@ -255,10 +255,10 @@ export interface A2AStep {
 export const A2A_STEPS: A2AStep[] = [
   {
     title: "Register the agent",
-    body: "Name it, say who owns it, and give the factory its agent card URL. A key scoped to this agent is minted at the same time; every door below checks it. Then grant it tools and set its gate in the registry's policy editor — an agent starts with nothing.",
+    body: "Name it, say who owns it, and give the factory its agent card URL. A key scoped to this agent is minted at the same time; every door below checks it. Then grant it tools and set its gate in the registry's policy editor — an agent starts with nothing — and name the vault secret it signs its A2A requests with.",
     snippet: (c) => `POST ${ENDPOINTS.origin}/api/attached      { "name": "…", "mode": "a2a", "card_url": "…" }
 →    { "agent": "${c.agent}", "key": "${KEY(c)}" }
-PATCH ${ENDPOINTS.origin}/api/attached     { "id": "${c.agent}", "grants": ["aegis-registry.get_warden_rules"], "gate_at": "write" }`,
+PATCH ${ENDPOINTS.origin}/api/attached     { "id": "${c.agent}", "grants": ["aegis-registry.get_warden_rules"], "gate_at": "write", "secret_name": "${c.agent}-a2a" }`,
     lang: "http",
   },
   {
@@ -288,13 +288,18 @@ AZURE_OPENAI_API_KEY=${KEY(c)}`,
   },
   {
     title: "Exchange work over A2A",
-    body: "The factory reads the agent's card and hands it tasks through the peer connector: peer.send, then peer.result, with the reply marked untrusted until a node validates it. The factory is a peer too: its card lists the deployed workflows as skills, and tasks/send at the tasks door puts a task on the trigger queue for a worker to run under the policy engine.",
+    body: "Every A2A request is signed, both ways, under a secret the two sides share and the vault holds by name: the agent signs as its id with the secret named in its policy, and checks the signature on every answer before reading it. The factory hands the agent tasks through the peer connector (peer.send, then peer.result, the reply marked untrusted until a node validates it) once its endpoint is registered under Peers and a person has approved its pinned card. The factory is a peer too: its card, served signed, lists the deployed workflows as skills, and tasks/send at the tasks door puts a task on the trigger queue for a worker to run under the policy engine.",
     snippet: (c) => `POST ${ENDPOINTS.tasks}
+x-af-agent: ${c.agent}
+x-af-timestamp: <unix seconds>      x-af-nonce: <16 random bytes, hex>
+x-af-signature: <base64url HMAC-SHA256, under the shared secret, of
+                 POST\\n/api/a2a\\ntimestamp\\nnonce\\nsha256hex(body)\\nx-af-delegation>
 { "jsonrpc": "2.0", "id": 1, "method": "tasks/send",
   "params": { "id": "${c.agent}-task-1", "metadata": { "workflow": "aegis-dlp-triage" },
               "message": { "role": "user", "parts": [{ "type": "data", "data": { "…": "the workflow's input" } }] } } }
 → { "result": { "id": "…", "status": { "state": "submitted" } } }      then tasks/get until completed
-GET  ${ENDPOINTS.card}   the factory's own card`,
+  x-af-signature on the answer: status\\nyour nonce\\nsha256hex(body), verified before it is read
+GET  ${ENDPOINTS.card}   the factory's own card, signed the same way`,
     lang: "http",
   },
 ];
@@ -318,6 +323,8 @@ export interface AttachedAgent {
   gate_at: "" | "read" | "write" | "risky" | "destructive";
   injection: "block" | "flag";
   blocked: boolean;
+  /** The vault name of the secret it signs its A2A requests with (phase L7); "" when it has none, and then the tasks door does not hear it. Never the value. */
+  secret_name: string;
   /** Measured from the run record for a live agent; demonstration figures for a seeded one. */
   runs30d: number;
   cost30d: number | null;

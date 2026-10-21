@@ -3,7 +3,7 @@ import { BACKEND_PREFIXES, CONSOLE_UNDER_BACKEND, MACHINE_ROUTE_PREFIXES, PUBLIC
 import { handlersOf, isMachine, routeFiles, urlOf } from "./routes";
 
 /**
- * Every exported HTTP handler under app/api (and the agent card) is guarded.
+ * Every exported HTTP handler under app/api is guarded.
  *
  * A console route calls permit(req, <permission>) as its first act, GET with
  * "view" (or the stricter read STRICT_READS names, as for IAM); a machine
@@ -20,19 +20,32 @@ describe("route coverage", () => {
   it("finds the routes", () => {
     // What remains in Next after phase L2: knowledge, evals, FinOps, control,
     // the assistant, observability, the platform's MCP server (the registry
-    // and the SDK door went to the backend in L6), the A2A doors (the model
-    // gateway alias, the tool broker, the tasks door), sign-in, and the
-    // authoring chat.
+    // and the SDK door went to the backend in L6, the A2A doors and the
+    // agent card in L7), sign-in, and the authoring chat.
     expect(files.length).toBeGreaterThan(25);
     expect(handlers.length).toBeGreaterThan(files.length);
   });
 
+  // Phase L7 (second round): the A2A doors (the tasks door, the tool broker,
+  // the model gateway alias) and the agent card are the backend's, signed
+  // end to end. No route file here answers for them, and the card is no
+  // longer an open route of the console's.
+  it("has no A2A door and no agent card of its own", () => {
+    expect(files.filter((f) => f.startsWith("app/api/a2a/") || f.startsWith("app/.well-known/"))).toEqual([]);
+    expect(Object.keys(PUBLIC_ROUTES).filter((f) => !f.startsWith("app/api/auth/"))).toEqual([]);
+    for (const p of ["/api/a2a", "/api/a2a/mcp/vendor-copilot", "/api/a2a/gateway/v1/chat/completions", "/.well-known/agent.json"]) {
+      expect(isBackendPath(p), `${p} is the backend's`).toBe(true);
+      expect(isMachineDoor(p), `${p} is opened with a signature or a key, not a cookie`).toBe(true);
+    }
+  });
+
   // Phase L6: the SDK door is the backend's. No route file here answers for
-  // it, and the machine routes left in Next are the A2A doors and the
-  // platform's own MCP server, which stays here under the backend's /api/mcp.
+  // it, and the one machine route left in Next (since the A2A doors went to
+  // the backend in L7) is the platform's own MCP server, which stays here
+  // under the backend's /api/mcp.
   it("has no SDK route of its own, and keeps the platform's MCP server as a machine route", () => {
     expect(files.filter((f) => f.startsWith("app/api/sdk/"))).toEqual([]);
-    expect(MACHINE_ROUTE_PREFIXES).toEqual(["app/api/a2a/", "app/api/mcp/server/"]);
+    expect(MACHINE_ROUTE_PREFIXES).toEqual(["app/api/mcp/server/"]);
     for (const p of ["/api/sdk", "/api/sdk/runs", "/api/sdk/runs/x/control"]) {
       expect(isBackendPath(p), `${p} is the backend's`).toBe(true);
       expect(isMachineDoor(p), `${p} is opened with a key, not a cookie`).toBe(true);

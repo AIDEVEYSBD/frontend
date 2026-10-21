@@ -61,6 +61,15 @@ export function formProblems(f: GuardianForm): Partial<Record<keyof GuardianForm
   return out;
 }
 
+/** The limits the guardian's `PUT` names when it refuses one (`400 {error, field}`), as the form lays them out; `body` is the request as a whole. */
+export const GUARDIAN_FIELDS = ["enabled", "model", "agents", "may", "max_actions_per_hour", "min_confidence", "rubric", "every_entries", "every_s", "body"] as const;
+export type GuardianField = (typeof GUARDIAN_FIELDS)[number];
+
+/** The form's field a refusal names, or null when it names none the form shows (the message then stands alone). */
+export function refusedField(field: string | undefined): GuardianField | null {
+  return (GUARDIAN_FIELDS as readonly string[]).includes(field ?? "") ? (field as GuardianField) : null;
+}
+
 /**
  * The `PUT` body: only what changed. The door merges (a field left out
  * keeps its value) and writes one audit event naming what changed, so

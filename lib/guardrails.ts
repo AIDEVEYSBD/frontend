@@ -643,6 +643,10 @@ export const CONTROL_LABELS: Record<string, string> = {
   "poisoning.shadowing": "Tool text reshapes other tools",
   "poisoning.name": "Tool name outside the MCP character set",
   "classifier.tool": "Tool text reads as instructions to the model",
+  // L7, second round: the A2A doors' refusals and the estate's breakers, outside the register's rows.
+  a2a_auth: "A2A request not signed by the caller it names",
+  replay: "A2A request replayed: its nonce was seen before",
+  breaker: "A circuit breaker is open on that tool or peer",
 };
 
 export function controlLabel(key: string): string {
