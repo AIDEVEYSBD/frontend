@@ -21,8 +21,11 @@ import { WindowPick, nextWin, winMs, type Win } from "./window-pick";
 import { Pick } from "./select";
 import { Checkbox } from "./forms";
 import { api, errorText, type RunRow as LedgerRow } from "@/lib/api/client";
-import { deployAgent, readQueue, type QueueSummary } from "@/lib/api/l2";
-import { JOB_STATUS_META, countOf } from "@/lib/queue";
+import { readQueue, type QueueSummary } from "@/lib/api/l2";
+import { getLifecycle, STAGE_NAMES, type Lifecycle } from "@/lib/api/l8";
+import { STAGE_LABEL, spineOf } from "@/lib/lifecycle";
+import { DeployDialog } from "./deploy-gate";
+import { JOB_STATUS_META, countOf, jobLine } from "@/lib/queue";
 import { partnerStatus, type PartnerPeer } from "@/lib/peers";
 import { auditLine, inFlight, type RunRowL5 } from "@/lib/api/l5";
 import { KillDialog } from "./kill-dialog";
@@ -307,35 +310,10 @@ const ago = (iso: string | null) => {
   return `${Math.round(s / 86400)} d ago`;
 };
 
-/* ── Lifecycle stages: the slide's spine, each lit only by a real record ── */
+/* ── Lifecycle: the backend's spine per agent (phase L8), each stage lit only by its own record ── */
 
-const LIFECYCLE: {
-  id: string;
-  label: string;
-  roadmap?: boolean;
-  evidence: (a: AgentRow) => string;
-}[] = [
-  { id: "design", label: "Design", evidence: () => "spec in the registry" },
-  { id: "test", label: "Test", evidence: (a) => `${a.evals.length} benchmark run${a.evals.length === 1 ? "" : "s"}` },
-  { id: "approve", label: "Approve", roadmap: true, evidence: () => "" },
-  { id: "publish", label: "Publish", evidence: (a) => `deployed ${a.deployed_at ? "" : "not yet"}` },
-  { id: "deploy", label: "Deploy", evidence: (a) => `deployed_at stamp in the registry${a.deployed_at ? "" : ""}` },
-  { id: "observe", label: "Observe", evidence: (a) => `${a.runsTotal} journalled run${a.runsTotal === 1 ? "" : "s"}` },
-  { id: "improve", label: "Improve", evidence: () => "benchmarked across two spec versions" },
-  { id: "retire", label: "Retire", roadmap: true, evidence: () => "" },
-];
-
-function lifecycleOf(a: AgentRow): Set<string> {
-  const lit = new Set<string>(["design"]);
-  if (a.evals.length > 0) lit.add("test");
-  if (a.deployed_at) {
-    lit.add("publish");
-    lit.add("deploy");
-  }
-  if (a.runsTotal > 0) lit.add("observe");
-  if (new Set(a.evals.map((e) => e.digest)).size > 1) lit.add("improve");
-  return lit;
-}
+/** Where a stage's click goes on the lifecycle page. */
+const STAGE_ANCHOR: Record<string, string> = { reviewed: "#reviews", approved: "#deployments", canary: "#deployments", deployed: "#deployments" };
 
 const DOT_BG: Record<string, string> = {
   done: "bg-ok",
@@ -402,7 +380,11 @@ export function Control() {
   // The inbox's deadlines tick on a slow clock: the page is large, and a second is finer than a countdown in hours needs.
   const clock = useNow(15_000);
   const [stageNotice, setStageNotice] = useState<string | null>(null);
-  const [deployingId, setDeployingId] = useState<string | null>(null);
+  /* The agent the deploy dialog is open for: the gate decides, an administrator may override. */
+  const [deployAsk, setDeployAsk] = useState<string | null>(null);
+  /* Each agent's spine, read from the backend once per agent list (and after a deploy), not on the page's 4-second tick. */
+  const [spines, setSpines] = useState<Record<string, Lifecycle>>({});
+  const [spineTick, setSpineTick] = useState(0);
   /* Hover readouts — what a tooltip would have hidden, kept on the page. */
   const [stageHint, setStageHint] = useState<string | null>(null);
   const [tickHint, setTickHint] = useState<string | null>(null);
@@ -485,54 +467,35 @@ export function Control() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  /* Deploy straight from the lifecycle strip — the backend's deploy door
-     (POST /api/agents/{id}/deploy), the step the builder's theater ends on,
-     minus the theatrics. The saved document is re-validated there first. */
-  const deployNow = useCallback(
-    async (agentId: string) => {
-      setDeployingId(agentId);
-      try {
-        const d = await deployAgent(agentId);
-        notice(`${agentId} deployed — digest ${String(d.digest).slice(0, 8)}`);
-        load();
-      } catch (e) {
-        notice(`Deploy refused: ${(e as Error).message.slice(0, 120)}`);
-      } finally {
-        setDeployingId(null);
-      }
-    },
-    [load, notice],
-  );
+  /* The spines, for the agents on the page: one read per agent, again after a deploy. */
+  const agentIds = (raw?.agents ?? []).map((a) => a.id).join(",");
+  useEffect(() => {
+    if (!agentIds) return;
+    let stop = false;
+    const ids = agentIds.split(",");
+    Promise.allSettled(ids.map((id) => getLifecycle(id))).then((rs) => {
+      if (stop) return;
+      const out: Record<string, Lifecycle> = {};
+      rs.forEach((r, i) => {
+        if (r.status === "fulfilled") out[ids[i]] = r.value;
+      });
+      setSpines(out);
+    });
+    return () => {
+      stop = true;
+    };
+  }, [agentIds, spineTick]);
 
-  /* Each lifecycle stage is a control, not a caption. */
+  /* Each lifecycle stage is a control, not a caption: the design opens the
+     builder, an undeployed agent's deploy opens the gate's dialog, every
+     other stage opens the agent's lifecycle page at that record. */
   const stageAction = useCallback(
-    (a: AgentRow, stageId: string) => {
-      switch (stageId) {
-        case "design":
-          router.push(`/builder?load=${encodeURIComponent(a.id)}`);
-          break;
-        case "test":
-        case "improve":
-          router.push(`/evals?agent=${encodeURIComponent(a.id)}`);
-          break;
-        case "approve":
-          notice("Approval flow ships with auth — authoring and authorising stay separate powers.");
-          break;
-        case "publish":
-        case "deploy":
-          if (a.deployed_at) open({ kind: "agent", id: a.id });
-          else deployNow(a.id);
-          break;
-        case "observe":
-          if (a.runsTotal > 0) open({ kind: "agent", id: a.id });
-          else router.push(`/runs?agent=${encodeURIComponent(a.id)}`);
-          break;
-        case "retire":
-          notice("No retirement flow yet — Delete on the Workflows page removes a spec from the registry.");
-          break;
-      }
+    (a: AgentRow, stage: string, lit: boolean, retired: boolean) => {
+      if (stage === "designed") return router.push(`/builder?load=${encodeURIComponent(a.id)}`);
+      if (stage === "deployed" && !lit && !retired) return setDeployAsk(a.id);
+      router.push(`/lifecycle?agent=${encodeURIComponent(a.id)}${STAGE_ANCHOR[stage] ?? ""}`);
     },
-    [router, notice, deployNow, open],
+    [router],
   );
 
   /* Which kill is in flight: a run id, or "*" for the whole estate. The
@@ -689,52 +652,65 @@ export function Control() {
           active={drill?.kind === "kpi" && drill.which === "kills"} onOpen={() => open({ kind: "kpi", which: "kills" })} />
       </div>
 
-      {/* ── Lifecycle: the Design→Retire spine, lit by real signals only ── */}
+      {/* ── Lifecycle: the backend's spine per agent, each stage lit only by its own record ── */}
+      {deployAsk && (
+        <DeployDialog
+          agent={deployAsk}
+          label={`the latest version of ${data?.agents.find((a) => a.id === deployAsk)?.name ?? deployAsk}`}
+          onClose={() => setDeployAsk(null)}
+          onDeployed={(d) => {
+            notice(`${d.id} version ${d.version ?? "?"} deployed — digest ${d.digest.slice(0, 8)}${d.override ? " (by override)" : ""}`);
+            setSpineTick((n) => n + 1);
+            load();
+          }}
+        />
+      )}
       <section className="mt-4 flex flex-col overflow-hidden rounded-md border border-line bg-surface">
         <PanelHead
           title="Agent lifecycle"
-          meta="each stage lit by its own record — unlit stages are honestly unbuilt"
+          meta="the latest version of each agent, each stage lit only by its own record: a version, a review, a gate decision, a deployment, a retirement"
         />
         <div className="overflow-x-auto">
           <div className="min-w-[720px]">
-            <div className="grid grid-cols-[minmax(140px,1fr)_repeat(8,minmax(64px,72px))] items-center gap-1 border-b border-line px-4 py-1.5">
+            <div className="grid grid-cols-[minmax(140px,1fr)_repeat(6,minmax(64px,80px))] items-center gap-1 border-b border-line px-4 py-1.5">
               <span className="text-[10.5px] font-semibold text-dim">Agent</span>
-              {LIFECYCLE.map((s) => (
-                <span key={s.id} className="flex flex-col items-center gap-0.5 text-center">
-                  <Label>{s.label}</Label>
-                  {s.roadmap && <span className="text-[8px] text-ghost">roadmap</span>}
+              {STAGE_NAMES.map((st) => (
+                <span key={st} className="flex flex-col items-center gap-0.5 text-center">
+                  <Label>{STAGE_LABEL[st]}</Label>
                 </span>
               ))}
             </div>
             {(data?.agents ?? []).map((a) => {
-              const lit = lifecycleOf(a);
+              const spine = spines[a.id];
+              const stages = spine ? spineOf(spine) : [];
+              const retired = Boolean(spine?.retired);
               return (
                 <div
                   key={a.id}
-                  className="grid w-full grid-cols-[minmax(140px,1fr)_repeat(8,minmax(64px,72px))] items-center gap-1 border-b border-line px-4 py-1.5 last:border-b-0 hover:bg-raise/30"
+                  className={`grid w-full grid-cols-[minmax(140px,1fr)_repeat(6,minmax(64px,80px))] items-center gap-1 border-b border-line px-4 py-1.5 last:border-b-0 hover:bg-raise/30 ${retired ? "opacity-70" : ""}`}
                 >
-                  <Button size="sm" variant="quiet" className="max-w-full justify-self-start" onClick={() => open({ kind: "agent", id: a.id })}>
+                  <Button size="sm" variant="solid" tone="neutral" className="max-w-full justify-self-start" onClick={() => open({ kind: "agent", id: a.id })}>
                     <span className="min-w-0 truncate">{a.name}</span>
+                    {retired && <span className="ml-1 text-[10px] text-faint">retired</span>}
                   </Button>
-                  {LIFECYCLE.map((s, i) => {
-                    const on = lit.has(s.id);
-                    const prev = i === 0 || lit.has(LIFECYCLE[i - 1].id) || LIFECYCLE[i - 1].roadmap;
-                    const busy = deployingId === a.id && (s.id === "publish" || s.id === "deploy");
-                    const hint = s.roadmap
-                      ? `${s.label}: not built yet — click for the honest answer`
+                  {STAGE_NAMES.map((name, i) => {
+                    const st = stages.find((x) => x.stage === name);
+                    const on = Boolean(st?.lit);
+                    const prev = i === 0 || Boolean(stages.find((x) => x.stage === STAGE_NAMES[i - 1])?.lit);
+                    const hint = !spine
+                      ? `${STAGE_LABEL[name]}: reading the spine…`
                       : on
-                        ? `${s.label}: ${s.evidence(a)} — click to open`
-                        : s.id === "publish" || s.id === "deploy"
-                          ? `${s.label}: not deployed — click to deploy now`
-                          : s.id === "test" || s.id === "improve"
-                            ? `${s.label}: no benchmark yet — click to build one`
-                            : `${s.label}: no record yet — click to start`;
+                        ? `${STAGE_LABEL[name]}: ${[st?.who, st?.note].filter(Boolean).join(" — ")} — click to open`
+                        : name === "deployed" && !retired
+                          ? `${STAGE_LABEL[name]}: not deployed — click to deploy through the promotion gate`
+                          : `${STAGE_LABEL[name]}: waiting on ${st?.needs ?? "its record"} — click to open its lifecycle`;
+                    const dot = !spine ? "border-line bg-raise" : on ? (st?.tone === "warn" ? "border-warn bg-warn" : st?.tone === "err" ? "border-err bg-err" : "border-ok bg-ok") : "border-line-strong bg-surface";
                     return (
                       <button
-                        key={s.id}
+                        key={name}
                         type="button"
-                        onClick={() => stageAction(a, s.id)}
-                        title={`${a.name} · ${s.label}`}
+                        onClick={() => stageAction(a, name, on, retired)}
+                        title={`${a.name} · ${STAGE_LABEL[name]}`}
                         aria-label={`${a.name} — ${hint}`}
                         onMouseEnter={() => setStageHint(`${a.name} · ${hint}`)}
                         onMouseLeave={() => setStageHint(null)}
@@ -743,18 +719,8 @@ export function Control() {
                         className="focusable flex cursor-pointer items-center justify-center rounded-sm py-1.5 transition-colors hover:bg-raise/70"
                       >
                         <span className={`h-px w-4 ${i === 0 ? "opacity-0" : on && prev ? "bg-ok/60" : "bg-line"}`} />
-                        <span
-                          className={`size-2.5 shrink-0 rounded-[3px] border transition-transform ${
-                            busy
-                              ? "animate-pulse border-run bg-run"
-                              : s.roadmap
-                                ? "border-dashed border-line-strong bg-transparent"
-                                : on
-                                  ? "border-ok bg-ok"
-                                  : "border-line-strong bg-surface"
-                          }`}
-                        />
-                        <span className={`h-px w-4 ${i === LIFECYCLE.length - 1 ? "opacity-0" : "bg-line"}`} />
+                        <span className={`size-2.5 shrink-0 rounded-[3px] border transition-transform ${deployAsk === a.id && name === "deployed" ? "animate-pulse border-run bg-run" : dot}`} />
+                        <span className={`h-px w-4 ${i === STAGE_NAMES.length - 1 ? "opacity-0" : "bg-line"}`} />
                       </button>
                     );
                   })}
@@ -839,7 +805,11 @@ export function Control() {
                   </span>
 
                   <span className="flex flex-col gap-1">
-                    {a.active > 0 ? (
+                    {spines[a.id]?.retired ? (
+                      <span title={`${spines[a.id].retired!.reason}${spines[a.id].retired!.replacement ? ` · replaced by ${spines[a.id].retired!.replacement}` : ""}`}>
+                        <Status tone="neutral">Retired</Status>
+                      </span>
+                    ) : a.active > 0 ? (
                       <Status tone="run">{a.active} live</Status>
                     ) : a.deployed_at ? (
                       <Status tone="ok">Deployed</Status>
@@ -2655,6 +2625,28 @@ function QueuePanel({ queue, now }: { queue: QueueData | null; now: number }) {
                 {countOf(a, "cancelled")}
               </span>
             </div>
+          ))}
+        </div>
+      )}
+      {queue.dead_letters.length > 0 && (
+        <div className="flex flex-col border-t border-line">
+          <span className="px-3 pt-2 text-[10px] text-faint" title={JOB_STATUS_META.dead.means}>
+            dead letters
+          </span>
+          {queue.dead_letters.slice(0, 6).map((j) => (
+            <span key={j.job} className="flex min-w-0 items-baseline gap-2 px-3 py-1 text-[10.5px]">
+              <span className="shrink-0 font-mono text-fg">{j.agent}</span>
+              {j.run_id ? (
+                <Link href={`/runs?id=${encodeURIComponent(j.run_id)}`} className="focusable shrink-0 rounded-sm font-mono text-dim hover:underline">
+                  {j.job.slice(0, 8)}
+                </Link>
+              ) : (
+                <span className="shrink-0 font-mono text-ghost">{j.job.slice(0, 8)}</span>
+              )}
+              <span className={`min-w-0 truncate ${j.taint ? "text-warn" : "text-faint"}`} title={jobLine(j)}>
+                {jobLine(j)}
+              </span>
+            </span>
           ))}
         </div>
       )}

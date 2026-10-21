@@ -444,7 +444,8 @@ describe("the kill reaches the tasks a tree handed peers", () => {
     const r = await l7.killRun("triage-run-1", "stop the cascade");
     expect([r.delivery, r.state, r.already]).toEqual(["tree", "done", []]);
     expect(r.reached).toEqual([
-      { run: `peer:self/${task}`, agent: "self", source: "peer", kind: "peer_task", delivery: "a2a", parent: "triage-run-1", depth: 1, state: "canceled", peer: "self", task_id: task, error: null, kill: null },
+      // Captured before the L8 polish split `answered_state` from `state`: the answer is in `state`, and the console reads it there when `answered_state` is absent.
+      { run: `peer:self/${task}`, agent: "self", source: "peer", kind: "peer_task", delivery: "a2a", parent: "triage-run-1", depth: 1, state: "canceled", answered_state: null, peer: "self", task_id: task, error: null, kill: null },
     ]);
     expect(killSummary(r)).toBe("The run itself had already ended (done); the kill by Chandresh Singh reached what it set off: 1 peer task cancelled over A2A.");
     const text = textOf(renderToStaticMarkup(createElement(KillReceiptView, { receipt: r })));

@@ -225,10 +225,12 @@ export class DoorError extends Error {
 
 /* ═══════════════════ operating the estate ═══════════════════ */
 
-export type AttentionKind = "gate" | "refusal" | "budget" | "dead_letter" | "health" | "drift" | "guardian" | "side_channel" | "breaker";
-const ATTENTION_KINDS: AttentionKind[] = ["gate", "refusal", "budget", "dead_letter", "health", "drift", "guardian", "side_channel", "breaker"];
+export type AttentionKind = "gate" | "refusal" | "budget" | "dead_letter" | "health" | "drift" | "guardian" | "side_channel" | "breaker" | "override" | "rollback";
+const ATTENTION_KINDS: AttentionKind[] = ["gate", "refusal", "budget", "dead_letter", "health", "drift", "guardian", "side_channel", "breaker", "override", "rollback"];
 /** The kinds L7 added: the fleet read as a system (drift per agent, the guardian's verdicts, two agents coordinating through a shared store, an estate breaker that opened). */
 export const L7_ATTENTION_KINDS: AttentionKind[] = ["drift", "guardian", "side_channel", "breaker"];
+/** The kinds L8 added: a deploy an administrator passed past the promotion gate, and a rollback with the runs it flagged (each 7 days). */
+export const L8_ATTENTION_KINDS: AttentionKind[] = ["override", "rollback"];
 
 /**
  * What a row's one button does, derived from the backend's action: answer
@@ -242,8 +244,14 @@ export const L7_ATTENTION_KINDS: AttentionKind[] = ["drift", "guardian", "side_c
  * act of the guardian and a side channel open the run. An estate breaker
  * still open names its close (`close`: `DELETE /api/breakers/{name}`, a
  * person with configure); one that has closed opens the Breakers page.
+ * L8: a drift names the fleet door's pause (`pause`: `POST /api/fleet
+ * {action: pause}`, a person with run; nothing pauses an agent on its own),
+ * its drift page kept as the row's link; a redirect the guardian could not
+ * make names the steer it would have sent (`redirect`: `POST
+ * /api/runs/{id}/steer {guidance}`); an override and a rollback open the
+ * agent's lifecycle page.
  */
-export type AttentionActionKind = "answer" | "replay" | "check" | "open" | "kill" | "hold" | "close";
+export type AttentionActionKind = "answer" | "replay" | "check" | "open" | "kill" | "hold" | "close" | "pause" | "redirect";
 
 export interface AttentionAction {
   kind: AttentionActionKind;
@@ -577,21 +585,55 @@ export function openableRun(item: Pick<AttentionItem, "run" | "runs">): string |
   return item.run || item.runs[0] || null;
 }
 
-/** L7 kinds: the console's page or lever for the backend's door. */
-function l7Action(kind: AttentionKind, method: string, path: string, agent: string): { kind: AttentionActionKind; href?: string } {
+/** The agent a door's `?agent=` names, else the item's own; a malformed query names nobody. */
+function agentNamed(path: string, agent: string): string {
+  const named = /[?&]agent=([^&]+)/.exec(path)?.[1];
+  try {
+    return named ? decodeURIComponent(named) : agent;
+  } catch {
+    return agent;
+  }
+}
+
+/**
+ * The console's lifecycle page for a door of the agent's lifecycle
+ * (`/api/agents/{id}/lifecycle?digest=`, `/api/agents/{id}/deployments`):
+ * the agent, the digest when one is named, and the deployments section for
+ * the deployments door.
+ */
+export function lifecycleHref(path: string, agent: string): string {
+  const m = /^\/api\/agents\/([^/?#]+)\/(lifecycle|deployments)(?:\?([^#]*))?$/.exec(path);
+  let who = agent;
+  if (m) {
+    try {
+      who = decodeURIComponent(m[1]);
+    } catch {
+      who = agent;
+    }
+  }
+  const q = new URLSearchParams();
+  if (who) q.set("agent", who);
+  const digest = m?.[3] ? new URLSearchParams(m[3]).get("digest") : null;
+  if (digest) q.set("digest", digest);
+  const qs = q.toString();
+  return `/lifecycle${qs ? `?${qs}` : ""}${m?.[2] === "deployments" ? "#deployments" : ""}`;
+}
+
+/** L7 and L8 kinds: the console's page or lever for the backend's door. */
+function l7Action(kind: AttentionKind, method: string, path: string, agent: string, body: Record<string, unknown> | null, data: Record<string, unknown> | null): { kind: AttentionActionKind; href?: string } {
   if (method === "POST" && /\/api\/runs\/[^/]+\/kill$/.test(path)) return { kind: "kill" };
-  if (method === "POST" && /\/api\/runs\/[^/]+\/steer$/.test(path)) return { kind: "hold" };
+  // A steer carrying guidance is the guardian's redirect a person may send; without, its hold at the next gate.
+  if (method === "POST" && /\/api\/runs\/[^/]+\/steer$/.test(path)) return { kind: typeof body?.guidance === "string" && body.guidance ? "redirect" : "hold" };
   if (kind === "breaker") return method === "DELETE" && /^\/api\/breakers\/./.test(path) ? { kind: "close" } : { kind: "open", href: "/breakers" };
   if (kind === "drift") {
-    const named = /[?&]agent=([^&]+)/.exec(path)?.[1];
-    let who = agent;
-    try {
-      who = named ? decodeURIComponent(named) : agent;
-    } catch {
-      /* a malformed query names nobody: the item's own agent */
-    }
-    return { kind: "open", href: who ? `/drift?agent=${encodeURIComponent(who)}` : "/drift" };
+    // L8: the action is the fleet door's pause, the drift report moved to `data.review`.
+    const review = data?.review && typeof data.review === "object" ? str((data.review as Record<string, unknown>).path) : "";
+    const who = agentNamed(review || path, agent);
+    const href = who ? `/drift?agent=${encodeURIComponent(who)}` : "/drift";
+    if (method === "POST" && path === "/api/fleet" && body?.action === "pause") return { kind: "pause", href };
+    return { kind: "open", href };
   }
+  if (kind === "override" || kind === "rollback") return { kind: "open", href: lifecycleHref(path, agent) };
   return { kind: "open" };
 }
 
@@ -602,9 +644,11 @@ export function attentionOf(v: unknown): AttentionItem {
   const method = str(a.method).toUpperCase();
   const path = str(a.path);
   const page = path.startsWith("/") && !path.startsWith("/api/");
-  // The L7 kinds name API doors with GET (the run, the drift report, the
-  // inbox): those open a page here, never re-read the door.
-  const l7 = L7_ATTENTION_KINDS.includes(kind) ? l7Action(kind, method, path, str(o.agent)) : null;
+  // The L7 and L8 kinds name API doors with GET (the run, the drift report,
+  // the inbox, the lifecycle): those open a page here, never re-read the door.
+  const body = a.body && typeof a.body === "object" && !Array.isArray(a.body) ? obj(a.body) : null;
+  const data = o.data && typeof o.data === "object" && !Array.isArray(o.data) ? obj(o.data) : null;
+  const l7 = L7_ATTENTION_KINDS.includes(kind) || L8_ATTENTION_KINDS.includes(kind) ? l7Action(kind, method, path, str(o.agent), body, data) : null;
   const actionKind: AttentionActionKind = l7
     ? l7.kind
     : kind === "gate" ? "answer" : !method || page ? "open" : kind === "dead_letter" && method === "POST" ? "replay" : method === "GET" ? "check" : "open";
@@ -629,13 +673,13 @@ export function attentionOf(v: unknown): AttentionItem {
       kind: actionKind,
       method,
       path,
-      body: a.body && typeof a.body === "object" && !Array.isArray(a.body) ? obj(a.body) : null,
+      body,
       says: str(a.says),
       href: l7?.href ?? (actionKind === "open" && page ? path : undefined),
     },
     agents: strs(o.agents),
     runs: strs(o.runs),
-    data: o.data && typeof o.data === "object" && !Array.isArray(o.data) ? obj(o.data) : null,
+    data,
   };
 }
 
@@ -766,10 +810,11 @@ function guardianNoteOf(title: string, detail: string, d: Record<string, unknown
   const facts = [conf, str(d.model), str(d.delivery) ? `delivered ${str(d.delivery)}` : ""].filter(Boolean).join(" · ");
   const reason = str(d.reason) || detail;
   return {
-    action: act === "block" ? "Guardian blocked the run" : act === "hold" ? "Guardian held the run at its next gate" : title || "Guardian",
+    action: act === "block" ? "Guardian blocked the run" : act === "hold" ? "Guardian held the run at its next gate" : act === "redirect" ? "Guardian redirected the run" : title || "Guardian",
     by: str(d.by) || "guardian",
     at: str(d.at),
-    detail: [reason, facts].filter(Boolean).join(" — "),
+    // A redirect's guidance is what the run read at its next model call: the reason, as the run was handed it.
+    detail: [act === "redirect" && str(d.guidance) ? str(d.guidance) : reason, facts].filter(Boolean).join(" — "),
   };
 }
 

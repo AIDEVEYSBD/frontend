@@ -61,6 +61,7 @@ describe("backend-owned paths", () => {
       "/api/a2a",
       "/api/peers",
       "/api/breakers",
+      "/api/evals/runs",
     ]) {
       expect(BACKEND_PREFIXES, `${p} is the backend's`).toContain(p);
     }
@@ -305,7 +306,13 @@ describe("backend-owned paths", () => {
     expect(isBackendPath("/api/mcp/server")).toBe(false);
     expect(isBackendPath("/api/control")).toBe(false);
     expect(isBackendPath("/api/configuration")).toBe(false);
+    // Phase L8: the eval runner is the backend's (its reads at /api/evals/runs); the eval sets stay the console's.
+    expect(isBackendPath("/api/evals")).toBe(false);
     expect(isBackendPath("/api/evals/run")).toBe(false);
+    expect(isBackendPath("/api/evals/runs/ev-mvi66ddb-df7a")).toBe(true);
+    expect(isBackendPath("/api/evals/runs")).toBe(true);
+    expect(isBackendPath("/api/evals/runsx")).toBe(false);
+    expect(isBackendPath("/api/agents/aegis/evals/run")).toBe(true);
     expect(isBackendPath("/runs")).toBe(false);
   });
 
@@ -339,11 +346,13 @@ describe("upstreamFor", () => {
       url: "http://localhost:8000/api/vault?name=foundry",
     });
     expect(upstreamFor("/api/screener/health", "", BOTH)).toEqual({ to: "backend", url: "http://localhost:8000/api/screener/health" });
+    expect(upstreamFor("/api/evals/runs/ev-1", "", BOTH)).toEqual({ to: "backend", url: "http://localhost:8000/api/evals/runs/ev-1" });
+    expect(upstreamFor("/api/agents/aegis/evals/run", "", BOTH)).toEqual({ to: "backend", url: "http://localhost:8000/api/agents/aegis/evals/run" });
   });
 
   it("sends every other API path to RUNTIME_ORIGIN when that is set", () => {
     expect(upstreamFor("/api/control", "", BOTH)).toEqual({ to: "runtime", url: "https://agentruntime.autogrc.cloud/api/control" });
-    expect(upstreamFor("/api/evals/run", "", BOTH)).toEqual({ to: "runtime", url: "https://agentruntime.autogrc.cloud/api/evals/run" });
+    expect(upstreamFor("/api/evals", "?id=triage-bench", BOTH)).toEqual({ to: "runtime", url: "https://agentruntime.autogrc.cloud/api/evals?id=triage-bench" });
     expect(upstreamFor("/api/author/chat", "", BOTH)).toEqual({ to: "runtime", url: "https://agentruntime.autogrc.cloud/api/author/chat" });
     expect(upstreamFor("/api/approvals", "?agent=x", { runtimeOrigin: "https://agentruntime.autogrc.cloud" })).toEqual({
       to: "runtime",
@@ -361,7 +370,7 @@ describe("upstreamFor", () => {
   it("keeps a non-backend path in Next when only BACKEND_ORIGIN is set", () => {
     expect(upstreamFor("/api/control", "", { backendOrigin: "http://localhost:8000" })).toEqual({ to: "next" });
     expect(upstreamFor("/api/configuration", "", { backendOrigin: "http://localhost:8000" })).toEqual({ to: "next" });
-    expect(upstreamFor("/api/evals/run", "", { backendOrigin: "http://localhost:8000" })).toEqual({ to: "next" });
+    expect(upstreamFor("/api/evals", "", { backendOrigin: "http://localhost:8000" })).toEqual({ to: "next" });
     expect(upstreamFor("/api/author/chat", "", { backendOrigin: "http://localhost:8000" })).toEqual({ to: "next" });
   });
 

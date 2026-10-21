@@ -94,6 +94,18 @@ export const REGISTRY_SCHEMA = `
   );
   ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS matrix jsonb;
   ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS summary jsonb;
+  -- Phase L8: the backend's eval runner writes this table now. Its columns,
+  -- declared exactly as the backend declares them (backend/app/registry_l8.py),
+  -- so whichever side reaches the database first creates them and the eval
+  -- pages read them either way. state defaults to done: a row the console's
+  -- runner wrote before L8 reads as finished.
+  ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS threshold double precision;
+  ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS passed_threshold boolean;
+  ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS by text NOT NULL DEFAULT '';
+  ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS state text NOT NULL DEFAULT 'done';
+  ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS version int;
+  ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS finished_at timestamptz;
+  ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS error text NOT NULL DEFAULT '';
   CREATE TABLE IF NOT EXISTS trigger_jobs (
     id           text PRIMARY KEY,
     agent        text NOT NULL,

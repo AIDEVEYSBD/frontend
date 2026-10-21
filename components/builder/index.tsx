@@ -13,6 +13,8 @@ import { Cross } from "./controls";
 import { EMPTY, reduce, withHistory, type HistoryAction } from "@/lib/builder-store";
 import { fromDocument, toDocument, validate, type HarnessKind, type Problem } from "@/lib/spec";
 import { useMcp } from "@/lib/use-mcp";
+import { editableDocument, retiredRefusalOf, saveAgent, type AgentSaved, type Retired } from "@/lib/api/l8";
+import { draftBanner, retiredLine, savedLine } from "@/lib/lifecycle";
 
 type View = "canvas" | "agent";
 
@@ -45,6 +47,10 @@ export function Builder() {
   const [problemsFlash, setProblemsFlash] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef(0);
+  /* L8: what the loaded agent's lifecycle says about this canvas: the draft
+     being edited against the version production runs, and a retirement. */
+  const [loaded, setLoaded] = useState<{ draft: string; running: number | null; retired: Retired | null } | null>(null);
+  const [saveNote, setSaveNote] = useState("");
   const canvasApi = useRef<CanvasApi | null>(null);
   /* The MCP servers are read once here and handed to all three panels, so a
      custom tool wears the same mark in the rail, on the canvas and in the
@@ -67,20 +73,34 @@ export function Builder() {
 
   /* Arriving via /workflows → Open in Builder: fetch the saved document and
      reconstruct it. The document is the only artefact — the same nodes and
-     cards come back because both directions read the same shape. */
+     cards come back because both directions read the same shape. Since L8,
+     once an agent is deployed `GET /api/agents/{id}` answers what runs; the
+     builder edits the latest save, a draft newer than that when there is
+     one (`GET /api/agents/{id}/versions/{version}`), and says so. */
   useEffect(() => {
     if (!loadId && !draftId) return;
     let stop = false;
-    const url = draftId
-      ? `/api/drafts?id=${encodeURIComponent(draftId)}`
-      : `/api/agents?id=${encodeURIComponent(loadId!)}`;
-    fetch(url)
-      .then((r) => r.json())
-      .then((d) => {
+    const read: Promise<Record<string, unknown>> = draftId
+      ? fetch(`/api/drafts?id=${encodeURIComponent(draftId)}`)
+          .then((r) => r.json())
+          .then((d) => {
+            if (d.error) throw new Error(String(d.error));
+            return d.spec as Record<string, unknown>;
+          })
+      : editableDocument(loadId!).then((edit) => {
+          if (!stop)
+            setLoaded({
+              draft: edit.draft ? draftBanner({ version: edit.version, deployed_version: edit.agent.deployed_version }) : "",
+              running: edit.agent.deployed_version,
+              retired: edit.agent.retired,
+            });
+          return edit.spec;
+        });
+    read
+      .then((spec) => {
         if (stop) return;
-        if (d.error) throw new Error(String(d.error));
         // A fetched document is saved work — loading it is not an edit.
-        rawDispatch({ type: "load", system: fromDocument(d.spec) });
+        rawDispatch({ type: "load", system: fromDocument(spec) });
         if (autoRun && loadId) router.push(`/runs?agent=${encodeURIComponent(loadId)}`);
       })
       .catch((e) =>
@@ -91,6 +111,13 @@ export function Builder() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadId, draftId, autoRun]);
+
+  /* What a save did: a draft once the agent is deployed (production keeps
+     running its version until a deploy), else what runs. */
+  const afterSave = useCallback((saved: AgentSaved) => {
+    setSaveNote(savedLine(saved, loaded?.running ?? null));
+    if (saved.draft) setLoaded((l) => (l ? { ...l, draft: draftBanner({ version: saved.version, deployed_version: l.running }) } : l));
+  }, [loaded?.running]);
 
   /* Arriving cold: whatever the last session left in the draft slot comes
      back, flagged so it can be discarded in one click. */
@@ -298,24 +325,22 @@ export function Builder() {
           <span title={dirty && saving === "idle" ? "Unsaved changes" : undefined}>
             <Button
               size="sm"
-              variant="quiet"
+              variant="solid"
               permission="deploy"
               onClick={async () => {
                 setSaving("busy");
+                setSaveNote("");
                 try {
-                  const res = await fetch("/api/agents", {
-                    method: "POST",
-                    headers: { "content-type": "application/json" },
-                    body: JSON.stringify({ spec: toDocument(system) }),
-                  });
-                  setSaving(res.ok ? "done" : "failed");
-                  if (res.ok) {
-                    setRefreshTick((n) => n + 1);
-                    setDirty(false);
-                    clearDraftSlot();
-                  }
-                } catch {
+                  const saved = await saveAgent(toDocument(system) as Record<string, unknown>);
+                  setSaving("done");
+                  afterSave(saved);
+                  setRefreshTick((n) => n + 1);
+                  setDirty(false);
+                  clearDraftSlot();
+                } catch (e) {
                   setSaving("failed");
+                  const gone = retiredRefusalOf(e);
+                  setSaveNote(gone ? `${system.id} is retired. ${retiredLine(gone)}` : `Save refused: ${(e as Error).message}`);
                 }
                 setTimeout(() => setSaving("idle"), 1400);
               }}
@@ -335,7 +360,7 @@ export function Builder() {
           <span title={errors.length > 0 ? "Fix the blocking problems first" : undefined}>
             <Button
               size="sm"
-              variant="outline"
+              variant="solid"
               onClick={() => {
                 // Running always happens in the theater. The canvas hands its
                 // document over and the theater is the only place a run lives.
@@ -373,13 +398,17 @@ export function Builder() {
       {deploying && (
         <DeployTheater
           doc={toDocument(system)}
-          onClose={(deployed, refused) => {
+          onClose={(deployed, refused, saved) => {
             setDeploying(false);
-            if (deployed) {
+            if (deployed || saved) {
               setRefreshTick((n) => n + 1);
               setDirty(false);
               clearDraftSlot();
             }
+            if (deployed) {
+              setLoaded((l) => (l ? { ...l, draft: "" } : l));
+              setSaveNote("");
+            } else if (saved) afterSave(saved);
             if (refused) setShowProblems(true);
           }}
         />
@@ -388,6 +417,24 @@ export function Builder() {
       {loadError && (
         <div className="border-b border-line px-3 py-2">
           <Banner tone="err" title={loadError} />
+        </div>
+      )}
+      {loaded?.retired && (
+        <div className="border-b border-line px-3 py-2">
+          <Banner tone="neutral" title={`${system.id} is retired`}>
+            {retiredLine(loaded.retired)} A deploy is refused; its versions stay readable.
+          </Banner>
+        </div>
+      )}
+      {(saveNote || loaded?.draft) && (
+        <div className="flex items-center gap-2 border-b border-line px-3 py-1.5">
+          <span className="text-[11.5px] text-dim">{saveNote || loaded?.draft}</span>
+          <span className="grow" />
+          {(loadId || system.id) && (
+            <Button size="sm" variant="solid" tone="neutral" href={`/lifecycle?agent=${encodeURIComponent(loadId ?? system.id)}`}>
+              Lifecycle
+            </Button>
+          )}
         </div>
       )}
 

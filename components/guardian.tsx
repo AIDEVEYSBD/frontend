@@ -13,15 +13,17 @@ import { useSession } from "@/lib/use-session";
 import { listAgents } from "@/lib/api/l2";
 import { DoorError, auditLine } from "@/lib/api/l5";
 import { getGuardian, listGuardianActions, setGuardian, type GuardianAction, type GuardianView } from "@/lib/api/l7";
-import { cadenceText, capText, coverageText, formOf, formProblems, mayText, outcomeText, patchOf, refusedField, verdictText, type GuardianField, type GuardianForm } from "@/lib/guardian";
+import { cadenceText, capText, coverageText, formOf, formProblems, mayOf, mayText, outcomeText, patchOf, refusedField, verdictText, type GuardianField, type GuardianForm } from "@/lib/guardian";
 
 /**
  * The guardian (phase L7): a supervisory model the backend runs over each
  * covered run's trajectory as it progresses, against the run's goal and a
  * rubric a person writes. Within the limits set here it may hold a run at
- * its next gate or block (kill) it; outside them (an action it may not
- * take, the hourly cap, a confidence under the floor) it only raises
- * attention. Every act is journalled on the run as a note signed
+ * its next gate, block (kill) it, or (phase L8) redirect it: its reason is
+ * handed to the run as guidance, signed `guardian`, taken at its next model
+ * call; outside them (an action it may not take, the hourly cap, a
+ * confidence under the floor) it only raises attention, and a redirect it
+ * could not make is offered to a person as the steer it would have sent. Every act is journalled on the run as a note signed
  * `guardian`, which the run's transcript shows as an operator's action.
  *
  * The limits (`GET`/`PUT /api/guardian`) are a person's: the form sends only
@@ -143,8 +145,8 @@ export function Guardian() {
           </span>
           <p className="text-[12.5px] leading-[1.6] text-dim">
             A supervisory model that reads each covered run&rsquo;s trajectory as it runs, against the run&rsquo;s goal and the rubric below. Within the limits set
-            here it holds a run at its next gate or blocks it; outside them it only raises the verdict for a person. Every act is journalled on the run, signed
-            guardian.
+            here it holds a run at its next gate, blocks it, or redirects it with its reason as guidance; outside them it only raises the verdict for a person.
+            Every act is journalled on the run, signed guardian.
           </p>
         </div>
       </header>
@@ -201,7 +203,8 @@ export function Guardian() {
                   <span className="text-[12.5px] font-medium text-mist">What it may do on its own</span>
                   <Checkbox label="Hold a run at its next gate" checked={form.hold} onChange={(on) => edit({ hold: on })} disabled={!editable} />
                   <Checkbox label="Block a run (kill it and what it set off)" checked={form.block} onChange={(on) => edit({ block: on })} disabled={!editable} />
-                  <span className="text-[11px] text-faint">It may {mayText([...(form.hold ? (["hold"] as const) : []), ...(form.block ? (["block"] as const) : [])])}.</span>
+                  <Checkbox label="Redirect a run (its reason becomes guidance at the next model call)" checked={form.redirect} onChange={(on) => edit({ redirect: on })} disabled={!editable} />
+                  <span className="text-[11px] text-faint">It may {mayText(mayOf(form))}.</span>
                   {problemOf("may") && <span className="text-[11px] text-err">{problemOf("may")}</span>}
                 </div>
               </div>
@@ -360,7 +363,7 @@ export function GuardianActionsTable({ actions }: { actions: GuardianAction[] })
               </span>
             </td>
             <td className="px-3 py-2 whitespace-nowrap">
-              <Tag tone={a.action === "block" ? "err" : "warn"}>{verdictText(a)}</Tag>
+              <Tag tone={a.action === "block" ? "err" : a.action === "redirect" ? "run" : "warn"}>{verdictText(a)}</Tag>
             </td>
             <td className="max-w-[340px] px-3 py-2">
               <span className="flex flex-col gap-0.5">

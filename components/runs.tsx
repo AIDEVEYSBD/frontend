@@ -26,6 +26,9 @@ import { exitText, sandboxLine, sandboxOfEntry, sandboxRunOf, SANDBOX_TOOL } fro
 import { RunSourceTag } from "./run-source";
 import { SandboxOutput, SandboxSummary } from "./sandbox-result";
 import { KillDialog } from "./kill-dialog";
+import { RunFlagsBanner } from "./run-flags";
+import { retiredLine, runFlagsOf, type RunFlags } from "@/lib/lifecycle";
+import { retiredOf, type Retired } from "@/lib/api/l8";
 import { KillAlreadyView, KillReceiptView, RunTreePanel } from "./run-tree";
 import { RateLimitNote, useRetryReady } from "./rate-limit";
 import { killRefusalOf, killRun, rateLimitOf, type KillReceipt, type KillRefusal, type RateLimit } from "@/lib/api/l7";
@@ -149,6 +152,8 @@ interface SavedAgent {
   name: string;
   description: string;
   nodes: number;
+  /** L8: retired agents take no new runs; their card opens the lifecycle instead. */
+  retired: Retired | null;
 }
 
 /** A row of the backend's run ledger, as the list shows it. `stuck` and `waiting_on` are L5's; `source` (an attached agent's SDK, or A2A) is L6's. */
@@ -175,7 +180,7 @@ function Launcher() {
 
   useEffect(() => {
     listAgents()
-      .then((rows) => setAgents(rows.map((a) => ({ id: a.id, name: a.name, description: a.description ?? "", nodes: a.nodes }))))
+      .then((rows) => setAgents(rows.map((a) => ({ id: a.id, name: a.name, description: a.description ?? "", nodes: a.nodes, retired: retiredOf(a.retired) }))))
       .catch(() => setAgents([]));
     api
       .GET("/api/runs")
@@ -218,23 +223,30 @@ function Launcher() {
             {(agents ?? []).map((a) => (
               <button
                 key={a.id}
-                onClick={() => router.push(`/runs?agent=${encodeURIComponent(a.id)}`)}
-                className="focusable group flex cursor-pointer flex-col gap-2.5 rounded-lg border border-line bg-surface p-4 text-left elev-1 transition-[border-color,box-shadow,transform] duration-200 ease-[var(--ease-out)] hover:-translate-y-px hover:border-line-strong hover:elev-2"
+                onClick={() => router.push(a.retired ? `/lifecycle?agent=${encodeURIComponent(a.id)}` : `/runs?agent=${encodeURIComponent(a.id)}`)}
+                title={a.retired ? retiredLine(a.retired) : undefined}
+                className={`focusable group flex cursor-pointer flex-col gap-2.5 rounded-lg border border-line p-4 text-left elev-1 transition-[border-color,box-shadow,transform] duration-200 ease-[var(--ease-out)] hover:-translate-y-px hover:border-line-strong hover:elev-2 ${a.retired ? "bg-raise/60" : "bg-surface"}`}
               >
                 <div className="flex items-center gap-2.5">
                   <span className="grid size-8 shrink-0 place-items-center rounded-md bg-raise text-dim">
                     <Icon name="workflow" size={15} />
                   </span>
-                  <span className="min-w-0 truncate text-[13.5px] font-semibold text-fg">{a.name}</span>
+                  <span className={`min-w-0 truncate text-[13.5px] font-semibold ${a.retired ? "text-dim" : "text-fg"}`}>{a.name}</span>
+                  {a.retired && <Status tone="neutral">Retired</Status>}
                 </div>
-                {a.description && (
-                  <p className="text-[11.5px] leading-[1.55] text-dim">{a.description}</p>
+                {a.retired ? (
+                  <p className="text-[11.5px] leading-[1.55] text-faint">
+                    {a.retired.reason}
+                    {a.retired.replacement ? ` · replaced by ${a.retired.replacement}` : ""}
+                  </p>
+                ) : (
+                  a.description && <p className="text-[11.5px] leading-[1.55] text-dim">{a.description}</p>
                 )}
                 <span className="mt-auto flex items-center gap-2 border-t border-line pt-2">
                   <Mono className="text-[10px] text-faint">{a.nodes} nodes</Mono>
                   <span className="grow" />
-                  <span className="flex items-center gap-1 text-[11px] font-medium text-run opacity-0 transition-opacity group-hover:opacity-100">
-                    Run
+                  <span className={`flex items-center gap-1 text-[11px] font-medium opacity-0 transition-opacity group-hover:opacity-100 ${a.retired ? "text-dim" : "text-run"}`}>
+                    {a.retired ? "Lifecycle" : "Run"}
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                       <path d="M5 12h14M13 6l6 6-6 6" />
                     </svg>
@@ -516,7 +528,9 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
         }
         // A lockdown refuses every start (423): say why, who set it and how it ends, not the door's instructions.
         const locked = lockdownRefusalOf(response.status, error);
-        setError(locked ? lockdownRefusalText(locked) : errorText(error, response));
+        // A retired agent takes no new runs (409 retired, L8): who retired it, why, and what replaces it.
+        const retired = response.status === 409 ? retiredOf((error as { retired?: unknown } | undefined)?.retired) : null;
+        setError(locked ? lockdownRefusalText(locked) : retired ? `${agentId || "This agent"} is retired. ${retiredLine(retired)}` : errorText(error, response));
         setPhase("done");
         setFinalState("failed");
         return;
@@ -857,12 +871,15 @@ function RunRecord({ id, onReread }: { id: string; onReread: () => void }) {
   const [specNodes, setSpecNodes] = useState<{ id: string; label: string; kind: string }[] | null>(null);
   const [specEdges, setSpecEdges] = useState<BoardEdge[]>([]);
   const [loadError, setLoadError] = useState("");
+  /** L8: what the record says beyond the journal: a rollback's flag, an A2A task's taint, the eval it is a case of. */
+  const [flags, setFlags] = useState<RunFlags | null>(null);
 
   useEffect(() => {
     api
       .GET("/api/runs/{run_id}", { params: { path: { run_id: id } } })
       .then(({ data, error, response }) => {
         if (!data) throw new Error(errorText(error, response));
+        setFlags(runFlagsOf(data));
         setRaw((data.journal?.entries ?? []) as unknown as Entry[]);
         setMeta({
           system: data.system ?? "",
@@ -1003,6 +1020,7 @@ function RunRecord({ id, onReread }: { id: string; onReread: () => void }) {
         specNodes={specNodes}
         edges={specEdges}
         onReplay={onReread}
+        flags={flags}
       />
     );
   }
@@ -1031,7 +1049,7 @@ function RunRecord({ id, onReread }: { id: string; onReread: () => void }) {
       result={atEnd ? meta.result : null}
       suspension={null}
       onAnswered={() => {}}
-      setup={null}
+      setup={flags ? <RunFlagsBanner flags={flags} agent={meta.system} /> : null}
       segments={segments}
       tNow={playback.t}
       traceOf={id}
@@ -1079,6 +1097,7 @@ function FollowTheater({
   specNodes,
   edges,
   onReplay,
+  flags = null,
 }: {
   id: string;
   system: string;
@@ -1094,6 +1113,8 @@ function FollowTheater({
   edges: BoardEdge[];
   /** The run settled: read the record again and replay it. */
   onReplay: () => void;
+  /** What the record said beyond the journal when the page opened (L8). */
+  flags?: RunFlags | null;
 }) {
   const [raw, setRaw] = useState<Entry[]>(initial);
   // The stream replays the whole journal on every (re)connection; entries are deduplicated by id.
@@ -1240,7 +1261,7 @@ function FollowTheater({
         runLive={running}
         notice={receipt ? <KillReceiptView receipt={receipt} onDismiss={() => setReceipt(null)} /> : already ? <KillAlreadyView refusal={already} onDismiss={() => setAlready(null)} /> : null}
         steer={offer.show ? <SteerPanel runId={id} holdBlocked={offer.hold.allowed ? undefined : offer.hold.reason} /> : null}
-        setup={null}
+        setup={flags ? <RunFlagsBanner flags={flags} agent={system} /> : null}
         footer={
           running ? (
             <div className="flex h-11 shrink-0 items-center gap-3 border-t border-line bg-surface px-4">

@@ -15,6 +15,10 @@ import { TriangleGlyph, bestOf, logScore } from "./tradeoff";
 import { CAT } from "./charts";
 import { RateLimitNote } from "./rate-limit";
 import type { RateLimit } from "@/lib/api/l7";
+import { listAgents } from "@/lib/api/l2";
+import { editableDocument, followEval, retiredOf, retiredRefusalOf, saveAgent, startEval, type EvalCaseResult, type EvalRunView, type ModelSummary, type Retired } from "@/lib/api/l8";
+import { historyRowFromView, historyRowOf, lastComparison, liveOf, mergeHistory, rowStateText, settleOf, thresholdText, thresholdTone, throttleOf, type CompareResult, type HistoryRow } from "@/lib/evals";
+import { retiredLine, savedLine } from "@/lib/lifecycle";
 
 /**
  * Evals: build a benchmark beside an agent, run it, keep the score.
@@ -25,6 +29,15 @@ import type { RateLimit } from "@/lib/api/l7";
  * the same thing every time. Every case is a real run — same runtime, same
  * journal, same policy engine — graded deterministically, and every score is
  * stamped with the spec digest it measured.
+ *
+ * Phase L8: the runner is the backend's. "Run the benchmark" starts an eval
+ * with `POST /api/agents/{id}/evals/run` and follows it by reading `GET
+ * /api/evals/runs/{id}` (lib/api/l8.ts followEval): the live table, a rate
+ * limit a case waits on, and a comparison's recommendation are read off the
+ * eval's view. A deploy gate trusts only a score the backend produced
+ * itself, so the score carries the spec's threshold and whether it was met,
+ * and who started it. The sets and their history stay the console's
+ * (/api/evals); a set's latest score is its latest finished eval.
  */
 
 /* ═══════════════════ shapes ═══════════════════ */
@@ -36,7 +49,8 @@ interface SetRow {
   model: string;
   n: number;
   labeled?: boolean;
-  latest: { passed: number; total: number; model: string; at: string; matrix?: Matrix | null } | null;
+  /** The latest finished eval of the set (a row still running is not it). */
+  latest: { passed: number; total: number; model: string; at: string; matrix?: Matrix | null; threshold?: number | null; passed_threshold?: boolean | null; by?: string; version?: number | null } | null;
 }
 
 interface Check {
@@ -54,34 +68,7 @@ interface EvalCase {
   expected?: string;
 }
 
-interface CaseResult {
-  id: string;
-  note: string;
-  passed: boolean;
-  state: string;
-  error: string;
-  checks: { kind: string; ok: boolean; note: string }[];
-  expected?: string;
-  predicted?: string | null;
-  duration_ms: number;
-  run_file: string;
-}
-
-interface HistoryRow {
-  id: string;
-  model: string;
-  digest: string;
-  passed: number;
-  total: number;
-  results: CaseResult[];
-  matrix?: Matrix | null;
-  summary?: {
-    batch_id?: string; forced?: boolean; compare?: boolean; tier?: "small" | "medium" | "large" | null;
-    avg_ms?: number; tokens?: { in: number; out: number }; model_calls?: number;
-    cost_total?: number | null; cost_per_case?: number | null; incumbent?: string;
-  } | null;
-  at: string;
-}
+type CaseResult = EvalCaseResult;
 
 interface FullSet {
   id: string;
@@ -347,12 +334,24 @@ export function Evals() {
     params.get("agent") ? "new" : null,
   );
 
+  /* Which agents are retired (L8): their benchmarks still read, and take no new eval. */
+  const [retired, setRetired] = useState<Record<string, Retired>>({});
   const refresh = useCallback(async () => {
     try {
       const d = await (await fetch("/api/evals")).json();
       setSets(d.sets ?? []);
     } catch {
       setSets([]);
+    }
+    try {
+      const out: Record<string, Retired> = {};
+      for (const a of await listAgents()) {
+        const r = retiredOf(a.retired);
+        if (r) out[a.id] = r;
+      }
+      setRetired(out);
+    } catch {
+      /* no registry: nothing reads as retired */
     }
   }, []);
 
@@ -407,6 +406,7 @@ export function Evals() {
           <SetCard
             key={s.id}
             row={s}
+            retired={retired[s.agent] ?? null}
             open={openId === s.id}
             onToggle={() => setOpenId(openId === s.id ? null : s.id)}
             onChanged={refresh}
@@ -427,6 +427,8 @@ export function Evals() {
 interface AgentOpt {
   id: string;
   name: string;
+  /** L8: a retired agent's benchmark may still be edited; it takes no new eval. */
+  retired: boolean;
 }
 
 function blankCase(n: number, keys: { name: string; kind?: Kind }[], labels?: Labels | null): EvalCase {
@@ -471,7 +473,7 @@ function SetBuilder({
   useEffect(() => {
     fetch("/api/agents")
       .then((r) => r.json())
-      .then((d) => setAgents((d.agents ?? []).map((a: AgentOpt) => ({ id: a.id, name: a.name }))))
+      .then((d) => setAgents((d.agents ?? []).map((a: { id: string; name: string; retired?: unknown }) => ({ id: a.id, name: a.name, retired: Boolean(retiredOf(a.retired)) }))))
       .catch(() => setAgents([]));
   }, []);
 
@@ -700,7 +702,7 @@ function SetBuilder({
                 onChange={setAgent}
                 options={[
                   { value: "", label: "Choose an agent…" },
-                  ...agents.map((a) => ({ value: a.id, label: a.name })),
+                  ...agents.map((a) => ({ value: a.id, label: a.retired ? `${a.name} (retired)` : a.name })),
                 ]}
               />
             </Field>
@@ -1076,32 +1078,57 @@ function SetBuilder({
 
 /* ═══════════════════ one set ═══════════════════ */
 
+/** A rate limit a case's start waits on, as the card shows it: the limit with the runner's own wait, when it was read, and which case. */
+interface Throttled {
+  limit: RateLimit;
+  at: number;
+  caseId: string;
+  attempt: number;
+  of: number;
+  /** The eval row it was read on. */
+  run: string;
+}
+
 function SetCard({
   row,
+  retired,
   open,
   onToggle,
   onChanged,
   onEdit,
 }: {
   row: SetRow;
+  /** The agent it benchmarks is retired (L8): its history reads, and it takes no new eval. */
+  retired: Retired | null;
   open: boolean;
   onToggle: () => void;
   onChanged: () => void;
   onEdit: () => void;
 }) {
   const [detail, setDetail] = useState<{ runs: HistoryRow[]; labels?: Labels } | null>(null);
-  const [live, setLive] = useState<{ done: number; total: number; cases: CaseResult[] } | null>(null);
+  /* The eval being followed: one view per row the request wrote (one, or one per candidate), in the order started; null when none is. */
+  const [views, setViews] = useState<EvalRunView[] | null>(null);
+  /* What finished in this card, kept until the set's history read holds it. */
+  const [seen, setSeen] = useState<HistoryRow[]>([]);
   const [runError, setRunError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [override, setOverride] = useState("");
   const [compare, setCompare] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
   const [cmp, setCmp] = useState<CompareResult | null>(null);
-  const [liveModel, setLiveModel] = useState<string | null>(null);
   const [viewModel, setViewModel] = useState<string | null>(null);
-  /** A case's start the backend refused for a rate limit (429): the runner waits the time it gave and tries again. */
-  const [throttled, setThrottled] = useState<{ limit: RateLimit; at: number; caseId: string; attempt: number; of: number } | null>(null);
+  /** A case's start the backend refused for a rate limit (429): its runner waits the time it gave and tries again. */
+  const [throttled, setThrottled] = useState<Throttled | null>(null);
   const { models, defaultModel } = useModels();
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const running = views !== null;
+  const live = views ? liveOf(views) : null;
 
   /* The incumbent is what the benchmark runs on today; it is always in the
      comparison. The default pick is its tier and the one below, which is the
@@ -1130,70 +1157,63 @@ function SetCard({
     let stop = false;
     fetch(`/api/evals?id=${encodeURIComponent(row.id)}`)
       .then((r) => r.json())
-      .then((d) => !stop && setDetail({ runs: d.runs ?? [], labels: d.set?.labels ?? undefined }))
+      .then((d) => !stop && setDetail({ runs: (Array.isArray(d.runs) ? d.runs : []).map(historyRowOf), labels: d.set?.labels ?? undefined }))
       .catch(() => !stop && setDetail({ runs: [] }));
     return () => {
       stop = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, row.id, live === null]);
+    // `running` re-reads the history once an eval this card followed is over.
+  }, [open, row.id, running]);
 
+  /* Start on the backend, then follow every row it wrote until each is over.
+     A comparison's rows run one after another; the live table follows the
+     candidate measured now. Leaving the page stops the following, not the
+     eval: it runs on, and its rows land in the history. */
   const run = async () => {
-    setLive({ done: 0, total: row.n, cases: [] });
+    setViews([]);
     setRunError("");
     setCmp(null);
-    setLiveModel(null);
+    setThrottled(null);
     try {
-      const res = await fetch("/api/evals/run", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          set_id: row.id,
-          ...(override ? { model: override } : {}),
-          ...(compare ? { compare: { models: picked } } : {}),
-        }),
+      const started = await startEval(row.agent, {
+        set: row.id,
+        ...(override ? { model: override } : {}),
+        ...(compare ? { compare: { models: picked } } : {}),
       });
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        throw new Error(String((d as { error?: string }).error ?? `HTTP ${res.status}`));
-      }
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error("no stream");
-      const dec = new TextDecoder();
-      let buf = "";
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const parts = buf.split("\n\n");
-        buf = parts.pop() ?? "";
-        for (const part of parts) {
-          const line = part.split("\n").find((l) => l.startsWith("data: "));
-          if (!line) continue;
-          const e = JSON.parse(line.slice(6));
-          if (e.type === "model.start") {
-            // A comparison runs the suite once per candidate; the live table
-            // starts over for each so it never mixes two models' cases.
-            setLiveModel(String(e.model));
-            setLive((s) => s && { ...s, done: 0, cases: [] });
-          } else if (e.type === "rate_limited" && e.limit && typeof e.limit === "object") {
-            // The wait is the runner's (wait_s), which never runs past its own cap.
-            setThrottled({ limit: { ...(e.limit as RateLimit), retry_after_s: Number(e.wait_s) || (e.limit as RateLimit).retry_after_s }, at: Date.now(), caseId: String(e.id ?? ""), attempt: Number(e.attempt) || 1, of: Number(e.of) || 1 });
-          } else if (e.type === "case.done") {
-            setThrottled(null);
-            setLive((s) => s && { ...s, done: s.done + 1, cases: [...s.cases, e as CaseResult] });
-          } else if (e.type === "compare") {
-            setCmp(e as CompareResult);
-          }
-        }
-      }
+      const latest = new Map<string, EvalRunView>();
+      const final = await followEval(started.runs, {
+        everyMs: 1500,
+        stopped: () => !mounted.current,
+        onView: (v) => {
+          latest.set(v.id, v);
+          if (!mounted.current) return;
+          setViews(started.runs.map((id) => latest.get(id)).filter((x): x is EvalRunView => Boolean(x)));
+          const t = throttleOf(v);
+          setThrottled((cur) =>
+            t
+              ? cur && cur.run === v.id && cur.caseId === t.id && cur.attempt === t.attempt
+                ? cur
+                : { limit: { ...t.limit, retry_after_s: t.wait_s }, at: Date.now(), caseId: t.id, attempt: t.attempt, of: t.of, run: v.id }
+              : cur && cur.run === v.id
+                ? null
+                : cur,
+          );
+        },
+      });
+      if (!mounted.current) return;
+      const { comparison, failed } = settleOf(final);
+      setSeen((s) => mergeHistory(s, final.map(historyRowFromView)));
+      if (comparison) setCmp(comparison);
+      if (failed.length) setRunError(failed.map((v) => `${modelLabel(v.model === "default" ? "" : v.model)}: ${v.error || "the eval failed"}`).join("; "));
     } catch (e) {
-      setRunError((e as Error).message);
+      const gone = retiredRefusalOf(e);
+      setRunError(gone ? `${row.agent} is retired. ${retiredLine(gone)}` : (e as Error).message);
     } finally {
-      setLive(null);
-      setLiveModel(null);
-      setThrottled(null);
-      onChanged();
+      if (mounted.current) {
+        setViews(null);
+        setThrottled(null);
+        onChanged();
+      }
     }
   };
 
@@ -1208,17 +1228,18 @@ function SetCard({
     onChanged();
   };
 
-  const activeCmp = cmp ?? lastComparison(detail?.runs ?? [], detail?.labels?.positive);
+  const runs = detail ? mergeHistory(detail.runs, seen) : seen;
+  const activeCmp = cmp ?? lastComparison(runs, detail?.labels?.positive);
   /* Which compared model's run is on screen: the one picked, else the
      recommendation, else the incumbent, else the latest run of all. */
   const viewRun = (() => {
-    if (!activeCmp || !detail?.runs.length) return null;
+    if (!activeCmp || !runs.length) return null;
     const want = viewModel ?? activeCmp.recommended ?? activeCmp.incumbent;
     const m = activeCmp.models.find((x) => x.model === want) ?? activeCmp.models[0];
-    const r = m?.run_id ? detail.runs.find((x) => x.id === m.run_id) : undefined;
+    const r = m?.run_id ? runs.find((x) => x.id === m.run_id) : undefined;
     return r ? { ...r, model: m.model } : null;
   })();
-  const shownRun = viewRun ?? detail?.runs[0] ?? null;
+  const shownRun = viewRun ?? runs.find((r) => r.state === "done") ?? runs[0] ?? null;
 
   const score = row.latest;
   const pct = score ? Math.round((score.passed / Math.max(1, score.total)) * 100) : null;
@@ -1233,7 +1254,10 @@ function SetCard({
         className="focusable flex w-full cursor-pointer items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-raise/40"
       >
         <span className="flex min-w-0 grow flex-col gap-0.5">
-          <span className="text-[13.5px] font-semibold text-fg">{row.name}</span>
+          <span className="flex items-center gap-2">
+            <span className="text-[13.5px] font-semibold text-fg">{row.name}</span>
+            {retired && <Tag>agent retired</Tag>}
+          </span>
           <span className="truncate font-mono text-[10.5px] text-faint">
             benchmarks <span className="text-dim">{row.agent}</span> · {row.n} case
             {row.n === 1 ? "" : "s"} · runs on {modelLabel(row.model)}
@@ -1251,6 +1275,8 @@ function SetCard({
               {live.done}/{live.total}
             </Mono>
           </span>
+        ) : running ? (
+          <span className="text-[11px] text-faint">starting…</span>
         ) : score ? (
           <span className="flex items-center gap-2">
             {headline && (
@@ -1264,6 +1290,11 @@ function SetCard({
             <span className={`tnum ${headline ? "text-[11.5px] text-dim" : "text-[15px] font-semibold"} ${!headline && pct === 100 ? "text-ok" : !headline && pct! >= 60 ? "text-warn" : !headline ? "text-err" : ""}`}>
               {score.passed}/{score.total}
             </span>
+            {score.threshold !== null && score.threshold !== undefined && (
+              <Tag tone={thresholdTone({ passed_threshold: score.passed_threshold ?? null })}>
+                {score.passed_threshold === true ? "met" : score.passed_threshold === false ? "under" : "threshold"} {score.threshold}
+              </Tag>
+            )}
             <span className="text-[10.5px] text-ghost">{ago(score.at)}</span>
           </span>
         ) : (
@@ -1276,9 +1307,14 @@ function SetCard({
 
       {open && (
         <div className="flex flex-col gap-4 border-t border-line px-4 py-4">
+          {retired && (
+            <Banner tone="neutral" title={`${row.agent} is retired`}>
+              {retiredLine(retired)} Its history stays readable; a new eval is refused.
+            </Banner>
+          )}
           <div className="flex flex-wrap items-center gap-2.5">
-            <Button size="sm" variant="solid" tone="ink" permission="run" disabled={!!live || (compare && picked.length < 2)} loading={!!live} onClick={run}>
-              {live ? "Measuring…" : compare ? `Compare ${picked.length} models` : "Run the benchmark"}
+            <Button size="sm" variant="solid" tone="ink" permission="run" disabled={running || Boolean(retired) || (compare && picked.length < 2)} loading={running} onClick={run}>
+              {running ? "Measuring…" : compare ? `Compare ${picked.length} models` : "Run the benchmark"}
             </Button>
             <span className="text-[11px] text-faint">on</span>
             <div className="w-64">
@@ -1292,13 +1328,13 @@ function SetCard({
               />
             </div>
             <span className="ml-2 flex items-center gap-2">
-              <Switch label="Compare models" checked={compare} onChange={enableCompare} disabled={!!live} />
+              <Switch label="Compare models" checked={compare} onChange={enableCompare} disabled={running} />
               {compare && (
                 <div className="w-72">
                   <PickMany
                     values={picked}
                     onChange={setPicked}
-                    disabled={!!live}
+                    disabled={running}
                     aria-label="Models to compare"
                     placeholder="Pick the models to compare"
                     summary={(c) => `${c.length} model${c.length === 1 ? "" : "s"}: ${c.map((x) => x.label).join(", ")}`}
@@ -1318,7 +1354,7 @@ function SetCard({
                     ["One below", () => setPicked(tierBelow())],
                     ["All", () => setPicked(models.map((m) => m.id))],
                   ] as [string, () => void][]).map(([label, fn]) => (
-                    <Button key={label} size="sm" variant="quiet" disabled={!!live} onClick={fn}>
+                    <Button key={label} size="sm" variant="solid" disabled={running} onClick={fn}>
                       {label}
                     </Button>
                   ))}
@@ -1344,7 +1380,7 @@ function SetCard({
                 onChanged();
               }}
             >
-              {confirmDelete ? "Click again — history goes too" : "Delete set"}
+              {confirmDelete ? "Click again — the set goes; the backend's eval records stay" : "Delete set"}
             </Button>
           </div>
 
@@ -1354,13 +1390,14 @@ function SetCard({
             </Banner>
           )}
 
-          {live && liveModel && (
+          {live && (
             <p className="text-[11.5px] text-dim">
-              Measuring <span className="font-mono text-fg">{modelLabel(liveModel === "default" ? "" : liveModel)}</span>
-              {compare ? ", every model call pinned to it" : ""}
+              Measuring <span className="font-mono text-fg">{modelLabel(live.model === "default" ? "" : live.model)}</span>
+              {live.legs > 1 ? `, candidate ${live.leg} of ${live.legs}, every model call pinned to it` : ""}
+              <span className="text-faint"> · on the backend, each case a real run · {live.passed} passed so far</span>
             </p>
           )}
-          {live && throttled && (
+          {running && throttled && (
             <div className="flex flex-col gap-1">
               <RateLimitNote limit={throttled.limit} readAt={throttled.at} />
               <span className="text-[11px] text-faint">
@@ -1369,14 +1406,14 @@ function SetCard({
             </div>
           )}
           {live && live.cases.length > 0 && <CaseTable cases={live.cases} />}
-          {!live && activeCmp && (
+          {!running && activeCmp && (
             <>
               <Recommendation cmp={activeCmp} models={models} onUse={useModel} currentModel={row.model} onChanged={onChanged} agent={row.agent} />
               <ComparePanel cmp={activeCmp} models={models} onUse={useModel} currentModel={row.model} />
             </>
           )}
 
-          {!live && detail?.runs.length ? (
+          {!running && runs.length ? (
             <div className="flex flex-col gap-3">
               {activeCmp && (
                 <div className="flex flex-wrap items-center gap-2">
@@ -1386,7 +1423,7 @@ function SetCard({
                       value={viewRun?.model ?? ""}
                       onChange={setViewModel}
                       options={activeCmp.models
-                        .filter((m) => m.run_id && detail.runs.some((r) => r.id === m.run_id))
+                        .filter((m) => m.run_id && runs.some((r) => r.id === m.run_id))
                         .map((m) => ({
                           value: m.model,
                           label: `${modelLabel(m.model === "default" ? "" : m.model)}${m.model === activeCmp.recommended ? " · recommended" : m.model === activeCmp.incumbent ? " · incumbent" : ""}`,
@@ -1396,30 +1433,44 @@ function SetCard({
                   <span className="text-[10.5px] text-faint">the matrix and the cases below are this model&rsquo;s run</span>
                 </div>
               )}
+              {shownRun && (
+                <span className="flex flex-wrap items-center gap-2 text-[11px] text-dim">
+                  <Tag tone={thresholdTone(shownRun)}>{thresholdText({ ...shownRun, forced: Boolean(shownRun.summary?.forced) })}</Tag>
+                  {shownRun.by && <span>started by {shownRun.by}</span>}
+                  {shownRun.version !== null && <Mono className="text-[10px] text-faint">version {shownRun.version}</Mono>}
+                </span>
+              )}
               {shownRun?.matrix && (
-                <ConfusionPanel matrix={shownRun.matrix} positive={detail.labels?.positive} />
+                <ConfusionPanel matrix={shownRun.matrix} positive={detail?.labels?.positive} />
               )}
               <CaseTable cases={shownRun?.results ?? []} />
               <div className="flex flex-col gap-1">
                 <span className="text-[11px] font-semibold text-dim">History</span>
-                {detail.runs.map((h) => (
-                  <div key={h.id} className="flex items-center gap-3 text-[11.5px]">
-                    {h.matrix && (
+                {runs.map((h) => (
+                  <div key={h.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11.5px]">
+                    {h.matrix && h.state === "done" && (
                       <span className="tnum font-semibold text-fg">
-                        F1 {derive(h.matrix, detail.labels?.positive).headlineF1.toFixed(3)}
+                        F1 {derive(h.matrix, detail?.labels?.positive).headlineF1.toFixed(3)}
                       </span>
                     )}
                     <span className={`tnum ${h.matrix ? "text-dim" : "font-semibold"} ${!h.matrix && h.passed === h.total ? "text-ok" : !h.matrix ? "text-warn" : ""}`}>
                       {h.passed}/{h.total}
                     </span>
+                    {rowStateText(h) && <Tag tone={h.state === "failed" ? "err" : "run"}>{rowStateText(h)}</Tag>}
+                    {h.threshold !== null && h.state === "done" && (
+                      <span className={`text-[10.5px] ${h.passed_threshold === true ? "text-ok" : h.passed_threshold === false ? "text-err" : "text-faint"}`}>
+                        {h.passed_threshold === true ? "met" : h.passed_threshold === false ? "under" : "threshold"} {h.threshold}
+                      </span>
+                    )}
                     <Mono className="text-[10px] text-faint">{modelLabel(h.model === "default" ? "" : h.model)}</Mono>
                     <Mono className="text-[10px] text-ghost">spec {h.digest.slice(0, 8)}</Mono>
+                    {h.by && <span className="text-[10px] text-faint">by {h.by}</span>}
                     <span className="text-[10px] text-ghost">{ago(h.at)}</span>
                   </div>
                 ))}
               </div>
             </div>
-          ) : !live ? (
+          ) : !running ? (
             <p className="text-[12px] text-faint">
               Never run. The first run sets the baseline — every later score compares against it.
             </p>
@@ -1430,7 +1481,8 @@ function SetCard({
   );
 }
 
-function CaseTable({ cases }: { cases: CaseResult[] }) {
+/** A run's cases, graded: what passed, what each check said, the label against the expected one, and the run behind each score. */
+export function CaseTable({ cases }: { cases: CaseResult[] }) {
   const [openCase, setOpenCase] = useState<string | null>(null);
   return (
     <div className="overflow-hidden rounded-md border border-line">
@@ -1443,7 +1495,7 @@ function CaseTable({ cases }: { cases: CaseResult[] }) {
           >
             <span className={`size-1.5 shrink-0 rounded-[2px] ${c.passed ? "bg-ok" : "bg-err"}`} />
             <span className="min-w-0 grow truncate text-[12.5px] font-medium text-fg">{c.id}</span>
-            {c.expected !== undefined && (
+            {c.expected != null && (
               <Mono className="hidden shrink-0 text-[10.5px] sm:inline">
                 <span className="text-dim">{c.expected}</span>
                 <span className="text-ghost"> → </span>
@@ -1607,34 +1659,6 @@ function ConfusionPanel({ matrix, positive }: { matrix: Matrix; positive?: strin
 
 /* ═══════════════════ model comparison ═══════════════════ */
 
-interface ModelSummary {
-  model: string;
-  run_id?: string;
-  tier: "small" | "medium" | "large" | null;
-  passed: number;
-  total: number;
-  pass_rate: number;
-  headline_f1: number | null;
-  macro_f1: number | null;
-  invalid: number;
-  avg_ms: number;
-  tokens: { in: number; out: number };
-  model_calls: number;
-  cost_total: number | null;
-  cost_per_case: number | null;
-}
-
-interface CompareResult {
-  batch_id: string;
-  incumbent: string;
-  models: ModelSummary[];
-  recommended: string | null;
-  rationale: string;
-  /** Spec digest the comparison measured, so a stale one reads as stale. */
-  digest?: string;
-  at?: string;
-}
-
 const fmtCost = (c: number | null) =>
   c === null ? "unknown" : c === 0 ? "$0" : c < 0.0005 ? "<$0.001" : c < 0.01 ? `$${c.toFixed(4)}` : `$${c.toFixed(3)}`;
 const fmtMs = (ms: number) => (ms >= 60_000 ? `${(ms / 60_000).toFixed(1)}m` : `${(ms / 1000).toFixed(1)}s`);
@@ -1646,7 +1670,7 @@ const fmtMs = (ms: number) => (ms >= 60_000 ? `${(ms / 60_000).toFixed(1)}m` : `
  * the cheapest model that clears the incumbent's quality within a small
  * margin with no invalid outputs; it is a recommendation, never a switch.
  */
-function ComparePanel({
+export function ComparePanel({
   cmp,
   models,
   onUse,
@@ -1702,7 +1726,7 @@ function ComparePanel({
                 {m.invalid > 0 && <Tag tone="warn">{m.invalid} invalid</Tag>}
                 <span className="grow" />
                 {!isInc && m.model !== currentModel && m.model !== "default" && (
-                  <Button size="sm" variant="quiet" onClick={() => onUse(m.model)}>
+                  <Button size="sm" variant="solid" onClick={() => onUse(m.model)}>
                     Use for this benchmark
                   </Button>
                 )}
@@ -1726,68 +1750,6 @@ function ComparePanel({
       <p className="border-t border-line px-3 py-2 text-[11px] leading-[1.5] text-dim">{cmp.rationale}</p>
     </div>
   );
-}
-
-
-/**
- * The most recent comparison, rebuilt from history: every run that shares
- * the latest batch id, one per model. Cost and tokens come from the stored
- * summary; older rows without one show cost as unknown rather than zero.
- */
-function lastComparison(runs: HistoryRow[], positive?: string): CompareResult | null {
-  const batches = new Map<string, HistoryRow[]>();
-  for (const r of runs) {
-    const b = r.summary?.batch_id;
-    if (!b || !r.summary?.compare) continue;
-    batches.set(b, [...(batches.get(b) ?? []), r]);
-  }
-  // The newest batch with at least two legs. A batch whose other legs failed
-  // (a refused model, a stopped run) is not a comparison, and must not hide
-  // the last one that was.
-  const latest = [...batches.values()]
-    .filter((rows) => rows.length >= 2)
-    .sort((a, b) => new Date(b[0].at).getTime() - new Date(a[0].at).getTime())[0];
-  if (!latest) return null;
-  const models: ModelSummary[] = latest.map((r) => {
-    const m = r.matrix ? derive(r.matrix, positive) : null;
-    const durations = (r.results ?? []).map((c) => c.duration_ms);
-    return {
-      model: r.model,
-      run_id: r.id,
-      tier: r.summary?.tier ?? null,
-      passed: r.passed,
-      total: r.total,
-      pass_rate: r.passed / Math.max(1, r.total),
-      headline_f1: m?.headlineF1 ?? null,
-      macro_f1: m?.macroF1 ?? null,
-      invalid: m?.invalid ?? 0,
-      avg_ms: r.summary?.avg_ms ?? Math.round(durations.reduce((a, b) => a + b, 0) / Math.max(1, durations.length)),
-      tokens: r.summary?.tokens ?? { in: 0, out: 0 },
-      model_calls: r.summary?.model_calls ?? 0,
-      cost_total: r.summary?.cost_total ?? null,
-      cost_per_case: r.summary?.cost_per_case ?? null,
-    };
-  });
-  const incumbent = latest[0].summary?.incumbent ?? models[0].model;
-  const quality = (m: ModelSummary) => m.headline_f1 ?? m.pass_rate;
-  const inc = models.find((m) => m.model === incumbent) ?? models[0];
-  const eligible = models
-    .filter((m) => quality(m) >= quality(inc) - 0.02 && m.invalid === 0 && m.cost_per_case !== null)
-    .sort((a, b) => (a.cost_per_case as number) - (b.cost_per_case as number) || a.avg_ms - b.avg_ms);
-  const best = eligible[0] ?? null;
-  return {
-    batch_id: latest[0].summary?.batch_id ?? "",
-    digest: latest[0].digest,
-    at: latest[0].at,
-    incumbent: inc.model,
-    models,
-    recommended: best?.model ?? null,
-    rationale: best
-      ? best.model === inc.model
-        ? "The incumbent is already the cheapest model that clears the bar."
-        : `${best.model} clears the incumbent's quality within 0.02${inc.cost_per_case && best.cost_per_case !== null ? ` at ${Math.round((1 - best.cost_per_case / inc.cost_per_case) * 100)}% lower cost per case` : ""}.`
-      : "No candidate cleared the incumbent's quality with a known cost; keep the incumbent.",
-  };
 }
 
 
@@ -1824,15 +1786,19 @@ function Recommendation({
   /* Make the recommendation the workflow's own model: every node that calls
      a model is pinned to it, and tier routing on those nodes is cleared so
      the choice is explicit in the saved spec. The benchmark's model is left
-     alone; that is the other button. */
-  const [applied, setApplied] = useState(false);
+     alone; that is the other button. It edits the latest save (a draft, once
+     the agent is deployed), and saving is never gated: a deployed agent keeps
+     running its version until the draft is deployed through the gate. */
+  const [applied, setApplied] = useState("");
+  const [applyError, setApplyError] = useState("");
   const makeWorkflowDefault = async () => {
     if (!rec) return;
     setBusy(true);
+    setApplyError("");
     try {
-      const d = await (await fetch(`/api/agents?id=${encodeURIComponent(agent)}`)).json();
-      if (!d.spec) throw new Error(String(d.error ?? "no spec"));
-      const spec = d.spec as { spec: { nodes: Record<string, unknown>[] } };
+      const edit = await editableDocument(agent);
+      const spec = structuredClone(edit.spec) as { spec?: { nodes?: Record<string, unknown>[] } };
+      if (!spec.spec || !Array.isArray(spec.spec.nodes)) throw new Error(`the registry holds no document for "${agent}"`);
       spec.spec.nodes = spec.spec.nodes.map((n) => {
         const callsModel = n.harness === "delegate" || (Array.isArray(n.steps) && (n.steps as { action?: string }[]).some((st) => st.action === "model"));
         if (!callsModel) return n;
@@ -1840,10 +1806,12 @@ function Recommendation({
         delete next.model_class;
         return next;
       });
-      const res = await fetch("/api/agents", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ spec }) });
-      if (!res.ok) throw new Error(String((await res.json()).error ?? res.status));
-      setApplied(true);
+      const saved = await saveAgent(spec as Record<string, unknown>);
+      setApplied(savedLine(saved, edit.agent.deployed_version));
       onChanged();
+    } catch (e) {
+      const gone = retiredRefusalOf(e);
+      setApplyError(gone ? `${agent} is retired. ${retiredLine(gone)}` : (e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -1883,17 +1851,19 @@ function Recommendation({
             Use for this benchmark
           </Button>
         )}
-        <Button size="sm" variant="outline" permission="deploy" disabled={busy || applied} loading={busy} onClick={makeWorkflowDefault}>
-          {applied ? "Workflow updated" : "Make it the workflow's model"}
+        <Button size="sm" variant="solid" permission="deploy" disabled={busy || Boolean(applied)} loading={busy} onClick={makeWorkflowDefault}>
+          {applied ? "Saved" : "Make it the workflow's model"}
         </Button>
       </div>
+      {applied && <span className="text-[11.5px] text-dim">{applied}</span>}
+      {applyError && <span className="text-[11.5px] text-err">{applyError}</span>}
       <ul className="flex flex-col gap-0.5 pl-4 text-[11.5px] leading-[1.5] text-dim">
         {reasons.map((r) => (
           <li key={r} className="list-disc">{r}</li>
         ))}
       </ul>
       <span className="text-[10.5px] text-faint">
-        Every call was pinned to each model on the same {rec.total} cases. Making it the workflow&rsquo;s model pins every model-calling node of {agent} to it in the saved spec (tier routing on those nodes is cleared); the benchmark&rsquo;s own model changes only with the other button. Both are explicit: nothing switches on its own.
+        Every call was pinned to each model on the same {rec.total} cases. Making it the workflow&rsquo;s model pins every model-calling node of {agent} to it in a new saved version (tier routing on those nodes is cleared); once the agent is deployed that version is a draft, and production keeps running until it is deployed through the promotion gate. The benchmark&rsquo;s own model changes only with the other button. Both are explicit: nothing switches on its own.
       </span>
     </div>
   );

@@ -1,11 +1,13 @@
-import type { GuardianAct, GuardianAction, GuardianPatch, GuardianView } from "./api/l7";
+import { GUARDIAN_ACTS, type GuardianAct, type GuardianAction, type GuardianPatch, type GuardianView } from "./api/l7";
 
 /**
  * The guardian's limits as a form, and what it did as lines. The guardian
  * is a supervisory model the backend runs over each covered run's
  * trajectory: within the limits a person sets it may hold a run at its next
- * gate or block (kill) it; outside them it only raises attention. Pure:
- * components/guardian.tsx renders these, tests/l7-logic.test.ts holds them.
+ * gate, block (kill) it, or (phase L8) redirect it, its reason handed to the
+ * run as guidance at its next model call; outside them it only raises
+ * attention. Pure: components/guardian.tsx renders these,
+ * tests/l7-logic.test.ts and tests/l8-logic.test.ts hold them.
  */
 
 /** What the form holds; numbers stay text until saved, so a half-typed value is not lost. */
@@ -17,6 +19,8 @@ export interface GuardianForm {
   agents: string[];
   hold: boolean;
   block: boolean;
+  /** L8: steer the run with the guardian's reason as guidance. */
+  redirect: boolean;
   max_actions_per_hour: string;
   min_confidence: string;
   rubric: string;
@@ -32,6 +36,7 @@ export function formOf(v: GuardianView): GuardianForm {
     agents: v.agents === "*" ? [] : [...v.agents],
     hold: v.may.includes("hold"),
     block: v.may.includes("block"),
+    redirect: v.may.includes("redirect"),
     max_actions_per_hour: String(v.max_actions_per_hour),
     min_confidence: String(v.min_confidence),
     rubric: v.rubric,
@@ -82,7 +87,7 @@ export function patchOf(before: GuardianView, f: GuardianForm): GuardianPatch {
   const agents: string[] | "*" = f.allAgents ? "*" : [...new Set(f.agents.map((a) => a.trim()).filter(Boolean))];
   const same = agents === "*" ? before.agents === "*" : before.agents !== "*" && agents.length === before.agents.length && agents.every((a, i) => a === (before.agents as string[])[i]);
   if (!same) out.agents = agents;
-  const may: GuardianAct[] = [...(f.hold ? (["hold"] as const) : []), ...(f.block ? (["block"] as const) : [])];
+  const may = mayOf(f);
   if (may.length !== before.may.length || may.some((m) => !before.may.includes(m))) out.may = may;
   const max = Number(f.max_actions_per_hour);
   if (max !== before.max_actions_per_hour) out.max_actions_per_hour = max;
@@ -104,11 +109,33 @@ export function coverageText(v: Pick<GuardianView, "enabled" | "agents">): strin
   return `the runs of ${v.agents.join(", ")}`;
 }
 
-/** What it may do on its own. */
+/** The acts the form allows, in the backend's order. */
+export function mayOf(f: Pick<GuardianForm, "hold" | "block" | "redirect">): GuardianAct[] {
+  return GUARDIAN_ACTS.filter((a) => f[a]);
+}
+
+const FIRST: Record<GuardianAct, string> = {
+  hold: "hold a run at its next gate",
+  block: "block (kill) a run",
+  redirect: "redirect a run, its reason handed to it as guidance",
+};
+const LATER: Record<GuardianAct, string> = {
+  hold: "hold it at its next gate",
+  block: "block (kill) it",
+  redirect: "redirect it with its reason as guidance",
+};
+const NOUN: Record<GuardianAct, string> = { hold: "a hold", block: "a block", redirect: "a redirect" };
+
+const orList = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")}${xs.length > 2 ? "," : ""} or ${xs[xs.length - 1]}`);
+
+/** What it may do on its own, and which of its verdicts are raised for a person instead. */
 export function mayText(may: readonly GuardianAct[]): string {
-  if (!may.length) return "nothing on its own: every verdict is raised for a person";
-  if (may.length === 2) return "hold a run at its next gate, or block (kill) it";
-  return may[0] === "hold" ? "hold a run at its next gate; a block is raised for a person" : "block (kill) a run; a hold is raised for a person";
+  const acts = GUARDIAN_ACTS.filter((a) => may.includes(a));
+  if (!acts.length) return "nothing on its own: every verdict is raised for a person";
+  const can = acts.map((a, i) => (i === 0 ? FIRST[a] : LATER[a]));
+  const text = can.length === 1 ? can[0] : `${can.slice(0, -1).join(", ")}, or ${can[can.length - 1]}`;
+  const raised = GUARDIAN_ACTS.filter((a) => !acts.includes(a)).map((a) => NOUN[a]);
+  return raised.length ? `${text}; ${orList(raised)} is raised for a person` : text;
 }
 
 /** The hourly cap against what it did in the last hour. */
@@ -124,8 +151,12 @@ export function cadenceText(v: Pick<GuardianView, "every_entries" | "every_s">):
 
 /** What it did with one verdict, in a line: acted (the hold or the kill landed), or raised for a person and why. */
 export function outcomeText(a: Pick<GuardianAction, "outcome" | "action" | "why">): string {
-  if (a.outcome === "acted") return a.action === "block" ? "Blocked: the run and what it set off were killed" : "Held: the run waits for a person at its next gate";
-  return `Raised for a person: it would ${a.action === "block" ? "block" : "hold"} the run, but ${a.why || "it may not act"}`;
+  if (a.outcome === "acted") {
+    if (a.action === "block") return "Blocked: the run and what it set off were killed";
+    if (a.action === "redirect") return "Redirected: its reason went to the run as guidance for its next model call";
+    return "Held: the run waits for a person at its next gate";
+  }
+  return `Raised for a person: it would ${a.action} the run, but ${a.why || "it may not act"}`;
 }
 
 /** The verdict with its confidence: "block · 0.95". */

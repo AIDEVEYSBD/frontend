@@ -19,6 +19,8 @@ export const MEASURE_LABEL: Record<MeasureName, string> = {
   cost_per_run: "Cost per run",
   tool_mix: "Tool mix",
   refusal_rate: "Refusal rate",
+  benchmark_outcomes: "Outcomes vs benchmark",
+  benchmark_labels: "Outcomes vs benchmark labels",
 };
 
 export const MEASURE_ASKS: Record<MeasureName, string> = {
@@ -27,6 +29,8 @@ export const MEASURE_ASKS: Record<MeasureName, string> = {
   cost_per_run: "what a run costs, priced as the ledger prices it",
   tool_mix: "which tools the runs call, every call pooled",
   refusal_rate: "the share of runs that met a refusal",
+  benchmark_outcomes: "how recent production runs end, against how the benchmark's cases ended on the digest production runs",
+  benchmark_labels: "how recent production runs end, against the labels a labeled benchmark expects",
 };
 
 export const STATISTIC_LABEL: Record<DriftMeasure["statistic"], string> = {
@@ -89,19 +93,30 @@ export function windowsLine(a: Pick<AgentDrift, "recent" | "baseline">, windows:
 
 export type VerdictTone = "err" | "ok" | "neutral";
 
-/** An agent's verdict: drifted (which measures), within its thresholds, or not enough runs to say. */
-export function driftVerdict(a: Pick<AgentDrift, "enough" | "drifted" | "measures" | "says">): { tone: VerdictTone; label: string; detail: string } {
-  if (!a.enough) return { tone: "neutral", label: "Not enough runs", detail: a.says };
+/**
+ * An agent's verdict: drifted (which measures), within its thresholds, or
+ * not enough runs to say. Since L8 a drift against the benchmark of what
+ * production runs counts even when the trailing baseline has too few runs,
+ * so a drifted agent reads as drifted first.
+ */
+export function driftVerdict(a: Pick<AgentDrift, "enough" | "drifted" | "measures" | "says"> & { benchmark?: AgentDrift["benchmark"] }): { tone: VerdictTone; label: string; detail: string } {
   if (a.drifted) {
-    const moved = a.measures.filter((m) => m.drifted).map((m) => MEASURE_LABEL[m.name]);
+    const moved = [...a.measures, ...(a.benchmark?.measures ?? [])].filter((m) => m.drifted).map((m) => MEASURE_LABEL[m.name]);
     return { tone: "err", label: "Drifted", detail: moved.length ? `shifted: ${moved.join(", ")}` : a.says };
   }
+  if (!a.enough) return { tone: "neutral", label: "Not enough runs", detail: a.says };
   return { tone: "ok", label: "Within thresholds", detail: a.says || "no measure past its threshold" };
 }
 
+/** The benchmark a drift was read against, in a line: `ev-… · version 1 (90df2dfa) on triage-bench, 3 cases, labeled`. */
+export function benchmarkEvalLine(b: NonNullable<AgentDrift["benchmark"]>["eval"]): string {
+  const what = b.version !== null ? `version ${b.version} (${b.digest.slice(0, 8)})` : b.digest.slice(0, 8);
+  return `${b.id} · ${what} on ${b.set}, ${b.cases} case${b.cases === 1 ? "" : "s"}${b.labeled ? ", labeled" : ""}`;
+}
+
 /** Agents in reading order: drifted first, then those compared, then those without enough runs; by name within each. */
-export function orderDrift(agents: readonly AgentDrift[]): AgentDrift[] {
-  const rank = (a: AgentDrift) => (a.drifted ? 0 : a.enough ? 1 : 2);
+export function orderDrift<T extends Pick<AgentDrift, "agent" | "drifted" | "enough">>(agents: readonly T[]): T[] {
+  const rank = (a: T) => (a.drifted ? 0 : a.enough ? 1 : 2);
   return [...agents].sort((a, b) => rank(a) - rank(b) || a.agent.localeCompare(b.agent));
 }
 

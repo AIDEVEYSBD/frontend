@@ -3,29 +3,46 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, IconButton, Mono } from "../ui";
+import { GatePanel } from "../deploy-gate";
+import { useSession } from "@/lib/use-session";
+import { DoorError } from "@/lib/api/l5";
+import { deploy, gateRefusalOf, retiredRefusalOf, saveAgent, type AgentSaved, type GateRefusal, type OverrideRequest } from "@/lib/api/l8";
+import { canOverride, gatedSaveLine, overrideLine, retiredLine } from "@/lib/lifecycle";
 
 /**
  * The deploy theater: the moment a document becomes part of the estate,
  * staged honestly. Every act maps to a real step the backend performs —
  * the save, where its parser seals the document and a version is recorded
- * (POST /api/agents), then the deploy, which stamps the registry (POST
- * /api/agents/{id}/deploy) — and the final state shows the real digest that
- * now identifies this agent. The choreography never lies: if the parser
- * refuses, the theater shows the refusal, not a success scene.
+ * (POST /api/agents), then the deploy of exactly that version to
+ * production (POST /api/agents/{id}/deploy) — and the final state shows the
+ * real digest that now identifies this agent. The choreography never lies:
+ * if the parser refuses, the theater shows the refusal, not a success scene.
+ *
+ * Phase L8: the deploy goes through the promotion gate. Saving is never
+ * gated (once the agent is deployed, a save is a draft and production keeps
+ * running its version); a deploy the gate refuses is its own act, showing
+ * every unmet condition with its detail and what the gate read, and for an
+ * administrator an override with a reason, sent as the same deploy.
  *
  * All art is procedural JSX/SVG; all sound is synthesized in WebAudio at
  * click time (the click is the gesture that unlocks audio). Reduced-motion
  * viewers get the same truth with the theatrics stripped.
  */
 
-type Act = "seal" | "validate" | "ship" | "live" | "refused";
+type Act = "seal" | "validate" | "ship" | "live" | "refused" | "gated";
 
 interface Deployed {
   id: string;
   digest: string;
   store: string;
+  version: number | null;
   steps: { step: string; ms: number }[];
+  /** An administrator's override, when the gate was passed by one. */
+  override: string;
 }
+
+/** What the two requests came to: deployed, held at the gate (the version saved), or refused (the parser, or a retired agent). */
+type Outcome = { kind: "deployed"; deployed: Deployed } | { kind: "gated"; saved: AgentSaved; gate: GateRefusal; saveMs: number } | { kind: "refused"; message: string; at: "save" | "deploy"; saved?: AgentSaved };
 
 /* ── procedural sound: three cues, synthesized, nothing fetched ── */
 
@@ -77,13 +94,22 @@ export function DeployTheater({
   onClose,
 }: {
   doc: unknown;
-  /** `refused` lets the shell surface the problems rail after a refusal. */
-  onClose: (deployed: boolean, refused?: boolean) => void;
+  /** `refused` lets the shell surface the problems rail after a refusal; `saved` is the version saved when the gate held its deploy. */
+  onClose: (deployed: boolean, refused?: boolean, saved?: AgentSaved) => void;
 }) {
   const router = useRouter();
+  const { session } = useSession();
   const [act, setAct] = useState<Act>("seal");
   const [result, setResult] = useState<Deployed | null>(null);
   const [refusal, setRefusal] = useState("");
+  /* Which request refused: the save (the parser) or the deploy (a retirement, a permission, the store). */
+  const [refusedAt, setRefusedAt] = useState<"save" | "deploy">("save");
+  /* A deploy refused after its save: the version saved, for the builder. */
+  const [refusedSaved, setRefusedSaved] = useState<AgentSaved | null>(null);
+  /* Held at the gate: the version saved, the refusal, and an override in flight. */
+  const [gated, setGated] = useState<{ saved: AgentSaved; gate: GateRefusal; saveMs: number } | null>(null);
+  const [overriding, setOverriding] = useState(false);
+  const [overrideError, setOverrideError] = useState("");
   const [typedDigest, setTypedDigest] = useState("");
   const [muted, setMuted] = useState(() => {
     try {
@@ -119,27 +145,30 @@ export function DeployTheater({
 
     (async () => {
       /* Two real requests on the backend: the save, where the parser seals
-         the document (a refusal lands here), then the deploy, which reports
-         its own steps and the moment it happened. The save's round trip is
-         measured here and reported as the first step. */
-      const post = (url: string, body?: unknown) =>
-        fetch(url, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: body === undefined ? undefined : JSON.stringify(body),
-          signal: ctrl.signal,
-        })
-          .then(async (r) => ({ ok: r.ok, body: await r.json() }))
-          .catch((e) => ({ ok: false, body: { error: (e as Error).message } }));
-      const request = (async () => {
+         the document (a refusal lands here), then the deploy of exactly the
+         version saved, through the promotion gate, which reports its own
+         steps and the moment it happened. The save's round trip is measured
+         here and reported as the first step. */
+      const request = (async (): Promise<Outcome> => {
         const t0 = Date.now();
-        const saved = await post("/api/agents", { spec: doc });
-        if (!saved.ok || saved.body.error) return saved;
+        let saved: AgentSaved;
+        try {
+          saved = await saveAgent(doc as Record<string, unknown>, { signal: ctrl.signal });
+        } catch (e) {
+          const gone = retiredRefusalOf(e);
+          return { kind: "refused", message: gone ? `${meta.id ?? "This agent"} is retired. ${retiredLine(gone)}` : (e as Error).message, at: "save" };
+        }
         const saveMs = Date.now() - t0;
-        const id = String(saved.body.id ?? meta.id ?? "");
-        const deployed = await post(`/api/agents/${encodeURIComponent(id)}/deploy`);
-        if (!deployed.ok || deployed.body.error) return deployed;
-        return { ok: true, body: { ...deployed.body, steps: [{ step: "save", ms: saveMs }, ...(deployed.body.steps ?? [])] } };
+        const id = saved.id || meta.id || "";
+        try {
+          const d = await deploy(id, saved.version ? { version: saved.version } : {}, { signal: ctrl.signal });
+          return { kind: "deployed", deployed: { id, digest: d.digest, store: d.store, version: d.version, steps: [{ step: "save", ms: saveMs }, ...d.steps], override: d.override ? overrideLine(d.override) : "" } };
+        } catch (e) {
+          const gate = gateRefusalOf(e);
+          if (gate) return { kind: "gated", saved, gate, saveMs };
+          const gone = retiredRefusalOf(e);
+          return { kind: "refused", message: gone ? `${id} is retired. ${retiredLine(gone)}` : (e as Error).message, at: "deploy", saved };
+        }
       })();
 
       sound().tick();
@@ -150,11 +179,19 @@ export function DeployTheater({
       await minDwell(1150);
       if (stop) return;
 
-      const { ok, body } = await request;
+      const outcome = await request;
       if (stop) return;
-      if (!ok || body.error) {
-        setRefusal(String(body.error ?? "the deploy failed"));
+      if (outcome.kind === "refused") {
+        setRefusal(outcome.message || "the deploy failed");
+        setRefusedAt(outcome.at);
+        setRefusedSaved(outcome.saved ?? null);
         setAct("refused");
+        sound().refuse();
+        return;
+      }
+      if (outcome.kind === "gated") {
+        setGated({ saved: outcome.saved, gate: outcome.gate, saveMs: outcome.saveMs });
+        setAct("gated");
         sound().refuse();
         return;
       }
@@ -162,7 +199,7 @@ export function DeployTheater({
       sound().thunk();
       await minDwell(1250);
       if (stop) return;
-      setResult(body as Deployed);
+      setResult(outcome.deployed);
       setAct("live");
       sound().live();
     })();
@@ -186,18 +223,45 @@ export function DeployTheater({
     return () => clearInterval(id);
   }, [act, result, reduce]);
 
+  /* An administrator's override, sent as the same deploy of the same version. */
+  const override = useCallback(
+    async (body: OverrideRequest) => {
+      if (!gated) return;
+      setOverriding(true);
+      setOverrideError("");
+      try {
+        const d = await deploy(gated.saved.id || meta.id || "", { ...(gated.saved.version ? { version: gated.saved.version } : {}), override: body });
+        setGated(null);
+        setAct("ship");
+        sound().thunk();
+        await new Promise((r) => setTimeout(r, reduce ? 0 : 1250));
+        setResult({ id: d.id, digest: d.digest, store: d.store, version: d.version, steps: [{ step: "save", ms: gated.saveMs }, ...d.steps], override: d.override ? overrideLine(d.override) : "" });
+        setAct("live");
+        sound().live();
+      } catch (e) {
+        const gate = gateRefusalOf(e);
+        if (gate) setGated((g) => (g ? { ...g, gate } : g));
+        if (e instanceof DoorError && e.status === 403 && e.control === "override") setOverrideError(`${e.message}. Only an administrator may override the gate.`);
+        else if (!gate) setOverrideError((e as Error).message);
+      } finally {
+        setOverriding(false);
+      }
+    },
+    [gated, meta.id, reduce, sound],
+  );
+
   const escape = useCallback(
     (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose(act === "live", act === "refused");
+      if (e.key === "Escape") onClose(act === "live", act === "refused" && refusedAt === "save", act === "gated" ? gated?.saved : act === "refused" ? (refusedSaved ?? undefined) : undefined);
     },
-    [onClose, act],
+    [onClose, act, gated, refusedAt, refusedSaved],
   );
   useEffect(() => {
     window.addEventListener("keydown", escape);
     return () => window.removeEventListener("keydown", escape);
   }, [escape]);
 
-  const stageIndex = { seal: 0, validate: 1, ship: 2, live: 3, refused: 1 }[act];
+  const stageIndex = { seal: 0, validate: 1, ship: 2, live: 3, refused: 1, gated: 2 }[act];
 
   // Dialog semantics: focus lands inside on mount and Tab cycles within.
   const panelRef = useRef<HTMLDivElement>(null);
@@ -239,21 +303,21 @@ export function DeployTheater({
         }
       `}</style>
 
-      <div ref={panelRef} className="af-dep-rise flex w-[min(560px,92vw)] flex-col gap-5 rounded-lg border border-line bg-surface p-6 elev-3">
+      <div ref={panelRef} className={`af-dep-rise flex max-h-[92vh] flex-col gap-5 overflow-y-auto rounded-lg border border-line bg-surface p-6 elev-3 ${act === "gated" ? "w-[min(720px,94vw)]" : "w-[min(560px,92vw)]"}`}>
         {/* progress */}
         <div className="flex items-center gap-2">
           {["Seal", "Validate", "Ship", "Live"].map((s, i) => (
             <div key={s} className="flex grow items-center gap-2">
               <span
                 className={`text-[11px] font-medium transition-colors duration-200 ease-[var(--ease-out)] ${
-                  act === "refused" && i === 1
+                  (act === "refused" && i === 1) || (act === "gated" && i === 2)
                     ? "text-err"
                     : i <= stageIndex
                       ? "text-fg"
                       : "text-ghost"
                 }`}
               >
-                {act === "refused" && i === 1 ? "Refused" : s}
+                {act === "refused" && i === 1 ? "Refused" : act === "gated" && i === 2 ? "Gated" : s}
               </span>
               {i < 3 && (
                 <span className="relative h-px grow overflow-hidden rounded bg-line">
@@ -287,6 +351,9 @@ export function DeployTheater({
         </div>
 
         {/* stage */}
+        {act === "gated" && gated ? (
+          <GatePanel refusal={gated.gate} agent={gated.saved.id || meta.id || ""} admin={canOverride(session)} busy={overriding} error={overrideError} onOverride={override} />
+        ) : (
         <div className="relative grid h-[240px] place-items-center overflow-hidden rounded-md border border-line bg-sunken/30">
           {act !== "refused" ? (
             <svg viewBox="0 0 320 200" className="h-full w-full" aria-hidden>
@@ -384,11 +451,12 @@ export function DeployTheater({
                   <path d="M6 6l12 12M18 6L6 18" />
                 </svg>
               </span>
-              <p className="text-[13px] font-semibold text-fg">The parser refused it.</p>
+              <p className="text-[13px] font-semibold text-fg">{refusedAt === "save" ? "The parser refused it." : "The deploy was refused."}</p>
               <p className="font-mono text-[11px] leading-[1.6] break-all text-err">{refusal}</p>
             </div>
           )}
         </div>
+        )}
 
         {/* caption */}
         <div className="flex min-h-[40px] flex-col gap-1">
@@ -413,19 +481,26 @@ export function DeployTheater({
           {act === "live" && result && (
             <div className="flex flex-col gap-1">
               <p className="text-[12.5px] text-fg">
-                <span className="font-semibold text-ok">Live.</span> Callable by other workflows,
-                visible on the control plane, running under the journal.
+                <span className="font-semibold text-ok">Live.</span> Version {result.version ?? "?"} passed the promotion gate
+                and is what production runs: callable by other workflows, visible on the control plane, running under the journal.
               </p>
+              {result.override && <p className="text-[11.5px] text-warn">{result.override}</p>}
               <Mono className="text-[10.5px] text-faint">
                 digest {(reduce ? result.digest : typedDigest) || "…"} · {result.store} ·{" "}
                 {result.steps.map((s) => `${s.step} ${s.ms}ms`).join(" · ")}
               </Mono>
             </div>
           )}
+          {act === "gated" && gated && (
+            <p className="text-[12.5px] text-dim">
+              {gatedSaveLine(gated.saved)} Saving is never gated; deploying is.
+            </p>
+          )}
           {act === "refused" && (
             <p className="text-[12.5px] text-dim">
-              Nothing shipped. Fix the named field on the canvas — the refusal is the same answer
-              the runtime would give.
+              {refusedAt === "save"
+                ? "Nothing shipped. Fix the named field on the canvas — the refusal is the same answer the runtime would give."
+                : "The version is saved; nothing that runs changed."}
             </p>
           )}
         </div>
@@ -435,7 +510,7 @@ export function DeployTheater({
           <span className="grow" />
           {act === "live" ? (
             <>
-              <Button size="sm" variant="outline" onClick={() => onClose(true)}>
+              <Button size="sm" variant="solid" onClick={() => onClose(true)}>
                 Back to canvas
               </Button>
               <Button size="sm" variant="solid" tone="ink" onClick={() => router.push("/control")}>
@@ -443,9 +518,18 @@ export function DeployTheater({
               </Button>
             </>
           ) : act === "refused" ? (
-            <Button size="sm" variant="solid" tone="ink" onClick={() => onClose(false, true)}>
+            <Button size="sm" variant="solid" tone="ink" onClick={() => onClose(false, refusedAt === "save", refusedSaved ?? undefined)}>
               Back to canvas
             </Button>
+          ) : act === "gated" ? (
+            <>
+              <Button size="sm" variant="solid" tone="neutral" href={`/lifecycle?agent=${encodeURIComponent(gated?.saved.id || meta.id || "")}`}>
+                Open its lifecycle
+              </Button>
+              <Button size="sm" variant="solid" tone="ink" onClick={() => onClose(false, false, gated?.saved)}>
+                Back to canvas
+              </Button>
+            </>
           ) : act === "ship" ? null : (
             // Past "ship" the registry write is already underway — nothing
             // honest is left to cancel, so the button goes away entirely.

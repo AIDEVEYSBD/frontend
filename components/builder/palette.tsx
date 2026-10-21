@@ -33,6 +33,8 @@ interface SavedAgent {
   name: string;
   description: string;
   nodes: number;
+  /** L8: a retired agent is refused inside any caller (`agent.invoke`, control retired), so it is not offered. */
+  retired?: { reason?: string; replacement?: string } | null;
 }
 
 function dragPayload(e: React.DragEvent, kind: string, value: string) {
@@ -284,16 +286,18 @@ export function Palette({
 
   const workflowCard = (a: SavedAgent) => {
     const self = a.id === system.id;
+    const retired = Boolean(a.retired);
+    const off = self || retired;
     return (
       <button
         key={a.id}
         type="button"
-        draggable={!self}
+        draggable={!off}
         onDragStart={(e) => dragPayload(e, "workflow", JSON.stringify({ id: a.id, name: a.name }))}
-        onClick={onGrant && !self ? () => onGrant("workflow", JSON.stringify({ id: a.id, name: a.name })) : undefined}
-        title={a.name}
+        onClick={onGrant && !off ? () => onGrant("workflow", JSON.stringify({ id: a.id, name: a.name })) : undefined}
+        title={retired ? `${a.name} is retired${a.retired?.replacement ? `; replaced by ${a.retired.replacement}` : ""}: a call to it is refused` : a.name}
         className={`focusable group relative flex items-center gap-2.5 rounded-md border border-line bg-surface py-2 pl-2.5 text-left transition-[border-color,box-shadow] hover:border-line-strong hover:elev-1 ${
-          self ? "pr-2 opacity-45" : "cursor-grab pr-6 active:cursor-grabbing"
+          off ? "pr-2 opacity-45" : "cursor-grab pr-6 active:cursor-grabbing"
         }`}
       >
         <span className="grid size-6 shrink-0 place-items-center rounded-md bg-raise text-dim">
@@ -303,10 +307,10 @@ export function Palette({
           <span className="truncate text-[11.5px] font-medium text-fg">{a.name}</span>
           <span className="truncate font-mono text-[9.5px] text-faint">
             {a.id} · {a.nodes} node{a.nodes === 1 ? "" : "s"}
-            {self ? " · this one, can't call itself" : ""}
+            {self ? " · this one, can't call itself" : retired ? ` · retired${a.retired?.replacement ? `, use ${a.retired.replacement}` : ""}` : ""}
           </span>
         </span>
-        {!self && <Grip />}
+        {!off && <Grip />}
       </button>
     );
   };

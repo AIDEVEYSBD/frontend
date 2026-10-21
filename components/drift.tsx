@@ -7,7 +7,7 @@ import { Button, Status, Tag } from "./ui";
 import { Checkbox } from "./forms";
 import { hueFor } from "@/lib/hue";
 import { getDrift, type AgentDrift, type DriftMeasure, type DriftReport } from "@/lib/api/l7";
-import { MEASURE_ASKS, MEASURE_LABEL, STATISTIC_LABEL, dispositionField, driftVerdict, orderDrift, sideText, statText, thresholdText, windowsLine } from "@/lib/drift";
+import { MEASURE_ASKS, MEASURE_LABEL, STATISTIC_LABEL, benchmarkEvalLine, dispositionField, driftVerdict, orderDrift, sideText, statText, thresholdText, windowsLine } from "@/lib/drift";
 
 /**
  * Drift per agent (phase L7, `GET /api/drift`): the last day of an agent's
@@ -145,7 +145,7 @@ export function AgentCard({ drift: a, windows, single }: { drift: AgentDrift; wi
         </Button>
       </div>
       {!a.enough ? (
-        <p className="px-4 py-3 text-[12px] leading-[1.55] text-faint">Nothing is compared until both windows hold enough finished runs; the numbers above say how many each has and needs.</p>
+        <p className="px-4 py-3 text-[12px] leading-[1.55] text-faint">Nothing is compared against the trailing baseline until both windows hold enough finished runs; the numbers above say how many each has and needs.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[980px] border-collapse text-[11.5px]">
@@ -169,7 +169,42 @@ export function AgentCard({ drift: a, windows, single }: { drift: AgentDrift; wi
           <p className="border-t border-line px-4 py-2 text-[10.5px] text-ghost">Disposition is read from {dispositionField(a)}.</p>
         </div>
       )}
+      {a.benchmark && <BenchmarkBlock b={a.benchmark} agent={a.agent} />}
     </section>
+  );
+}
+
+/**
+ * Drift against the benchmark (L8): the recent window's dispositions
+ * against the outcomes on the benchmark's cases, and for a labeled set
+ * against its labels, read against what production runs. It counts toward
+ * the verdict even when the trailing baseline is too thin.
+ */
+function BenchmarkBlock({ b, agent }: { b: NonNullable<AgentDrift["benchmark"]>; agent: string }) {
+  return (
+    <div className="border-t border-line">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 bg-raise/30 px-4 py-2">
+        <span className="text-[12px] font-semibold text-fg">Against the benchmark</span>
+        {b.drifted ? <Tag tone="err" solid>drifted</Tag> : b.enough ? <Tag tone="ok">within</Tag> : <Tag>not enough runs</Tag>}
+        <span className="min-w-0 text-[11px] text-dim">{benchmarkEvalLine(b.eval)}</span>
+        <span className="grow" />
+        <Button size="sm" variant="solid" tone="neutral" href={`/lifecycle?agent=${encodeURIComponent(agent)}`}>
+          Lifecycle
+        </Button>
+      </div>
+      {b.says && <p className="px-4 py-1.5 text-[11px] leading-[1.5] text-faint">{b.says}</p>}
+      {b.measures.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[980px] border-collapse text-[11.5px]">
+            <tbody>
+              {b.measures.map((m) => (
+                <MeasureRow key={m.name} m={m} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }
 

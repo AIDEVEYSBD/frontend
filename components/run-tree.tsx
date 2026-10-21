@@ -22,6 +22,7 @@ import {
   nodeHref,
   nodeKindLabel,
   nodeLinkText,
+  peerCancelLine,
   peerTaskLine,
   reachedKindLabel,
   reachedStateText,
@@ -140,6 +141,11 @@ function NodeRow({ row }: { row: TreeRow }) {
             in the runs list: {figuresLine(n.listed)}
           </span>
         )}
+        {n.kind === "peer" && n.peer?.cancel && (
+          <span className="w-full min-w-0 pl-0.5 text-[10.5px] leading-[1.45] text-dim" title="The kill's signed tasks/cancel reached the peer, and this is its answer">
+            {peerCancelLine(n.peer)}
+          </span>
+        )}
         {n.error && <span className="w-full truncate pl-0.5 text-[10.5px] text-err" title={n.error}>{n.error}</span>}
       </div>
     </div>
@@ -171,6 +177,11 @@ function ReachedRow({ r }: { r: Reached }) {
       )}
       <span className="min-w-0 grow text-[11px] text-faint">{r.kill ? `stopping on the kill ${killByText(r.kill)}${r.kill.at ? ` at ${r.kill.at.replace("T", " ").replace(/\.\d+Z$|Z$/, " UTC")}` : ""}` : deliveryText(r.delivery)}</span>
       <span className="tnum font-mono text-[10px] text-ghost">{reachedStateText(r)}</span>
+      {peerTask && r.delivery === "a2a" && r.answered_state !== null && r.state && r.state !== r.answered_state && (
+        <span className="tnum font-mono text-[10px] text-ghost" title="The task's last state as this side saw it, before the cancel">
+          last seen {r.state}
+        </span>
+      )}
       {peerTask && r.delivery !== "a2a" && !r.kill && (
         <span className="w-full min-w-0 text-[10.5px] leading-[1.45] break-words text-err" title={peerTaskLine(r)}>
           {r.error || "the peer did not confirm the cancel"}

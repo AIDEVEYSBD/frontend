@@ -394,6 +394,8 @@ export const ATTENTION_LABEL: Record<AttentionItem["kind"], string> = {
   guardian: "guardian",
   side_channel: "side channel",
   breaker: "breaker",
+  override: "override",
+  rollback: "rollback",
 };
 
 export const ACTION_LABEL: Record<AttentionItem["action"]["kind"], string> = {
@@ -404,6 +406,8 @@ export const ACTION_LABEL: Record<AttentionItem["action"]["kind"], string> = {
   kill: "Kill…",
   hold: "Hold",
   close: "Close breaker",
+  pause: "Pause agent…",
+  redirect: "Redirect…",
 };
 
 /**
@@ -481,4 +485,65 @@ export function sideChannelOf(item: Pick<AttentionItem, "kind" | "data">): SideC
 export function driftFirstSeen(item: Pick<AttentionItem, "kind" | "data">): string | null {
   if (item.kind !== "drift") return null;
   return s_(item.data?.first_seen) || null;
+}
+
+/* ═══════════════════ the L8 kinds ═══════════════════ */
+
+/** The eval a drift item was read against (L8: `data.benchmark`), when the recent window moved past the benchmark of what production runs. */
+export interface DriftBenchmark {
+  id: string;
+  digest: string;
+  version: number | null;
+  set: string;
+  at: string;
+  cases: number;
+  labeled: boolean;
+}
+
+/** A drift item's benchmark, or null for any other kind or a drift read only against the trailing baseline. */
+export function driftBenchmarkOf(item: Pick<AttentionItem, "kind" | "data">): DriftBenchmark | null {
+  if (item.kind !== "drift" || !item.data) return null;
+  const b = o_(item.data.benchmark);
+  if (!s_(b.id)) return null;
+  return { id: s_(b.id), digest: s_(b.digest), version: typeof b.version === "number" ? b.version : null, set: s_(b.set), at: s_(b.at), cases: n_(b.cases), labeled: b.labeled === true };
+}
+
+/** The benchmark in a line: `against the benchmark ev-… (version 1, triage-bench, 3 cases, labeled)`. */
+export function driftBenchmarkLine(b: DriftBenchmark): string {
+  const parts = [b.version !== null ? `version ${b.version}` : b.digest.slice(0, 8), b.set, `${b.cases} case${b.cases === 1 ? "" : "s"}`, b.labeled ? "labeled" : ""].filter(Boolean);
+  return `against the benchmark ${b.id} (${parts.join(", ")})`;
+}
+
+/** What a drift item's pause sends to the fleet door: the agents and the backend's reason. Null for any other row. */
+export function pauseOf(item: Pick<AttentionItem, "action" | "agent">): { agents: string[]; reason: string } | null {
+  if (item.action.kind !== "pause") return null;
+  const b = item.action.body ?? {};
+  const agents = Array.isArray(b.agents) ? b.agents.map(s_).filter(Boolean) : item.agent ? [item.agent] : [];
+  return agents.length ? { agents, reason: s_(b.reason) } : null;
+}
+
+/** The guidance a redirect the guardian could not make would send. "" for any other row. */
+export function redirectGuidanceOf(item: Pick<AttentionItem, "action">): string {
+  return item.action.kind === "redirect" ? s_(item.action.body?.guidance) : "";
+}
+
+/** An override item's record (`data.override`): who passed what, and why. Null for any other kind. */
+export function overrideOfAttention(item: Pick<AttentionItem, "kind" | "data">): { reason: string; by: string; passed: string[]; version: number | null; environment: string } | null {
+  if (item.kind !== "override" || !item.data) return null;
+  const o = o_(item.data.override);
+  return {
+    reason: s_(o.reason),
+    by: s_(o.by),
+    passed: Array.isArray(o.passed) ? o.passed.map(s_).filter(Boolean) : [],
+    version: typeof item.data.version === "number" ? item.data.version : null,
+    environment: s_(item.data.environment) || "production",
+  };
+}
+
+/** A rollback item's from and to, and the runs it flagged. Null for any other kind. */
+export function rollbackOfAttention(item: Pick<AttentionItem, "kind" | "data" | "runs">): { from: number | null; to: number | null; reason: string; flagged: string[] } | null {
+  if (item.kind !== "rollback" || !item.data) return null;
+  const v = (x: unknown) => (typeof o_(x).version === "number" ? (o_(x).version as number) : null);
+  const flagged = Array.isArray(item.data.flagged) ? item.data.flagged.map(s_).filter(Boolean) : item.runs;
+  return { from: v(item.data.from), to: v(item.data.to), reason: s_(item.data.reason), flagged };
 }

@@ -121,7 +121,7 @@ export interface paths {
         /** Deployed workflows from the registry */
         get: operations["listAgents"];
         put?: never;
-        /** Save a spec: validated in-process, written through to the workspace file, recorded as a version */
+        /** Save a spec: validated in-process and recorded as a version; written through to what runs until the agent is deployed, a draft after; deploy: true goes through the promotion gate */
         post: operations["saveAgent"];
         delete?: never;
         options?: never;
@@ -147,6 +147,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agents/{agent}/benchmark": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The latest eval of the deployed digest on the spec's own suite: score, passed, total, threshold, model, set, digest, matches_deployed */
+        get: operations["getAgentBenchmark"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agents/{agent}/deploy": {
         parameters: {
             query?: never;
@@ -156,8 +173,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Mark the latest version deployed and stamp deployed_at */
+        /** Deploy a version (default: the latest) to an environment (default: production); production goes through the promotion gate: 409 with the unmet conditions */
         post: operations["deployAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/{agent}/deployments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every deployment of the agent, per environment, newest first (rollbacks included), and what runs in each now */
+        get: operations["listAgentDeployments"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -181,6 +215,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agents/{agent}/evals/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run an eval: every case a real run through the engine (rate limits and lockdown apply), graded with the console's checks; 202, read it at the status URL */
+        post: operations["runAgentEval"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/{agent}/lifecycle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The lifecycle spine for one digest (default: the latest version's): designed, reviewed, approved, canary, deployed, retired, each lit only by its own record */
+        get: operations["getAgentLifecycle"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/{agent}/retire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retire an agent: who, why and its replacement; it then refuses new runs and triggers (409 retired) and its schedules stop; its runs and versions stay readable */
+        post: operations["retireAgentLifecycle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/{agent}/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every policy review of the agent's digests, newest first */
+        get: operations["listAgentReviews"];
+        put?: never;
+        /** Sign a policy review of one digest: approved or changes requested; the reviewer holds POLICY_REVIEWER_ROLE and is not the version's author */
+        post: operations["reviewAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/{agent}/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reinstate a version deployed before as a new production deployment; every run of the version rolled back from is flagged */
+        post: operations["rollbackAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agents/{agent}/versions": {
         parameters: {
             query?: never;
@@ -190,6 +310,23 @@ export interface paths {
         };
         /** Every saved version of a workflow */
         get: operations["listAgentVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/{agent}/versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One saved version with its document: a draft the builder edits, or a version deployed before */
+        get: operations["getAgentVersion"];
         put?: never;
         post?: never;
         delete?: never;
@@ -615,6 +752,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/evals/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One eval run: its graded cases so far and its progress while it runs, the score, the threshold and whether it was met */
+        get: operations["getEvalRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/fleet": {
         parameters: {
             query?: never;
@@ -660,7 +814,7 @@ export interface paths {
         };
         /** The guardian's limits, as a person set them, and what it has done since this instance started */
         get: operations["getGuardian"];
-        /** Set the guardian's limits: which agents it watches, what it may do (hold, block), its hourly cap, its confidence floor, its model and rubric */
+        /** Set the guardian's limits: which agents it watches, what it may do (hold, block, redirect), its hourly cap, its confidence floor, its model and rubric */
         put: operations["setGuardian"];
         post?: never;
         delete?: never;
@@ -1545,15 +1699,38 @@ export interface components {
         AgentDeployed: {
             /** At */
             at: string;
+            /** Conditions */
+            conditions?: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Decision
+             * @default
+             */
+            decision: string;
             /**
              * Deployed
              * @default true
              */
             deployed: boolean;
+            /**
+             * Deployment
+             * @default
+             */
+            deployment: string;
             /** Digest */
             digest: string;
+            /**
+             * Environment
+             * @default production
+             */
+            environment: string;
             /** Id */
             id: string;
+            /** Override */
+            override?: {
+                [key: string]: unknown;
+            } | null;
             /** Steps */
             steps?: components["schemas"]["DeployStep"][];
             /** Store */
@@ -1565,6 +1742,13 @@ export interface components {
         AgentDetail: {
             /** Deployed At */
             deployed_at?: string | null;
+            /**
+             * Deployed Digest
+             * @default
+             */
+            deployed_digest: string;
+            /** Deployed Version */
+            deployed_version?: number | null;
             /**
              * Description
              * @default
@@ -1579,10 +1763,16 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            /** Retired */
+            retired?: {
+                [key: string]: unknown;
+            } | null;
             /** Spec */
             spec: {
                 [key: string]: unknown;
             };
+            /** Spec Version */
+            spec_version?: number | null;
             /** Store */
             store: string;
             /** Updated At */
@@ -1595,6 +1785,7 @@ export interface components {
             /** Agent */
             agent: string;
             baseline: components["schemas"]["DriftWindow"];
+            benchmark?: components["schemas"]["BenchmarkDrift"] | null;
             /**
              * Drifted
              * @default false
@@ -1705,7 +1896,10 @@ export interface components {
         };
         /**
          * AgentSaveRequest
-         * @description The document to save. `deploy: true` also marks it deployed in the same save.
+         * @description The document to save. `deploy: true` also deploys the saved version to
+         *     production in the same request, through the promotion gate (L8); a
+         *     refused deploy answers 409 with the gate's unmet conditions and the
+         *     version stays saved as a draft.
          */
         AgentSaveRequest: {
             /**
@@ -1713,6 +1907,7 @@ export interface components {
              * @default false
              */
             deploy: boolean;
+            override?: components["schemas"]["OverrideBody"] | null;
             /** Spec */
             spec: {
                 [key: string]: unknown;
@@ -1729,6 +1924,11 @@ export interface components {
             deployed_at?: string | null;
             /** Digest */
             digest: string;
+            /**
+             * Draft
+             * @default false
+             */
+            draft: boolean;
             /** Id */
             id: string;
             /**
@@ -1749,6 +1949,13 @@ export interface components {
             /** Deployed At */
             deployed_at?: string | null;
             /**
+             * Deployed Digest
+             * @default
+             */
+            deployed_digest: string;
+            /** Deployed Version */
+            deployed_version?: number | null;
+            /**
              * Description
              * @default
              */
@@ -1764,6 +1971,10 @@ export interface components {
             name: string;
             /** Nodes */
             nodes: number;
+            /** Retired */
+            retired?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Trigger
              * @default prompt
@@ -2154,6 +2365,65 @@ export interface components {
             remaining: number;
             /** Results */
             results: components["schemas"]["app__approvals__AnswerResult"][];
+        };
+        /**
+         * Benchmark
+         * @description The latest eval of the deployed digest (or, when it has none, the
+         *     latest of the agent on its suite, `matches_deployed: false`).
+         */
+        Benchmark: {
+            /** At */
+            at: string;
+            /** Deployed */
+            deployed?: {
+                [key: string]: unknown;
+            } | null;
+            /** Digest */
+            digest: string;
+            /** Id */
+            id: string;
+            /** Matches Deployed */
+            matches_deployed: boolean;
+            /** Model */
+            model: string;
+            /** Passed */
+            passed: number;
+            /** Passed Threshold */
+            passed_threshold?: boolean | null;
+            /** Score */
+            score: number | null;
+            /** Set */
+            set: string;
+            /** Threshold */
+            threshold?: number | null;
+            /** Total */
+            total: number;
+            /** Version */
+            version?: number | null;
+        };
+        /**
+         * BenchmarkDrift
+         * @description The recent window against the deployed digest's latest eval (L8).
+         */
+        BenchmarkDrift: {
+            /**
+             * Drifted
+             * @default false
+             */
+            drifted: boolean;
+            /** Enough */
+            enough: boolean;
+            /** Eval */
+            eval: {
+                [key: string]: unknown;
+            };
+            /** Measures */
+            measures?: components["schemas"]["DriftMeasure"][];
+            /**
+             * Says
+             * @default
+             */
+            says: string;
         };
         /** BlastAgent */
         BlastAgent: {
@@ -2554,6 +2824,8 @@ export interface components {
              * @default
              */
             spec_digest: string;
+            /** Taint */
+            taint?: string | null;
             /** Trace Id */
             trace_id: string;
         };
@@ -2604,6 +2876,24 @@ export interface components {
             verdicts: {
                 [key: string]: unknown;
             }[];
+        };
+        /** Condition */
+        Condition: {
+            /** Condition */
+            condition: string;
+            /** Detail */
+            detail: string;
+            /** Items */
+            items?: {
+                [key: string]: unknown;
+            }[];
+            /** Met */
+            met: boolean;
+            /**
+             * Overridden
+             * @default false
+             */
+            overridden: boolean;
         };
         /** ControlAnswer */
         ControlAnswer: {
@@ -2783,12 +3073,101 @@ export interface components {
             /** Window */
             window: string;
         };
+        /**
+         * DeployBody
+         * @description `{version | digest, environment}`; default the latest version, to
+         *     production. Production is gated; an administrator may pass unmet
+         *     conditions with `override: {reason, conditions?}`.
+         */
+        DeployBody: {
+            /** Digest */
+            digest?: string | null;
+            /**
+             * Environment
+             * @default production
+             */
+            environment: string;
+            override?: components["schemas"]["OverrideBody"] | null;
+            /** Version */
+            version?: number | null;
+        };
         /** DeployStep */
         DeployStep: {
             /** Ms */
             ms: number;
             /** Step */
             step: string;
+        };
+        /** DeploymentList */
+        DeploymentList: {
+            /** Adopted */
+            adopted?: {
+                [key: string]: unknown;
+            } | null;
+            /** Agent */
+            agent: string;
+            /** Count */
+            count: number;
+            /** Current */
+            current?: {
+                [key: string]: components["schemas"]["DeploymentView"];
+            };
+            /** Deployments */
+            deployments: components["schemas"]["DeploymentView"][];
+        };
+        /** DeploymentView */
+        DeploymentView: {
+            /** Agent */
+            agent: string;
+            /** At */
+            at: string;
+            /** By */
+            by: string;
+            /**
+             * Current
+             * @default false
+             */
+            current: boolean;
+            /**
+             * Decision
+             * @default
+             */
+            decision: string;
+            /** Digest */
+            digest: string;
+            /** Environment */
+            environment: string;
+            /**
+             * Eval Run
+             * @default
+             */
+            eval_run: string;
+            /** Flagged */
+            flagged?: string[];
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Override */
+            override?: {
+                [key: string]: unknown;
+            } | null;
+            /** Previous */
+            previous?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /**
+             * Review
+             * @default
+             */
+            review: string;
+            /** Version */
+            version?: number | null;
         };
         /** Detached */
         Detached: {
@@ -2879,7 +3258,7 @@ export interface components {
              * Name
              * @enum {string}
              */
-            name: "disposition_mix" | "confidence" | "cost_per_run" | "tool_mix" | "refusal_rate";
+            name: "disposition_mix" | "confidence" | "cost_per_run" | "tool_mix" | "refusal_rate" | "benchmark_outcomes" | "benchmark_labels";
             /** Recent */
             recent?: {
                 [key: string]: unknown;
@@ -3000,6 +3379,232 @@ export interface components {
             reason: string;
             /** To */
             to: string;
+        };
+        /**
+         * EvalCaseResult
+         * @description One case, graded: the console's record, plus the outcome the drift
+         *     watch compares with production (the spec's `evals.compare` field, else
+         *     the run's final state).
+         */
+        EvalCaseResult: {
+            /** Checks */
+            checks?: components["schemas"]["EvalCheck"][];
+            /**
+             * Duration Ms
+             * @default 0
+             */
+            duration_ms: number;
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /** Expected */
+            expected?: string | null;
+            /** Id */
+            id: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /**
+             * Outcome
+             * @default
+             */
+            outcome: string;
+            /** Passed */
+            passed: boolean;
+            /** Predicted */
+            predicted?: string | null;
+            /**
+             * Run File
+             * @default
+             */
+            run_file: string;
+            /** State */
+            state: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** EvalCheck */
+        EvalCheck: {
+            /** Kind */
+            kind: string;
+            /** Note */
+            note: string;
+            /** Ok */
+            ok: boolean;
+        };
+        /** EvalCompare */
+        EvalCompare: {
+            /** Models */
+            models?: string[];
+            /**
+             * Scope
+             * @default class
+             * @enum {string}
+             */
+            scope: "class" | "below" | "all";
+        };
+        /** EvalProgress */
+        EvalProgress: {
+            /** Current */
+            current?: {
+                [key: string]: unknown;
+            } | null;
+            /** Done */
+            done: number;
+            /** Passed */
+            passed: number;
+            /** Rate Limited */
+            rate_limited?: {
+                [key: string]: unknown;
+            } | null;
+            /** Total */
+            total: number;
+        };
+        /**
+         * EvalRunRequest
+         * @description Default: the latest version's digest, the spec's own `evals.dataset`,
+         *     and the set's model (else the deployment's default).
+         */
+        EvalRunRequest: {
+            compare?: components["schemas"]["EvalCompare"] | null;
+            /** Digest */
+            digest?: string | null;
+            /** Model */
+            model?: string | null;
+            /** Set */
+            set?: string | null;
+        };
+        /** EvalRunStarted */
+        EvalRunStarted: {
+            /** Agent */
+            agent: string;
+            /** Batch Id */
+            batch_id: string;
+            /**
+             * Compare
+             * @default false
+             */
+            compare: boolean;
+            /** Dataset */
+            dataset: boolean;
+            /** Digest */
+            digest: string;
+            /** Id */
+            id: string;
+            /** Models */
+            models: string[];
+            /** Runs */
+            runs: string[];
+            /** Set */
+            set: string;
+            /** Status Url */
+            status_url: string;
+            /** Threshold */
+            threshold?: number | null;
+            /** Total */
+            total: number;
+            /** Version */
+            version?: number | null;
+        };
+        /** EvalRunView */
+        EvalRunView: {
+            /** Agent */
+            agent: string;
+            /** At */
+            at: string;
+            /**
+             * By
+             * @default
+             */
+            by: string;
+            /** Comparison */
+            comparison?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Dataset
+             * @default false
+             */
+            dataset: boolean;
+            /** Digest */
+            digest: string;
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /** Finished At */
+            finished_at?: string | null;
+            /**
+             * Forced
+             * @default false
+             */
+            forced: boolean;
+            /** Headline F1 */
+            headline_f1?: number | null;
+            /** Id */
+            id: string;
+            /**
+             * Invalid
+             * @default 0
+             */
+            invalid: number;
+            /**
+             * Labeled
+             * @default false
+             */
+            labeled: boolean;
+            /** Macro F1 */
+            macro_f1?: number | null;
+            /** Matrix */
+            matrix?: {
+                [key: string]: unknown;
+            } | null;
+            /** Metrics */
+            metrics?: {
+                [key: string]: unknown;
+            } | null;
+            /** Model */
+            model: string;
+            /** Passed */
+            passed: number;
+            /** Passed Threshold */
+            passed_threshold?: boolean | null;
+            progress: components["schemas"]["EvalProgress"];
+            /** Results */
+            results?: components["schemas"]["EvalCaseResult"][];
+            /** Score */
+            score?: number | null;
+            /** Set */
+            set: string;
+            /**
+             * Set Name
+             * @default
+             */
+            set_name: string;
+            /** State */
+            state: string;
+            /** Status Url */
+            status_url: string;
+            /** Summary */
+            summary?: {
+                [key: string]: unknown;
+            };
+            /** Threshold */
+            threshold?: number | null;
+            /** Total */
+            total: number;
+            /** Version */
+            version?: number | null;
+            /**
+             * Version Digest
+             * @default
+             */
+            version_digest: string;
         };
         /**
          * Evidence
@@ -3277,6 +3882,34 @@ export interface components {
              */
             timeout_s: number;
         };
+        /**
+         * GateRefusal
+         * @description 409: the promotion gate is not met for this digest.
+         */
+        GateRefusal: {
+            /** Agent */
+            agent: string;
+            /** Conditions */
+            conditions?: components["schemas"]["Condition"][];
+            /**
+             * Decision
+             * @default
+             */
+            decision: string;
+            /** Digest */
+            digest: string;
+            /**
+             * Environment
+             * @default production
+             */
+            environment: string;
+            /** Error */
+            error: string;
+            /** Unmet */
+            unmet: components["schemas"]["Unmet"][];
+            /** Version */
+            version?: number | null;
+        };
         /** GatesDiff */
         GatesDiff: {
             /** Added */
@@ -3376,7 +4009,7 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "hold" | "block";
+            action: "hold" | "block" | "redirect";
             /** Agent */
             agent: string;
             /** At */
@@ -3484,7 +4117,7 @@ export interface components {
             /** Max Actions Per Hour */
             max_actions_per_hour?: number | null;
             /** May */
-            may?: ("hold" | "block")[] | null;
+            may?: ("hold" | "block" | "redirect")[] | null;
             /** Min Confidence */
             min_confidence?: number | null;
             /** Model */
@@ -3524,7 +4157,7 @@ export interface components {
              */
             max_actions_per_hour: number;
             /** May */
-            may?: ("hold" | "block")[];
+            may?: ("hold" | "block" | "redirect")[];
             /**
              * Min Confidence
              * @default 0.8
@@ -3695,6 +4328,8 @@ export interface components {
             agent: string;
             /** Attempts */
             attempts: number;
+            /** Cancel Reason */
+            cancel_reason?: string | null;
             /** Claimed By */
             claimed_by?: string | null;
             /** Created At */
@@ -3748,6 +4383,8 @@ export interface components {
             status: "queued" | "running" | "done" | "failed" | "suspended" | "cancelled";
             /** Status Url */
             status_url: string;
+            /** Taint */
+            taint?: string | null;
             /**
              * Trace Id
              * @default
@@ -3769,6 +4406,8 @@ export interface components {
             agent: string;
             /** Attempts */
             attempts: number;
+            /** Cancel Reason */
+            cancel_reason?: string | null;
             /** Claimed By */
             claimed_by?: string | null;
             /** Created At */
@@ -3814,6 +4453,8 @@ export interface components {
             status: "queued" | "running" | "done" | "failed" | "suspended" | "cancelled";
             /** Status Url */
             status_url: string;
+            /** Taint */
+            taint?: string | null;
             /**
              * Trace Id
              * @default
@@ -3829,6 +4470,8 @@ export interface components {
             agent: string;
             /** Attempts */
             attempts: number;
+            /** Cancel Reason */
+            cancel_reason?: string | null;
             /** Claimed By */
             claimed_by?: string | null;
             /** Created At */
@@ -3869,6 +4512,8 @@ export interface components {
             status: "queued" | "running" | "done" | "failed" | "suspended" | "cancelled";
             /** Status Url */
             status_url: string;
+            /** Taint */
+            taint?: string | null;
             /**
              * Trace Id
              * @default
@@ -3995,6 +4640,27 @@ export interface components {
             says: string;
             /** Window Days */
             window_days: number;
+        };
+        /** Lifecycle */
+        Lifecycle: {
+            /** Agent */
+            agent: string;
+            /** Current */
+            current?: string | null;
+            /** Deployed */
+            deployed?: {
+                [key: string]: unknown;
+            } | null;
+            /** Digest */
+            digest: string;
+            /** Retired */
+            retired?: {
+                [key: string]: unknown;
+            } | null;
+            /** Stages */
+            stages: components["schemas"]["Stage"][];
+            /** Version */
+            version?: number | null;
         };
         /** LimitSetView */
         LimitSetView: {
@@ -4447,6 +5113,13 @@ export interface components {
             /** Removed */
             removed?: components["schemas"]["NodeRef"][];
         };
+        /** OverrideBody */
+        OverrideBody: {
+            /** Conditions */
+            conditions?: ("eval" | "review" | "findings" | "regression")[] | null;
+            /** Reason */
+            reason: string;
+        };
         /** OwnerRequest */
         OwnerRequest: {
             /**
@@ -4700,6 +5373,10 @@ export interface components {
              * @default 0
              */
             calls: number;
+            /** Cancel */
+            cancel?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Failed
              * @default 0
@@ -5133,6 +5810,8 @@ export interface components {
         ReachedRun: {
             /** Agent */
             agent: string;
+            /** Answered State */
+            answered_state?: string | null;
             /** Delivery */
             delivery: string;
             /**
@@ -5284,6 +5963,33 @@ export interface components {
             /** Model */
             model?: string | null;
         };
+        /** RetireRequest */
+        RetireRequest: {
+            /** Reason */
+            reason: string;
+            /** Replacement */
+            replacement?: string | null;
+        };
+        /** RetirementView */
+        RetirementView: {
+            /** Agent */
+            agent: string;
+            /** At */
+            at: string;
+            /** Audit Id */
+            audit_id?: number | null;
+            /** By */
+            by: string;
+            /** Cancelled Jobs */
+            cancelled_jobs?: string[];
+            /** Reason */
+            reason: string;
+            /**
+             * Replacement
+             * @default
+             */
+            replacement: string;
+        };
         /** RetrievalPassage */
         RetrievalPassage: {
             /**
@@ -5423,12 +6129,94 @@ export interface components {
                 [key: string]: unknown;
             }[];
         };
+        /** ReviewList */
+        ReviewList: {
+            /** Agent */
+            agent: string;
+            /** Count */
+            count: number;
+            /** Reviews */
+            reviews: components["schemas"]["ReviewView"][];
+            /** Role */
+            role: string;
+        };
+        /** ReviewRequest */
+        ReviewRequest: {
+            /** Digest */
+            digest: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "approved" | "changes_requested";
+        };
+        /** ReviewView */
+        ReviewView: {
+            /** Agent */
+            agent: string;
+            /** At */
+            at: string;
+            /** Authors */
+            authors?: string[];
+            /** By */
+            by: string;
+            /** Digest */
+            digest: string;
+            /** Id */
+            id: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Verdict */
+            verdict: string;
+            /** Version */
+            version?: number | null;
+        };
         /** RoleView */
         RoleView: {
             /** Permissions */
             permissions: string[];
             /** Role */
             role: string;
+        };
+        /** RollbackRequest */
+        RollbackRequest: {
+            /** Reason */
+            reason: string;
+            /** To Version */
+            to_version: number;
+        };
+        /** RollbackResult */
+        RollbackResult: {
+            /** Agent */
+            agent: string;
+            /** At */
+            at: string;
+            /** Audit Id */
+            audit_id?: number | null;
+            /** By */
+            by: string;
+            /** Count */
+            count: number;
+            deployment: components["schemas"]["DeploymentView"];
+            /**
+             * Environment
+             * @default production
+             */
+            environment: string;
+            /** Flagged */
+            flagged: string[];
+            from: components["schemas"]["VersionPoint"];
+            /** Reason */
+            reason: string;
+            to: components["schemas"]["VersionPoint"];
         };
         /** Roster */
         Roster: {
@@ -6206,6 +6994,31 @@ export interface components {
             /** Issuer */
             issuer: string;
         };
+        /** Stage */
+        Stage: {
+            /** At */
+            at?: string | null;
+            /**
+             * By
+             * @default
+             */
+            by: string;
+            /**
+             * Digest
+             * @default
+             */
+            digest: string;
+            /** Lit */
+            lit: boolean;
+            /** Record */
+            record?: {
+                [key: string]: unknown;
+            } | null;
+            /** Stage */
+            stage: string;
+            /** Version */
+            version?: number | null;
+        };
         /** StateAccepted */
         StateAccepted: {
             /** Entries */
@@ -6683,6 +7496,17 @@ export interface components {
             /** Role */
             role: string;
         };
+        /** Unmet */
+        Unmet: {
+            /** Condition */
+            condition: string;
+            /** Detail */
+            detail: string;
+            /** Items */
+            items?: {
+                [key: string]: unknown;
+            }[];
+        };
         /** UserAccess */
         UserAccess: {
             /** Disabled At */
@@ -6840,6 +7664,44 @@ export interface components {
             /** Valid */
             valid: boolean;
         };
+        /**
+         * VersionDocument
+         * @description One saved version, with its document.
+         */
+        VersionDocument: {
+            /**
+             * Current
+             * @default false
+             */
+            current: boolean;
+            /** Deployed */
+            deployed: boolean;
+            /** Deployed At */
+            deployed_at?: string | null;
+            /** Digest */
+            digest: string;
+            /** Id */
+            id: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /** Nodes */
+            nodes: number;
+            /** Saved At */
+            saved_at: string;
+            /** Saved By */
+            saved_by: string;
+            /** Spec */
+            spec: {
+                [key: string]: unknown;
+            };
+            /** Tools */
+            tools: string[];
+            /** Version */
+            version: number;
+        };
         /** VersionList */
         VersionList: {
             /** Count */
@@ -6852,6 +7714,13 @@ export interface components {
             latest?: number | null;
             /** Versions */
             versions: components["schemas"]["VersionView"][];
+        };
+        /** VersionPoint */
+        VersionPoint: {
+            /** Digest */
+            digest: string;
+            /** Version */
+            version?: number | null;
         };
         /** VersionRef */
         VersionRef: {
@@ -7701,6 +8570,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description deploy: true and the promotion gate is not met; the version stays saved */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateRefusal"];
+                };
+            };
         };
     };
     getAgent: {
@@ -7819,7 +8697,7 @@ export interface operations {
             };
         };
     };
-    deployAgent: {
+    getAgentBenchmark: {
         parameters: {
             query?: never;
             header?: never;
@@ -7836,7 +8714,147 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    "application/json": components["schemas"]["Benchmark"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    deployAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DeployBody"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
                     "application/json": components["schemas"]["AgentDeployed"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The promotion gate is not met (or the agent is retired) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateRefusal"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    listAgentDeployments: {
+        parameters: {
+            query?: {
+                environment?: string | null;
+            };
+            header?: never;
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentList"];
                 };
             };
             /** @description Bad Request */
@@ -7940,6 +8958,455 @@ export interface operations {
             };
         };
     };
+    runAgentEval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["EvalRunRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalRunStarted"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Payment Required */
+            402: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getAgentLifecycle: {
+        parameters: {
+            query?: {
+                digest?: string | null;
+            };
+            header?: never;
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Lifecycle"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    retireAgentLifecycle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetireRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetirementView"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    listAgentReviews: {
+        parameters: {
+            query?: {
+                digest?: string | null;
+            };
+            header?: never;
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewList"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    reviewAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewView"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    rollbackAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RollbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RollbackResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     listAgentVersions: {
         parameters: {
             query?: never;
@@ -7958,6 +9425,65 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VersionList"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getAgentVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionDocument"];
                 };
             };
             /** @description Bad Request */
@@ -9835,6 +11361,55 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getEvalRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalRunView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

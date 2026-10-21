@@ -9,6 +9,8 @@ import { DrillModal } from "./drill";
 import { VersionHistory } from "./versions";
 import { useSession } from "@/lib/use-session";
 import { agentDocument, listAgents, listRuns, retireAgent } from "@/lib/api/l2";
+import { retiredOf, type Retired } from "@/lib/api/l8";
+import { retiredLine } from "@/lib/lifecycle";
 
 /**
  * The registry, as a page.
@@ -20,6 +22,13 @@ import { agentDocument, listAgents, listRuns, retireAgent } from "@/lib/api/l2";
  *
  * These are the same files `agent.invoke` chains at run time. Deleting here
  * breaks any workflow that calls the deleted one — the menu says so.
+ *
+ * Phase L8: each card says where its agent stands in its lifecycle: the
+ * version production runs and a draft saved since, or that it is retired
+ * (it takes no new work; its runs and versions stay readable). The menu's
+ * Lifecycle opens the spine, reviews, deployments, rollback and retirement.
+ * Retiring is not deleting: Delete removes the registry row, Retire (on the
+ * lifecycle page) keeps every record and refuses new work.
  */
 
 interface SavedAgent {
@@ -27,6 +36,10 @@ interface SavedAgent {
   name: string;
   description: string;
   nodes: number;
+  /** L8: the latest save, the version production runs, and a retirement. */
+  version?: number | null;
+  deployed_version?: number | null;
+  retired?: unknown;
 }
 
 interface RunRow {
@@ -83,7 +96,7 @@ export function Workflows() {
     setMenu({
       agent,
       x: Math.max(pad, Math.min(x, window.innerWidth - 240 - pad)),
-      y: Math.max(pad, Math.min(y, window.innerHeight - 290 - pad)),
+      y: Math.max(pad, Math.min(y, window.innerHeight - 330 - pad)),
     });
   }, []);
 
@@ -154,6 +167,9 @@ export function Workflows() {
           {(agents ?? []).map((a) => {
             const last = lastRunOf(a.id);
             const state = last ? (RUN_STATE[last.state] ?? { tone: "neutral" as const, label: last.state }) : null;
+            const retired: Retired | null = retiredOf(a.retired);
+            const running = a.deployed_version ?? null;
+            const draft = !retired && running !== null && a.version !== null && a.version !== undefined && a.version !== running ? a.version : null;
             return (
               <div key={a.id} className="relative">
                 <button
@@ -181,11 +197,23 @@ export function Workflows() {
                   {a.description && (
                     <p className="text-[12px] leading-[1.55] text-dim">{a.description}</p>
                   )}
+                  {retired ? (
+                    <p className="text-[11px] leading-[1.5] text-faint" title={retiredLine(retired)}>
+                      <span className="font-medium text-dim">Retired</span> {retired.reason ? `· ${retired.reason}` : ""}
+                      {retired.replacement ? ` · replaced by ${retired.replacement}` : ""}
+                    </p>
+                  ) : running !== null ? (
+                    <p className="font-mono text-[10.5px] text-faint">
+                      production runs v{running}
+                      {draft !== null && <span className="text-warn"> · draft v{draft} saved since</span>}
+                    </p>
+                  ) : null}
                   <div className="mt-auto flex items-center gap-2.5 border-t border-line pt-2.5">
                     <span className="tnum font-mono text-[10.5px] text-faint">
                       {a.nodes} node{a.nodes === 1 ? "" : "s"}
                     </span>
                     <span className="grow" />
+                    {retired && <Status tone="neutral">Retired</Status>}
                     {last && state ? (
                       <>
                         <Status tone={state.tone}>{state.label}</Status>
@@ -234,6 +262,7 @@ export function Workflows() {
           onOpen={() => router.push(`/builder?load=${encodeURIComponent(menu.agent.id)}`)}
           onRun={() => router.push(`/runs?agent=${encodeURIComponent(menu.agent.id)}`)}
           onBenchmark={() => router.push(`/evals?agent=${encodeURIComponent(menu.agent.id)}`)}
+          onLifecycle={() => router.push(`/lifecycle?agent=${encodeURIComponent(menu.agent.id)}`)}
           onExport={() => exportJson(menu.agent.id)}
           onVersions={() => {
             setVersionsOf(menu.agent);
@@ -301,6 +330,7 @@ function ContextMenu({
   onOpen,
   onRun,
   onBenchmark,
+  onLifecycle,
   onExport,
   onVersions,
   canDelete,
@@ -312,6 +342,7 @@ function ContextMenu({
   onOpen: () => void;
   onRun: () => void;
   onBenchmark: () => void;
+  onLifecycle: () => void;
   onExport: () => void;
   onVersions: () => void;
   canDelete: boolean;
@@ -345,8 +376,9 @@ function ContextMenu({
         <Label>{at.agent.name}</Label>
       </div>
       <MenuItem icon="bot" label="Open in Builder" hint="The graph, rebuilt from its cards" onClick={onOpen} />
-      <MenuItem icon="pulse" label="Run" hint="Straight into the theater" onClick={onRun} />
+      <MenuItem icon="pulse" label="Run" hint={retiredOf(at.agent.retired) ? "Retired: it takes no new runs" : "Straight into the theater"} disabled={Boolean(retiredOf(at.agent.retired))} onClick={onRun} />
       <MenuItem icon="chip" label="Benchmark" hint="Upload and run an eval set against it" onClick={onBenchmark} />
+      <MenuItem icon="gavel" label="Lifecycle" hint="Reviews, the gate, deployments, rollback, retirement" onClick={onLifecycle} />
       <MenuItem icon="json" label="Export JSON" hint="The spec document itself" onClick={onExport} />
       <MenuItem icon="clock" label="Versions" hint="Every save and deploy, and what changed" onClick={onVersions} />
       <div className="my-0.5 h-px bg-line" />

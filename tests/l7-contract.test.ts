@@ -216,7 +216,8 @@ describe("GET /api/runs/{id}/tree", () => {
     expect(by[CHILD]).toMatchObject({ cost: 0.0035, tokens: 1100, tool_calls: 1, refusals: 1 });
     // The peer's call was counted where it was made; its leaf counts zero and carries the call.
     expect(by[PEER]).toMatchObject({ cost: 0, tool_calls: 0, agent: "vendor-bot" });
-    expect(by[PEER].peer).toEqual({ name: "vendor-bot", task_id: "t-77", state: "submitted", calls: 1, refused: 0, failed: 0, tools: ["peer.send"], replied: false });
+    // No cancel landed on it (L8 polish names one under `cancel`; this capture predates the field).
+    expect(by[PEER].peer).toEqual({ name: "vendor-bot", task_id: "t-77", state: "submitted", calls: 1, refused: 0, failed: 0, tools: ["peer.send"], replied: false, cancel: null });
     // Totals: each node and everything under it; the root's is the rollup.
     expect(by[ROOT].total).toEqual({ cost: 0.00385, tokens: 1210, tool_calls: 3, refusals: 3 });
     expect(by[CHILD].total).toEqual({ cost: 0.0035, tokens: 1100, tool_calls: 1, refusals: 1 });

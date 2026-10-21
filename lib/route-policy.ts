@@ -71,7 +71,13 @@ export const STRICT_READS: Record<string, string> = { "app/api/iam/": "iam" };
  * (PASSTHROUGH_DOORS); the peer registry (`/api/peers`, with its approve and
  * rescan doors beneath it) and the estate's breakers (`/api/breakers`, with
  * the close beneath it), console doors behind the cookie. The agent card at
- * the root is the backend's too, outside `/api` (BACKEND_PATHS).
+ * the root is the backend's too, outside `/api` (BACKEND_PATHS). Phase L8
+ * (first round) moved the eval runner to the backend: an eval is started at
+ * `/api/agents/{id}/evals/run` (with the lifecycle doors beneath
+ * `/api/agents`: reviews, deploy, deployments, the spine, rollback, retire,
+ * the benchmark, a version's document) and read at `/api/evals/runs/{id}`,
+ * the one prefix beneath `/api/evals` that is the backend's; the eval sets
+ * and their history (`/api/evals` itself) stay the console's.
  */
 export const BACKEND_PREFIXES = [
   "/api/runs",
@@ -107,6 +113,7 @@ export const BACKEND_PREFIXES = [
   "/api/a2a",
   "/api/peers",
   "/api/breakers",
+  "/api/evals/runs",
 ];
 
 /**

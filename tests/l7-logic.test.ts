@@ -316,10 +316,11 @@ describe("the guardian's form", () => {
       "every agent's runs",
       "the runs of a, b",
     ]);
+    // Since L8 the guardian may also redirect, so a guardian that may only block raises a redirect for a person too.
     expect([mayText([]), mayText(["block"]), mayText(["hold", "block"])]).toEqual([
       "nothing on its own: every verdict is raised for a person",
-      "block (kill) a run; a hold is raised for a person",
-      "hold a run at its next gate, or block (kill) it",
+      "block (kill) a run; a hold or a redirect is raised for a person",
+      "hold a run at its next gate, or block (kill) it; a redirect is raised for a person",
     ]);
     expect(capText({ actions_last_hour: 3, max_actions_per_hour: 0 })).toBe("3 acts in the last hour; the cap is 0, so it acts on nothing");
     expect(cadenceText({ every_entries: 1, every_s: 0.5 })).toBe("every 1 new entry, or after 0.5 s with at least one");

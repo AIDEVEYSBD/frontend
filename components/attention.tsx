@@ -7,11 +7,29 @@ import { Button, Mono, Status, Tag } from "./ui";
 import { KillDialog } from "./kill-dialog";
 import { hueFor } from "@/lib/hue";
 import { soon } from "@/lib/soon";
-import { clearAttention, listAttention, openableRun, portHealthLine, steerRun, type AttentionItem, type PortHealth } from "@/lib/api/l5";
+import { clearAttention, fleet, listAttention, openableRun, portHealthLine, steerRun, type AttentionItem, type PortHealth } from "@/lib/api/l5";
 import { killRefusalOf, killRun, rateLimitOfError } from "@/lib/api/l7";
 import { closeBreaker } from "@/lib/api/l7b";
 import { breakerOfAttention, breakerTarget } from "@/lib/breakers";
-import { ATTENTION_LABEL, HOLDS_LABEL, URGENT_SEVERITY, attentionVerb, countdown, driftFirstSeen, orderAttention, sideChannelOf, type ChannelEnd } from "@/lib/gates";
+import {
+  ATTENTION_LABEL,
+  HOLDS_LABEL,
+  URGENT_SEVERITY,
+  attentionVerb,
+  countdown,
+  driftBenchmarkLine,
+  driftBenchmarkOf,
+  driftFirstSeen,
+  orderAttention,
+  overrideOfAttention,
+  pauseOf,
+  redirectGuidanceOf,
+  rollbackOfAttention,
+  sideChannelOf,
+  type ChannelEnd,
+} from "@/lib/gates";
+import { conditionLabel } from "@/lib/lifecycle";
+import { TextDialog } from "./text-dialog";
 import { alreadySummary, killSummary } from "@/lib/run-tree";
 import { rateLimitText } from "@/lib/rate-limit";
 import { useNow } from "./gate-form";
@@ -41,6 +59,15 @@ import { useNow } from "./gate-form";
  * second round) is red while it is open, with its close on the row (the
  * configure permission; the next call goes through on every worker), and
  * opens the Breakers page once it has closed.
+ *
+ * L8 adds two kinds and two levers. A deploy an administrator passed past
+ * the promotion gate (`override`) and a rollback (`rollback`, with the runs
+ * it flagged) open the agent's lifecycle page. A drift row's button is the
+ * fleet door's pause, for a person to take (the run permission, the
+ * backend's reason to start from); the drift report stays the row's link,
+ * and a drift read against the benchmark names that eval. A redirect the
+ * guardian could not make offers the steer it would have sent, its guidance
+ * still the person's to change.
  */
 
 const KIND_TONE: Record<AttentionItem["kind"], "warn" | "err" | "queue" | "run"> = {
@@ -53,6 +80,8 @@ const KIND_TONE: Record<AttentionItem["kind"], "warn" | "err" | "queue" | "run">
   guardian: "err",
   side_channel: "warn",
   breaker: "err",
+  override: "warn",
+  rollback: "warn",
 };
 
 const RunLink = ({ run }: { run: string }) => (
@@ -91,12 +120,26 @@ export function AttentionLinks({ item }: { item: AttentionItem }) {
     );
   }
   const first = driftFirstSeen(item);
+  const bench = driftBenchmarkOf(item);
+  const override = overrideOfAttention(item);
+  const rollback = rollbackOfAttention(item);
   const agents = item.agents.length > 1 ? item.agents : [];
   const runs = item.runs.length > 1 || (item.runs.length === 1 && item.runs[0] !== item.run) ? item.runs : [];
-  if (!agents.length && !runs.length && !first) return null;
+  if (!agents.length && !runs.length && !first && !bench && !override && !rollback) return null;
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px]">
       {first && <span className="text-faint">drifting since first seen {first.replace("T", " ").replace(/\.\d+Z$|Z$/, " UTC")}</span>}
+      {bench && <span className="text-faint">{driftBenchmarkLine(bench)}</span>}
+      {override && (
+        <span className="text-faint">
+          passed {override.passed.map(conditionLabel).join(", ") || "the unmet conditions"} by override{override.by ? ` (${override.by})` : ""}: {override.reason}
+        </span>
+      )}
+      {rollback && (
+        <span className="text-faint">
+          version {rollback.from ?? "?"} → {rollback.to ?? "?"}: {rollback.reason}; flagged for review
+        </span>
+      )}
       {agents.length > 0 && <span className="text-faint">{agents.join(", ")}</span>}
       {runs.map((r) => (
         <RunLink key={r} run={r} />
@@ -153,6 +196,8 @@ export function AttentionPanel({
   const [checked, setChecked] = useState<Record<string, PortHealth>>({});
   /* A kill the guardian would have made, taken up by a person: the dialog, the guardian's reason to start from. */
   const [killAsk, setKillAsk] = useState<AttentionItem | null>(null);
+  /* A drift's pause, or a redirect the guardian could not make: the dialog, the backend's text to start from. */
+  const [textAsk, setTextAsk] = useState<AttentionItem | null>(null);
 
   const refusedText = (item: AttentionItem, e: unknown) => {
     const rl = rateLimitOfError(e);
@@ -176,6 +221,11 @@ export function AttentionPanel({
     }
     if (a.kind === "kill") {
       setKillAsk(item);
+      return;
+    }
+    if (a.kind === "pause" || a.kind === "redirect") {
+      if ((a.kind === "pause" && !pauseOf(item)) || (a.kind === "redirect" && !item.run)) return onNotice(a.says || item.title);
+      setTextAsk(item);
       return;
     }
     if (a.kind === "close") {
@@ -257,6 +307,66 @@ export function AttentionPanel({
           }}
         />
       )}
+      {textAsk && textAsk.action.kind === "pause" && (
+        <TextDialog
+          title={`Pause ${pauseOf(textAsk)?.agents.join(", ") || textAsk.agent}?`}
+          what={`${textAsk.title}. Pausing stops new starts and queue claims for it, and kills every run of it in flight; it waits paused until a person resumes it. Nothing pauses it on its own.`}
+          label="Reason"
+          hint="Recorded on the pause, with your name, and audited."
+          missing="A pause needs a reason."
+          initial={pauseOf(textAsk)?.reason ?? ""}
+          confirm="Pause"
+          tone="warn"
+          permission="run"
+          busy={busy === textAsk.id}
+          onClose={() => setTextAsk(null)}
+          onConfirm={async (reason) => {
+            const item = textAsk;
+            const p = pauseOf(item);
+            if (!p) return;
+            setBusy(item.id);
+            try {
+              const r = await fleet("pause", p.agents, reason);
+              onNotice(`Paused ${r.agents.join(", ")}${r.killed.length ? `; ${r.killed.length} run${r.killed.length === 1 ? "" : "s"} in flight killed` : ""}. Resume it from the estate once the drift is understood.`);
+              reload();
+            } catch (e) {
+              onNotice(refusedText(item, e));
+            } finally {
+              setBusy(null);
+              setTextAsk(null);
+            }
+          }}
+        />
+      )}
+      {textAsk && textAsk.action.kind === "redirect" && textAsk.run && (
+        <TextDialog
+          title="Redirect the run the guardian flagged?"
+          what={`${textAsk.agent} · ${textAsk.run}. The guardian would have redirected it but did not act (${String(textAsk.data?.why ?? "outside its limits")}). The run reads the guidance at its next model call.`}
+          label="Guidance"
+          hint="Handed to the run as a steer, signed with your name."
+          missing="A redirect needs the guidance it sends."
+          initial={redirectGuidanceOf(textAsk)}
+          confirm="Send guidance"
+          tone="warn"
+          permission="run"
+          busy={busy === textAsk.id}
+          onClose={() => setTextAsk(null)}
+          onConfirm={async (guidance) => {
+            const item = textAsk;
+            setBusy(item.id);
+            try {
+              const r = await steerRun(item.run!, { guidance });
+              onNotice(`Sent guidance to ${r.run} (${r.delivery}); it reads it at its next model call.`);
+              reload();
+            } catch (e) {
+              onNotice(refusedText(item, e));
+            } finally {
+              setBusy(null);
+              setTextAsk(null);
+            }
+          }}
+        />
+      )}
       <div data-hue={hueFor("attention queue")} className="flex h-9 shrink-0 items-center gap-2 border-b border-line bg-raise/55 px-3">
         <span className="text-[12px] font-semibold">Attention</span>
         {worst && (
@@ -317,9 +427,15 @@ export function AttentionPanel({
                 <Button
                   size="sm"
                   variant={it.action.kind === "open" ? "outline" : "solid"}
-                  tone={it.action.kind === "answer" || it.action.kind === "hold" ? "warn" : it.action.kind === "kill" ? "err" : it.action.kind === "replay" || it.action.kind === "close" ? "ink" : "neutral"}
+                  tone={it.action.kind === "answer" || it.action.kind === "hold" || it.action.kind === "pause" || it.action.kind === "redirect" ? "warn" : it.action.kind === "kill" ? "err" : it.action.kind === "replay" || it.action.kind === "close" ? "ink" : "neutral"}
                   permission={
-                    it.action.kind === "answer" ? "approve" : it.action.kind === "close" ? "configure" : it.action.kind === "replay" || it.action.kind === "kill" || it.action.kind === "hold" ? "run" : undefined
+                    it.action.kind === "answer"
+                      ? "approve"
+                      : it.action.kind === "close"
+                        ? "configure"
+                        : it.action.kind === "replay" || it.action.kind === "kill" || it.action.kind === "hold" || it.action.kind === "pause" || it.action.kind === "redirect"
+                          ? "run"
+                          : undefined
                   }
                   loading={busy === it.id}
                   onClick={() => act(it)}
@@ -331,7 +447,7 @@ export function AttentionPanel({
           );
         })}
         {items && items.length === 0 && !error && (
-          <p className="px-3 py-3 text-[12px] text-faint">Nothing waiting. Gates, stopped runs, budget breaches, dead letters, failing health, drift, the guardian&rsquo;s verdicts, agents coordinating through a shared store and estate breakers that opened land here with the action that clears them.</p>
+          <p className="px-3 py-3 text-[12px] text-faint">Nothing waiting. Gates, stopped runs, budget breaches, dead letters, failing health, drift, the guardian&rsquo;s verdicts, agents coordinating through a shared store, estate breakers that opened, deploys passed past the promotion gate and rollbacks land here with the action that clears them.</p>
         )}
       </div>
     </section>

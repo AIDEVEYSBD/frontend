@@ -2,6 +2,7 @@ import path from "node:path";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { dbReady, query } from "@/lib/server/db";
 import { EVALS_DIR, validateSet, type EvalCase } from "@/lib/server/evals";
+import { DELETE_CONSOLE_HISTORY, LATEST_DONE_PER_SET, SET_HISTORY } from "@/lib/server/eval-sql";
 import { permit } from "@/lib/server/auth";
 
 /**
@@ -12,6 +13,14 @@ import { permit } from "@/lib/server/auth";
  * (DB + workspace file), and every run of it is recorded against the spec
  * digest it ran under, so "the agent got better" is a claim with two
  * measurements behind it, not a feeling.
+ *
+ * Phase L8: running a set is the backend's (`POST /api/agents/{id}/evals/run`,
+ * read at `GET /api/evals/runs/{id}`); the console's runner is retired. The
+ * sets and their history stay here, on the table the two share: a row the
+ * backend writes appears in the history as soon as the eval is accepted,
+ * with its `state`, so a set's latest score is its latest finished eval
+ * (lib/server/eval-sql.ts), and every row carries the threshold, whether it
+ * was met, and who started it.
  */
 
 export const runtime = "nodejs";
@@ -29,11 +38,7 @@ export async function GET(req: Request) {
       [id],
     );
     if (!sets.length) return Response.json({ error: `no eval set "${id}"` }, { status: 404 });
-    const runs = await query(
-      `SELECT id, model, digest, passed, total, results, matrix, summary, at FROM eval_runs
-       WHERE set_id = $1 ORDER BY at DESC LIMIT 40`,
-      [id],
-    );
+    const runs = await query(SET_HISTORY, [id]);
     const set = { ...sets[0], labels: sets[0].labels ?? undefined };
     return Response.json({ set, runs });
   }
@@ -42,8 +47,8 @@ export async function GET(req: Request) {
     `SELECT s.id, s.agent, s.name, s.model, (s.labels IS NOT NULL) AS labeled, jsonb_array_length(s.cases) AS n
      FROM eval_sets s ORDER BY s.updated_at DESC`,
   );
-  const latest = await query<{ set_id: string; passed: number; total: number; model: string; matrix: unknown; at: string }>(
-    `SELECT DISTINCT ON (set_id) set_id, passed, total, model, matrix, at FROM eval_runs ORDER BY set_id, at DESC`,
+  const latest = await query<{ set_id: string; passed: number; total: number; model: string; matrix: unknown; at: string; threshold: number | null; passed_threshold: boolean | null; by: string; version: number | null }>(
+    LATEST_DONE_PER_SET,
   );
   const byId = new Map(latest.map((l) => [l.set_id, l]));
   return Response.json({
@@ -87,7 +92,8 @@ export async function DELETE(req: Request) {
   if (!id || !/^[a-z][a-z0-9-]{0,62}$/.test(id)) return Response.json({ error: "which set?" }, { status: 400 });
   if (await dbReady()) {
     await query("DELETE FROM eval_sets WHERE id = $1", [id]);
-    await query("DELETE FROM eval_runs WHERE set_id = $1", [id]);
+    // The backend's eval records stay: a deployment names the eval its gate read.
+    await query(DELETE_CONSOLE_HISTORY, [id]);
   }
   await unlink(path.join(EVALS_DIR, `${id}.json`)).catch(() => {});
   return Response.json({ removed: true });

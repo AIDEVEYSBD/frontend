@@ -60,7 +60,17 @@ export interface PeerInfo {
   failed: number;
   tools: string[];
   replied: boolean;
+  /** L8 polish: a kill's cancel the peer answered (`state` is its answer), by whom, why, and how it went; null when no cancel landed. */
+  cancel: PeerCancel | null;
 }
+
+/** A delivered cancel, on the run tree's peer node. */
+export type PeerCancel = {
+  state: string;
+  by: string;
+  reason: string;
+  delivery: string;
+};
 
 export interface TreeNode {
   /** A record's run id; for a sub-run its minted id (`<agent>-sub-<hex>`, or a path for a worker's), for a peer `peer:<name>/<task or the calling run>`. Only `kind: run` is a record. */
@@ -132,7 +142,9 @@ export function figuresOf(v: unknown): Figures {
 export function peerOf(v: unknown): PeerInfo | null {
   const o = obj(v);
   if (!str(o.name)) return null;
-  return { name: str(o.name), task_id: str(o.task_id), state: str(o.state, "unknown") || "unknown", calls: num(o.calls), refused: num(o.refused), failed: num(o.failed), tools: strs(o.tools), replied: o.replied === true };
+  const c = obj(o.cancel);
+  const cancel = o.cancel && typeof o.cancel === "object" && !Array.isArray(o.cancel) ? { state: str(c.state), by: str(c.by), reason: str(c.reason), delivery: str(c.delivery) } : null;
+  return { name: str(o.name), task_id: str(o.task_id), state: str(o.state, "unknown") || "unknown", calls: num(o.calls), refused: num(o.refused), failed: num(o.failed), tools: strs(o.tools), replied: o.replied === true, cancel };
 }
 
 export function treeNodeOf(v: unknown): TreeNode {
@@ -206,8 +218,10 @@ export interface Reached {
   parent: string | null;
   /** Levels below the run the kill named. */
   depth: number;
-  /** Its state when the kill reached it (a job: `queued`, though it is dead-lettered now; a peer task: the peer's answer to the cancel, or the last state seen when it did not answer). */
+  /** Its state when the kill reached it (a job: `queued`, though it is dead-lettered now; a peer task: the task's last state this side saw, delivered or not). */
   state: string;
+  /** A peer task the cancel reached: the state the peer answered with (`canceled`; `unknown` when its answer named none). Null when the cancel did not land, and for everything that is not a peer task (L8 polish). */
+  answered_state: string | null;
   /** A peer task: the peer it was handed to (the registry's id); null for everything else. */
   peer: string | null;
   /** A peer task: its id at the peer; null for everything else. */
@@ -266,6 +280,7 @@ export function reachedOf(v: unknown): Reached {
     parent: strOrNull(o.parent),
     depth: num(o.depth),
     state: str(o.state),
+    answered_state: strOrNull(o.answered_state),
     peer: strOrNull(o.peer),
     task_id: strOrNull(o.task_id),
     error: strOrNull(o.error),
@@ -552,7 +567,8 @@ export function blastOf(v: unknown): BlastRadius {
 /* ═══════════════════ drift ═══════════════════ */
 
 export type MeasureName = Schemas["DriftMeasure"]["name"];
-export const MEASURE_NAMES: MeasureName[] = ["disposition_mix", "confidence", "cost_per_run", "tool_mix", "refusal_rate"];
+/** The five trailing measures, then (L8) the two read against the deployed digest's benchmark. */
+export const MEASURE_NAMES: MeasureName[] = ["disposition_mix", "confidence", "cost_per_run", "tool_mix", "refusal_rate", "benchmark_outcomes", "benchmark_labels"];
 export type MeasureKind = Schemas["DriftMeasure"]["kind"];
 export type Statistic = Schemas["DriftMeasure"]["statistic"];
 
@@ -615,6 +631,37 @@ export interface AgentDrift {
   /** The spec's declared outcome field (its evals' `compare`), or null when the final state is read instead. */
   outcome_field: string | null;
   measures: DriftMeasure[];
+  /**
+   * L8: the recent window against the benchmark of the digest production
+   * runs, when that digest has an eval on its suite; null otherwise. It
+   * counts toward `drifted` even when the trailing baseline has too few
+   * runs (`enough` false above).
+   */
+  benchmark: BenchmarkDrift | null;
+}
+
+/** The eval drift is read against: what production runs, measured on its own suite. */
+export type BenchmarkEval = {
+  id: string;
+  digest: string;
+  version: number | null;
+  set: string;
+  at: string;
+  /** Cases on the benchmark: the baseline of `benchmark_outcomes`. */
+  cases: number;
+  /** A labeled set: `benchmark_labels` reads against its labels too. */
+  labeled: boolean;
+};
+
+/** `AgentDrift.benchmark` (L8): the recent window's dispositions against the benchmark's outcomes, and its labels for a labeled set. */
+export interface BenchmarkDrift {
+  eval: BenchmarkEval;
+  /** Enough recent runs to read (fewer than `min_recent` says so, and raises nothing). */
+  enough: boolean;
+  says: string;
+  drifted: boolean;
+  /** benchmark_outcomes, and benchmark_labels for a labeled set: each a Jensen–Shannon distance past 0.2. */
+  measures: DriftMeasure[];
 }
 
 /** `GET /api/drift` */
@@ -665,7 +712,19 @@ export function agentDriftOf(v: unknown): AgentDrift {
     drifted: o.drifted === true,
     outcome_field: strOrNull(o.outcome_field),
     measures: (Array.isArray(o.measures) ? o.measures : []).map(measureOf),
+    benchmark: benchmarkDriftOf(o.benchmark),
   };
+}
+
+export function benchmarkEvalOf(v: unknown): BenchmarkEval {
+  const o = obj(v);
+  return { id: str(o.id), digest: str(o.digest), version: numOrNull(o.version), set: str(o.set), at: str(o.at), cases: num(o.cases), labeled: o.labeled === true };
+}
+
+export function benchmarkDriftOf(v: unknown): BenchmarkDrift | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const o = obj(v);
+  return { eval: benchmarkEvalOf(o.eval), enough: o.enough === true, says: str(o.says), drifted: o.drifted === true, measures: (Array.isArray(o.measures) ? o.measures : []).map(measureOf) };
 }
 
 const numbers = (v: unknown): Record<string, number> => {
@@ -695,8 +754,9 @@ export function rateSideOf(v: Record<string, unknown>): RateSide | null {
 
 /* ═══════════════════ the guardian ═══════════════════ */
 
-export type GuardianAct = "hold" | "block";
-export const GUARDIAN_ACTS: GuardianAct[] = ["hold", "block"];
+/** hold: at the run's next gate; block: kill it and what it set off; redirect (L8): its reason handed to the run as guidance at its next model call. */
+export type GuardianAct = "hold" | "block" | "redirect";
+export const GUARDIAN_ACTS: GuardianAct[] = ["hold", "block", "redirect"];
 
 /** What it has done since this backend instance started (kept in memory, not on the record). */
 export interface GuardianStats {
@@ -747,14 +807,14 @@ export interface GuardianAction {
   at: string;
   run: string;
   agent: string;
-  /** The verdict the model gave: hold or block. */
+  /** The verdict the model gave: hold, block or redirect. */
   verdict: string;
   confidence: number;
   reason: string;
   model: string;
   /** What it did, or would have done. */
   action: GuardianAct;
-  /** acted: the hold or the kill landed on the run. attention: outside its limits, raised for a person. */
+  /** acted: the hold, the kill or the redirect landed on the run. attention: outside its limits, raised for a person. */
   outcome: "acted" | "attention";
   /** Why it only raised attention: an action it may not take, the hourly cap, confidence under the floor. */
   why: string;
@@ -808,7 +868,7 @@ export function guardianActionOf(v: unknown): GuardianAction {
     confidence: num(o.confidence),
     reason: str(o.reason),
     model: str(o.model),
-    action: o.action === "block" ? "block" : "hold",
+    action: pick(o.action, GUARDIAN_ACTS, "hold"),
     outcome: o.outcome === "acted" ? "acted" : "attention",
     why: str(o.why),
     entries: num(o.entries),

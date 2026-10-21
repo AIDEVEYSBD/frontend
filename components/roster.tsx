@@ -4,12 +4,17 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { HARNESS } from "@/lib/spec";
 import { Mono, Status } from "./ui";
+import { listAgents } from "@/lib/api/l2";
+import { retiredOf, type Retired } from "@/lib/api/l8";
+import { retiredLine } from "@/lib/lifecycle";
 
 /**
  * The agent roster — every saved workflow as a band, every node in it as an
  * agent row. Nothing on this page is typed in: purpose is the node's own
  * persona or plan, autonomy is derived from grants × tool risk × gates, the
  * hierarchy is the graph, and the run columns are the runtime's own records.
+ * A retired workflow (phase L8) keeps its band, marked retired: it takes no
+ * new work, and its records stay.
  */
 
 interface Autonomy {
@@ -105,9 +110,21 @@ const HEAD = (
 export function Roster() {
   const [groups, setGroups] = useState<Group[] | null>(null);
   const [error, setError] = useState("");
+  const [retired, setRetired] = useState<Record<string, Retired>>({});
 
   useEffect(() => {
     let stop = false;
+    listAgents()
+      .then((rows) => {
+        if (stop) return;
+        const out: Record<string, Retired> = {};
+        for (const a of rows) {
+          const r = retiredOf(a.retired);
+          if (r) out[a.id] = r;
+        }
+        setRetired(out);
+      })
+      .catch(() => {});
     fetch("/api/roster")
       .then((r) => r.json())
       .then((d) => {
@@ -160,6 +177,13 @@ export function Roster() {
                   {g.name}
                 </Link>
                 {g.description && <span className="text-[12px] text-dim">{g.description}</span>}
+                {retired[g.id] && (
+                  <span title={retiredLine(retired[g.id])}>
+                    <Status tone="neutral" chip>
+                      Retired{retired[g.id].replacement ? ` · replaced by ${retired[g.id].replacement}` : ""}
+                    </Status>
+                  </span>
+                )}
                 <span className="grow" />
                 <Mono className="whitespace-nowrap">{g.trigger}</Mono>
                 <Mono className="whitespace-nowrap">last run {ago(g.lastRun)}</Mono>

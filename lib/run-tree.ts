@@ -249,32 +249,54 @@ export function reachedKindLabel(r: Pick<Reached, "kind" | "delivery" | "depth">
 }
 
 /**
- * A peer task's line: the peer and its task, and why the cancel did not
- * reach it when it did not. The peer's id is the registry's, so the Peers
- * page names the same one.
+ * The peer's answer to a delivered cancel: `answered_state` since the
+ * backend's L8 polish split it from `state` (the task's last state this side
+ * saw); a receipt from before the split carried the answer in `state`. ""
+ * when the cancel was not delivered.
  */
-export function peerTaskLine(r: Pick<Reached, "kind" | "delivery" | "agent" | "peer" | "task_id" | "error" | "state">): string {
+export function answerOf(r: Pick<Reached, "delivery" | "state" | "answered_state">): string {
+  if (r.delivery !== "a2a") return "";
+  return r.answered_state ?? r.state;
+}
+
+/**
+ * A peer task's line: the peer and its task, what the peer answered and the
+ * state this side last saw it in, and why the cancel did not reach it when
+ * it did not. The peer's id is the registry's, so the Peers page names the
+ * same one.
+ */
+export function peerTaskLine(r: Pick<Reached, "kind" | "delivery" | "agent" | "peer" | "task_id" | "error" | "state" | "answered_state">): string {
   if (r.kind !== "peer_task" && !r.delivery.startsWith("a2a")) return "";
   const who = r.peer || r.agent || "a peer";
   const task = r.task_id ? `task ${r.task_id} at ${who}` : `a task at ${who}`;
   if (r.delivery === "a2a") {
+    const answer = answerOf(r);
     // A delivered cancel whose answer named no state: the backend does not assume it stopped, so a later kill asks again.
-    if (!r.state || r.state === "unknown") return `${task}: the cancel was delivered and the peer named no state; a later kill asks again`;
-    return `${task}: cancelled, the peer answered ${r.state}`;
+    if (!answer || answer === "unknown") return `${task}: the cancel was delivered and the peer named no state; a later kill asks again`;
+    const seen = r.answered_state !== null && r.state && r.state !== answer ? ` (last seen ${r.state})` : "";
+    return `${task}: cancelled, the peer answered ${answer}${seen}`;
   }
   return `${task}: not cancelled${r.error ? `: ${r.error}` : ""}${r.state ? ` (last seen ${r.state})` : ""}`;
 }
 
 /** What a reached row's state says, beside it: a job's new status, a peer's answer, a run's state when the kill reached it, or (under `already`) its state now. */
-export function reachedStateText(r: Pick<Reached, "kind" | "delivery" | "state" | "kill">): string {
+export function reachedStateText(r: Pick<Reached, "kind" | "delivery" | "state" | "kill" | "answered_state">): string {
   const st = r.state || "?";
   if (r.kill) return `still ${st}`;
   if (r.kind === "job") return st === "failed" ? "dead-lettered, now failed" : `now ${st}`;
   if (r.kind === "peer_task" || r.delivery.startsWith("a2a")) {
     if (r.delivery !== "a2a") return `last seen ${st}`;
-    return st === "unknown" ? "answered without a state" : `answered ${st}`;
+    const answer = answerOf(r);
+    return !answer || answer === "unknown" ? "answered without a state" : `answered ${answer}`;
   }
   return `was ${st}`;
+}
+
+/** A tree peer node's delivered cancel in a line (L8 polish: `peer.cancel`), or "" when none landed. */
+export function peerCancelLine(p: { cancel: { state: string; by: string; reason: string; delivery: string } | null } | null): string {
+  const c = p?.cancel;
+  if (!c) return "";
+  return `cancelled over A2A${c.by ? ` by ${c.by}` : ""}${c.reason ? ` (${c.reason})` : ""}; the peer answered ${c.state || "without a state"}`;
 }
 
 /** An earlier kill in words: `by Ann (runaway tree)`. */
