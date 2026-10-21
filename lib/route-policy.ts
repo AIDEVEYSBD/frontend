@@ -46,7 +46,10 @@ export const STRICT_READS: Record<string, string> = { "app/api/iam/": "iam" };
  * 3 approvals, agents, authoring, drafts, the roster, keys, attached agents,
  * IAM and the vault; phase L3 the screener; phase L4 the applications
  * register, the OpenAI-compatible gateway, the retrieval door and the
- * chatbots built here (`/api/apps`).
+ * chatbots built here (`/api/apps`); phase L5 the attention queue, the
+ * fleet and lockdown doors and the external answer door (`/api/answer`).
+ * The L5 doors beneath existing prefixes (`/api/approvals/{run}/links`,
+ * `/api/runs/{id}/steer`, `/api/runs/{id}/artefacts.zip`) travel with them.
  */
 export const BACKEND_PREFIXES = [
   "/api/runs",
@@ -69,6 +72,10 @@ export const BACKEND_PREFIXES = [
   "/api/gateway",
   "/api/retrieval",
   "/api/apps",
+  "/api/attention",
+  "/api/fleet",
+  "/api/lockdown",
+  "/api/answer",
 ];
 
 /**
@@ -76,9 +83,11 @@ export const BACKEND_PREFIXES = [
  * own secret), so the cookie gate in proxy.ts never stands in front of them:
  * the backend's trigger, webhook and worker doors; the L4 gateway, retrieval
  * and chatbot doors (application keys); the console's SDK, A2A and
- * platform-MCP doors. Sign-in itself is open too, or nobody could start.
- * An entry ending in "/" matches anything beneath it; a bare entry matches
- * itself and anything beneath it.
+ * platform-MCP doors; the external answer door, which an outside
+ * participant opens with the signed link token in its path (phase L5).
+ * Sign-in itself is open too, or nobody could start. An entry ending in "/"
+ * matches anything beneath it; a bare entry matches itself and anything
+ * beneath it.
  */
 export const MACHINE_DOORS = [
   "/api/trigger/",
@@ -92,11 +101,27 @@ export const MACHINE_DOORS = [
   "/api/a2a",
   "/api/mcp/server",
   "/api/auth/",
+  "/api/answer/",
 ];
 
 /** Whether a URL path is a machine door: exempt from the session cookie, guarded by its own key. */
 export function isMachineDoor(pathname: string): boolean {
   return MACHINE_DOORS.some((d) => (d.endsWith("/") ? pathname.startsWith(d) : pathname === d || pathname.startsWith(`${d}/`)));
+}
+
+/**
+ * Pages a person may open without a session: the landing page, sign-in and
+ * its refusal, and the external answer page (`/answer/{token}`), where an
+ * outside participant answers one gate with a signed link and nothing else.
+ * The chrome (header, nav, assistant) is withheld on the same list.
+ */
+export const OPEN_PAGES = ["/", "/login", "/no-access"];
+export const OPEN_PREFIXES = ["/answer/", "/_next/", "/logos/", "/media/", "/.well-known/", "/favicon.ico", "/icon.svg"];
+
+/** Whether a page path (never an API path) is open without a session cookie. */
+export function isOpenPage(pathname: string): boolean {
+  if (pathname.startsWith("/api/")) return false;
+  return OPEN_PAGES.includes(pathname) || OPEN_PREFIXES.some((p) => pathname.startsWith(p));
 }
 
 /**

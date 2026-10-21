@@ -18,8 +18,15 @@ import { ApproveDialog, useGates, type Gate } from "./approve";
 import { soon } from "@/lib/soon";
 import { WindowPick, nextWin, winMs, type Win } from "./window-pick";
 import { Pick } from "./select";
+import { Checkbox } from "./forms";
 import { api, errorText, type RunRow as LedgerRow } from "@/lib/api/client";
+import type { RunRowL5 } from "@/lib/api/l5";
 import { KillDialog } from "./kill-dialog";
+import { AttentionPanel } from "./attention";
+import { FleetBar, LockdownBanner, LockdownSwitch, useLockdown } from "./operate";
+import { Deadline, ShapeTag, useNow } from "./gate-form";
+import { batchable } from "@/lib/gates";
+import { useSession } from "@/lib/use-session";
 
 const PERIOD_DAYS = { day: 1, week: 7, month: 30 } as const;
 const PERIOD_LABEL = { day: "day", week: "week", month: "month" } as const;
@@ -144,7 +151,8 @@ interface ControlData {
     avgMs7d: number | null;
   };
   agents: AgentRow[];
-  live: { id: string; system: string; startedAt: string }[];
+  /** In flight, from the backend's ledger. `stuck` and `waitingOn` are L5's: the step is past the agent's p95, and what it is waiting on. */
+  live: { id: string; system: string; startedAt: string; stuck?: boolean; waitingOn?: string | null }[];
   days: DayRow[];
   models: ModelRow[];
   runs: RunRow[];
@@ -236,7 +244,7 @@ function rewindow(d: ControlData, now: number, w: Win): ControlData {
 /** The backend's view of what is in flight (GET /api/runs, the `live` flag), laid over the estate read. Null leaves the read as it came. */
 function withLive(d: ControlData, rows: LedgerRow[] | null): ControlData {
   if (rows === null) return d;
-  const live = rows.map((r) => ({ id: r.id, system: r.system, startedAt: r.started }));
+  const live = (rows as RunRowL5[]).map((r) => ({ id: r.id, system: r.system, startedAt: r.started, stuck: r.stuck === true, waitingOn: r.waiting_on ?? null }));
   const bySystem = new Map<string, number>();
   for (const l of live) bySystem.set(l.system, (bySystem.get(l.system) ?? 0) + 1);
   return {
@@ -356,7 +364,16 @@ export function Control() {
     setCardWin({});
   };
   const [stack, setStack] = useState<Drill[]>([]);
-  const [answering, setAnswering] = useState<Gate | null>(null);
+  /* The gates the inbox dialog is answering: one, or several of one agent and shape together. */
+  const [answering, setAnswering] = useState<Gate[] | null>(null);
+  /* Inbox rows ticked for a batch answer, by run id. */
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  /* Estate rows ticked for a fleet action, by agent id. */
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const { lockdown, setState: setLockdownState } = useLockdown();
+  const { session } = useSession();
+  // The inbox's deadlines tick on a slow clock: the page is large, and a second is finer than a countdown in hours needs.
+  const clock = useNow(15_000);
   const [stageNotice, setStageNotice] = useState<string | null>(null);
   const [deployingId, setDeployingId] = useState<string | null>(null);
   /* Hover readouts — what a tooltip would have hidden, kept on the page. */
@@ -532,13 +549,29 @@ export function Control() {
         }
       : null,
   );
-  const statusLine = !data
-    ? "reading the estate…"
-    : t!.active > 0
-      ? `${t!.active} run${t!.active === 1 ? "" : "s"} in flight`
-      : t!.pending > 0
-        ? `quiet — ${t!.pending} awaiting a person`
-        : `all quiet · last activity ${ago(data.runs[0]?.at ?? null)}`;
+  const locked = Boolean(lockdown?.on);
+  const statusLine = locked
+    ? `lockdown${lockdown?.reason ? ` · ${lockdown.reason}` : ""}${data && t!.active > 0 ? ` · ${t!.active} in flight, held` : ""}`
+    : !data
+      ? "reading the estate…"
+      : t!.active > 0
+        ? `${t!.active} run${t!.active === 1 ? "" : "s"} in flight`
+        : t!.pending > 0
+          ? `quiet — ${t!.pending} awaiting a person`
+          : `all quiet · last activity ${ago(data.runs[0]?.at ?? null)}`;
+
+  /* The inbox dialog for one run's gate; false when the inbox has no row for it yet. */
+  const answerRun = useCallback(
+    (runId: string): boolean => {
+      const g = (gates ?? []).find((x) => x.run === runId);
+      if (!g) return false;
+      setAnswering([g]);
+      return true;
+    },
+    [gates],
+  );
+  const pickedGates = (gates ?? []).filter((g) => picked.has(g.run));
+  const batchCheck = batchable(pickedGates, session ? { roles: session.roles, appRoles: session.appRoles } : null);
 
   return (
     <div className="relative mx-auto w-full max-w-[1520px] px-5 py-7">
@@ -548,7 +581,12 @@ export function Control() {
           <div className="flex items-center gap-3">
             <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">Control</h1>
             <span className="flex items-center gap-1.5 rounded-md border border-line bg-surface px-2 py-1">
-              {data && t!.active > 0 ? (
+              {locked ? (
+                <span className="relative flex size-2">
+                  <span className="absolute inline-flex size-2 animate-ping rounded-full bg-err opacity-60" />
+                  <span className="relative inline-flex size-2 rounded-full bg-err" />
+                </span>
+              ) : data && t!.active > 0 ? (
                 <span className="relative flex size-2">
                   <span className="absolute inline-flex size-2 animate-ping rounded-full bg-run opacity-60" />
                   <span className="relative inline-flex size-2 rounded-full bg-run" />
@@ -556,7 +594,7 @@ export function Control() {
               ) : (
                 <span className="size-2 rounded-full bg-ok" />
               )}
-              <span className="text-[11.5px] font-medium text-dim">{statusLine}</span>
+              <span className={`text-[11.5px] font-medium ${locked ? "text-err" : "text-dim"}`}>{statusLine}</span>
             </span>
           </div>
           <p className="max-w-[64ch] text-[12.5px] leading-[1.55] text-dim">
@@ -570,6 +608,7 @@ export function Control() {
           <WindowPick value={win} onChange={setWin} />
         </span>
         <LogExport />
+        <LockdownSwitch state={lockdown} onChanged={(s) => { setLockdownState(s); load(); }} onNotice={notice} />
         {t && t.active > 0 && (
           <Button tone="err" variant="solid" size="sm" permission="run" loading={killing === "*"} onClick={() => setKillAsk({})}>
             <span className="size-1.5 rounded-[2px] bg-on-solid" />
@@ -579,6 +618,18 @@ export function Control() {
       </div>
 
       {error && <p className="mt-4 text-[12.5px] text-err">{error}</p>}
+
+      {/* ── Lockdown: the banner stays while it is on ── */}
+      {locked && (
+        <div className="mt-4">
+          <LockdownBanner state={lockdown} />
+        </div>
+      )}
+
+      {/* ── What needs a person, ranked; each row with the one action that clears it ── */}
+      <div className="mt-4">
+        <AttentionPanel onAnswer={answerRun} onOpenRun={(id) => open({ kind: "run", id })} onNotice={notice} />
+      </div>
 
       {/* ── KPI band — every tile opens its records ── */}
       <div className="mt-6 grid grid-cols-2 overflow-hidden rounded-md border border-line bg-surface sm:grid-cols-4 xl:grid-cols-8">
@@ -690,10 +741,34 @@ export function Control() {
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
         {/* ── The estate ── */}
         <section className="flex h-fit flex-col overflow-hidden rounded-md border border-line bg-surface">
-          <PanelHead title="Estate" meta="every agent, its whole record — click a row" />
+          <PanelHead
+            title="Estate"
+            meta={selected.size ? "pause, resume, drain or kill the agents ticked" : "every agent, its whole record — click a row, tick rows for a fleet action"}
+            right={
+              selected.size > 0 ? (
+                <FleetBar
+                  agents={[...selected]}
+                  names={(id) => data?.agents.find((a) => a.id === id)?.name ?? id}
+                  onClear={() => setSelected(new Set())}
+                  onDone={(r) => {
+                    const verb = { pause: "Paused", resume: "Resumed", drain: "Draining", kill: "Killed runs on" }[r.action];
+                    notice(`${verb} ${r.agents.length} agent${r.agents.length === 1 ? "" : "s"}${r.affected ? ` · ${r.affected} run${r.affected === 1 ? "" : "s"} affected` : ""}${r.audit ? ` · audit ${r.audit.slice(0, 8)}` : ""}`);
+                    setSelected(new Set());
+                    load();
+                  }}
+                />
+              ) : undefined
+            }
+          />
           <div className="max-h-[560px] overflow-auto">
-            <div className="min-w-[820px]">
-              <div className="sticky top-0 z-10 grid grid-cols-[minmax(170px,1.4fr)_96px_120px_130px_86px_86px_72px] items-center gap-3 border-b border-line bg-surface px-4 py-2">
+            <div className="min-w-[860px]">
+              <div className="sticky top-0 z-10 grid grid-cols-[28px_minmax(170px,1.4fr)_96px_120px_130px_86px_86px_72px] items-center gap-3 border-b border-line bg-surface px-4 py-2">
+                <Checkbox
+                  aria-label="Select every agent"
+                  checked={Boolean(data?.agents.length) && selected.size === data?.agents.length}
+                  indeterminate={selected.size > 0 && selected.size < (data?.agents.length ?? 0)}
+                  onChange={(on) => setSelected(on ? new Set((data?.agents ?? []).map((a) => a.id)) : new Set())}
+                />
                 {["Agent", "Status", "Benchmark", "Health · last 14", "Avg time", `Spend · ${win}`, ""].map((h, i) => (
                   <span key={i} className={`text-[11px] font-semibold text-dim ${i === 4 || i === 5 ? "text-right" : ""}`}>{h}</span>
                 ))}
@@ -706,10 +781,24 @@ export function Control() {
                   tabIndex={0}
                   onClick={() => open({ kind: "agent", id: a.id })}
                   onKeyDown={(e) => e.key === "Enter" && open({ kind: "agent", id: a.id })}
-                  className={`focusable grid cursor-pointer grid-cols-[minmax(170px,1.4fr)_96px_120px_130px_86px_86px_72px] items-center gap-3 border-b border-line px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-raise/50 ${
-                    drill?.kind === "agent" && drill.id === a.id ? "bg-raise/70" : ""
+                  className={`focusable grid cursor-pointer grid-cols-[28px_minmax(170px,1.4fr)_96px_120px_130px_86px_86px_72px] items-center gap-3 border-b border-line px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-raise/50 ${
+                    drill?.kind === "agent" && drill.id === a.id ? "bg-raise/70" : selected.has(a.id) ? "bg-raise/40" : ""
                   }`}
                 >
+                  <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      aria-label={`Select ${a.name}`}
+                      checked={selected.has(a.id)}
+                      onChange={(on) =>
+                        setSelected((s) => {
+                          const n = new Set(s);
+                          if (on) n.add(a.id);
+                          else n.delete(a.id);
+                          return n;
+                        })
+                      }
+                    />
+                  </span>
                   <span className="flex min-w-0 flex-col gap-0.5">
                     <span className="truncate text-[13px] font-semibold text-fg">{a.name}</span>
                     <span className="truncate font-mono text-[10px] text-faint">
@@ -845,8 +934,14 @@ export function Control() {
                   onClick={() => open({ kind: "run", id: r.id })}
                   className="focusable flex min-w-0 grow cursor-pointer flex-col text-left"
                 >
-                  <span className="truncate text-[12.5px] font-medium text-fg">{r.system}</span>
-                  <span className="truncate font-mono text-[10px] text-faint">{r.id} · {ago(r.startedAt)}</span>
+                  <span className="flex items-center gap-2">
+                    <span className="truncate text-[12.5px] font-medium text-fg">{r.system}</span>
+                    {r.stuck && <Status tone="warn">stuck</Status>}
+                  </span>
+                  <span className={`truncate font-mono text-[10px] ${r.stuck ? "text-warn" : "text-faint"}`}>
+                    {r.id} · {ago(r.startedAt)}
+                    {r.waitingOn ? ` · waiting on ${r.waitingOn}` : ""}
+                  </span>
                 </button>
                 <KillButton id={r.id} busy={killing === r.id || killing === "*"} onKill={askKill} />
               </div>
@@ -859,55 +954,78 @@ export function Control() {
             )}
           </section>
 
-          {/* Approvals queue — the human turn, front and center */}
+          {/* The inbox: every gate waiting, as the approvals door lays it out.
+              The attention queue above ranks what needs a person; this is
+              where the gates themselves are answered, one at a time or several
+              of one agent and shape together. */}
           <section className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">
             <PanelHead
-              title="Approvals queue"
-              meta="a person is the next step"
+              title="Inbox"
+              meta={picked.size ? (batchCheck.ok ? `${picked.size} ticked · answer them together` : batchCheck.reason) : "gates waiting for a person · tick several to answer together"}
               right={
-                (data?.totals.pending ?? 0) > 0 ? (
-                  <Status tone="warn">{data!.totals.pending} waiting</Status>
+                picked.size > 0 ? (
+                  <span className="flex items-center gap-1.5">
+                    <Button size="sm" variant="solid" tone="warn" permission="approve" disabled={!batchCheck.ok} onClick={() => setAnswering(pickedGates)}>
+                      Answer {picked.size} together
+                    </Button>
+                    <Button size="sm" variant="quiet" onClick={() => setPicked(new Set())}>
+                      Clear
+                    </Button>
+                  </span>
+                ) : (gates?.length ?? 0) > 0 ? (
+                  <Status tone="warn">{gates!.length} waiting</Status>
                 ) : undefined
               }
             />
-            {(data?.runs ?? [])
-              .filter((r) => r.state === "suspended")
-              .slice(0, 6)
-              .map((r) => (
-                <div key={r.id} className="flex items-center gap-3 border-b border-line px-3 py-2.5 last:border-b-0">
+            <div className="max-h-[420px] overflow-y-auto">
+              {(gates ?? []).map((g) => (
+                <div key={g.run} className={`flex items-center gap-2.5 border-b border-line px-3 py-2.5 last:border-b-0 ${picked.has(g.run) ? "bg-raise/40" : ""}`}>
+                  <Checkbox
+                    aria-label={`Tick ${g.agent} · ${g.node}`}
+                    checked={picked.has(g.run)}
+                    onChange={(on) =>
+                      setPicked((s) => {
+                        const n = new Set(s);
+                        if (on) n.add(g.run);
+                        else n.delete(g.run);
+                        return n;
+                      })
+                    }
+                  />
                   <button
                     type="button"
-                    onClick={() => open({ kind: "run", id: r.id })}
+                    onClick={() => open({ kind: "run", id: g.run })}
                     className="focusable flex min-w-0 grow cursor-pointer flex-col text-left"
                   >
-                    <span className="truncate text-[12.5px] font-medium text-fg">{r.system}</span>
+                    <span className="flex items-center gap-2">
+                      <span className="truncate text-[12.5px] font-medium text-fg">{g.agent}</span>
+                      <ShapeTag shape={g.shape} />
+                    </span>
                     <span className="truncate font-mono text-[10px] text-warn">
-                      paused at {r.suspendedAt || "a gate"} · {ago(r.at)}
+                      {g.asks ? g.asks.slice(0, 60) : `paused at ${g.node}`} · {ago(g.waiting_since)}
+                    </span>
+                    <span className="flex flex-wrap items-center gap-x-2 text-[10px] text-faint">
+                      <span>{g.approvers.length ? g.approvers.join(", ") : "anyone"}</span>
+                      <Deadline deadline={g.deadline} now={clock} />
+                      {g.escalations.length > 0 && <span>escalated ×{g.escalations.length}</span>}
                     </span>
                   </button>
                   {/* Answering happens here. It used to link to the run page,
                       which is where a run is *started* — the one place a person
                       with a gate to answer should never be sent. */}
-                  <Button permission="approve"
-                    size="sm"
-                    variant="outline"
-                    tone="warn"
-                    onClick={() => {
-                      const g = (gates ?? []).find((x) => x.run === r.id);
-                      if (g) setAnswering(g);
-                      else open({ kind: "run", id: r.id });
-                    }}
-                  >
+                  <Button permission="approve" size="sm" variant="outline" tone="warn" onClick={() => setAnswering([g])}>
                     Answer
                   </Button>
                 </div>
               ))}
-            {data && !data.runs.some((r) => r.state === "suspended") && (
-              <p className="px-3 py-4 text-[12px] text-faint">
-                No gates open. When a workflow suspends for sign-off, it queues here with an
-                Answer button.
-              </p>
-            )}
+              {gates && gates.length === 0 && (
+                <p className="px-3 py-4 text-[12px] text-faint">
+                  No gates open. When a workflow suspends for a person, it queues here with an
+                  Answer button.
+                </p>
+              )}
+              {gates === null && <p className="px-3 py-4 text-[12px] text-faint">Reading the inbox…</p>}
+            </div>
           </section>
 
           {/* Guardrails — the record of "no" */}
@@ -1160,8 +1278,7 @@ export function Control() {
           onKill={askKill}
           killing={killing}
           onAnswer={(runId) => {
-            const g = (gates ?? []).find((x) => x.run === runId);
-            if (g) setAnswering(g);
+            answerRun(runId);
           }}
         />
       )}
@@ -1183,9 +1300,10 @@ export function Control() {
 
       {answering && (
         <ApproveDialog
-          gate={answering}
+          gates={answering}
           onClose={() => setAnswering(null)}
           onAnswered={() => {
+            setPicked(new Set());
             reloadGates();
             load();
           }}
@@ -1763,6 +1881,8 @@ function renderDrill(
         body: (
           <div className="flex flex-col">
             <Fact k="State" v={<Status tone="run">running</Status>} />
+            {l.stuck && <Fact k="Stuck" v={`this step is past the agent's p95${l.waitingOn ? ` · waiting on ${l.waitingOn}` : ""}`} tone="text-warn" />}
+            {!l.stuck && l.waitingOn && <Fact k="Waiting on" v={<Mono className="text-[10.5px]">{l.waitingOn}</Mono>} />}
             <Fact k="Started" v={ago(l.startedAt)} />
             <Fact k="Run file" v={<Mono className="text-[10px]">{l.id}</Mono>} />
             <div className="flex gap-2 px-4 py-3">

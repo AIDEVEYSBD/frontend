@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BACKEND_PREFIXES, CONSOLE_UNDER_BACKEND, MACHINE_DOORS, isBackendPath, isMachineDoor, upstreamFor } from "@/lib/route-policy";
+import { BACKEND_PREFIXES, CONSOLE_UNDER_BACKEND, MACHINE_DOORS, OPEN_PAGES, OPEN_PREFIXES, isBackendPath, isMachineDoor, isOpenPage, upstreamFor } from "@/lib/route-policy";
 
 /**
  * The path router's decision (proxy.ts), as a pure function of the path and
@@ -33,9 +33,37 @@ describe("backend-owned paths", () => {
       "/api/gateway",
       "/api/retrieval",
       "/api/apps",
+      "/api/attention",
+      "/api/fleet",
+      "/api/lockdown",
+      "/api/answer",
     ]) {
       expect(BACKEND_PREFIXES, `${p} is the backend's`).toContain(p);
     }
+  });
+
+  // Phase L5: the attention queue, the fleet and lockdown doors and the
+  // external answer door are new prefixes; the links, steer and artefact
+  // bundle doors sit under prefixes already forwarded.
+  it("hands the L5 doors to the backend", () => {
+    expect(isBackendPath("/api/attention")).toBe(true);
+    expect(isBackendPath("/api/attention/health:x/acknowledge")).toBe(true);
+    expect(isBackendPath("/api/fleet")).toBe(true);
+    expect(isBackendPath("/api/lockdown")).toBe(true);
+    expect(isBackendPath("/api/answer/tok-1")).toBe(true);
+    expect(isBackendPath("/api/approvals/run-1/links")).toBe(true);
+    expect(isBackendPath("/api/runs/run-1/steer")).toBe(true);
+    expect(isBackendPath("/api/runs/run-1/artefacts.zip")).toBe(true);
+    expect(isBackendPath("/api/attentionx")).toBe(false);
+    expect(isBackendPath("/api/fleets")).toBe(false);
+    expect(isBackendPath("/api/answers")).toBe(false);
+    expect(upstreamFor("/api/attention", "", BOTH)).toEqual({ to: "backend", url: "http://localhost:8000/api/attention" });
+    expect(upstreamFor("/api/fleet", "", BOTH)).toEqual({ to: "backend", url: "http://localhost:8000/api/fleet" });
+    expect(upstreamFor("/api/lockdown", "", BOTH)).toEqual({ to: "backend", url: "http://localhost:8000/api/lockdown" });
+    expect(upstreamFor("/api/answer/tok-1", "", BOTH)).toEqual({ to: "backend", url: "http://localhost:8000/api/answer/tok-1" });
+    expect(upstreamFor("/api/runs/run-1/artefacts.zip", "", BOTH)).toEqual({ to: "backend", url: "http://localhost:8000/api/runs/run-1/artefacts.zip" });
+    expect(upstreamFor("/api/approvals/run-1/links", "", BOTH)).toEqual({ to: "backend", url: "http://localhost:8000/api/approvals/run-1/links" });
+    expect(upstreamFor("/api/runs/run-1/steer", "", BOTH)).toEqual({ to: "backend", url: "http://localhost:8000/api/runs/run-1/steer" });
   });
 
   // Phase L4: the register, the OpenAI-compatible gateway, the retrieval
@@ -169,9 +197,25 @@ describe("upstreamFor", () => {
  */
 describe("machine doors", () => {
   it("names the backend's keyed doors and the console's own", () => {
-    for (const d of ["/api/trigger/", "/api/webhooks/", "/api/worker/", "/api/gateway/", "/api/retrieval/", "/api/apps/", "/api/sdk/", "/api/sdk", "/api/a2a", "/api/mcp/server", "/api/auth/"]) {
+    for (const d of ["/api/trigger/", "/api/webhooks/", "/api/worker/", "/api/gateway/", "/api/retrieval/", "/api/apps/", "/api/sdk/", "/api/sdk", "/api/a2a", "/api/mcp/server", "/api/auth/", "/api/answer/"]) {
       expect(MACHINE_DOORS, `${d} is a machine door`).toContain(d);
     }
+  });
+
+  // The external answer door is opened with the signed link token in its
+  // path; the session cookie never stands in front of it. The other L5
+  // doors are a person's: attention, fleet, lockdown, links, steer, the
+  // artefact bundle all need the cookie.
+  it("exempts the external answer door and only that of the L5 doors", () => {
+    expect(isMachineDoor("/api/answer/tok-1")).toBe(true);
+    expect(isMachineDoor("/api/answer")).toBe(false);
+    expect(isMachineDoor("/api/answers/x")).toBe(false);
+    expect(isMachineDoor("/api/attention")).toBe(false);
+    expect(isMachineDoor("/api/fleet")).toBe(false);
+    expect(isMachineDoor("/api/lockdown")).toBe(false);
+    expect(isMachineDoor("/api/approvals/run-1/links")).toBe(false);
+    expect(isMachineDoor("/api/runs/run-1/steer")).toBe(false);
+    expect(isMachineDoor("/api/runs/run-1/artefacts.zip")).toBe(false);
   });
 
   it("exempts the L4 doors from the cookie gate", () => {
@@ -207,5 +251,40 @@ describe("machine doors", () => {
     expect(isMachineDoor("/api/knowledge/reembed")).toBe(false);
     expect(isMachineDoor("/applications")).toBe(false);
     expect(isMachineDoor("/")).toBe(false);
+  });
+});
+
+/**
+ * The pages the cookie gate leaves open (proxy.ts, through
+ * lib/route-policy.ts): the landing page, sign-in and its refusal, and the
+ * external answer page, where an outside participant uses a signed link and
+ * has no session. The chrome stays off the same list. Everything else is a
+ * console page and needs the cookie.
+ */
+describe("open pages", () => {
+  it("names the landing page, sign-in, no-access and the external answer page", () => {
+    expect(OPEN_PAGES).toEqual(["/", "/login", "/no-access"]);
+    expect(OPEN_PREFIXES).toContain("/answer/");
+  });
+
+  it("opens the external answer page and the static assets, nothing else", () => {
+    expect(isOpenPage("/")).toBe(true);
+    expect(isOpenPage("/login")).toBe(true);
+    expect(isOpenPage("/no-access")).toBe(true);
+    expect(isOpenPage("/answer/tok-1")).toBe(true);
+    expect(isOpenPage("/answer/")).toBe(true);
+    expect(isOpenPage("/_next/static/x.js")).toBe(true);
+    expect(isOpenPage("/favicon.ico")).toBe(true);
+    expect(isOpenPage("/answer")).toBe(false);
+    expect(isOpenPage("/answers/tok-1")).toBe(false);
+    expect(isOpenPage("/control")).toBe(false);
+    expect(isOpenPage("/runs")).toBe(false);
+    expect(isOpenPage("/loginx")).toBe(false);
+  });
+
+  it("never opens an API path, whatever it is called", () => {
+    expect(isOpenPage("/api/answer/tok-1")).toBe(false);
+    expect(isOpenPage("/api/auth/login")).toBe(false);
+    expect(isOpenPage("/api/")).toBe(false);
   });
 });

@@ -9,7 +9,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, IconButton, Kbd, Label, Mono, RUN_STATE, Status, Tag } from "./ui";
 import { Skeleton, Thinking } from "./loaders";
-import { Field, Input, Textarea } from "./forms";
+import { Field, Textarea } from "./forms";
 import { Banner } from "./overlays";
 import { Icon } from "./builder/icons";
 import { Pick } from "./select";
@@ -19,9 +19,13 @@ import { SpanDetail, Waterfall, useTrace, type Span } from "./waterfall";
 import { explainControl } from "@/lib/guardrails";
 import { ControlRef, KILL_CONTROL } from "./control-ref";
 import { RunBoard, ViewSwitch, useRunView, type BoardEdge } from "./run-board";
-import { api, errorText, subscribeRunEvents, type RunEnd, type RunRow } from "@/lib/api/client";
+import { api, errorText, subscribeRunEvents, type RunEnd } from "@/lib/api/client";
+import { artefactsZipUrl, gateFromSuspension, listGates, type Gate, type RunRowL5 } from "@/lib/api/l5";
 import { KillDialog } from "./kill-dialog";
 import { LineageDrawer } from "./lineage";
+import { ApproveDialog } from "./approve";
+import { SteerPanel } from "./steer";
+import { Deadline, useNow } from "./gate-form";
 
 /**
  * The runs console: where a workflow actually runs.
@@ -57,6 +61,10 @@ interface Suspension {
   node: string;
   approvers: string[];
   prompt: string;
+  /** Absolute; null when the gate has none. */
+  deadline: string | null;
+  /** The suspension as the backend sent it (shape, items, chain, deadline), for the dialog when the inbox has not caught up. */
+  raw: Record<string, unknown>;
 }
 
 interface OutputRecord {
@@ -134,8 +142,8 @@ interface SavedAgent {
   nodes: number;
 }
 
-/** A row of the backend's run ledger, as the list shows it. */
-type RunSummary = Pick<RunRow, "id" | "system" | "state" | "at" | "ms" | "denials" | "live">;
+/** A row of the backend's run ledger, as the list shows it. `stuck` and `waiting_on` are L5's. */
+type RunSummary = Pick<RunRowL5, "id" | "system" | "state" | "at" | "ms" | "denials" | "live" | "stuck" | "waiting_on">;
 
 const ago = (iso: string) => {
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -275,10 +283,12 @@ function Launcher() {
                 >
                   <div className="flex min-w-0 grow flex-col">
                     <span className="truncate text-[13px] font-semibold text-fg">{r.system || r.id}</span>
-                    <Mono className="truncate text-[10.5px] text-faint">
+                    <Mono className={`truncate text-[10.5px] ${r.stuck ? "text-warn" : "text-faint"}`}>
                       {r.id} · {ago(r.at)} · {(r.ms / 1000).toFixed(1)}s
+                      {r.waiting_on ? ` · waiting on ${r.waiting_on}` : ""}
                     </Mono>
                   </div>
+                  {r.stuck && <Status tone="warn">stuck</Status>}
                   {r.denials > 0 && <Status tone="err">{r.denials} refused</Status>}
                   <StateBadge state={r.state} />
                 </button>
@@ -328,8 +338,10 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState("");
   // The run's id, as the backend minted it: what a resume, a kill, the event
-  // stream and the cost lookup all refer to.
+  // stream and the cost lookup all refer to. The state twin is for what
+  // renders by it (the steering panel, the artefact bundle link).
   const runId = useRef("");
+  const [liveRunId, setLiveRunId] = useState("");
   const abort = useRef<AbortController | null>(null);
   // Closes the event stream. The backend replays the whole journal on every
   // (re)connection, so entries are deduplicated by id across legs here.
@@ -409,7 +421,8 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
     if (result && Object.keys(result).length) setResult(result);
     setFinalState(end.state);
     if (end.state === "suspended" && suspension) {
-      setSuspension({ node: suspension.node, approvers: suspension.approvers ?? [], prompt: suspension.prompt ?? "" });
+      const raw = suspension as unknown as Record<string, unknown>;
+      setSuspension({ node: suspension.node, approvers: suspension.approvers ?? [], prompt: suspension.prompt ?? "", deadline: typeof raw.deadline === "string" ? raw.deadline : null, raw });
     } else {
       setPhase("done");
     }
@@ -486,6 +499,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
         return;
       }
       runId.current = data.run;
+      setLiveRunId(data.run);
       follow(data.run);
     } catch (e) {
       if ((e as Error).name === "AbortError") return;
@@ -535,6 +549,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
     setSuspension(null);
     setKilling(false);
     runId.current = "";
+    setLiveRunId("");
     maxT.current = 0;
     seen.current = new Set();
     legOffset.current = 0;
@@ -543,25 +558,16 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
     void launch(parsed);
   };
 
-  /** Answer the gate. The backend signs with the session and resumes; the stream picks up the new leg. */
-  const answer = async (approved: boolean, _by: string, note: string): Promise<boolean> => {
+  /** The gate was answered through the inbox dialog; the backend signed and resumed, and the stream picks up the new leg. */
+  const answered = () => {
     const id = runId.current;
-    if (!id) return false;
+    if (!id) return;
     setError("");
-    const { data, error, response } = await api.POST("/api/runs/{run_id}/resume", {
-      params: { path: { run_id: id } },
-      body: { answer: { approved }, note },
-    });
-    if (!data) {
-      setError(errorText(error, response));
-      return false;
-    }
     setSuspension(null);
     setPhase("live");
     startedAt.current = Date.now();
     setWallMs(0);
     follow(id);
-    return true;
   };
 
   if (loadError) {
@@ -603,6 +609,8 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
     <Theater
       title={system.name}
       subtitle={system.id}
+      runId={liveRunId || undefined}
+      agentId={system.id}
       nodes={system.nodes.map((n) => ({ id: n.id, label: n.label || n.id, kind: n.harness }))}
       edges={system.edges.map((e) => ({ source: e.source, target: e.target, when: e.when, label: e.label }))}
       entries={entries}
@@ -612,7 +620,8 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
       outputs={outputs}
       result={result}
       suspension={suspension}
-      onAnswer={answer}
+      onAnswered={answered}
+      steer={liveRunId && phase === "live" ? <SteerPanel runId={liveRunId} suspended={Boolean(suspension)} /> : null}
       setup={
         phase === "setup" ? (
           <div className="flex flex-col gap-3 border-b border-line bg-raise/40 px-4 py-4">
@@ -767,6 +776,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
                 setError("");
                 setKilling(false);
                 runId.current = "";
+                setLiveRunId("");
                 maxT.current = 0;
                 seen.current = new Set();
                 legOffset.current = 0;
@@ -948,7 +958,7 @@ function ReplayTheater({ id }: { id: string }) {
       outputs={[]}
       result={atEnd ? meta.result : null}
       suspension={null}
-      onAnswer={() => {}}
+      onAnswered={() => {}}
       setup={null}
       segments={segments}
       tNow={playback.t}
@@ -1238,13 +1248,15 @@ function Theater({
   outputs,
   result,
   suspension,
-  onAnswer,
+  onAnswered,
+  steer,
   setup,
   footer,
   traceOf,
   segments,
   tNow,
   runId,
+  agentId,
 }: {
   title: string;
   subtitle: string;
@@ -1262,8 +1274,10 @@ function Theater({
   outputs: OutputRecord[];
   result: Record<string, unknown> | null;
   suspension: Suspension | null;
-  /** Resolves false when the answer was refused and the gate still stands. */
-  onAnswer: (approved: boolean, by: string, note: string) => void | Promise<boolean>;
+  /** The gate was answered through the inbox dialog; the run is resuming. */
+  onAnswered: () => void;
+  /** Live only: the steering panel, at the top of the artifact rail. */
+  steer?: React.ReactNode;
   setup: React.ReactNode;
   footer: React.ReactNode;
   /** Replay only: node time-bands + the playhead, for per-node progress. */
@@ -1271,8 +1285,10 @@ function Theater({
   tNow?: number;
   /** Run id whose trace the theater may show. Absent on a live run. */
   traceOf?: string;
-  /** The run's id, for the lineage drawer's link to the record. Absent on a live run that has not started. */
+  /** The run's id, for the lineage drawer's link to the record and the artefact bundle. Absent on a live run that has not started. */
   runId?: string;
+  /** The agent the run belongs to, for a gate the inbox has not listed yet. */
+  agentId?: string;
 }) {
   const draftId =
     result && typeof result.draft_id === "string" && /^[a-z][a-z0-9-]{0,62}$/.test(result.draft_id)
@@ -1333,7 +1349,7 @@ function Theater({
       {setup}
 
       {/* ── The gate: when a person is the next step, the room says so. ── */}
-      {suspension && <GateBanner suspension={suspension} onAnswer={onAnswer} />}
+      {suspension && <GateBanner suspension={suspension} runId={runId ?? ""} agentId={agentId ?? title} onAnswered={onAnswered} />}
 
       {view === "cards" && (
         <div className="flex min-h-0 grow flex-col">
@@ -1348,6 +1364,11 @@ function Theater({
                 </a>
               ))}
               {artifacts.length === 0 && <span className="text-[11px] text-ghost">none written</span>}
+              {artifacts.length > 0 && runId && (
+                <a href={artefactsZipUrl(runId)} download className="focusable flex items-center gap-1.5 rounded-md border border-line bg-surface px-2 py-1 text-[11.5px] font-medium text-fg hover:border-line-strong">
+                  Download all (.zip)
+                </a>
+              )}
               <span className="grow" />
               {error && finalState === "failed" && <Status tone="err">{error.slice(0, 120)}</Status>}
               {finalState === "killed" && <span className="flex items-center gap-2"><Status tone="err">Killed by operator</Status><ControlRef control={KILL_CONTROL} /></span>}
@@ -1427,26 +1448,16 @@ function Theater({
           <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line bg-raise/60 px-4">
             <span className="truncate text-[12px] font-semibold">Artifacts</span>
             <div className="grow" />
-            {artifacts.length > 1 && (
-              <Button
-                size="sm"
-                variant="quiet"
-                className="shrink-0"
-                onClick={() => {
-                  for (const a of artifacts) {
-                    const link = document.createElement("a");
-                    link.href = `/api/artifact?name=${encodeURIComponent(a.name)}`;
-                    link.download = a.name;
-                    link.click();
-                  }
-                }}
-              >
+            {/* Every file the run wrote, as one archive: the backend's bundle door, a plain link the proxy forwards. */}
+            {artifacts.length > 0 && runId && (
+              <Button size="sm" variant="quiet" className="shrink-0" href={artefactsZipUrl(runId)}>
                 Download all ({artifacts.length})
               </Button>
             )}
             <Mono className="shrink-0 text-[11px] text-faint">{artifacts.length} produced</Mono>
           </div>
           <div className="flex min-h-0 grow flex-col gap-3 overflow-y-auto px-4 py-4">
+            {steer}
             {suspension && (
               <div className="relative overflow-hidden rounded-md border border-line bg-surface px-3 py-2.5 pl-4">
                 <span className="absolute inset-y-0 left-0 w-[3px] bg-warn" />
@@ -1665,24 +1676,39 @@ function ArtifactRow({ a }: { a: { name: string; kind: string; t: number } }) {
 
 function GateBanner({
   suspension,
-  onAnswer,
+  runId,
+  agentId,
+  onAnswered,
 }: {
   suspension: Suspension;
-  /** Resolves false when the answer was refused and the gate still stands. */
-  onAnswer: (approved: boolean, by: string, note: string) => void | Promise<boolean>;
+  runId: string;
+  agentId: string;
+  /** The gate was answered through the dialog; the run is resuming. */
+  onAnswered: () => void;
 }) {
   const { session: me } = useSession();
   const by = signerName(me, CURRENT_USER.name);
-  const [note, setNote] = useState("");
-  const [needNote, setNeedNote] = useState(false);
-  // Which decision is in flight. The banner unmounts when the resume stream
-  // opens, so this never needs resetting — it only has to stop a second click.
-  const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
+  const now = useNow();
+  // The same dialog as the inbox: the gate's row from the approvals door
+  // when it is there, else one built from the suspension the stream sent.
+  const [gate, setGate] = useState<Gate | null>(null);
+  const [opening, setOpening] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     ref.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, []);
+
+  const answer = async () => {
+    setOpening(true);
+    try {
+      const inbox = runId ? await listGates().catch(() => null) : null;
+      const row = inbox?.pending.find((g) => g.run === runId) ?? null;
+      setGate(row ?? gateFromSuspension(runId, agentId, { ...suspension.raw, node: suspension.node, approvers: suspension.approvers, prompt: suspension.prompt }));
+    } finally {
+      setOpening(false);
+    }
+  };
 
   return (
     <div
@@ -1702,54 +1728,25 @@ function GateBanner({
       <Mono className="text-[10.5px] text-faint">
         {suspension.approvers.length ? `asks: ${suspension.approvers.join(", ")}` : "no approver role set"}
       </Mono>
+      <Deadline deadline={suspension.deadline} now={now} />
       <span className="grow" />
       <span className="flex items-center gap-1.5 text-[11px] text-faint">
         <span className="grid size-5 place-items-center rounded-full bg-ink text-[8.5px] font-semibold text-on-ink">{me?.initials ?? CURRENT_USER.initials}</span>
         {by}
       </span>
-      <div className="w-64">
-        <Input
-          value={note}
-          onChange={(v) => {
-            setNote(v);
-            setNeedNote(false);
+      <Button tone="warn" variant="solid" size="sm" permission="approve" loading={opening} disabled={!runId} onClick={answer}>
+        Answer
+      </Button>
+      {gate && (
+        <ApproveDialog
+          gates={[gate]}
+          onClose={() => setGate(null)}
+          onAnswered={() => {
+            setGate(null);
+            onAnswered();
           }}
-          placeholder={needNote ? "A rejection needs a reason" : "Reason (goes to the journal)"}
-          aria-label="Decision rationale — goes to the journal"
-          invalid={needNote}
         />
-      </div>
-      <Button
-        tone="ok"
-        variant="solid"
-        size="sm"
-        permission="approve" loading={busy === "approve"}
-        disabled={busy !== null}
-        onClick={async () => {
-          setBusy("approve");
-          if ((await onAnswer(true, by, note || "approved in the theater")) === false) setBusy(null);
-        }}
-      >
-        Approve
-      </Button>
-      <Button
-        tone="err"
-        variant="solid"
-        size="sm"
-        permission="approve" loading={busy === "reject"}
-        disabled={busy !== null}
-        onClick={async () => {
-          // A rejection with no reason is a rejection nobody can learn from.
-          if (!note.trim()) {
-            setNeedNote(true);
-            return;
-          }
-          setBusy("reject");
-          if ((await onAnswer(false, by, note)) === false) setBusy(null);
-        }}
-      >
-        Reject
-      </Button>
+      )}
     </div>
   );
 }
@@ -1954,6 +1951,24 @@ function parseJsonText(text: string): [string, string][] | null {
   return out.length ? out : null;
 }
 
+/**
+ * An operator action in the journal, or null. The steer door journals one
+ * entry per action: kind `operator` (or a `note` carrying `data.operator`
+ * or `data.by`), with `data.action` (guidance, hold_at_next_gate, model),
+ * `data.by` and `data.at`. The detail is the guidance text, the model
+ * name, or on/off for the hold.
+ */
+function operatorOf(e: Entry): { action: string; by: string; at: string; detail: string } | null {
+  const d = e.data ?? {};
+  const isOp = e.kind === "operator" || e.kind === "steer" || ((e.kind === "note" || e.kind === "control") && (d.operator !== undefined || typeof d.by === "string") && typeof d.action === "string");
+  if (!isOp) return null;
+  const action = String(d.action ?? e.title ?? "steered");
+  const label = action === "guidance" ? "Guidance for the next step" : action === "hold_at_next_gate" ? (d.hold_at_next_gate === false || d.value === false ? "Hold at next gate lifted" : "Hold at next gate") : action === "model" ? `Model for the next step: ${String(d.model ?? d.value ?? "")}` : e.title || action;
+  const detail = action === "guidance" ? String(d.guidance ?? d.value ?? e.detail ?? "") : action === "model" ? "" : e.detail ?? "";
+  const by = typeof d.by === "string" ? d.by : typeof d.operator === "string" ? d.operator : "an operator";
+  return { action: label, by, at: typeof d.at === "string" ? d.at : "", detail };
+}
+
 function JournalRow({ e, entries, onLineage }: { e: Entry; entries: Entry[]; onLineage?: (id: string) => void }) {
   const [open, setOpen] = useState(false);
   const lineageButton = onLineage && e.id ? (
@@ -2100,6 +2115,34 @@ function JournalRow({ e, entries, onLineage }: { e: Entry; entries: Entry[]; onL
                 </pre>
               </details>
             )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* An operator's hand on the run: guidance, a hold, a model change (the
+     steer door), each journalled with who and when. The row says so, in
+     those words, so a reviewer can tell the operator's steps from the
+     run's own. */
+  const operator = operatorOf(e);
+  if (operator) {
+    return (
+      <div className="flex gap-3">
+        <Mono className="w-9 shrink-0 pt-2 text-[10.5px] text-ghost">{clock(e.t)}</Mono>
+        <div className="min-w-0 grow rounded-md border border-line bg-raise">
+          <div className="flex flex-col gap-1 px-3 py-2">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="size-1.5 shrink-0 rounded-[2px] bg-run" />
+              <span className="text-[10.5px] font-medium text-run">operator</span>
+              <span className="text-[12.5px] font-medium text-fg">{operator.action}</span>
+              <span className="grow" />
+              <span className="text-[11px] text-faint">
+                {operator.by}
+                {operator.at ? ` · ${new Date(operator.at).toLocaleTimeString()}` : ""}
+              </span>
+            </span>
+            {operator.detail && <span className="text-[11.5px] leading-[1.55] whitespace-pre-wrap text-mist">{operator.detail}</span>}
           </div>
         </div>
       </div>

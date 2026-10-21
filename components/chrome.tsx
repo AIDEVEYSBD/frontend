@@ -11,6 +11,7 @@ import { AFMark } from "./brand";
 import { useEffect, useState } from "react";
 import { Assistant } from "./assistant";
 import { applyAccent } from "./appearance";
+import { isOpenPage } from "@/lib/route-policy";
 
 const NAV = [
   { href: "/control", label: "Control" },
@@ -52,6 +53,8 @@ export function Chrome({ children }: { children: React.ReactNode }) {
       if ((res.status === 403 || res.status === 401) && url.startsWith("/api/") && !url.startsWith("/api/auth/")) {
         try {
           const j = (await res.clone().json()) as { error?: string; reauth?: boolean };
+          // A route handler that redirects to the identity provider, not a page: a client-side navigation cannot follow it.
+          // eslint-disable-next-line @next/next/no-location-assign-relative-destination
           if (j.reauth) window.location.href = `/api/auth/login?next=${encodeURIComponent(window.location.pathname)}`;
           else window.dispatchEvent(new CustomEvent("af:denied", { detail: j.error ?? "not permitted" }));
         } catch {
@@ -68,8 +71,10 @@ export function Chrome({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("af:denied", onDenied);
   }, []);
 
-  // The landing page carries its own header and footer; sign-in pages stand alone.
-  if (pathname === "/" || pathname === "/login" || pathname === "/no-access") return <>{children}</>;
+  // The landing page carries its own header and footer; sign-in pages stand
+  // alone; so does the external answer page, which an outside participant
+  // opens with a signed link and no session (lib/route-policy.ts OPEN_PAGES).
+  if (isOpenPage(pathname)) return <>{children}</>;
   const who = session ?? { name: CURRENT_USER.name, initials: CURRENT_USER.initials, appRoles: [] as string[], sso: false, demoDefaultApplied: false, email: "" };
   const roleLabel = who.sso ? (who.appRoles.length ? who.appRoles.join(", ") : who.demoDefaultApplied ? "default role (no assignment)" : "no role") : CURRENT_USER.role;
   const nav = NAV.filter((item) => item.href !== "/iam" || !loaded || can("iam"));
