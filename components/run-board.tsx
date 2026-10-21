@@ -5,6 +5,8 @@ import { Spinner } from "./ui";
 import { Thinking } from "./loaders";
 import { HARNESS } from "@/lib/spec";
 import { explainControl } from "@/lib/guardrails";
+import { sandboxRunOf, SANDBOX_TOOL } from "@/lib/sandbox";
+import { SandboxOutput } from "./sandbox-result";
 import { ControlRef } from "./control-ref";
 import { DrillModal } from "./drill";
 import { Icon } from "./builder/icons";
@@ -809,17 +811,25 @@ function LedgerModal({ visit: v, live, maxT, initial, onClose }: { visit: Visit;
               </button>
               {isOpen && (
                 <div className="flex flex-col gap-2 bg-canvas px-4 py-3 pl-[72px]">
-                  {r.kind === "tool" && r.members.map((m, i) => (
-                    <div key={m.id} className="flex flex-col gap-1.5">
-                      {r.count > 1 && <span className="font-mono text-[10px] text-faint">call {i + 1} of {r.count} · {m.done && m.ms !== undefined ? fmtMs(m.ms) : "no result"}</span>}
-                      <Args args={m.call?.data?.args ?? {}} />
-                      {m.result && (
-                        <pre className="max-h-[320px] overflow-auto rounded-md border border-line bg-sunken/40 p-2.5 font-mono text-[10.5px] leading-[1.55] whitespace-pre-wrap text-mist">
-                          {typeof m.result.data?.value === "string" ? m.result.data.value : JSON.stringify(m.result.data?.value ?? null, null, 2)}
-                        </pre>
-                      )}
-                    </div>
-                  ))}
+                  {r.kind === "tool" && r.members.map((m, i) => {
+                    // An isolated `sandbox.execute` (phase L6): its facts above its output.
+                    const sandbox = m.result && m.result.data?.tool === SANDBOX_TOOL ? sandboxRunOf(m.result.data?.value) : null;
+                    return (
+                      <div key={m.id} className="flex flex-col gap-1.5">
+                        {r.count > 1 && <span className="font-mono text-[10px] text-faint">call {i + 1} of {r.count} · {m.done && m.ms !== undefined ? fmtMs(m.ms) : "no result"}</span>}
+                        <Args args={m.call?.data?.args ?? {}} />
+                        {sandbox ? (
+                          <SandboxOutput run={sandbox} />
+                        ) : (
+                          m.result && (
+                            <pre className="max-h-[320px] overflow-auto rounded-md border border-line bg-sunken/40 p-2.5 font-mono text-[10.5px] leading-[1.55] whitespace-pre-wrap text-mist">
+                              {typeof m.result.data?.value === "string" ? m.result.data.value : JSON.stringify(m.result.data?.value ?? null, null, 2)}
+                            </pre>
+                          )
+                        )}
+                      </div>
+                    );
+                  })}
                   {r.kind === "reasoning" && <Thought text={r.detail ?? ""} />}
                   {(r.kind === "refused" || r.kind === "error") && (
                     <div className="flex flex-col gap-1">

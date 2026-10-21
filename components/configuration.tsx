@@ -11,6 +11,9 @@ import { hueFor } from "@/lib/hue";
 import { CONNECTOR_DEFS } from "@/lib/connections";
 import { TOOL_BY_ID } from "@/lib/catalogue";
 import { AttachedAgents } from "./attached-agents";
+import { ToolServers } from "./tool-servers";
+import { useMcp } from "@/lib/use-mcp";
+import { STATUS_META } from "@/lib/mcp-registry";
 import { Pick } from "./select";
 import { soon } from "@/lib/soon";
 import type { AttachedAgent } from "@/lib/attached";
@@ -86,6 +89,7 @@ const SECTIONS = [
   { id: "deployment", label: "Deployment" },
   { id: "agents", label: "Third-party agents" },
   { id: "mcp", label: "MCP server" },
+  { id: "registry", label: "Tool servers" },
   { id: "sources", label: "Connected sources" },
   { id: "tools", label: "Tool registry" },
   { id: "gates", label: "Where a person signs" },
@@ -146,6 +150,8 @@ export function Configuration() {
   const [mcp, setMcp] = useState<{ endpoint: string; transport: string; auth: string; tools: { name: string; description: string; action: boolean }[]; client: Record<string, unknown> } | null>(null);
   const [folded, setFolded] = useState<Record<string, boolean>>({});
   const [attached, setAttached] = useState<AttachedAgent[]>([]);
+  // The MCP registry is the backend's (phase L6); read once for the panel and the page facts.
+  const registry = useMcp();
 
   useEffect(() => {
     // The remembered folds are read after the first paint, so the server and
@@ -287,6 +293,12 @@ export function Configuration() {
           defaultModel: data.defaultModel,
           interfaces: { servedAsMcp: rows.filter((r) => !r.nativeMcp).length, nativeMcpBrokered: rows.filter((r) => r.nativeMcp).length },
           agentFactoryMcp: { endpoint: MCP_ENDPOINT, tools: mcp ? mcp.tools.map((t) => t.name) : "described at the endpoint" },
+          toolServers: registry.servers
+            ? {
+                twoPersonApproval: registry.twoPerson,
+                servers: registry.servers.map((s) => ({ id: s.id, label: s.label, status: STATUS_META[s.status].label, tools: s.pin?.tools.length ?? 0, pin: s.pin?.digest ?? null, lastScan: s.last_scan?.at ?? null, hits: s.last_scan?.hits.length ?? 0 })),
+              }
+            : "reading the registry",
           thirdPartyAgents: {
             total: attached.length,
             overSdk: attached.filter((a) => a.mode === "sdk").length,
@@ -444,6 +456,26 @@ export function Configuration() {
               </span>
             </div>
           </div>
+        </Panel>
+
+        {/* ── the MCP registry: tool servers, admitted, pinned and approved ── */}
+        <Panel
+          id="registry"
+          folded={Boolean(folded["registry"])}
+          onToggle={() => toggle("registry")}
+          title="Tool servers"
+          caption="The MCP servers that carry a team's own tools to its agents. Registering is admission, not trust: the server is started once, every tool's name, description and schema is screened, and the tool list is pinned by its digest. Nothing attaches to a run until a person approves the pin, and a rescan that finds a different list marks the server changed and detaches it until someone approves again. Environment and header values stay with the registry; only their names are shown."
+          meta={
+            registry.servers && registry.servers.some((x) => STATUS_META[x.status].alarming) ? (
+              <Tag tone="err" solid>
+                {registry.servers.filter((x) => STATUS_META[x.status].alarming).length} need attention
+              </Tag>
+            ) : (
+              <Tag tone="ok" solid>MCP</Tag>
+            )
+          }
+        >
+          <ToolServers servers={registry.servers} twoPerson={registry.twoPerson} error={registry.error} refresh={registry.refresh} />
         </Panel>
 
         {/* ── sources: the load-bearing table ── */}

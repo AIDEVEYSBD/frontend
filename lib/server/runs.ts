@@ -51,6 +51,8 @@ export interface RunRow {
   byModel: { model: string; in: number; out: number; cost: number; estimated: boolean }[];
   /** Every model call, attributed to its node. */
   calls: CallRow[];
+  /** `sdk` or `a2a` when an attached agent opened the run (the record's `reported_by.mode`); "" for the platform's own. */
+  source: string;
 }
 
 export function costOf(model: string, tk: { in: number; out: number }, sheet: Sheet | null): number {
@@ -144,6 +146,7 @@ export async function readRuns(sheet: Sheet | null): Promise<RunRow[]> {
         artifactNames,
         byModel,
         calls,
+        source: String(run?.source ?? run?.reported_by?.mode ?? ""),
       });
     } catch {
       /* torn write — skip */

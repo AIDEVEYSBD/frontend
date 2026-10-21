@@ -1,18 +1,31 @@
-import { spawn } from "node:child_process";
 import path from "node:path";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { dbReady, query } from "@/lib/server/db";
-import { spawnEnv } from "@/lib/server/spawn-env";
 
 /**
- * Custom tools over MCP.
+ * The MCP registry, as the console's side reads it.
  *
- * A team builds whatever tool it needs, runs it as an MCP server, and connects
- * it here. The frontend's only job is discovery: start the server once, ask it
- * what tools it has, remember the answer. The runtime attaches the same server
- * at run time (runtime/agentfactory/tools.py, MCPHost) from the file this
- * module writes, so "connect a tool" is a config change on both sides and
- * never a release of either.
+ * The registry is the backend's since phase L6 (backend/CONTRACT.md, "The
+ * MCP registry door"): it starts a server once, screens every tool, pins the
+ * tool list by digest, holds the server pending until a person approves the
+ * pin, and writes both records, the `mcp` setting and the runtime's
+ * `workspace/mcp.json`. The console only reads what it wrote, for the A2A
+ * tool broker (lib/server/mcp-call.ts), which starts a registered server to
+ * make one call. Nothing here hands a server's environment to a browser.
+ *
+ * Both shapes are read: an entry the registry pinned (`status`, and `pin`
+ * with the approved tool list, or the file's `pin: {digest, status}`), and
+ * an entry written before L6 (`tools` beside the command, no status). An
+ * entry with no status is not approved: the runtime would not attach it
+ * either, because registering was never trust.
+ *
+ * Since L6 an entry's `env` values may be vault references
+ * (`${secret:name}`, `${env:NAME}`), which the backend resolves through its
+ * secrets port each time it starts the server, and a stdio entry may carry
+ * `isolate: {image?, network?}`, which the runtime honours by starting it in
+ * a container. The console has neither a vault nor an isolator, so the
+ * broker refuses such a server (brokerRefusal below) rather than start
+ * something other than what a person approved.
  */
 
 export interface McpTool {
@@ -22,159 +35,121 @@ export interface McpTool {
   annotations?: Record<string, unknown>;
 }
 
+export type McpStatus = "pending" | "approved" | "refused" | "changed";
+const STATUSES: McpStatus[] = ["pending", "approved", "refused", "changed"];
+
 export interface McpServer {
   id: string;
   label: string;
+  /** stdio: a process this side starts; http: a server somebody else runs, at `url`. */
+  transport: "stdio" | "http";
   command: string;
   args: string[];
+  /** As the registry holds it: values, or vault references the backend resolves. Never sent to a browser. */
   env: Record<string, string>;
+  url: string;
+  /** The container a stdio server is registered to run in (runtime L6b); null when it runs as a plain process. */
+  isolate: Record<string, unknown> | null;
+  /** The pinned tool list, or the list a pre-L6 entry carried. */
   tools: McpTool[];
-  discovered_at: string;
+  status: McpStatus;
+  /** The pin's digest; "" when the entry has none. */
+  digest: string;
 }
 
 const ROOT = path.resolve(process.cwd(), "..", "runtime");
 export const MCP_FILE = path.join(ROOT, "workspace", "mcp.json");
 
-export async function loadServers(): Promise<McpServer[]> {
+const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+
+function toolOf(v: unknown): McpTool | null {
+  const t = obj(v);
+  if (typeof t.name !== "string" || !t.name) return null;
+  return {
+    name: t.name,
+    description: typeof t.description === "string" ? t.description : "",
+    inputSchema: Object.keys(obj(t.inputSchema)).length ? obj(t.inputSchema) : { type: "object" },
+    ...(Object.keys(obj(t.annotations)).length ? { annotations: obj(t.annotations) } : {}),
+  };
+}
+
+/** One registry entry in either shape, as the broker needs it. */
+export function serverOf(v: unknown): McpServer | null {
+  const s = obj(v);
+  if (typeof s.id !== "string" || !s.id) return null;
+  const pin = obj(s.pin);
+  const tools = Array.isArray(pin.tools) ? pin.tools : Array.isArray(s.tools) ? s.tools : [];
+  const status = STATUSES.find((x) => x === s.status) ?? STATUSES.find((x) => x === pin.status) ?? "pending";
+  const env: Record<string, string> = {};
+  for (const [k, val] of Object.entries(obj(s.env))) if (typeof val === "string") env[k] = val;
+  const command = typeof s.command === "string" ? s.command : "";
+  const url = typeof s.url === "string" ? s.url : "";
+  return {
+    id: s.id,
+    label: typeof s.label === "string" && s.label ? s.label : s.id,
+    // The runtime's own reading: a registration with a url is called, not started.
+    transport: s.transport === "http" || (url && !command) ? "http" : "stdio",
+    command,
+    args: Array.isArray(s.args) ? s.args.map(String) : [],
+    env,
+    url,
+    isolate: s.isolate && typeof s.isolate === "object" && !Array.isArray(s.isolate) ? (s.isolate as Record<string, unknown>) : null,
+    tools: tools.map(toolOf).filter((t): t is McpTool => t !== null),
+    status,
+    digest: typeof pin.digest === "string" ? pin.digest : "",
+  };
+}
+
+/** The raw entries: the `mcp` setting when the registry saved one, else the runtime's file. */
+async function rawServers(): Promise<unknown[]> {
   if (await dbReady()) {
-    const rows = await query<{ value: { servers?: McpServer[] } }>("SELECT value FROM settings WHERE key = 'mcp'");
-    if (rows.length) return rows[0].value.servers ?? [];
+    const rows = await query<{ value: { servers?: unknown[] } }>("SELECT value FROM settings WHERE key = 'mcp'");
+    if (rows.length) return Array.isArray(rows[0].value?.servers) ? rows[0].value.servers : [];
   }
   try {
-    const raw = JSON.parse(await readFile(MCP_FILE, "utf-8"));
-    return Array.isArray(raw.servers) ? raw.servers : [];
+    const file = JSON.parse(await readFile(MCP_FILE, "utf-8"));
+    return Array.isArray(file.servers) ? file.servers : [];
   } catch {
     return [];
   }
 }
 
-export async function saveServers(servers: McpServer[]): Promise<void> {
-  const value = { servers };
-  if (await dbReady()) {
-    await query(
-      `INSERT INTO settings (key, value, updated_at) VALUES ('mcp', $1, now())
-       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
-      [value],
-    );
-  }
-  // The runtime reads this file; the DB is authoritative for the UI.
-  await mkdir(path.dirname(MCP_FILE), { recursive: true });
-  await writeFile(MCP_FILE, JSON.stringify(value, null, 2) + "\n");
-}
-
-/** Split a command line the way a shell would for the simple cases. */
-export function shellWords(line: string): string[] {
-  const out: string[] = [];
-  const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(line))) out.push(m[1] ?? m[2] ?? m[3]);
-  return out;
-}
-
-/** Parse KEY=VALUE lines into an env map. */
-export function envLines(text: string): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const line of text.split(/\r?\n/)) {
-    const t = line.trim();
-    if (!t || t.startsWith("#")) continue;
-    const eq = t.indexOf("=");
-    if (eq <= 0) continue;
-    env[t.slice(0, eq).trim()] = t.slice(eq + 1).trim();
-  }
-  return env;
+export async function loadServers(): Promise<McpServer[]> {
+  return (await rawServers()).map(serverOf).filter((s): s is McpServer => s !== null);
 }
 
 /**
- * Start the server, complete the MCP handshake, list its tools, stop it.
- * Mirrors the runtime's MCPHost so what the builder shows is what a run gets.
+ * Whether a server may be reached at all: only an approved pin attaches, as
+ * the runtime holds it (`control: supply_chain`). The broker refuses the
+ * rest by that control, so an agent granted a tool on a server whose list
+ * changed is told why, not that the tool vanished.
  */
-export function discover(
-  command: string,
-  args: string[],
-  env: Record<string, string>,
-  timeoutMs = 20000,
-): Promise<McpTool[]> {
-  return new Promise((resolve, reject) => {
-    let child: ReturnType<typeof spawn>;
-    try {
-      child = spawn(command, args, { cwd: ROOT, env: spawnEnv(env), stdio: ["pipe", "pipe", "pipe"] });
-    } catch (e) {
-      reject(new Error(`could not start ${command}: ${(e as Error).message}`));
-      return;
-    }
-    let settled = false;
-    let stderr = "";
-    let buf = "";
-    let nextId = 0;
-    const pending = new Map<number, (r: { result?: unknown; error?: { message?: string } }) => void>();
+export function attachable(server: McpServer): boolean {
+  return server.status === "approved";
+}
 
-    const finish = (fn: () => void) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      try {
-        child.kill();
-      } catch {
-        /* already gone */
-      }
-      fn();
-    };
-    const timer = setTimeout(
-      () => finish(() => reject(new Error(`the server did not answer within ${timeoutMs / 1000}s${stderr ? ` — ${stderr.trim().split("\n").slice(-2).join(" ")}` : ""}`))),
-      timeoutMs,
-    );
+/** A reference the runtime's vault resolves when it starts a server: `${secret:name}`, `${env:NAME}` or `${env:NAME|default}`. */
+const REFERENCE = /\$\{(?:secret|env):[^}]*\}/;
 
-    const send = (method: string, params: unknown, withId: boolean) =>
-      new Promise<unknown>((res, rej) => {
-        const msg: Record<string, unknown> = { jsonrpc: "2.0", method, params };
-        if (withId) {
-          const id = ++nextId;
-          msg.id = id;
-          pending.set(id, (r) => (r.error ? rej(new Error(r.error.message ?? "MCP error")) : res(r.result)));
-        }
-        child.stdin!.write(JSON.stringify(msg) + "\n");
-        if (!withId) res(undefined);
-      });
-
-    child.on("error", (e) => finish(() => reject(new Error(`could not start ${command}: ${e.message}`))));
-    child.on("exit", (code) => {
-      if (!settled) finish(() => reject(new Error(`the server exited (${code ?? "signal"}) before answering${stderr ? ` — ${stderr.trim().split("\n").slice(-2).join(" ")}` : ""}`)));
-    });
-    child.stderr!.on("data", (b: Buffer) => (stderr += b.toString()));
-    child.stdout!.on("data", (b: Buffer) => {
-      buf += b.toString();
-      const lines = buf.split("\n");
-      buf = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        let msg: { id?: number; result?: unknown; error?: { message?: string } };
-        try {
-          msg = JSON.parse(line);
-        } catch {
-          continue; // stray output; the runtime ignores it too
-        }
-        if (typeof msg.id === "number" && pending.has(msg.id)) {
-          pending.get(msg.id)!(msg);
-          pending.delete(msg.id);
-        }
-      }
-    });
-
-    (async () => {
-      await send(
-        "initialize",
-        { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "agent-factory-builder", version: "1" } },
-        true,
-      );
-      await send("notifications/initialized", {}, false);
-      const r = (await send("tools/list", {}, true)) as { tools?: McpTool[] };
-      const tools = (r.tools ?? []).map((t) => ({
-        name: String(t.name),
-        description: String(t.description ?? ""),
-        inputSchema: (t.inputSchema && typeof t.inputSchema === "object" ? t.inputSchema : { type: "object" }) as Record<string, unknown>,
-        ...(t.annotations ? { annotations: t.annotations } : {}),
-      }));
-      finish(() => resolve(tools));
-    })().catch((e: Error) => finish(() => reject(e)));
-  });
+/**
+ * Why the console's broker will not start this server, or "" when it can.
+ *
+ * The backend starts a registered server as a run meets it: its `${secret:…}`
+ * and `${env:…}` references resolved through the secrets port, in a
+ * container when the registration asks for `isolate`. The broker has
+ * neither a vault nor an isolator, and a server started without them is not
+ * the one a person approved: it would run with the literal reference as its
+ * credential, or uncontained. So it is refused, by the supply-chain control,
+ * naming the reason and the variables (never a value). An HTTP registration
+ * is a server somebody else runs, and the broker only starts processes.
+ */
+export function brokerRefusal(server: McpServer): string {
+  if (server.transport === "http") return `${server.label} is an HTTP server, and the console's tool broker only starts stdio servers`;
+  if (server.isolate) return `${server.label} is registered to run in a container (isolate), and the console's tool broker has no isolator; it will not start it uncontained`;
+  const refs = Object.entries(server.env)
+    .filter(([, v]) => REFERENCE.test(v))
+    .map(([k]) => k);
+  if (refs.length) return `${server.label}'s environment holds vault references the console cannot resolve (${refs.join(", ")}); the console's tool broker has no vault and will not start it with the literal reference`;
+  if (!server.command) return `${server.label} names no command to start`;
+  return "";
 }

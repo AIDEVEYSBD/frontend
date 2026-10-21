@@ -32,9 +32,9 @@ Point it at a backend before opening anything beyond the landing page: without `
 
 ## What the backend owns
 
-Every request under these prefixes is the backend's (`lib/route-policy.ts` `BACKEND_PREFIXES`, the contract in `backend/CONTRACT.md`): `/api/runs`, `/api/approvals`, `/api/agents`, `/api/author`, `/api/drafts`, `/api/roster`, `/api/keys`, `/api/attached`, `/api/iam`, `/api/vault`, `/api/trigger`, `/api/webhooks`, `/api/queue`, `/api/worker`, `/api/screener` and `/api/healthz`. No route file under `app/api` answers for them (`tests/routes.test.ts`); the typed client in `lib/api/client.ts` is generated from the backend's OpenAPI document and calls them same-origin.
+Every request under these prefixes is the backend's (`lib/route-policy.ts` `BACKEND_PREFIXES`, the contract in `backend/CONTRACT.md`): `/api/runs`, `/api/approvals`, `/api/agents`, `/api/author`, `/api/drafts`, `/api/roster`, `/api/keys`, `/api/attached`, `/api/iam`, `/api/vault`, `/api/trigger`, `/api/webhooks`, `/api/queue`, `/api/worker`, `/api/screener`, `/api/applications`, `/api/gateway`, `/api/retrieval`, `/api/apps`, `/api/attention`, `/api/fleet`, `/api/lockdown`, `/api/answer`, the MCP registry (`/api/mcp`), the SDK door (`/api/sdk`) and `/api/healthz`. No route file under `app/api` answers for them (`tests/routes.test.ts`); the typed client in `lib/api/client.ts` is generated from the backend's OpenAPI document and calls them same-origin.
 
-One exception, named in `CONSOLE_UNDER_BACKEND`: `/api/author/chat` is the console's own authoring loop (the conversation goes to Foundry; every runtime step is a call to the backend's `/api/author/reference` and `/api/author/propose`).
+Two exceptions, named in `CONSOLE_UNDER_BACKEND`: `/api/author/chat` is the console's own authoring loop (the conversation goes to Foundry; every runtime step is a call to the backend's `/api/author/reference` and `/api/author/propose`), and `/api/mcp/server` is the platform's own MCP server, served here under the backend's registry prefix.
 
 ## What still runs in Next
 
@@ -46,11 +46,11 @@ Until later phases move them, these answer from `app/api` here, against Postgres
 - **Control aggregation** (`/api/control`, `/api/guardrails`, `/api/logs`, `/api/artifact`).
 - **The assistant** (`/api/assistant`) and its tool catalogue (`lib/server/console-tools.ts`).
 - **Observability** (`/api/observability`, `/api/observability/export`).
-- **The MCP registry** (`/api/mcp`) and the **platform MCP server** (`/api/mcp/server`).
-- **The model gateway**, **SDK door** and **A2A door** for attached agents (`/api/a2a/*`, `/api/sdk/*`), with the agent card at `/.well-known/agent.json`.
+- **The platform MCP server** (`/api/mcp/server`).
+- **The A2A doors** for attached agents (`/api/a2a/*`: the model gateway alias, the tool broker, the tasks door), with the agent card at `/.well-known/agent.json`. The tool broker starts a registered stdio server to make one call; it refuses, naming the reason, a server registered with `isolate` or with `${secret:…}` references in its environment, which only the backend can honour.
 - Sign-in (`/api/auth/*`) and the UI preferences (`/api/ui`).
 
-The machine doors among these (`/api/sdk*`, `/api/a2a*`, `/api/mcp/server`) keep their own API keys and stay outside the cookie gate, as do the backend's trigger, webhook and worker doors.
+The machine doors among these (`/api/a2a*`, `/api/mcp/server`) keep their own API keys and stay outside the cookie gate, as do the backend's trigger, webhook, worker and SDK doors.
 
 ## Knowledge namespaces
 

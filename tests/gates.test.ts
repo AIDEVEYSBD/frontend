@@ -179,7 +179,9 @@ describe("the gate row, normalised", () => {
     expect(g.fields).toEqual([]);
     expect(g.chain).toEqual([]);
     expect(g.external).toEqual({ allowed: false });
-    expect(g.evidence).toEqual({ decided: {}, presented: {}, tainted_by: [] });
+    expect(g.evidence).toEqual({ decided: {}, presented: {}, tainted_by: [], trail: [] });
+    expect(g.escalations).toBe(0);
+    expect(g.next).toEqual({ approve: "", refuse: "" });
     expect(g.deadline).toBeNull();
   });
 

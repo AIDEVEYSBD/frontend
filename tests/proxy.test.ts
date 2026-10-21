@@ -37,9 +37,58 @@ describe("backend-owned paths", () => {
       "/api/fleet",
       "/api/lockdown",
       "/api/answer",
+      "/api/mcp",
+      "/api/sdk",
     ]) {
       expect(BACKEND_PREFIXES, `${p} is the backend's`).toContain(p);
     }
+  });
+
+  // Phase L6: the SDK door is the backend's, whole: the description, the
+  // live run doors (open, entries, gate, the control long-poll, finish) and
+  // the 1.4 upload and poll. An attached agent opens it with the key scoped
+  // to it, so the cookie gate never stands in front of it, and the backend
+  // refuses a console session there (401).
+  it("hands the SDK door to the backend, and lets it through without a cookie", () => {
+    for (const p of ["/api/sdk", "/api/sdk/runs", "/api/sdk/runs/x", "/api/sdk/runs/x/control", "/api/sdk/runs/x/entries", "/api/sdk/runs/x/gate", "/api/sdk/runs/x/finish"]) {
+      expect(isBackendPath(p), `${p} is the backend's`).toBe(true);
+      expect(isMachineDoor(p), `${p} needs no cookie`).toBe(true);
+      expect(upstreamFor(p, "", BOTH)).toEqual({ to: "backend", url: `http://localhost:8000${p}` });
+      expect(upstreamFor(p, "", { backendOrigin: "http://localhost:8000" })).toEqual({ to: "backend", url: `http://localhost:8000${p}` });
+    }
+    // The long-poll keeps its wait.
+    expect(upstreamFor("/api/sdk/runs/x/control", "?wait=25", BOTH)).toEqual({ to: "backend", url: "http://localhost:8000/api/sdk/runs/x/control?wait=25" });
+    // A sibling is neither.
+    expect(isBackendPath("/api/sdkx")).toBe(false);
+    expect(isMachineDoor("/api/sdkx")).toBe(false);
+    // The platform's own MCP server is still the console's, and still a machine door.
+    expect(isBackendPath("/api/mcp/server")).toBe(false);
+    expect(isMachineDoor("/api/mcp/server")).toBe(true);
+    expect(upstreamFor("/api/mcp/server", "", { backendOrigin: "http://localhost:8000" })).toEqual({ to: "next" });
+  });
+
+  // Phase L6: the MCP registry moves to the backend with its approve and
+  // rescan doors beneath it. The platform's own MCP server stays on the
+  // console (the exact path only), and the A2A tool broker under /api/a2a
+  // is not the registry at all.
+  it("hands the MCP registry to the backend, and keeps the platform's own MCP server here", () => {
+    expect(isBackendPath("/api/mcp")).toBe(true);
+    expect(isBackendPath("/api/mcp/risk-engine")).toBe(true);
+    expect(isBackendPath("/api/mcp/risk-engine/approve")).toBe(true);
+    expect(isBackendPath("/api/mcp/risk-engine/rescan")).toBe(true);
+    expect(isBackendPath("/api/mcp/server")).toBe(false);
+    expect(isBackendPath("/api/mcp/server/x")).toBe(true);
+    expect(isBackendPath("/api/mcpx")).toBe(false);
+    expect(isBackendPath("/api/a2a/mcp/vendor-copilot")).toBe(false);
+    expect(upstreamFor("/api/mcp", "", BOTH)).toEqual({ to: "backend", url: "http://localhost:8000/api/mcp" });
+    expect(upstreamFor("/api/mcp/risk-engine/approve", "", BOTH)).toEqual({ to: "backend", url: "http://localhost:8000/api/mcp/risk-engine/approve" });
+    expect(upstreamFor("/api/mcp/risk-engine", "", { backendOrigin: "http://localhost:8000" })).toEqual({ to: "backend", url: "http://localhost:8000/api/mcp/risk-engine" });
+    // The platform's MCP server never goes to the backend: with only the
+    // backend named it stays in Next; behind the tunnel it goes where every
+    // other console route goes.
+    expect(upstreamFor("/api/mcp/server", "", { backendOrigin: "http://localhost:8000" })).toEqual({ to: "next" });
+    expect(upstreamFor("/api/mcp/server", "", BOTH)).toEqual({ to: "runtime", url: "https://agentruntime.autogrc.cloud/api/mcp/server" });
+    expect(upstreamFor("/api/a2a/mcp/vendor-copilot", "", { backendOrigin: "http://localhost:8000" })).toEqual({ to: "next" });
   });
 
   // Phase L5: the attention queue, the fleet and lockdown doors and the
@@ -110,7 +159,8 @@ describe("backend-owned paths", () => {
     expect(isBackendPath("/api/screenerx")).toBe(false);
     expect(isBackendPath("/api/runsx")).toBe(false);
     expect(isBackendPath("/api/agentsx")).toBe(false);
-    expect(isBackendPath("/api/sdk/runs")).toBe(false);
+    expect(isBackendPath("/api/sdk/runs")).toBe(true);
+    expect(isBackendPath("/api/sdkx")).toBe(false);
     expect(isBackendPath("/api/a2a")).toBe(false);
     expect(isBackendPath("/api/mcp/server")).toBe(false);
     expect(isBackendPath("/api/control")).toBe(false);
@@ -120,12 +170,17 @@ describe("backend-owned paths", () => {
   });
 
   // The authoring conversation is the console's loop; only its runtime steps
-  // (reference, propose) are the backend's. The exception is the exact path.
+  // (reference, propose) are the backend's. The platform's own MCP server is
+  // the console's; the registry around it is the backend's. Each exception
+  // is the exact path.
   it("keeps the console's named exceptions in Next, and only those", () => {
-    expect(CONSOLE_UNDER_BACKEND).toContain("/api/author/chat");
+    expect(CONSOLE_UNDER_BACKEND).toEqual(["/api/author/chat", "/api/mcp/server"]);
     expect(isBackendPath("/api/author/chat")).toBe(false);
     expect(isBackendPath("/api/author/chat/x")).toBe(true);
     expect(isBackendPath("/api/author")).toBe(true);
+    expect(isBackendPath("/api/mcp/server")).toBe(false);
+    expect(isBackendPath("/api/mcp/serverx")).toBe(true);
+    expect(isBackendPath("/api/mcp")).toBe(true);
   });
 });
 
@@ -196,7 +251,7 @@ describe("upstreamFor", () => {
  * route: a person reads and changes it, so it is not a door.
  */
 describe("machine doors", () => {
-  it("names the backend's keyed doors and the console's own", () => {
+  it("names the backend's keyed doors (the SDK door among them since L6) and the console's own", () => {
     for (const d of ["/api/trigger/", "/api/webhooks/", "/api/worker/", "/api/gateway/", "/api/retrieval/", "/api/apps/", "/api/sdk/", "/api/sdk", "/api/a2a", "/api/mcp/server", "/api/auth/", "/api/answer/"]) {
       expect(MACHINE_DOORS, `${d} is a machine door`).toContain(d);
     }
@@ -245,6 +300,9 @@ describe("machine doors", () => {
     expect(isMachineDoor("/api/appsx/chat")).toBe(false);
     expect(isMachineDoor("/api/mcp")).toBe(false);
     expect(isMachineDoor("/api/mcp/serverx")).toBe(false);
+    // The registry's doors are a person's (configure), so the cookie gate stands in front of them.
+    expect(isMachineDoor("/api/mcp/risk-engine/approve")).toBe(false);
+    expect(isMachineDoor("/api/mcp/risk-engine/rescan")).toBe(false);
     expect(isMachineDoor("/api/a2ax")).toBe(false);
     expect(isMachineDoor("/api/runs")).toBe(false);
     expect(isMachineDoor("/api/guardrails")).toBe(false);

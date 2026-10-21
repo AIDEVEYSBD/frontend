@@ -7,9 +7,21 @@ import { Banner } from "./overlays";
 import { AFMark } from "./brand";
 import { Material } from "./material";
 import { ThemeToggle } from "./theme";
-import { readExternalGate, submitExternalAnswer, type Answer, type AnswerResult, type ExternalGate } from "@/lib/api/l5";
-import { emptyForm, validateForm, validateVerdicts, type FormState } from "@/lib/gates";
-import { EvidencePanel, GateFields, GateMeta, ShapeTag, VerdictTable, useNow } from "./gate-form";
+import { DoorError, readExternalGate, submitExternalAnswer, type Answer, type AnswerResult, type ExternalGate } from "@/lib/api/l5";
+import { declaresNote, emptyForm, refusalErrors, validateForm, validateVerdicts, type FormState } from "@/lib/gates";
+import { Deadline, EvidencePanel, GateFields, NextLines, ShapeTag, VerdictTable, useNow } from "./gate-form";
+
+/**
+ * Why a link does not open, by the door's status: 410 is a link that was
+ * one and is no more (used, expired, or its gate closed), 404 a token that
+ * is not one of ours, 409 a run that is running right now.
+ */
+function linkTrouble(status: number): { title: string; tail: string } {
+  if (status === 410) return { title: "This link has been used or has expired", tail: "Ask the person who sent it for a new one." };
+  if (status === 404) return { title: "This link is not valid", tail: "Check that the whole address was copied, or ask the person who sent it for a new one." };
+  if (status === 409) return { title: "The workflow is running right now", tail: "It is not waiting for an answer at this moment; try the link again shortly." };
+  return { title: "This link cannot be opened", tail: "Try again, or ask the person who sent it for a new one." };
+}
 
 /**
  * An outside participant answers one gate.
@@ -25,7 +37,7 @@ import { EvidencePanel, GateFields, GateMeta, ShapeTag, VerdictTable, useNow } f
  */
 export function AnswerPage({ token }: { token: string }) {
   const [data, setData] = useState<ExternalGate | null>(null);
-  const [loadError, setLoadError] = useState("");
+  const [loadError, setLoadError] = useState<{ status: number; message: string } | null>(null);
   const now = useNow();
 
   const [form, setForm] = useState<FormState>({});
@@ -46,7 +58,7 @@ export function AnswerPage({ token }: { token: string }) {
         setData(d);
         setForm(emptyForm(d.gate.fields));
       })
-      .catch((e) => !stop && setLoadError((e as Error).message));
+      .catch((e) => !stop && setLoadError({ status: e instanceof DoorError ? e.status : 0, message: (e as Error).message }));
     return () => {
       stop = true;
     };
@@ -80,6 +92,9 @@ export function AnswerPage({ token }: { token: string }) {
     try {
       setResult(await submitExternalAnswer(token, answer, note.trim()));
     } catch (e) {
+      // A 400 names the field it refused: mark it where it was typed.
+      const marked = e instanceof DoorError ? refusalErrors(g, e.field, e.message) : {};
+      if (Object.keys(marked).length) setErrors(marked);
       setFailure((e as Error).message);
     } finally {
       setBusy(null);
@@ -103,8 +118,8 @@ export function AnswerPage({ token }: { token: string }) {
 
       <main className="mx-auto flex w-full max-w-[860px] flex-col gap-4 px-4 py-7 sm:px-5">
         {loadError && (
-          <Banner tone="err" title="This link cannot be opened">
-            {loadError}. The link may have expired, been used already, or been made for a different gate. Ask the person who sent it for a new one.
+          <Banner tone="err" title={linkTrouble(loadError.status).title}>
+            {loadError.message}. {linkTrouble(loadError.status).tail}
           </Banner>
         )}
         {!data && !loadError && <p className="text-[12.5px] text-faint">Reading the gate…</p>}
@@ -122,12 +137,6 @@ export function AnswerPage({ token }: { token: string }) {
               {data.expires_at ? ` and expires ${new Date(data.expires_at).toLocaleString()}` : ""}.
             </Banner>
 
-            {data.spent && !result && (
-              <Banner tone="warn" title="This link has already been used">
-                The gate took its answer earlier. Nothing more can be sent from here.
-              </Banner>
-            )}
-
             <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
               <div data-hue="amber" className="flex w-full flex-wrap items-center gap-3 border-b border-line bg-raise/55 px-4 py-2.5">
                 <Status tone="warn">gate</Status>
@@ -137,20 +146,29 @@ export function AnswerPage({ token }: { token: string }) {
                 <Mono className="text-[10px] text-ghost">{data.gate.run}</Mono>
               </div>
               <EvidencePanel evidence={data.gate.evidence} />
-              <div className="border-b border-line">
-                <GateMeta gate={data.gate} now={now} />
+              {/* What the link is told: when the answer is due and what each answer does. Who else may answer is the firm's, not the page's. */}
+              <div className="flex flex-col gap-2 border-b border-line px-4 py-3 text-[11.5px] text-faint">
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="text-dim">Answer due</span>
+                  <Deadline deadline={data.gate.deadline} now={now} />
+                </span>
+                <NextLines gate={data.gate} />
               </div>
 
               <div className="flex flex-col gap-3 px-4 py-3">
                 {data.gate.shape === "form" && (
-                  <GateFields fields={data.gate.fields} state={form} errors={errors} onChange={(name, v) => { setForm((f) => ({ ...f, [name]: v })); setErrors((e) => ({ ...e, [name]: "" })); }} disabled={Boolean(busy) || done || data.spent} />
+                  <GateFields fields={data.gate.fields} state={form} errors={errors} onChange={(name, v) => { setForm((f) => ({ ...f, [name]: v })); setErrors((e) => ({ ...e, [name]: "" })); }} disabled={Boolean(busy) || done} />
                 )}
                 {data.gate.shape === "verdicts" && (
-                  <VerdictTable items={data.gate.items} verdicts={data.gate.verdicts} transitions={data.gate.transitions} chosen={chosen} errors={errors} onChange={(c) => { setChosen(c); setErrors({}); }} disabled={Boolean(busy) || done || data.spent} />
+                  <VerdictTable items={data.gate.items} verdicts={data.gate.verdicts} transitions={data.gate.transitions} chosen={chosen} errors={errors} onChange={(c) => { setChosen(c); setErrors({}); }} disabled={Boolean(busy) || done} />
                 )}
-                <Field label={data.gate.shape === "decision" ? "Reason" : "Note"} hint="Optional. It goes into the record beside your answer.">
-                  <Textarea rows={3} value={note} onChange={setNote} disabled={Boolean(busy) || done || data.spent} placeholder={data.gate.shape === "decision" ? "Why this decision stands." : "Anything the record should carry beside the answer."} />
-                </Field>
+                {data.gate.shape === "decision" && errors.decision && <p className="text-[11.5px] text-err">{errors.decision}</p>}
+                {/* A form with its own note field takes the note there: a second box would overwrite it. */}
+                {!declaresNote(data.gate) && (
+                  <Field label={data.gate.shape === "decision" ? "Reason" : "Note"} hint="Optional. It goes into the record beside your answer.">
+                    <Textarea rows={3} value={note} onChange={setNote} disabled={Boolean(busy) || done} placeholder={data.gate.shape === "decision" ? "Why this decision stands." : "Anything the record should carry beside the answer."} />
+                  </Field>
+                )}
                 {failure && <p className="text-[11.5px] leading-[1.55] text-err">{failure}</p>}
                 {result && (
                   <p className={`text-[11.5px] leading-[1.55] ${done ? "text-ok" : "text-err"}`}>
@@ -162,15 +180,15 @@ export function AnswerPage({ token }: { token: string }) {
               <footer className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">
                 {data.gate.shape === "decision" ? (
                   <>
-                    <Button size="md" variant="solid" tone="ink" loading={busy === "approve"} disabled={Boolean(busy) || done || data.spent} onClick={() => submit(true)}>
+                    <Button size="md" variant="solid" tone="ink" loading={busy === "approve"} disabled={Boolean(busy) || done} onClick={() => submit(true)}>
                       Approve
                     </Button>
-                    <Button size="md" variant="solid" tone="err" loading={busy === "refuse"} disabled={Boolean(busy) || done || data.spent} onClick={() => submit(false)}>
+                    <Button size="md" variant="solid" tone="err" loading={busy === "refuse"} disabled={Boolean(busy) || done} onClick={() => submit(false)}>
                       Refuse
                     </Button>
                   </>
                 ) : (
-                  <Button size="md" variant="solid" tone="ink" loading={busy === "submit"} disabled={Boolean(busy) || done || data.spent} onClick={() => submit()}>
+                  <Button size="md" variant="solid" tone="ink" loading={busy === "submit"} disabled={Boolean(busy) || done} onClick={() => submit()}>
                     {data.gate.shape === "form" ? "Submit answer" : "Record verdicts"}
                   </Button>
                 )}

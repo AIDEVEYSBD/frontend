@@ -13,9 +13,14 @@ import { FRONTEND } from "./routes";
  * lib/ starts a Python process. This reads every source file and fails on
  * the first that does, so the habit cannot creep back one route at a time.
  *
- * The MCP helpers in lib/server still spawn a registered tool server by the
- * command its registration names; that is the MCP registry's job until it
- * moves, and it is not a hard-coded interpreter.
+ * The A2A tool broker (lib/server/mcp-call.ts) still spawns a registered
+ * tool server by the command its registration names, to make one call; the
+ * registry itself, discovery included, is the backend's since phase L6, and
+ * so is the SDK door (`/api/sdk`), whose run records the console used to
+ * write itself. The command is the registration's, never a hard-coded
+ * interpreter, and the broker refuses, before anything is spawned, a server
+ * it cannot start as registered (an `isolate` it has no container for, an
+ * environment still holding `${secret:…}` references it has no vault for).
  */
 
 function sources(dir: string): string[] {
@@ -37,6 +42,14 @@ const files = [...sources("app"), ...sources("lib")];
 describe("no python3 subprocess in the console", () => {
   it("reads the sources", () => {
     expect(files.length).toBeGreaterThan(50);
+  });
+
+  it("leaves the SDK door to the backend: no source of the console's answers under /api/sdk", () => {
+    expect(files.filter((f) => f.startsWith("app/api/sdk/"))).toEqual([]);
+  });
+
+  it("starts processes in one place only, the A2A tool broker", () => {
+    expect(files.filter((f) => CHILD_PROCESS.test(readFileSync(path.join(FRONTEND, f), "utf-8")))).toEqual(["lib/server/mcp-call.ts"]);
   });
 
   for (const file of files) {

@@ -4,6 +4,8 @@
  * real journal from a script as well as rendered by the board.
  */
 
+import { sandboxLine, sandboxRunOf } from "./sandbox";
+
 export interface BoardEntry {
   id: string;
   t: number;
@@ -77,6 +79,9 @@ export const fmtMs = (ms: number) => (ms < 1000 ? `${Math.round(ms)}ms` : ms < 6
 
 export function summarise(value: unknown): string {
   if (value === null || value === undefined) return "";
+  // An isolated `sandbox.execute` (phase L6) reads as its exit, isolator and time, never as its keys.
+  const sandbox = sandboxRunOf(value);
+  if (sandbox) return sandboxLine(sandbox);
   if (typeof value === "string") {
     const flat = value.replace(/\s+/g, " ").trim();
     return flat.length > 110 ? flat.slice(0, 107) + "…" : flat;

@@ -6,8 +6,8 @@ import { Checkbox, Field, Input, Textarea } from "./forms";
 import { Pick } from "./select";
 import { CURRENT_USER } from "@/lib/user";
 import { useSession, signerName } from "@/lib/use-session";
-import { answerGate, answerGates, listGates, mintLink, type Answer, type AnswerResult, type Gate, type MintedLink } from "@/lib/api/l5";
-import { batchable, emptyForm, gateAccess, validateForm, validateVerdicts, type Access, type FormState } from "@/lib/gates";
+import { answerGate, answerGates, DoorError, listGates, mintLink, type Answer, type AnswerResult, type Gate, type MintedLink } from "@/lib/api/l5";
+import { batchable, declaresNote, emptyForm, gateAccess, refusalErrors, validateForm, validateVerdicts, type Access, type FormState } from "@/lib/gates";
 import { Deadline, EvidencePanel, GateFields, GateMeta, ShapeTag, SignerLine, VerdictTable, useNow } from "./gate-form";
 
 /**
@@ -168,6 +168,9 @@ export function ApproveDialog({
       setResults(out);
       if (out.some((r) => r.ok || r.state === "closed")) onAnswered();
     } catch (e) {
+      // A 400 names the field it refused: mark it where it was typed.
+      const marked = !batch && e instanceof DoorError ? refusalErrors(gate, e.field, e.message) : {};
+      if (Object.keys(marked).length) setDraft((d) => ({ ...d, errors: { ...d.errors, ...marked } }));
       setFailure((e as Error).message);
     } finally {
       setBusy(null);
@@ -379,9 +382,12 @@ function GateAnswer({ gate, draft, onChange, disabled, decisionPick = false }: {
         <VerdictTable items={gate.items} verdicts={gate.verdicts} transitions={gate.transitions} chosen={draft.chosen} errors={draft.errors} onChange={(chosen) => onChange({ ...draft, chosen, errors: {} })} disabled={disabled} />
       )}
       {gate.shape === "decision" && decisionPick && <OwnDecision draft={draft} onChange={onChange} disabled={disabled} />}
-      <Field label={gate.shape === "decision" ? "Reason" : "Note"} hint="Optional, and the first thing a reviewer reads six months from now.">
-        <Textarea rows={2} value={draft.note} onChange={(v) => onChange({ ...draft, note: v })} placeholder={gate.shape === "decision" ? "Why this decision stands, or why it is being overridden." : "Anything the record should carry beside the answer."} disabled={disabled} />
-      </Field>
+      {/* A form with its own note field takes the note there: a second box would overwrite it. */}
+      {!declaresNote(gate) && (
+        <Field label={gate.shape === "decision" ? "Reason" : "Note"} hint="Optional, and the first thing a reviewer reads six months from now.">
+          <Textarea rows={2} value={draft.note} onChange={(v) => onChange({ ...draft, note: v })} placeholder={gate.shape === "decision" ? "Why this decision stands, or why it is being overridden." : "Anything the record should carry beside the answer."} disabled={disabled} />
+        </Field>
+      )}
     </div>
   );
 }

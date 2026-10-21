@@ -12,10 +12,11 @@ import { isMachineDoor, isOpenPage, upstreamFor } from "@/lib/route-policy";
  *   keys, attached agents, IAM, the vault, the trigger, webhook, queue and
  *   worker doors, the applications register with its gateway, retrieval and
  *   chatbot doors, the attention, fleet, lockdown and external answer doors,
- *   and the health check) are forwarded there at request
- *   time, with the shared secret attached and the session cookie forwarded.
- *   This happens before, and independently of, the RUNTIME_ORIGIN rewrite
- *   below. The local backend is `http://localhost:8000`
+ *   the MCP registry (not the platform's own MCP server at /api/mcp/server,
+ *   which stays here), the SDK door, and the health check) are forwarded
+ *   there at request time, with the shared secret attached and the session
+ *   cookie forwarded. This happens before, and independently of, the
+ *   RUNTIME_ORIGIN rewrite below. The local backend is `http://localhost:8000`
  *   (backend/CONTRACT.md). Without BACKEND_ORIGIN those paths have no
  *   answer here: the console serves pages and the domains that have not
  *   moved yet (frontend/README.md lists them).
@@ -50,8 +51,9 @@ const PUBLIC_ORIGIN = (process.env.NEXT_PUBLIC_ORIGIN ?? process.env.PUBLIC_ORIG
 // own secret; for the external answer door, the signed link token), so the
 // cookie gate never stands in front of them: the backend's trigger, webhook
 // and worker doors, the L4 gateway, retrieval and chatbot doors (application
-// keys), the L5 answer door, and the console's SDK, A2A and platform-MCP
-// doors. The list is MACHINE_DOORS in lib/route-policy.ts, so
+// keys), the L5 answer door, the L6 SDK door (an attached agent's scoped
+// key), and the console's A2A and platform-MCP doors. The list is
+// MACHINE_DOORS in lib/route-policy.ts, so
 // tests/proxy.test.ts holds it. Sign-in itself is open too, or nobody could
 // start; so is the external answer page, which is where that token is used
 // (OPEN_PAGES and OPEN_PREFIXES there, held by the same test).

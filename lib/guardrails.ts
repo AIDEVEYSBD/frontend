@@ -244,6 +244,24 @@ export const CONTROLS: Control[] = [
     ],
   },
   {
+    id: "AF-HO-04",
+    family: "HO",
+    title: "Two-person tool admission",
+    statement:
+      "Where the deployment requires it, a tool server shall not be approved by the person who registered it.",
+    implementation:
+      "With two-person approval on, the MCP registry refuses an approval signed by the server's own registrant and names this control, so admitting a server to runs takes two people.",
+    evidence: "Each server's registrant beside the approvals on its pin, and the refused approval in the access record.",
+    // The registry refuses outside any run, naming `two_person` (an alias below).
+    journal: "—",
+    order: null,
+    references: [
+      EU("Art. 14", "Human oversight"),
+      NIST("GOVERN", "Roles and responsibilities are defined"),
+      ASI("ASI04", "Agentic supply chain"),
+    ],
+  },
+  {
     id: "AF-DP-05",
     family: "DP",
     title: "Retrieval scope enforcement",
@@ -373,6 +391,23 @@ export const CONTROLS: Control[] = [
     journal: "—",
     order: null,
     references: [ASI("ASI05", "Unexpected code execution"), EU("Art. 15", "Accuracy, robustness and cybersecurity")],
+  },
+  {
+    id: "AF-IN-05",
+    family: "IN",
+    title: "Tool supply-chain pinning",
+    statement:
+      "A tool server shall reach a run only under the tool list a person approved, and a server whose tool list differs from the approved one shall not attach until it is approved again.",
+    implementation:
+      "Registering starts the server once, screens every tool's name, description and schema, and pins the tool list by SHA-256 digest; the server stays pending until a person approves the pin. The runtime refuses to attach a server whose pin is not approved or whose live tool list differs from it, and a rescan that finds a different list marks the server changed and detaches it.",
+    evidence: "The registry's pin, scans and approvals for every server, and a refusal entry naming the server wherever an unapproved or changed one was asked for.",
+    journal: "supply_chain",
+    order: null,
+    references: [
+      ASI("ASI04", "Agentic supply chain"),
+      LLM("LLM04", "Supply chain"),
+      ISO("A.10", "Third-party relationships"),
+    ],
   },
 
   /* ── Resilience ── */
@@ -548,11 +583,72 @@ export const RESIDUAL_RISK = {
  * catalogue id for a kill or a marking — and this maps either back.
  */
 export function explainControl(control: string): { name: string; decides: string; id?: string } {
-  const c = CONTROLS.find((x) => x.id === control) ?? CONTROLS.find((x) => x.journal === control);
+  const alias = Object.hasOwn(ALIASES, control) ? ALIASES[control] : PREFIX_ALIASES.find(([p]) => control.startsWith(p))?.[1];
+  const c =
+    CONTROLS.find((x) => x.id === control) ??
+    CONTROLS.find((x) => x.journal === control) ??
+    (alias ? CONTROLS.find((x) => x.id === alias) : undefined);
   if (c) return { name: c.title, decides: c.statement, id: c.id };
-  if (control === "contract.breach") {
-    const t = CONTROLS.find((x) => x.id === "AF-IN-01")!;
-    return { name: t.title, decides: t.statement, id: t.id };
-  }
   return { name: control, decides: "" };
+}
+
+/**
+ * Keys that name a register row other than by its journal key. A typed
+ * interface breach is journalled by its kind; the MCP registry's refusals
+ * happen outside any run (phase L6): `screener` when a tool's name,
+ * description or schema read as an injection at admission (and
+ * `screener.unavailable` when the screener could not judge, so nothing was
+ * admitted), `two_person` when the server's own registrant tried to
+ * approve it. The hits themselves name the screener's tool rules
+ * (backend/README.md): `classifier.tool` for weak signals together.
+ */
+const ALIASES: Record<string, string> = {
+  "contract.breach": "AF-IN-01",
+  screener: "AF-DP-04",
+  "screener.unavailable": "AF-DP-04",
+  "classifier.tool": "AF-DP-04",
+  two_person: "AF-HO-04",
+};
+
+/**
+ * Families of keys that name one register row: the local screener's
+ * tool-poisoning rules (`poisoning.override`, `.concealment`,
+ * `.credentials`, `.exfiltration`, `.hidden`, `.shadowing`, `.name`) and
+ * Model Armor's verdicts on a tool (`modelarmor.tool.<filter>`), all of them
+ * content screening applied to what a tool tells a model about itself.
+ */
+const PREFIX_ALIASES: [string, string][] = [
+  ["poisoning.", "AF-DP-04"],
+  ["modelarmor.tool", "AF-DP-04"],
+];
+
+/**
+ * A firing in a line, for the places that show one by its key rather than
+ * its register row: the MCP registry's refusals and screener hits, a tool
+ * server the builder holds back, a call the runtime would not attach. A key
+ * with no line of its own reads as its control's title; an unknown key as
+ * itself.
+ */
+export const CONTROL_LABELS: Record<string, string> = {
+  supply_chain: "Tool server not approved or its tools changed",
+  two_person: "A second person must approve",
+  screener: "A tool's name, description or schema failed screening",
+  "screener.unavailable": "The screener could not judge, so nothing was admitted",
+  egress: "Host outside the egress allowlist",
+  "poisoning.override": "Tool text overrides the agent's instructions",
+  "poisoning.concealment": "Tool text hides a step from the user",
+  "poisoning.credentials": "Tool text reaches for credentials",
+  "poisoning.exfiltration": "Tool text sends data to an outside address",
+  "poisoning.hidden": "Hidden instructions in tool text",
+  "poisoning.shadowing": "Tool text reshapes other tools",
+  "poisoning.name": "Tool name outside the MCP character set",
+  "classifier.tool": "Tool text reads as instructions to the model",
+};
+
+export function controlLabel(key: string): string {
+  if (Object.hasOwn(CONTROL_LABELS, key)) return CONTROL_LABELS[key];
+  // Model Armor names the filter that matched: `modelarmor.tool.pi_and_jailbreak`.
+  const armor = /^modelarmor\.tool\.(.+)$/.exec(key);
+  if (armor) return `Model Armor flagged tool text (${armor[1].replace(/_/g, " ")})`;
+  return explainControl(key).name;
 }

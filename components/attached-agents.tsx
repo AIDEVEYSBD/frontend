@@ -511,7 +511,7 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
                             ))}
                           </div>
                         ))}
-                        {registry.length === 0 && <span className="bg-surface px-3 py-2 text-[11px] text-faint">No MCP servers are connected to this deployment yet; connect one in the builder and its tools appear here.</span>}
+                        {registry.length === 0 && <span className="bg-surface px-3 py-2 text-[11px] text-faint">No tool server&rsquo;s tools are on offer yet; register one under Tool servers on this page, and its tools appear here once its pin is approved.</span>}
                       </div>
                     </div>
                   </td>

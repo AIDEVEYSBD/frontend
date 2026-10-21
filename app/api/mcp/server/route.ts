@@ -17,7 +17,9 @@ import { MCP_ENDPOINT } from "@/lib/site";
  *
  * GET describes the server for the console (under the person's session) and
  * for an MCP client (under its key). (The registry of servers this
- * deployment connects to is /api/mcp.)
+ * deployment connects to is /api/mcp, the backend's since phase L6; this
+ * path is the one beneath it that stays here, lib/route-policy.ts
+ * CONSOLE_UNDER_BACKEND.)
  */
 
 export const runtime = "nodejs";

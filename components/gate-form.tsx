@@ -2,10 +2,11 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { Mono, Status, Tag } from "./ui";
+import { RunSourceTag } from "./run-source";
 import { Field, Input, Textarea } from "./forms";
 import { Pick } from "./select";
 import type { Evidence, Gate, GateField, Shape, VerdictItem } from "@/lib/api/l5";
-import { allowedVerdicts, bulkVerdict, countdown, type FormState } from "@/lib/gates";
+import { allowedVerdicts, bulkVerdict, chainOf, countdown, type FormState } from "@/lib/gates";
 
 /**
  * The parts of a gate's interface, shared by every place one is answered:
@@ -48,9 +49,29 @@ export function ShapeTag({ shape }: { shape: Shape }) {
 
 /* ═══════════════════ who, when, where it goes next ═══════════════════ */
 
+/** What each answer does next, in the backend's words; nothing when the row carries none (a gate built from a live suspension). */
+export function NextLines({ gate }: { gate: Pick<Gate, "shape" | "next"> }) {
+  const { approve, refuse } = gate.next;
+  if (!approve && !refuse) return null;
+  return (
+    <span className="flex flex-col gap-0.5 text-[11px]">
+      {approve && (
+        <span>
+          <span className="text-dim">{gate.shape === "decision" ? "If approved" : "Once answered"}</span> · {approve}
+        </span>
+      )}
+      {refuse && gate.shape === "decision" && (
+        <span>
+          <span className="text-dim">If refused</span> · {refuse}
+        </span>
+      )}
+    </span>
+  );
+}
+
 export function GateMeta({ gate, now }: { gate: Gate; now: number }) {
   const current = gate.approvers;
-  const walked = gate.escalations.length;
+  const c = chainOf(gate);
   return (
     <div className="flex flex-col gap-2 px-4 py-3 text-[11.5px] text-faint">
       <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -60,18 +81,24 @@ export function GateMeta({ gate, now }: { gate: Gate; now: number }) {
         <span className="text-dim">Deadline</span>
         <Deadline deadline={gate.deadline} now={now} />
       </span>
-      {(gate.chain.length > 0 || walked > 0) && (
+      {(c.ahead.length > 0 || c.passedFirst) && (
         <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
           <span className="text-dim">Chain</span>
-          {gate.escalations.map((e, i) => (
-            <span key={`e-${i}`} className="inline-flex items-center gap-1">
-              <span className="line-through decoration-line-strong">{e.from.join(", ") || "first approvers"}</span>
+          {c.passedFirst && (
+            <span className="inline-flex items-center gap-1">
+              <span className="line-through decoration-line-strong">first approvers</span>
+              <span className="text-ghost">→</span>
+            </span>
+          )}
+          {c.passed.map((r, i) => (
+            <span key={`p-${i}`} className="inline-flex items-center gap-1">
+              <span className="line-through decoration-line-strong">{r}</span>
               <span className="text-ghost">→</span>
             </span>
           ))}
           <span className="font-medium text-fg">{current.join(", ") || "current"}</span>
-          {gate.chain.map((r, i) => (
-            <span key={`c-${i}`} className="inline-flex items-center gap-1">
+          {c.ahead.map((r, i) => (
+            <span key={`a-${i}`} className="inline-flex items-center gap-1">
               <span className="text-ghost">→</span>
               <span>{r}</span>
             </span>
@@ -79,17 +106,16 @@ export function GateMeta({ gate, now }: { gate: Gate; now: number }) {
           {gate.on_timeout && <span className="text-ghost">· on timeout: {gate.on_timeout}</span>}
         </span>
       )}
-      {walked > 0 && (
-        <span className="flex flex-col gap-0.5">
-          {gate.escalations.map((e, i) => (
-            <span key={i} className="text-[11px]">
-              Escalated {e.at ? new Date(e.at).toLocaleString() : ""} to {e.to.join(", ") || "the next role"}
-              {e.reason ? ` · ${e.reason}` : ""}
-            </span>
-          ))}
+      {gate.escalations > 0 && (
+        <span className="text-[11px]">
+          Escalated {gate.escalations}× along the chain
+          {c.ahead.length ? `; next ${c.ahead[0]} if this deadline passes` : gate.on_timeout === "escalate" ? "; the chain is spent, so when this deadline passes the gate is aborted and the run fails" : ""}
         </span>
       )}
+      <NextLines gate={gate} />
       <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        {/* An attached agent's gate (SDK, A2A): the answer goes back on its own channel, as the next steps above say. */}
+        <RunSourceTag run={{ source: gate.source }} />
         <span>Waiting since {gate.waiting_since ? new Date(gate.waiting_since).toLocaleString() : "unknown"}</span>
         {gate.external.allowed && <Status tone="queue">may be answered from outside</Status>}
         {gate.job?.external_id && <span>· raised by {gate.job.source} as {gate.job.external_id}</span>}
@@ -115,7 +141,7 @@ function Value({ v }: { v: unknown }) {
 export function EvidencePanel({ evidence, asks }: { evidence: Evidence; asks?: string }) {
   const decided = Object.entries(evidence.decided);
   const presented = Object.entries(evidence.presented);
-  if (!decided.length && !presented.length && !evidence.tainted_by.length) return null;
+  if (!decided.length && !presented.length && !evidence.tainted_by.length && !evidence.trail.length) return null;
   return (
     <div className="border-b border-line">
       {decided.length > 0 && (
@@ -145,6 +171,23 @@ export function EvidencePanel({ evidence, asks }: { evidence: Evidence; asks?: s
           <Tag tone="warn">tainted input</Tag>
           <span className="text-[11px] text-faint">Some of this came from outside the firm: {evidence.tainted_by.join(", ")}</span>
         </div>
+      )}
+      {evidence.trail.length > 0 && (
+        <>
+          <span className="block px-4 pt-2.5 pb-1 text-[11px] font-semibold text-dim">How the run got here</span>
+          <ol className="flex flex-col gap-1 px-4 pb-2.5">
+            {evidence.trail.map((e) => (
+              <li key={e.id || `${e.kind}-${e.t}`} className="flex min-w-0 items-baseline gap-2 text-[11.5px]">
+                <Mono className="w-[84px] shrink-0 truncate text-[10px] text-ghost">{e.kind}</Mono>
+                <span className="min-w-0 grow truncate text-mist">
+                  {e.node && <span className="text-faint">{e.node} · </span>}
+                  {e.summary || e.title || e.detail}
+                </span>
+                {e.tainted && <Tag tone="warn">tainted</Tag>}
+              </li>
+            ))}
+          </ol>
+        </>
       )}
       {asks && !decided.length && !presented.length && <p className="px-4 py-2 text-[11.5px] text-faint">{asks}</p>}
     </div>
@@ -204,7 +247,7 @@ export function GateFields({ fields, state, errors, onChange, disabled }: { fiel
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {fields.map((f) => {
         const label = `${f.label ?? f.name.replace(/_/g, " ")}${f.required ? " *" : ""}`;
-        const hint = f.hint ?? (f.required ? undefined : "optional");
+        const hint = [f.hint, f.required ? "" : "optional"].filter(Boolean).join(" · ") || undefined;
         const err = errors[f.name];
         const raw = state[f.name];
         const wide = f.kind === "object" || f.kind === "list" || (f.kind === "string" && NOTE_LIKE.test(f.name));

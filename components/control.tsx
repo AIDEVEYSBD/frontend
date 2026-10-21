@@ -20,10 +20,12 @@ import { WindowPick, nextWin, winMs, type Win } from "./window-pick";
 import { Pick } from "./select";
 import { Checkbox } from "./forms";
 import { api, errorText, type RunRow as LedgerRow } from "@/lib/api/client";
-import type { RunRowL5 } from "@/lib/api/l5";
+import { inFlight, type RunRowL5 } from "@/lib/api/l5";
 import { KillDialog } from "./kill-dialog";
+import { RunSourceTag } from "./run-source";
+import { runSourceOf } from "@/lib/api/l6";
 import { AttentionPanel } from "./attention";
-import { FleetBar, LockdownBanner, LockdownSwitch, useLockdown } from "./operate";
+import { FleetBar, LockdownBanner, LockdownSwitch, useFleet, useLockdown } from "./operate";
 import { Deadline, ShapeTag, useNow } from "./gate-form";
 import { batchable } from "@/lib/gates";
 import { useSession } from "@/lib/use-session";
@@ -62,6 +64,8 @@ interface RunRow {
   artifacts: number;
   artifactNames: string[];
   byModel: { model: string; in: number; out: number; cost: number | null }[];
+  /** `sdk` or `a2a` when an attached agent opened the run; "" for the platform's own. */
+  source?: string;
 }
 
 interface AgentRow {
@@ -151,8 +155,8 @@ interface ControlData {
     avgMs7d: number | null;
   };
   agents: AgentRow[];
-  /** In flight, from the backend's ledger. `stuck` and `waitingOn` are L5's: the step is past the agent's p95, and what it is waiting on. */
-  live: { id: string; system: string; startedAt: string; stuck?: boolean; waitingOn?: string | null }[];
+  /** In flight, from the backend's ledger. `step`, `stuck` and `waitingOn` are L5's: the node in flight, whether it has run past the agent's p95 for it, and what it is waiting on. */
+  live: { id: string; system: string; startedAt: string; stuck?: boolean; waitingOn?: string | null; step?: string; stepMs?: number; stepP95Ms?: number | null; source?: string; state?: string }[];
   days: DayRow[];
   models: ModelRow[];
   runs: RunRow[];
@@ -244,7 +248,19 @@ function rewindow(d: ControlData, now: number, w: Win): ControlData {
 /** The backend's view of what is in flight (GET /api/runs, the `live` flag), laid over the estate read. Null leaves the read as it came. */
 function withLive(d: ControlData, rows: LedgerRow[] | null): ControlData {
   if (rows === null) return d;
-  const live = (rows as RunRowL5[]).map((r) => ({ id: r.id, system: r.system, startedAt: r.started, stuck: r.stuck === true, waitingOn: r.waiting_on ?? null }));
+  const live = (rows as RunRowL5[]).map((r) => ({
+    id: r.id,
+    system: r.system,
+    startedAt: r.started,
+    stuck: r.stuck === true,
+    waitingOn: r.waiting_on || null,
+    step: r.step ?? "",
+    stepMs: r.step_ms ?? 0,
+    stepP95Ms: r.step_p95_ms ?? null,
+    source: runSourceOf(r),
+    // An SDK run its agent holds open stays live at a gate (phase L6): in flight, waiting on a person.
+    state: r.state,
+  }));
   const bySystem = new Map<string, number>();
   for (const l of live) bySystem.set(l.system, (bySystem.get(l.system) ?? 0) + 1);
   return {
@@ -371,6 +387,8 @@ export function Control() {
   /* Estate rows ticked for a fleet action, by agent id. */
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const { lockdown, setState: setLockdownState } = useLockdown();
+  /* Which agents stand paused or draining: the backend's flag, read back after every fleet action. */
+  const { fleet: fleetState, reload: reloadFleet } = useFleet();
   const { session } = useSession();
   // The inbox's deadlines tick on a slow clock: the page is large, and a second is finer than a countdown in hours needs.
   const clock = useNow(15_000);
@@ -415,10 +433,11 @@ export function Control() {
     } catch {
       setQueue(null);
     }
-    // Liveness is the backend's: its ledger flags the runs in flight.
+    // Liveness is the backend's: `live` flags the runs it drives in-process,
+    // and a worker's or an attached agent's run in flight reads `running`.
     try {
       const { data } = await api.GET("/api/runs");
-      setLiveRows(data ? data.runs.filter((r) => r.live) : null);
+      setLiveRows(data ? inFlight(data.runs) : null);
     } catch {
       setLiveRows(null);
     }
@@ -551,7 +570,7 @@ export function Control() {
   );
   const locked = Boolean(lockdown?.on);
   const statusLine = locked
-    ? `lockdown${lockdown?.reason ? ` · ${lockdown.reason}` : ""}${data && t!.active > 0 ? ` · ${t!.active} in flight, held` : ""}`
+    ? `lockdown${lockdown?.reason ? ` · ${lockdown.reason}` : ""}${data && t!.active > 0 ? ` · ${t!.active} in flight` : ""}`
     : !data
       ? "reading the estate…"
       : t!.active > 0
@@ -752,9 +771,10 @@ export function Control() {
                   onClear={() => setSelected(new Set())}
                   onDone={(r) => {
                     const verb = { pause: "Paused", resume: "Resumed", drain: "Draining", kill: "Killed runs on" }[r.action];
-                    notice(`${verb} ${r.agents.length} agent${r.agents.length === 1 ? "" : "s"}${r.affected ? ` · ${r.affected} run${r.affected === 1 ? "" : "s"} affected` : ""}${r.audit ? ` · audit ${r.audit.slice(0, 8)}` : ""}`);
+                    notice(`${verb} ${r.agents.length} agent${r.agents.length === 1 ? "" : "s"}${r.killed.length ? ` · ${r.killed.length} run${r.killed.length === 1 ? "" : "s"} killed` : ""}`);
                     setSelected(new Set());
                     load();
+                    reloadFleet();
                   }}
                 />
               ) : undefined
@@ -815,6 +835,11 @@ export function Control() {
                       <Status tone="queue">Saved</Status>
                     )}
                     {a.pending > 0 && <Status tone="warn">{a.pending} waiting</Status>}
+                    {fleetState?.paused[a.id] && (
+                      <span title={`${fleetState.paused[a.id].reason}${fleetState.paused[a.id].by ? ` · ${fleetState.paused[a.id].by}` : ""}`}>
+                        <Status tone="warn">{fleetState.paused[a.id].mode === "drain" ? "Draining" : "Paused"}</Status>
+                      </span>
+                    )}
                   </span>
 
                   <span className="flex flex-col gap-1">
@@ -905,7 +930,10 @@ export function Control() {
                 >
                   <span className={`size-1.5 shrink-0 rounded-[2px] ${DOT_BG[r.state] ?? "bg-line-strong"}`} />
                   <span className="flex min-w-0 grow flex-col">
-                    <span className="truncate text-[11.5px] font-medium text-fg">{r.system}</span>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate text-[11.5px] font-medium text-fg">{r.system}</span>
+                      <RunSourceTag run={r} />
+                    </span>
                     <span className="truncate font-mono text-[9.5px] text-faint">
                       {r.state} · {fmtMs(r.ms)} · {fmtCost(r.cost)}
                       {r.denials > 0 ? ` · ${r.denials} denied` : ""}
@@ -936,11 +964,12 @@ export function Control() {
                 >
                   <span className="flex items-center gap-2">
                     <span className="truncate text-[12.5px] font-medium text-fg">{r.system}</span>
+                    <RunSourceTag run={r} />
                     {r.stuck && <Status tone="warn">stuck</Status>}
                   </span>
                   <span className={`truncate font-mono text-[10px] ${r.stuck ? "text-warn" : "text-faint"}`}>
                     {r.id} · {ago(r.startedAt)}
-                    {r.waitingOn ? ` · waiting on ${r.waitingOn}` : ""}
+                    {r.state === "suspended" ? " · at a gate, waiting on a person" : r.waitingOn ? ` · waiting on ${r.waitingOn}` : ""}
                   </span>
                 </button>
                 <KillButton id={r.id} busy={killing === r.id || killing === "*"} onKill={askKill} />
@@ -1007,7 +1036,7 @@ export function Control() {
                     <span className="flex flex-wrap items-center gap-x-2 text-[10px] text-faint">
                       <span>{g.approvers.length ? g.approvers.join(", ") : "anyone"}</span>
                       <Deadline deadline={g.deadline} now={clock} />
-                      {g.escalations.length > 0 && <span>escalated ×{g.escalations.length}</span>}
+                      {g.escalations > 0 && <span>escalated ×{g.escalations}</span>}
                     </span>
                   </button>
                   {/* Answering happens here. It used to link to the run page,
@@ -1830,7 +1859,10 @@ function RunList({
         >
           <span className={`size-1.5 shrink-0 rounded-[2px] ${DOT_BG[r.state] ?? "bg-line-strong"}`} />
           <span className="flex min-w-0 grow flex-col">
-            <span className="truncate text-[12px] font-medium text-fg">{r.system}</span>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate text-[12px] font-medium text-fg">{r.system}</span>
+              <RunSourceTag run={r} />
+            </span>
             <span className="truncate font-mono text-[9.5px] text-faint">
               {r.state} · {fmtMs(r.ms)} · {fmtCost(r.cost)}
               {r.denials > 0 ? ` · ${r.denials} denied` : ""}
@@ -1880,13 +1912,28 @@ function renderDrill(
         title: `Run · ${l.system}`,
         body: (
           <div className="flex flex-col">
-            <Fact k="State" v={<Status tone="run">running</Status>} />
-            {l.stuck && <Fact k="Stuck" v={`this step is past the agent's p95${l.waitingOn ? ` · waiting on ${l.waitingOn}` : ""}`} tone="text-warn" />}
+            <Fact
+              k="State"
+              v={
+                <span className="flex items-center gap-2">
+                  {l.state === "suspended" ? <Status tone="warn">at a gate</Status> : <Status tone="run">running</Status>}
+                  <RunSourceTag run={l} />
+                </span>
+              }
+            />
+            {l.stuck && (
+              <Fact
+                k="Stuck"
+                v={`${l.step || "this step"} has run ${fmtMs(l.stepMs ?? null)}, past the agent's p95 of ${fmtMs(l.stepP95Ms ?? null)} for it${l.waitingOn ? ` · waiting on ${l.waitingOn}` : ""}`}
+                tone="text-warn"
+              />
+            )}
             {!l.stuck && l.waitingOn && <Fact k="Waiting on" v={<Mono className="text-[10.5px]">{l.waitingOn}</Mono>} />}
             <Fact k="Started" v={ago(l.startedAt)} />
             <Fact k="Run file" v={<Mono className="text-[10px]">{l.id}</Mono>} />
             <div className="flex gap-2 px-4 py-3">
-              <Button size="sm" variant="solid" tone="ink" href={`/runs?agent=${encodeURIComponent(l.system)}`}>
+              {/* The run itself, followed live with its kill switch and steering, whoever started it. */}
+              <Button size="sm" variant="solid" tone="ink" href={`/runs?id=${encodeURIComponent(l.id)}`}>
                 Open theater
               </Button>
               <KillButton id={l.id} label="Kill this run" busy={killing === l.id || killing === "*"} onKill={onKill} />
@@ -2126,8 +2173,14 @@ function renderDrill(
             {data.live.map((l) => (
               <div key={l.id} className="flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-b-0">
                 <button type="button" onClick={() => onOpen({ kind: "run", id: l.id })} className="focusable flex min-w-0 grow cursor-pointer flex-col text-left">
-                  <span className="truncate text-[12px] font-medium text-fg">{l.system}</span>
-                  <span className="truncate font-mono text-[9.5px] text-faint">{ago(l.startedAt)}</span>
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate text-[12px] font-medium text-fg">{l.system}</span>
+                    <RunSourceTag run={l} />
+                  </span>
+                  <span className="truncate font-mono text-[9.5px] text-faint">
+                    {ago(l.startedAt)}
+                    {l.state === "suspended" ? " · at a gate" : ""}
+                  </span>
                 </button>
                 <KillButton id={l.id} busy={killing === l.id || killing === "*"} onKill={onKill} />
               </div>

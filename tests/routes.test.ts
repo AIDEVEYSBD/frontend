@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BACKEND_PREFIXES, CONSOLE_UNDER_BACKEND, PUBLIC_ROUTES, isBackendPath, readPermissionFor } from "@/lib/route-policy";
+import { BACKEND_PREFIXES, CONSOLE_UNDER_BACKEND, MACHINE_ROUTE_PREFIXES, PUBLIC_ROUTES, isBackendPath, isMachineDoor, readPermissionFor } from "@/lib/route-policy";
 import { handlersOf, isMachine, routeFiles, urlOf } from "./routes";
 
 /**
@@ -19,10 +19,28 @@ const handlers = files.flatMap(handlersOf);
 describe("route coverage", () => {
   it("finds the routes", () => {
     // What remains in Next after phase L2: knowledge, evals, FinOps, control,
-    // the assistant, observability, the MCP registry and server, the model
-    // gateway, the SDK and A2A doors, sign-in, and the authoring chat.
+    // the assistant, observability, the platform's MCP server (the registry
+    // and the SDK door went to the backend in L6), the A2A doors (the model
+    // gateway alias, the tool broker, the tasks door), sign-in, and the
+    // authoring chat.
     expect(files.length).toBeGreaterThan(25);
     expect(handlers.length).toBeGreaterThan(files.length);
+  });
+
+  // Phase L6: the SDK door is the backend's. No route file here answers for
+  // it, and the machine routes left in Next are the A2A doors and the
+  // platform's own MCP server, which stays here under the backend's /api/mcp.
+  it("has no SDK route of its own, and keeps the platform's MCP server as a machine route", () => {
+    expect(files.filter((f) => f.startsWith("app/api/sdk/"))).toEqual([]);
+    expect(MACHINE_ROUTE_PREFIXES).toEqual(["app/api/a2a/", "app/api/mcp/server/"]);
+    for (const p of ["/api/sdk", "/api/sdk/runs", "/api/sdk/runs/x/control"]) {
+      expect(isBackendPath(p), `${p} is the backend's`).toBe(true);
+      expect(isMachineDoor(p), `${p} is opened with a key, not a cookie`).toBe(true);
+    }
+    expect(files).toContain("app/api/mcp/server/route.ts");
+    expect(isMachine("app/api/mcp/server/route.ts")).toBe(true);
+    expect(isBackendPath(urlOf("app/api/mcp/server/route.ts"))).toBe(false);
+    expect(handlersOf("app/api/mcp/server/route.ts").every((h) => h.guard.kind === "machine")).toBe(true);
   });
 
   it("names only real files in PUBLIC_ROUTES", () => {

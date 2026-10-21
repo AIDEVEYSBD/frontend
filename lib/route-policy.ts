@@ -22,11 +22,11 @@ export const PUBLIC_ROUTES: Record<string, string> = {
 
 /**
  * Route files that are machine doors: API keys, never sessions. The trigger,
- * webhook and worker doors are the backend's (BACKEND_PREFIXES below), so no
- * route file answers for them here; proxy.ts still exempts their URLs from
- * the cookie gate.
+ * webhook and worker doors, and since phase L6 the SDK door, are the
+ * backend's (BACKEND_PREFIXES below), so no route file answers for them
+ * here; proxy.ts still exempts their URLs from the cookie gate.
  */
-export const MACHINE_ROUTE_PREFIXES = ["app/api/a2a/", "app/api/sdk/", "app/api/mcp/server/"];
+export const MACHINE_ROUTE_PREFIXES = ["app/api/a2a/", "app/api/mcp/server/"];
 
 /**
  * Reads gated above "view", by file prefix. Every other GET is a viewer's to
@@ -50,6 +50,11 @@ export const STRICT_READS: Record<string, string> = { "app/api/iam/": "iam" };
  * fleet and lockdown doors and the external answer door (`/api/answer`).
  * The L5 doors beneath existing prefixes (`/api/approvals/{run}/links`,
  * `/api/runs/{id}/steer`, `/api/runs/{id}/artefacts.zip`) travel with them.
+ * Phase L6 the MCP registry (`/api/mcp`, with its approve and rescan doors
+ * beneath it), less the platform's own MCP server at `/api/mcp/server`,
+ * which CONSOLE_UNDER_BACKEND keeps here; and the SDK door (`/api/sdk`: the
+ * description, the live run doors under `/api/sdk/runs` and the 1.4
+ * upload and poll), which an attached agent opens with its scoped key.
  */
 export const BACKEND_PREFIXES = [
   "/api/runs",
@@ -76,15 +81,19 @@ export const BACKEND_PREFIXES = [
   "/api/fleet",
   "/api/lockdown",
   "/api/answer",
+  "/api/mcp",
+  "/api/sdk",
 ];
 
 /**
  * The doors a machine opens with an API key (or, for a webhook, the spec's
  * own secret), so the cookie gate in proxy.ts never stands in front of them:
  * the backend's trigger, webhook and worker doors; the L4 gateway, retrieval
- * and chatbot doors (application keys); the console's SDK, A2A and
- * platform-MCP doors; the external answer door, which an outside
- * participant opens with the signed link token in its path (phase L5).
+ * and chatbot doors (application keys); the backend's SDK door (phase L6),
+ * which an attached agent opens with the key scoped to it and where a
+ * console session is refused; the console's A2A and platform-MCP doors; the
+ * external answer door, which an outside participant opens with the signed
+ * link token in its path (phase L5).
  * Sign-in itself is open too, or nobody could start. An entry ending in "/"
  * matches anything beneath it; a bare entry matches itself and anything
  * beneath it.
@@ -129,10 +138,14 @@ export function isOpenPage(pathname: string): boolean {
  * authoring conversation is the console's own loop (it talks to Foundry for
  * the chat and to the backend's reference and propose doors for every
  * runtime step), so it stays in Next at /api/author/chat while the rest of
- * /api/author is the backend's. An exact path, never a prefix: anything
- * beneath it is still forwarded.
+ * /api/author is the backend's. The platform's own MCP server is the
+ * console's too (it serves the console tools the assistant shares), so it
+ * stays at /api/mcp/server while the registry of servers this deployment
+ * connects to, /api/mcp and everything else beneath it, is the backend's
+ * (phase L6). An exact path, never a prefix: anything beneath it is still
+ * forwarded.
  */
-export const CONSOLE_UNDER_BACKEND = ["/api/author/chat"];
+export const CONSOLE_UNDER_BACKEND = ["/api/author/chat", "/api/mcp/server"];
 
 /** Whether a URL path is one the backend owns: the prefix itself, or anything beneath it, less the console's named exceptions. */
 export function isBackendPath(pathname: string): boolean {

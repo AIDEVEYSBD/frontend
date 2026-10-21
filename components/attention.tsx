@@ -6,18 +6,20 @@ import { Button, Mono, Status, Tag } from "./ui";
 import { hueFor } from "@/lib/hue";
 import { soon } from "@/lib/soon";
 import { clearAttention, listAttention, type AttentionItem } from "@/lib/api/l5";
-import { ATTENTION_LABEL, attentionVerb, countdown, orderAttention } from "@/lib/gates";
+import { ATTENTION_LABEL, HOLDS_LABEL, URGENT_SEVERITY, attentionVerb, countdown, orderAttention } from "@/lib/gates";
 import { useNow } from "./gate-form";
 
 /**
  * What needs a person, ranked.
  *
  * The backend's attention door (`GET /api/attention`) folds every open
- * question into one queue: gates by deadline and blast radius, refusals
- * that stopped a run, budget breaches, dead letters, failing health. Each
- * row carries the one action that clears it, and that is the only button
- * on the row: answer, replay, acknowledge, or open. The rank is severity ×
- * age; lib/gates.ts orderAttention holds the order between reads.
+ * question into one queue: gates by deadline and what they hold (a sink or
+ * a destructive call outranks a note), refusals that stopped a run, budget
+ * breaches, dead letters, failing ports. Each row carries the action that
+ * clears it, `{method, path, body, says}`, and that is the only button on
+ * the row: answer the gate, replay the dead letter, re-read the health
+ * door, or open the page or the run. The rank is severity (1 to 10) × an
+ * age weight; lib/gates.ts orderAttention holds the order between reads.
  */
 
 const KIND_TONE: Record<AttentionItem["kind"], "warn" | "err" | "queue" | "run"> = {
@@ -28,7 +30,7 @@ const KIND_TONE: Record<AttentionItem["kind"], "warn" | "err" | "queue" | "run">
   health: "err",
 };
 
-const RISK_TONE: Record<string, "err" | "warn" | "neutral"> = { destructive: "err", risky: "warn", write: "warn", read: "neutral" };
+const HOLDS_TONE: Record<string, "err" | "warn"> = { sink: "err", destructive: "err", risky: "warn", write: "warn" };
 
 const ago = (s: number) => (s < 60 ? `${Math.round(s)}s` : s < 3600 ? `${Math.round(s / 60)}m` : s < 86400 ? `${Math.round(s / 3600)}h` : `${Math.round(s / 86400)}d`);
 
@@ -83,13 +85,15 @@ export function AttentionPanel({
     if (a.kind === "open") {
       if (a.href) router.push(a.href);
       else if (item.run) onOpenRun(item.run);
-      else router.push(`/runs?agent=${encodeURIComponent(item.agent)}`);
+      else if (item.agent) router.push(`/runs?agent=${encodeURIComponent(item.agent)}`);
+      else onNotice(a.says || item.title);
       return;
     }
     setBusy(item.id);
     try {
       await clearAttention(item);
-      onNotice(`${attentionVerb(item)}: ${item.title}`);
+      // A re-read clears nothing by itself: the row goes once the port reads healthy.
+      onNotice(a.kind === "check" ? `Re-read. ${a.says ? `To clear it: ${a.says}.` : "The row clears once it reads healthy."}` : `${attentionVerb(item)}: ${item.title}`);
       reload();
     } catch (e) {
       onNotice(`${attentionVerb(item)} refused: ${(e as Error).message.slice(0, 140)}`);
@@ -105,8 +109,8 @@ export function AttentionPanel({
         <span className="text-[12px] font-semibold">Attention</span>
         {worst && (
           <span className="relative flex size-2">
-            <span className={`absolute inline-flex size-2 animate-ping rounded-full opacity-60 ${worst.severity >= 4 ? "bg-err" : "bg-warn"}`} />
-            <span className={`relative inline-flex size-2 rounded-full ${worst.severity >= 4 ? "bg-err" : "bg-warn"}`} />
+            <span className={`absolute inline-flex size-2 animate-ping rounded-full opacity-60 ${worst.severity >= URGENT_SEVERITY ? "bg-err" : "bg-warn"}`} />
+            <span className={`relative inline-flex size-2 rounded-full ${worst.severity >= URGENT_SEVERITY ? "bg-err" : "bg-warn"}`} />
           </span>
         )}
         <span className="truncate text-[11px] text-faint">
@@ -119,45 +123,41 @@ export function AttentionPanel({
       <div className="max-h-[320px] overflow-y-auto">
         {(items ?? []).map((it, i) => {
           const dl = countdown(it.deadline, now);
-          const br = it.blast_radius;
           return (
             <div key={it.id} className="flex items-center gap-3 border-b border-line px-3 py-2 last:border-b-0">
               <span className="tnum w-5 shrink-0 text-right font-mono text-[10px] text-ghost">{i + 1}</span>
               <Status tone={KIND_TONE[it.kind]}>{ATTENTION_LABEL[it.kind]}</Status>
               <button
                 type="button"
-                onClick={() => (it.run ? onOpenRun(it.run) : router.push(`/runs?agent=${encodeURIComponent(it.agent)}`))}
+                onClick={() => (it.run ? onOpenRun(it.run) : it.action.href ? router.push(it.action.href) : it.agent ? router.push(`/runs?agent=${encodeURIComponent(it.agent)}`) : onNotice(it.action.says || it.title))}
                 className="focusable flex min-w-0 grow cursor-pointer flex-col text-left"
               >
                 <span className="truncate text-[12px] font-medium text-fg">{it.title || `${it.kind} on ${it.agent}`}</span>
                 <span className="truncate font-mono text-[9.5px] text-faint">
-                  {it.agent}
-                  {it.run ? ` · ${it.run}` : it.job ? ` · job ${it.job}` : ""}
-                  {it.detail ? ` · ${it.detail}` : ""}
+                  {[it.agent, it.run ?? (it.job ? `job ${it.job}` : ""), it.detail].filter(Boolean).join(" · ")}
                 </span>
               </button>
               <span className="hidden shrink-0 items-center gap-2 sm:flex">
-                {br && (
-                  <Tag tone={RISK_TONE[br.risk] ?? "neutral"}>
-                    {br.sinks} sink{br.sinks === 1 ? "" : "s"} · {br.risk}
-                  </Tag>
-                )}
+                {it.holds && <Tag tone={HOLDS_TONE[it.holds] ?? "warn"}>{HOLDS_LABEL[it.holds] ?? it.holds}</Tag>}
                 {it.deadline && <span className={`tnum font-mono text-[10px] ${dl.overdue ? "text-err" : dl.soon ? "text-warn" : "text-faint"}`}>{dl.overdue ? dl.text : `${dl.text} left`}</span>}
                 <span className="tnum font-mono text-[10px] text-faint" title={it.since ? new Date(it.since).toLocaleString() : ""}>
                   {ago(it.age_s)} old
                 </span>
-                <span className="tnum font-mono text-[10px] text-ghost">S{Math.round(it.severity)}</span>
+                <span className="tnum font-mono text-[10px] text-ghost">S{Math.round(it.severity)}/10</span>
               </span>
-              <Button
-                size="sm"
-                variant={it.action.kind === "open" ? "outline" : "solid"}
-                tone={it.action.kind === "answer" ? "warn" : it.action.kind === "replay" ? "ink" : "neutral"}
-                permission={it.action.kind === "answer" ? "approve" : it.action.kind === "open" ? undefined : "run"}
-                loading={busy === it.id}
-                onClick={() => act(it)}
-              >
-                {attentionVerb(it)}
-              </Button>
+              {/* What clears it, in the backend's words, on the one button. */}
+              <span className="shrink-0" title={it.action.says || undefined}>
+                <Button
+                  size="sm"
+                  variant={it.action.kind === "open" ? "outline" : "solid"}
+                  tone={it.action.kind === "answer" ? "warn" : it.action.kind === "replay" ? "ink" : "neutral"}
+                  permission={it.action.kind === "answer" ? "approve" : it.action.kind === "replay" ? "run" : undefined}
+                  loading={busy === it.id}
+                  onClick={() => act(it)}
+                >
+                  {attentionVerb(it)}
+                </Button>
+              </span>
             </div>
           );
         })}

@@ -19,8 +19,12 @@ import { SpanDetail, Waterfall, useTrace, type Span } from "./waterfall";
 import { explainControl } from "@/lib/guardrails";
 import { ControlRef, KILL_CONTROL } from "./control-ref";
 import { RunBoard, ViewSwitch, useRunView, type BoardEdge } from "./run-board";
-import { api, errorText, subscribeRunEvents, type RunEnd } from "@/lib/api/client";
-import { artefactsZipUrl, gateFromSuspension, listGates, type Gate, type RunRowL5 } from "@/lib/api/l5";
+import { api, errorText, subscribeRunEvents, type RunEnd, type Schemas } from "@/lib/api/client";
+import { artefactsZipUrl, gateFromSuspension, listGates, operatorOf, type Gate } from "@/lib/api/l5";
+import { runSourceOf, type RunRowL6 } from "@/lib/api/l6";
+import { exitText, sandboxLine, sandboxOfEntry, sandboxRunOf, SANDBOX_TOOL } from "@/lib/sandbox";
+import { RunSourceTag } from "./run-source";
+import { SandboxOutput, SandboxSummary } from "./sandbox-result";
 import { KillDialog } from "./kill-dialog";
 import { LineageDrawer } from "./lineage";
 import { ApproveDialog } from "./approve";
@@ -142,8 +146,8 @@ interface SavedAgent {
   nodes: number;
 }
 
-/** A row of the backend's run ledger, as the list shows it. `stuck` and `waiting_on` are L5's. */
-type RunSummary = Pick<RunRowL5, "id" | "system" | "state" | "at" | "ms" | "denials" | "live" | "stuck" | "waiting_on">;
+/** A row of the backend's run ledger, as the list shows it. `stuck` and `waiting_on` are L5's; `source` (an attached agent's SDK, or A2A) is L6's. */
+type RunSummary = Pick<RunRowL6, "id" | "system" | "state" | "at" | "ms" | "denials" | "live" | "stuck" | "waiting_on" | "source">;
 
 const ago = (iso: string) => {
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -282,7 +286,10 @@ function Launcher() {
                   }`}
                 >
                   <div className="flex min-w-0 grow flex-col">
-                    <span className="truncate text-[13px] font-semibold text-fg">{r.system || r.id}</span>
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="truncate text-[13px] font-semibold text-fg">{r.system || r.id}</span>
+                      <RunSourceTag run={r} />
+                    </span>
                     <Mono className={`truncate text-[10.5px] ${r.stuck ? "text-warn" : "text-faint"}`}>
                       {r.id} · {ago(r.at)} · {(r.ms / 1000).toFixed(1)}s
                       {r.waiting_on ? ` · waiting on ${r.waiting_on}` : ""}
@@ -621,7 +628,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
       result={result}
       suspension={suspension}
       onAnswered={answered}
-      steer={liveRunId && phase === "live" ? <SteerPanel runId={liveRunId} suspended={Boolean(suspension)} /> : null}
+      steer={liveRunId && phase === "live" && !suspension ? <SteerPanel runId={liveRunId} /> : null}
       setup={
         phase === "setup" ? (
           <div className="flex flex-col gap-3 border-b border-line bg-raise/40 px-4 py-4">
@@ -797,15 +804,29 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
 /* ═══════════════════ Replay theater ═══════════════════ */
 
 function ReplayTheater({ id }: { id: string }) {
+  // A run followed while in flight is read again once it settles, from a
+  // fresh mount, so its replay opens at the outcome like any other.
+  const [reads, setReads] = useState(0);
+  return <RunRecord key={`${id}:${reads}`} id={id} onReread={() => setReads((n) => n + 1)} />;
+}
+
+function RunRecord({ id, onReread }: { id: string; onReread: () => void }) {
   const params = useSearchParams();
-  const [entries, setEntries] = useState<Entry[] | null>(null);
+  // The journal as the record holds it; the display folds resumed legs onto one clock.
+  const [raw, setRaw] = useState<Entry[] | null>(null);
+  const entries = useMemo(() => (raw ? normalise(raw) : null), [raw]);
   const [meta, setMeta] = useState<{
     system: string;
     runId: string;
     state: string;
     error: string;
     result: Record<string, unknown> | null;
-  }>({ system: "", runId: "", state: "", error: "", result: null });
+    /** `sdk` or `a2a` for a run an attached agent opened; `worker` for a queued job's; "" for the platform's own. */
+    source: string;
+    startedAt: string;
+    /** A kill asked of the run and not yet taken: an SDK agent takes it on its next control poll, which may be a while. */
+    kill: Schemas["KillInfo"] | null;
+  }>({ system: "", runId: "", state: "", error: "", result: null, source: "", startedAt: "", kill: null });
   const [specNodes, setSpecNodes] = useState<{ id: string; label: string; kind: string }[] | null>(null);
   const [specEdges, setSpecEdges] = useState<BoardEdge[]>([]);
   const [loadError, setLoadError] = useState("");
@@ -815,13 +836,16 @@ function ReplayTheater({ id }: { id: string }) {
       .GET("/api/runs/{run_id}", { params: { path: { run_id: id } } })
       .then(({ data, error, response }) => {
         if (!data) throw new Error(errorText(error, response));
-        setEntries(normalise((data.journal?.entries ?? []) as unknown as Entry[]));
+        setRaw((data.journal?.entries ?? []) as unknown as Entry[]);
         setMeta({
           system: data.system ?? "",
           runId: data.id ?? "",
           state: data.state ?? "",
           error: data.error ?? "",
           result: data.result ?? null,
+          source: runSourceOf(data),
+          startedAt: typeof data.started_at === "string" ? data.started_at : "",
+          kill: data.kill ?? null,
         });
       })
       .catch((e) => setLoadError((e as Error).message));
@@ -855,11 +879,12 @@ function ReplayTheater({ id }: { id: string }) {
   const [view] = useRunView();
   const rolled = useRef(false);
   useEffect(() => {
-    if (rolled.current || !entries?.length || openAt || view !== "cards") return;
+    // A run in flight is followed, not replayed (FollowTheater below).
+    if (rolled.current || !entries?.length || openAt || view !== "cards" || meta.state === "running") return;
     rolled.current = true;
     playback.seek(0);
     playback.setPlaying(true);
-  }, [entries, openAt, view, playback]);
+  }, [entries, openAt, view, playback, meta.state]);
 
 
   const marks = useMemo(
@@ -933,7 +958,25 @@ function ReplayTheater({ id }: { id: string }) {
       </div>
     );
   }
-  if (!entries) return <p className="px-8 py-10 text-[12.5px] text-faint">Loading the journal…</p>;
+  if (!entries || !raw) return <p className="px-8 py-10 text-[12.5px] text-faint">Loading the journal…</p>;
+
+  // Still in flight: follow it live, with the kill switch and the steering
+  // a run launched here would have, whoever started it.
+  if (meta.state === "running") {
+    return (
+      <FollowTheater
+        id={meta.runId || id}
+        system={meta.system}
+        source={meta.source}
+        startedAt={meta.startedAt}
+        pendingKill={meta.kill}
+        initial={raw}
+        specNodes={specNodes}
+        edges={specEdges}
+        onReplay={onReread}
+      />
+    );
+  }
 
   const atEnd = playback.t >= duration;
   const visible = entries.filter((e) => e.t <= playback.t);
@@ -963,6 +1006,7 @@ function ReplayTheater({ id }: { id: string }) {
       segments={segments}
       tNow={playback.t}
       traceOf={id}
+      source={meta.source}
       footer={
         <Scrubber
           t={playback.t}
@@ -980,6 +1024,223 @@ function ReplayTheater({ id }: { id: string }) {
         />
       }
     />
+  );
+}
+
+/* ═══════════════════ Following a run in flight ═══════════════════ */
+
+/**
+ * A run still in flight, opened by its id rather than launched here: a
+ * worker's, another tab's, or one an attached agent opened through the SDK
+ * (phase L6). It is followed, not replayed: the event stream replays the
+ * journal so far and then delivers each entry as it is written, and the run
+ * is operated exactly as the live theater operates one launched here: Kill
+ * in the footer, Steer in the rail, a gate answered from the banner. For an
+ * SDK run the backend relays the kill, the steering and the gate's answer
+ * on the SDK's control long-poll; this page calls the same doors either way.
+ */
+function FollowTheater({
+  id,
+  system,
+  source,
+  startedAt,
+  pendingKill = null,
+  initial,
+  specNodes,
+  edges,
+  onReplay,
+}: {
+  id: string;
+  system: string;
+  source: string;
+  /** When the run started, for the clock between entries; "" when the record does not say. */
+  startedAt: string;
+  /** A kill already on the record when the page opened, not yet taken by the run. */
+  pendingKill?: Schemas["KillInfo"] | null;
+  /** The journal as the record held it when the page opened, before the legs are folded. */
+  initial: Entry[];
+  /** The spec's nodes, when the agent has a spec here; an SDK agent's run draws its nodes as it enters them. */
+  specNodes: { id: string; label: string; kind: string }[] | null;
+  edges: BoardEdge[];
+  /** The run settled: read the record again and replay it. */
+  onReplay: () => void;
+}) {
+  const [raw, setRaw] = useState<Entry[]>(initial);
+  // The stream replays the whole journal on every (re)connection; entries are deduplicated by id.
+  const seen = useRef(new Set(initial.map((e) => e.id)));
+  const [state, setState] = useState("running");
+  const [suspension, setSuspension] = useState<Suspension | null>(null);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [killAsk, setKillAsk] = useState(false);
+  const [killing, setKilling] = useState(false);
+  // The kill as the backend took it: for an SDK run it waits on the row until the agent polls.
+  const [killed, setKilled] = useState<Schemas["KillInfo"] | null>(pendingKill);
+  const stop = useRef<(() => void) | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const entries = useMemo(() => normalise(raw), [raw]);
+  const nodes = useMemo(() => {
+    if (specNodes) return specNodes;
+    const seen: { id: string; label: string; kind: string }[] = [];
+    for (const e of entries) {
+      if (e.kind === "node.enter" && e.node && !seen.some((n) => n.id === e.node)) seen.push({ id: e.node, label: e.title || e.node, kind: "" });
+    }
+    return seen;
+  }, [entries, specNodes]);
+  const journalMs = entries.length ? entries[entries.length - 1].t : 0;
+  const running = state === "running" && !suspension;
+  const sdk = source === "sdk";
+
+  // Wall clock: the journal ticks only when entries land; a 40-second tool
+  // call must not look like a hang.
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [running]);
+  const since = Date.parse(startedAt);
+  const elapsed = Number.isNaN(since) ? journalMs : Math.max(journalMs, now - since);
+
+  /** The run settled, or stopped at a gate. */
+  const settle = useCallback(
+    async (end: RunEnd) => {
+      let susp = end.suspension;
+      let res = end.result;
+      if (end.state === "suspended" && !susp) {
+        // A live stream's end names the state; the gate itself is on the run record.
+        const { data } = await api.GET("/api/runs/{run_id}", { params: { path: { run_id: id } } });
+        susp = data?.suspension ?? null;
+        if (data?.result && Object.keys(data.result).length) res = data.result;
+      }
+      if (res && Object.keys(res).length) setResult(res);
+      setKilling(false);
+      if (end.state === "suspended" && susp) {
+        const r = susp as unknown as Record<string, unknown>;
+        setSuspension({ node: susp.node, approvers: susp.approvers ?? [], prompt: susp.prompt ?? "", deadline: typeof r.deadline === "string" ? r.deadline : null, raw: r });
+      }
+      setState(end.state);
+      if (end.error) setError(end.error);
+    },
+    [id],
+  );
+
+  const follow = useCallback(() => {
+    stop.current?.();
+    stop.current = subscribeRunEvents(id, {
+      onEntry: (e) => {
+        if (seen.current.has(e.id)) return;
+        seen.current.add(e.id);
+        setRaw((prev) => [...prev, e as unknown as Entry]);
+      },
+      onEnd: (end) => void settle(end),
+      onError: async (message) => {
+        // The stream is gone; the run may not be. Its record says.
+        const { data } = await api.GET("/api/runs/{run_id}", { params: { path: { run_id: id } } });
+        if (data && data.state !== "running") {
+          void settle({ state: data.state, error: data.error ?? "", result: data.result ?? {}, suspension: data.suspension ?? null });
+          return;
+        }
+        setError(message);
+      },
+    });
+  }, [id, settle]);
+
+  useEffect(() => {
+    follow();
+    return () => stop.current?.();
+  }, [follow]);
+
+  /** The gate was answered through the inbox dialog; the stream picks up the new leg. */
+  const answered = () => {
+    setSuspension(null);
+    setState("running");
+    setError("");
+    follow();
+  };
+
+  return (
+    <>
+      {killAsk && (
+        <KillDialog
+          title="Kill this run?"
+          what={`${system || "run"} · ${id}. ${
+            sdk ? "The agent's SDK receives the kill on its control channel and stops before its next model or tool call" : "The backend cancels it before its next model or tool call"
+          }; the journal records the reason and your name.`}
+          onClose={() => setKillAsk(false)}
+          onConfirm={(reason) => {
+            setKillAsk(false);
+            setKilling(true);
+            api
+              .POST("/api/runs/{run_id}/kill", { params: { path: { run_id: id } }, body: { reason } })
+              .then(({ data, error, response }) => {
+                if (data) {
+                  setKilled(data.kill);
+                  return;
+                }
+                setKilling(false);
+                setError(errorText(error, response));
+              })
+              .catch((e: Error) => {
+                setKilling(false);
+                setError(e.message);
+              });
+          }}
+        />
+      )}
+      <Theater
+        title={system}
+        subtitle={id}
+        runId={id}
+        agentId={system}
+        source={source}
+        nodes={nodes}
+        edges={edges}
+        entries={entries}
+        live={running}
+        finalState={suspension ? "suspended" : state}
+        error={error}
+        outputs={[]}
+        result={result}
+        suspension={suspension}
+        onAnswered={answered}
+        steer={state === "running" && !suspension ? <SteerPanel runId={id} /> : null}
+        setup={null}
+        footer={
+          running ? (
+            <div className="flex h-11 shrink-0 items-center gap-3 border-t border-line bg-surface px-4">
+              <Thinking height={10} />
+              <span className="min-w-0 truncate text-[12px] text-dim">
+                {sdk && (killing || killed)
+                  ? `kill requested${killed?.by ? ` by ${killed.by}` : ""} — the agent's SDK takes it on its next control poll and stops before its next model or tool call`
+                  : killing
+                    ? "kill requested — the journal records it in a moment"
+                    : sdk
+                      ? "following — the agent's SDK sends each entry as it is written"
+                      : "following — every entry lands as the runtime writes it"}
+              </span>
+              {error && <span className="min-w-0 truncate text-[11.5px] text-err">{error}</span>}
+              <span className="grow" />
+              <Mono className="tnum text-[11px] text-faint">{clock(elapsed)}</Mono>
+              <Button tone="err" variant="solid" size="sm" permission="run" loading={killing} onClick={() => setKillAsk(true)}>
+                {killing ? "Killing…" : "Kill run"}
+              </Button>
+            </div>
+          ) : (
+            <div className="flex h-11 shrink-0 items-center gap-3 border-t border-line bg-surface px-4">
+              <StateBadge state={suspension ? "suspended" : state} />
+              {error && <span className="min-w-0 truncate text-[11.5px] text-err">{error}</span>}
+              <span className="grow" />
+              <Mono className="tnum text-[11px] text-faint">{clock(journalMs)}</Mono>
+              {!suspension && (
+                <Button tone="ink" variant="solid" size="sm" onClick={onReplay}>
+                  Replay the record
+                </Button>
+              )}
+            </div>
+          )
+        }
+      />
+    </>
   );
 }
 
@@ -1257,6 +1518,7 @@ function Theater({
   tNow,
   runId,
   agentId,
+  source = "",
 }: {
   title: string;
   subtitle: string;
@@ -1289,6 +1551,8 @@ function Theater({
   runId?: string;
   /** The agent the run belongs to, for a gate the inbox has not listed yet. */
   agentId?: string;
+  /** Where the run came from when not the platform itself (`sdk`, `a2a`), for the header's badge. */
+  source?: string;
 }) {
   const draftId =
     result && typeof result.draft_id === "string" && /^[a-z][a-z0-9-]{0,62}$/.test(result.draft_id)
@@ -1328,6 +1592,7 @@ function Theater({
           <Mono className="text-[11.5px] text-faint">{subtitle}</Mono>
         </div>
         <span className="text-[13px] font-semibold tracking-[-0.01em]">{title}</span>
+        <RunSourceTag run={{ source }} />
         {suspension ? (
           <Status tone="warn">Awaiting approval</Status>
         ) : live ? (
@@ -1881,6 +2146,8 @@ function TheaterTranscript({ entries, live, runId = "" }: { entries: Entry[]; li
 /** One line saying what a tool call produced — never the payload itself. */
 function summarise(value: unknown): string {
   if (value === null || value === undefined) return "";
+  const sandbox = sandboxRunOf(value);
+  if (sandbox) return sandboxLine(sandbox);
   if (typeof value === "string") {
     const flat = value.replace(/\s+/g, " ").trim();
     return flat.length > 96 ? flat.slice(0, 93) + "…" : flat;
@@ -1951,24 +2218,6 @@ function parseJsonText(text: string): [string, string][] | null {
   return out.length ? out : null;
 }
 
-/**
- * An operator action in the journal, or null. The steer door journals one
- * entry per action: kind `operator` (or a `note` carrying `data.operator`
- * or `data.by`), with `data.action` (guidance, hold_at_next_gate, model),
- * `data.by` and `data.at`. The detail is the guidance text, the model
- * name, or on/off for the hold.
- */
-function operatorOf(e: Entry): { action: string; by: string; at: string; detail: string } | null {
-  const d = e.data ?? {};
-  const isOp = e.kind === "operator" || e.kind === "steer" || ((e.kind === "note" || e.kind === "control") && (d.operator !== undefined || typeof d.by === "string") && typeof d.action === "string");
-  if (!isOp) return null;
-  const action = String(d.action ?? e.title ?? "steered");
-  const label = action === "guidance" ? "Guidance for the next step" : action === "hold_at_next_gate" ? (d.hold_at_next_gate === false || d.value === false ? "Hold at next gate lifted" : "Hold at next gate") : action === "model" ? `Model for the next step: ${String(d.model ?? d.value ?? "")}` : e.title || action;
-  const detail = action === "guidance" ? String(d.guidance ?? d.value ?? e.detail ?? "") : action === "model" ? "" : e.detail ?? "";
-  const by = typeof d.by === "string" ? d.by : typeof d.operator === "string" ? d.operator : "an operator";
-  return { action: label, by, at: typeof d.at === "string" ? d.at : "", detail };
-}
-
 function JournalRow({ e, entries, onLineage }: { e: Entry; entries: Entry[]; onLineage?: (id: string) => void }) {
   const [open, setOpen] = useState(false);
   const lineageButton = onLineage && e.id ? (
@@ -2031,6 +2280,9 @@ function JournalRow({ e, entries, onLineage }: { e: Entry; entries: Entry[]; onL
     const response = entries.filter(
       (x) => x.kind === "tool.result" && x.data?.tool === e.data?.tool,
     )[myIndex - 1];
+    // `sandbox.execute` under an isolator (phase L6): the isolator, the exit,
+    // the time, the truncation and the manifest digest come before the output.
+    const sandbox = response && e.data?.tool === SANDBOX_TOOL ? sandboxRunOf(response.data?.value) : null;
     return (
       <div className="flex gap-3">
         <Mono className="w-9 shrink-0 pt-2 text-[10.5px] text-ghost">{clock(e.t)}</Mono>
@@ -2042,7 +2294,9 @@ function JournalRow({ e, entries, onLineage }: { e: Entry; entries: Entry[]; onL
             <span className="flex items-center justify-between gap-3">
               <Mono className="truncate text-[11.5px] text-mist">{String(e.data?.tool ?? e.title)}</Mono>
               <span className="flex shrink-0 items-center gap-2">
-                {response ? (
+                {sandbox ? (
+                  <Mono className={`text-[10.5px] ${sandbox.exit === 0 ? "text-ok" : "text-err"}`}>{exitText(sandbox)}</Mono>
+                ) : response ? (
                   <Mono className="text-[10.5px] text-ok">returned</Mono>
                 ) : (
                   <Mono className="text-[10.5px] text-faint">…</Mono>
@@ -2060,7 +2314,7 @@ function JournalRow({ e, entries, onLineage }: { e: Entry; entries: Entry[]; onL
           {open && (
             <div className="flex flex-col gap-2 border-t border-line px-3 py-2.5">
               <CurlBlock tool={String(e.data?.tool ?? "")} args={e.data?.args ?? {}} />
-              {response && <ResponseBlock value={response.data?.value} />}
+              {sandbox ? <SandboxOutput run={sandbox} /> : response && <ResponseBlock value={response.data?.value} />}
             </div>
           )}
         </div>
@@ -2116,6 +2370,26 @@ function JournalRow({ e, entries, onLineage }: { e: Entry; entries: Entry[]; onL
               </details>
             )}
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* An isolated execution journalled in its own entry (the manifest digest,
+     the isolator, the exit), rather than as a tool result. */
+  const isolated = sandboxOfEntry(e);
+  if (isolated) {
+    return (
+      <div className="flex gap-3">
+        <Mono className="w-9 shrink-0 pt-2 text-[10.5px] text-ghost">{clock(e.t)}</Mono>
+        <div className="flex min-w-0 grow flex-col gap-1.5">
+          <span className="flex flex-wrap items-center gap-2">
+            <span className={`size-1.5 shrink-0 rounded-[2px] ${isolated.exit === 0 ? "bg-ok" : "bg-err"}`} />
+            <span className="text-[10.5px] font-medium text-dim">sandbox</span>
+            <Mono className="text-[11.5px] text-mist">{SANDBOX_TOOL}</Mono>
+            {e.detail && <span className="truncate text-[11.5px] text-faint">{e.detail}</span>}
+          </span>
+          <SandboxSummary run={isolated} />
         </div>
       </div>
     );

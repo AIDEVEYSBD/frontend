@@ -1,17 +1,21 @@
-import { errorText, type RunRow } from "./client";
+import { errorText, type RunRow, type Schemas } from "./client";
+import { PUBLIC_ORIGIN } from "../site";
 
 /**
  * The L5 doors (backend/CONTRACT.md, "L5: gates as interfaces, and operating
- * the estate"), called by hand.
+ * the estate", with its "As built" notes), called by hand.
  *
- * These doors are not in backend/openapi.json yet, so lib/api/backend.d.ts
- * does not know them and every call here is a plain fetch against the same
- * origin (proxy.ts forwards the prefixes in lib/route-policy.ts
- * BACKEND_PREFIXES to the backend). The types are the contract's, written
- * out. Once the backend lands the doors, run `npm run gen:api` and switch
- * each call below to `api.GET(...)`/`api.POST(...)` on the generated paths,
- * as lib/api/l4.ts does; the console-side shapes (Gate, AttentionItem and
- * so on) and the mapping functions can stay.
+ * The doors are in backend/openapi.json and, since `npm run gen:api` was
+ * run for L6, in lib/api/backend.d.ts too; every call here is still a plain
+ * fetch against the same origin (proxy.ts forwards the prefixes in
+ * lib/route-policy.ts BACKEND_PREFIXES to the backend) and every answer is
+ * read by a mapping function below. Each mapping reads the backend's own models
+ * (backend/app/approvals.py PendingGate, links.py, attention.py, fleet.py,
+ * schemas.py RunSteered and RunRow); tests/l5-contract.test.ts feeds them
+ * responses captured from the running backend, so a renamed or re-nested
+ * field fails a test instead of leaving a panel blank. Once `npm run
+ * gen:api` is run, each call can move to `api.GET(...)`/`api.POST(...)` as
+ * lib/api/l4.ts does; the console-side shapes and the mappings stay.
  */
 
 /* ═══════════════════ gates as interfaces ═══════════════════ */
@@ -31,28 +35,36 @@ export interface GateField {
   choices?: string[];
   /** Shown instead of the name when the spec gives one. */
   label?: string;
+  /** The field's explanation: the spec's `note` on the field (`{name, kind, required?, choices?, note?}`). */
   hint?: string;
 }
 
 /**
- * One item of the register a `verdicts` gate rules on. The run emitted the
- * list under `register`; the backend lays each item out with its current
- * verdict (null until one is recorded) and whatever fields the item carries,
- * which the table shows as evidence.
+ * One item of the register a `verdicts` gate rules on. The backend serves
+ * each as `{id, index, verdict, item}`: the item's id (its own `id`, else
+ * its index), its current verdict (null until one is recorded), and the
+ * register's entry under `item`, whose fields the table shows as evidence.
  */
 export interface VerdictItem {
   id: string;
   title: string;
   verdict: string | null;
+  /** The register entry's own fields, less its id and verdict. */
   fields: Record<string, unknown>;
 }
 
-/** One step the chain has already walked: who held the gate, who it went to, when. */
-export interface Escalation {
-  at: string;
-  from: string[];
-  to: string[];
-  reason: string;
+/** One journal entry the gate rests on, as the backend lays it out (`evidence.trail`): what it was, where, and a one-line summary. */
+export interface TrailEntry {
+  id: string;
+  /** Milliseconds into the run. */
+  t: number;
+  kind: string;
+  node: string;
+  title: string;
+  detail: string;
+  tool: string;
+  summary: string;
+  tainted: boolean;
 }
 
 /** The evidence the backend lays out for a reviewer. */
@@ -63,12 +75,21 @@ export interface Evidence {
   presented: Record<string, unknown>;
   /** Entries whose content came from outside the firm. */
   tainted_by: string[];
+  /** The entries the gate cites, walked back along `because` from the gate's own entry, in journal order. */
+  trail: TrailEntry[];
+}
+
+/** What each answer does next, in the backend's words (`next`). */
+export interface NextSteps {
+  approve: string;
+  refuse: string;
 }
 
 /**
- * A gate as the inbox shows it: the backend's `GET /api/approvals` row,
- * normalised. Every field the console reads is present; what the backend
- * omits is defaulted here, never left undefined for the form to trip on.
+ * A gate as the inbox shows it: the backend's `GET /api/approvals` row
+ * (PendingGate), normalised. Every field the console reads is present; what
+ * the backend omits is defaulted here, never left undefined for the form to
+ * trip on.
  */
 export interface Gate {
   run: string;
@@ -83,15 +104,17 @@ export interface Gate {
   verdicts: string[];
   transitions: Record<string, string[]>;
   register: string;
-  /** Roles, never names. */
+  /** The roles that may answer now, never names. Replaced by the next role in `chain` on each escalation. */
   approvers: string[];
-  /** The roles an unanswered gate walks to, in order. */
+  /** The spec's `escalate_to`: the roles an unanswered gate walks to after its first approvers, in order. Not trimmed as it walks; `escalations` says how far along it is. */
   chain: string[];
-  /** Absolute; null when the gate has no deadline. */
+  /** How many steps along `chain` the gate has walked. */
+  escalations: number;
+  /** Absolute; null when the gate has no deadline. Reset on every escalation. */
   deadline: string | null;
-  escalations: Escalation[];
   external: { allowed: boolean };
   evidence: Evidence;
+  next: NextSteps;
   timeout_s: number | null;
   on_timeout: string;
   waiting_since: string;
@@ -135,42 +158,78 @@ export interface BatchResult {
 
 /** `POST /api/approvals/{run}/links` */
 export interface MintedLink {
+  /** The answer page, absolute: the backend's `url`, or this console's public origin before the path it answers when the backend has no PUBLIC_ORIGIN. */
   url: string;
-  /** When the token stops working; at most the gate's deadline. */
+  /** The API door the page calls. */
+  path: string;
+  /** When the token stops working; never after the gate's deadline. */
   expires_at: string | null;
+  /** The gate's own deadline. */
+  deadline: string | null;
   email: string;
 }
 
 /** What the external answer page is given for a token. */
 export interface ExternalGate {
   gate: Gate;
+  /** The address the link is bound to. */
+  email: string;
   /** The identity the answer is written under: `external:<email>`. */
   answered_as: string;
   expires_at: string | null;
-  /** The token was already used; the page shows that instead of a form. */
-  spent: boolean;
+}
+
+/**
+ * A refusal from an L5 door. The message is the backend's `error`; beside
+ * it, what the body names: the field a 400 refuses, the role a 403 says is
+ * missing (and the gate's approvers), the control that refused, the pause a
+ * 409 carries. A spent or expired link is a 410, an unknown one a 404.
+ */
+export class DoorError extends Error {
+  readonly status: number;
+  readonly body: Record<string, unknown>;
+  readonly field?: string;
+  readonly missingRole?: string;
+  readonly approvers?: string[];
+  readonly control?: string;
+
+  constructor(message: string, status: number, body: Record<string, unknown>) {
+    super(message);
+    this.name = "DoorError";
+    this.status = status;
+    this.body = body;
+    this.field = typeof body.field === "string" ? body.field : undefined;
+    this.missingRole = typeof body.missing_role === "string" ? body.missing_role : undefined;
+    this.approvers = Array.isArray(body.approvers) ? body.approvers.map(String) : undefined;
+    this.control = typeof body.control === "string" ? body.control : undefined;
+  }
 }
 
 /* ═══════════════════ operating the estate ═══════════════════ */
 
 export type AttentionKind = "gate" | "refusal" | "budget" | "dead_letter" | "health";
-export type AttentionActionKind = "answer" | "replay" | "acknowledge" | "open";
+const ATTENTION_KINDS: AttentionKind[] = ["gate", "refusal", "budget", "dead_letter", "health"];
+
+/**
+ * What a row's one button does, derived from the backend's action: answer
+ * the gate in the inbox dialog, replay the dead letter through the door it
+ * names, re-read a health door, or open a page (or the run, for a refusal:
+ * the backend's door there starts the run again, which is a person's call
+ * after reading the journal, never a click from the queue).
+ */
+export type AttentionActionKind = "answer" | "replay" | "check" | "open";
 
 export interface AttentionAction {
   kind: AttentionActionKind;
-  /** A page to open (`open`), when the backend names one. */
+  /** As the backend names it: POST or GET for a door; "" when `path` is a console page. */
+  method: string;
+  path: string;
+  /** The body the door takes, as the backend lays it out (a gate's answer template); null for none. */
+  body: Record<string, unknown> | null;
+  /** What clears the item, in the backend's words. */
+  says: string;
+  /** A console page to open: the backend's `path` when it names no method. */
   href?: string;
-  /** A door to call (`replay`, `acknowledge`), when the backend names one; POST unless `method` says otherwise. */
-  path?: string;
-  method?: "POST" | "DELETE";
-  label?: string;
-}
-
-/** What makes a row urgent beyond its age: the sinks a gate holds, their risk. */
-export interface BlastRadius {
-  sinks: number;
-  risk: string;
-  agents: number;
 }
 
 /** One row of `GET /api/attention`. */
@@ -182,55 +241,91 @@ export interface AttentionItem {
   agent: string;
   run: string | null;
   job: string | null;
-  /** 1 (low) to 5 (critical). */
+  /** 1 (low) to 10 (a gate past its deadline). */
   severity: number;
   /** When it arose. */
   since: string;
   age_s: number;
-  /** severity × age, as the backend ranks it. */
+  /** severity × (1 + min(age in hours, 48) / 24), as the backend ranks it. */
   rank: number;
-  blast_radius: BlastRadius | null;
   deadline: string | null;
+  /** For a gate, what it stands in front of: sink, destructive, risky, write, or "". */
+  holds: string;
   action: AttentionAction;
 }
 
 export type SteerRequest = { guidance?: string; hold_at_next_gate?: boolean; model?: string };
 
+/** Where a steer (or a kill) is delivered: the backend's own `RunSteered.delivery`, `sdk` since L6. */
+export type Delivery = Schemas["RunSteered"]["delivery"];
+const DELIVERIES: Delivery[] = ["in-process", "worker", "sdk"];
+
 export interface SteerResult {
   run: string;
+  /** running, or (an SDK run steered at its gate) suspended: a steer on a run that is not in flight is refused (409). */
+  state: string;
+  /** The levers as the backend recorded them; for a worker's or an SDK agent's run, merged with any not yet handed over (the latest guidance and model win, a hold stays). */
   applied: SteerRequest;
   by: string;
   at: string;
+  /** in-process: taken at the run's next checkpoint here; worker: handed to the worker on its next heartbeat; sdk: handed to the attached agent on its next control poll. */
+  delivery: Delivery;
 }
 
 export type FleetAction = "pause" | "resume" | "drain" | "kill";
 export const FLEET_ACTIONS: { id: FleetAction; label: string; verb: string; tone: "ink" | "warn" | "err"; what: string }[] = [
-  { id: "pause", label: "Pause", verb: "Paused", tone: "warn", what: "stops new starts and queue claims for these agents; runs already in flight keep going" },
+  { id: "pause", label: "Pause", verb: "Paused", tone: "warn", what: "stops new starts and queue claims for these agents, and kills every run of theirs already in flight" },
   { id: "resume", label: "Resume", verb: "Resumed", tone: "ink", what: "lifts a pause or a drain; starts and claims are accepted again" },
-  { id: "drain", label: "Drain", verb: "Draining", tone: "warn", what: "pauses these agents and lets every run in flight finish; nothing new starts" },
-  { id: "kill", label: "Kill", verb: "Killed", tone: "err", what: "cancels every run in flight for these agents before its next model or tool call, and pauses them" },
+  { id: "drain", label: "Drain", verb: "Draining", tone: "warn", what: "stops new starts and queue claims for these agents and lets every run in flight finish" },
+  { id: "kill", label: "Kill", verb: "Killed", tone: "err", what: "kills every run in flight for these agents before its next model or tool call; it does not pause them, so new runs still start" },
 ];
 
+/** A pause or a drain on an agent (`workflows.paused`). */
+export interface PauseInfo {
+  mode: "pause" | "drain";
+  reason: string;
+  by: string;
+  at: string;
+}
+
+/** What `POST /api/fleet` answers. */
 export interface FleetResult {
   action: FleetAction;
   agents: string[];
-  /** Runs the action touched (killed, drained); 0 for a pause with nothing in flight. */
-  affected: number;
-  /** The audit event's id. */
-  audit: string;
+  reason: string;
+  by: string;
+  at: string;
+  /** The runs the action killed (pause and kill), in-process and worker-started. */
+  killed: string[];
+  /** Every agent paused or draining after the action, not only these. */
+  paused: Record<string, PauseInfo>;
+}
+
+/** What `GET /api/fleet` answers. */
+export interface FleetState {
+  paused: Record<string, PauseInfo>;
+  lockdown: LockdownState;
+  /** Runs this backend drives in-process, per agent; a worker's runs are not counted here. */
+  live: Record<string, number>;
 }
 
 export interface LockdownState {
   on: boolean;
+  /** Why it was set, or why it was lifted. */
   reason: string;
   by: string;
   at: string | null;
-  /** The controls the lockdown names in its audit event. */
+  /** The controls a lockdown exercises while it is on, in the backend's words; empty when off. */
   controls: string[];
 }
 
-/** `GET /api/runs` rows gain `stuck` and `waiting_on` in L5. */
-export type RunRowL5 = RunRow & { stuck?: boolean; waiting_on?: string | null };
+/**
+ * `GET /api/runs` rows gain, for a running run: the node in flight
+ * (`step`), how long it has run and the agent's p95 for it over 30 days,
+ * whether it is past that p95 (`stuck`), and the tool call nothing has
+ * answered, else `model` (`waiting_on`; "" when not running).
+ */
+export type RunRowL5 = RunRow & { step?: string; step_ms?: number; step_p95_ms?: number | null; stuck?: boolean; waiting_on?: string | null };
 
 /** What `GET /api/models` offers for the next step. */
 export interface OfferedModel {
@@ -238,11 +333,21 @@ export interface OfferedModel {
   label: string;
 }
 
+/** An operator's hand on a run, as its journal records it. */
+export interface OperatorAction {
+  action: string;
+  by: string;
+  /** ISO time when the entry carries one; the journal's own clock otherwise. */
+  at: string;
+  detail: string;
+}
+
 /* ═══════════════════ mapping ═══════════════════ */
 
 const str = (v: unknown, d = ""): string => (typeof v === "string" ? v : v === null || v === undefined ? d : String(v));
 const strs = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => str(x)).filter(Boolean) : []);
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+const num = (v: unknown, d = 0): number => (typeof v === "number" && Number.isFinite(v) ? v : d);
 
 export function shapeOf(v: unknown): Shape {
   return v === "form" || v === "verdicts" ? v : "decision";
@@ -259,23 +364,31 @@ export function fieldOf(v: unknown): GateField | null {
     required: Boolean(f.required),
     choices: kind === "choice" ? strs(f.choices) : undefined,
     label: str(f.label) || undefined,
-    hint: str(f.hint) || undefined,
+    hint: str(f.note) || str(f.hint) || undefined,
   };
 }
 
 /**
- * An item of the register, from whatever the run emitted: an object with an
- * id (or ref, or key) and fields, or a bare string. The index is the id of
- * last resort, so a verdict always has something to attach to.
+ * An item of the register. The backend's is `{id, index, verdict, item}`
+ * with the register's entry under `item` (an object, or a bare value); an
+ * entry given flat (an object with an id, ref or key, or a bare string) is
+ * read the same way. The index is the id of last resort, so a verdict
+ * always has something to attach to.
  */
 export function itemOf(v: unknown, i: number): VerdictItem {
   if (typeof v === "string") return { id: v, title: v, verdict: null, fields: {} };
   const o = obj(v);
-  const id = str(o.id) || str(o.ref) || str(o.key) || String(i + 1);
-  const { id: _id, verdict, ...rest } = o;
+  const wrapped = "item" in o && "index" in o;
+  const inner = wrapped ? o.item : o;
+  const entry = obj(inner);
+  const { id: _id, verdict: _verdict, ...fields } = entry;
   void _id;
-  const title = str(o.title) || str(o.name) || str(o.summary) || id;
-  return { id, title, verdict: typeof verdict === "string" && verdict ? verdict : null, fields: rest };
+  void _verdict;
+  const id = str(o.id) || str(entry.id) || str(entry.ref) || str(entry.key) || String(i + 1);
+  const bare = wrapped && (typeof inner === "string" || typeof inner === "number") ? String(inner) : "";
+  const title = str(entry.title) || str(entry.name) || str(entry.summary) || bare || id;
+  const verdict = typeof o.verdict === "string" && o.verdict ? o.verdict : null;
+  return { id, title, verdict, fields };
 }
 
 function transitionsOf(v: unknown): Record<string, string[]> {
@@ -284,9 +397,11 @@ function transitionsOf(v: unknown): Record<string, string[]> {
   return out;
 }
 
-function escalationOf(v: unknown): Escalation {
-  const o = obj(v);
-  return { at: str(o.at), from: strs(o.from), to: strs(o.to), reason: str(o.reason) };
+function trailOf(v: unknown): TrailEntry[] {
+  return (Array.isArray(v) ? v : []).map((x) => {
+    const e = obj(x);
+    return { id: str(e.id), t: num(e.t), kind: str(e.kind), node: str(e.node), title: str(e.title), detail: str(e.detail), tool: str(e.tool), summary: str(e.summary), tainted: e.tainted === true };
+  });
 }
 
 /**
@@ -306,6 +421,7 @@ export function gateOf(v: unknown): Gate {
   const answer = obj(g.answer);
   const decided = obj(g.decided);
   const ev = obj(g.evidence);
+  const next = obj(g.next);
   const timeout_s = typeof g.timeout_s === "number" ? g.timeout_s : null;
   const waiting_since = str(g.waiting_since);
   const job = g.job ? obj(g.job) : null;
@@ -325,10 +441,12 @@ export function gateOf(v: unknown): Gate {
     register: str(g.register ?? answer.register),
     approvers: strs(g.approvers),
     chain: strs(g.chain ?? g.escalate_to),
+    // A count of steps walked; an older reader's list of steps counts the same.
+    escalations: typeof g.escalations === "number" ? Math.max(0, Math.floor(g.escalations)) : Array.isArray(g.escalations) ? g.escalations.length : 0,
     deadline: deadlineOf(g.deadline, waiting_since, timeout_s),
-    escalations: (Array.isArray(g.escalations) ? g.escalations : []).map(escalationOf),
-    external: { allowed: ext.allowed === true || g.external === true },
-    evidence: { decided: Object.keys(obj(ev.decided)).length ? obj(ev.decided) : decided, presented: obj(ev.presented), tainted_by: strs(ev.tainted_by) },
+    external: { allowed: g.external === true || ext.allowed === true },
+    evidence: { decided: Object.keys(obj(ev.decided)).length ? obj(ev.decided) : decided, presented: obj(ev.presented), tainted_by: strs(ev.tainted_by), trail: trailOf(ev.trail) },
+    next: { approve: str(next.approve), refuse: str(next.refuse) },
     timeout_s,
     on_timeout: str(g.on_timeout),
     waiting_since,
@@ -341,9 +459,9 @@ export function gateOf(v: unknown): Gate {
 /**
  * A gate from a live run's suspension, for the theater when the inbox has
  * not caught up (the stream's `end` frame arrives before the next inbox
- * read). The suspension carries shape, items, chain, approvers and deadline
- * in L5; an older one carries node, approvers and prompt, which makes a
- * decision gate.
+ * read). The suspension carries shape, fields, items, chain, escalations,
+ * approvers, deadline and external as the inbox row does; it has no
+ * evidence or next steps, which only the inbox lays out.
  */
 export function gateFromSuspension(run: string, agent: string, s: Record<string, unknown>): Gate {
   return gateOf({
@@ -356,15 +474,24 @@ export function gateFromSuspension(run: string, agent: string, s: Record<string,
   });
 }
 
+/** The backend's rank: severity × (1 + min(age in hours, 48) / 24), to two places. */
+export function rankOf(severity: number, ageS: number): number {
+  const hours = Math.max(0, ageS) / 3600;
+  return Math.round(severity * (1 + Math.min(hours, 48) / 24) * 100) / 100;
+}
+
 export function attentionOf(v: unknown): AttentionItem {
   const o = obj(v);
   const a = obj(o.action);
-  const br = o.blast_radius ? obj(o.blast_radius) : null;
-  const kind = (["gate", "refusal", "budget", "dead_letter", "health"].includes(str(o.kind)) ? str(o.kind) : "health") as AttentionKind;
-  const actionKind = (["answer", "replay", "acknowledge", "open"].includes(str(a.kind)) ? str(a.kind) : kind === "gate" ? "answer" : kind === "dead_letter" ? "replay" : "open") as AttentionActionKind;
-  const since = str(o.since) || str(o.at);
-  const age_s = typeof o.age_s === "number" ? o.age_s : since ? Math.max(0, (Date.now() - Date.parse(since)) / 1000) : 0;
-  const severity = typeof o.severity === "number" ? o.severity : 1;
+  const kind: AttentionKind = ATTENTION_KINDS.includes(str(o.kind) as AttentionKind) ? (str(o.kind) as AttentionKind) : "health";
+  const method = str(a.method).toUpperCase();
+  const path = str(a.path);
+  const page = path.startsWith("/") && !path.startsWith("/api/");
+  const actionKind: AttentionActionKind =
+    kind === "gate" ? "answer" : !method || page ? "open" : kind === "dead_letter" && method === "POST" ? "replay" : method === "GET" ? "check" : "open";
+  const since = str(o.since);
+  const age_s = typeof o.age_s === "number" ? o.age_s : since && !Number.isNaN(Date.parse(since)) ? Math.max(0, (Date.now() - Date.parse(since)) / 1000) : 0;
+  const severity = num(o.severity, 1);
   return {
     id: str(o.id) || `${kind}:${str(o.run) || str(o.job) || str(o.agent)}`,
     kind,
@@ -376,16 +503,81 @@ export function attentionOf(v: unknown): AttentionItem {
     severity,
     since,
     age_s,
-    rank: typeof o.rank === "number" ? o.rank : severity * age_s,
-    blast_radius: br ? { sinks: Number(br.sinks ?? 0), risk: str(br.risk, "read"), agents: Number(br.agents ?? 1) } : null,
+    rank: typeof o.rank === "number" ? o.rank : rankOf(severity, age_s),
     deadline: str(o.deadline) || null,
-    action: { kind: actionKind, href: str(a.href) || undefined, path: str(a.path) || undefined, method: a.method === "DELETE" ? "DELETE" : "POST", label: str(a.label) || undefined },
+    holds: str(o.holds),
+    action: {
+      kind: actionKind,
+      method,
+      path,
+      body: a.body && typeof a.body === "object" && !Array.isArray(a.body) ? obj(a.body) : null,
+      says: str(a.says),
+      href: actionKind === "open" && page ? path : undefined,
+    },
   };
 }
 
 export function lockdownOf(v: unknown): LockdownState {
   const o = obj(v);
   return { on: o.on === true, reason: str(o.reason), by: str(o.by), at: str(o.at) || null, controls: strs(o.controls) };
+}
+
+function pausesOf(v: unknown): Record<string, PauseInfo> {
+  const out: Record<string, PauseInfo> = {};
+  for (const [agent, raw] of Object.entries(obj(v))) {
+    const p = obj(raw);
+    out[agent] = { mode: p.mode === "drain" ? "drain" : "pause", reason: str(p.reason), by: str(p.by), at: str(p.at) };
+  }
+  return out;
+}
+
+export function fleetStateOf(v: unknown): FleetState {
+  const o = obj(v);
+  const live: Record<string, number> = {};
+  for (const [agent, n] of Object.entries(obj(o.live))) live[agent] = num(n);
+  return { paused: pausesOf(o.paused), lockdown: lockdownOf(o.lockdown), live };
+}
+
+/**
+ * The runs in flight in a ledger read: those this backend drives in-process
+ * and the SDK runs their agents hold open (`live`; an SDK run stays `live`
+ * at a gate, where a kill still reaches it), and those a worker is driving
+ * (state running, `live` false). `live` alone misses the worker's.
+ */
+export function inFlight<T extends { live?: boolean; state?: string }>(rows: readonly T[]): T[] {
+  return rows.filter((r) => r.live === true || r.state === "running");
+}
+
+/**
+ * An operator's action in a run's journal, or null. The steer door's levers
+ * are journalled as `note` entries whose `data.control` names them (the
+ * `gate.open` a hold opens carries `operator.hold` too, and stays a gate): the
+ * runtime writes `operator.guidance` (`text`), `operator.model` (`model`,
+ * `instead_of`) and `operator.hold` (`tool`) when the run takes each one;
+ * the backend writes `operator.steer` on a worker's run when the steer is
+ * asked; the SDKs write the same controls. Each carries `by`, and `at` when
+ * the writer had a clock.
+ */
+export function operatorOf(e: { kind: string; title?: string; detail?: string; data?: Record<string, unknown> }): OperatorAction | null {
+  const d = e.data ?? {};
+  const control = str(d.control);
+  // A gate the hold opened carries the same control, but it is a gate, not the operator's note.
+  if (e.kind !== "note" || !control.startsWith("operator.")) return null;
+  const by = str(d.by) || "an operator";
+  const at = str(d.at);
+  const detail = str(e.detail);
+  switch (control) {
+    case "operator.guidance":
+      return { action: "Guidance for the next step", by, at, detail: str(d.text) || detail };
+    case "operator.model":
+      return { action: `Model for the next call: ${str(d.model) || "unnamed"}`, by, at, detail };
+    case "operator.hold":
+      return { action: "Held for a person", by, at, detail };
+    case "operator.steer":
+      return { action: "Steered", by, at, detail };
+    default:
+      return { action: str(e.title) || control, by, at, detail };
+  }
 }
 
 /* ═══════════════════ calls ═══════════════════ */
@@ -407,8 +599,8 @@ async function call<T>(method: "GET" | "POST" | "DELETE", path: string, body?: u
   }
   if (!res.ok) {
     const e = errorText(json ?? text, res);
-    if (/answered (404|502|503)/.test(e)) throw new Error(`${e}: this door is served by the backend; this deployment may not have named it (BACKEND_ORIGIN)`);
-    throw new Error(e);
+    const hint = /answered (404|502|503)/.test(e) ? `${e}: this door is served by the backend; this deployment may not have named it (BACKEND_ORIGIN)` : e;
+    throw new DoorError(hint, res.status, obj(json));
   }
   return parse(json);
 }
@@ -427,30 +619,39 @@ function resultOf(v: unknown, run: string): AnswerResult {
   return { run: str(r.run) || run, ok: r.ok === true, state: str(r.state), continuing: r.continuing === true, delivered: str(r.delivered), error: str(r.error) };
 }
 
+const isDecision = (answer: Answer): answer is DecisionAnswer => "approved" in answer && typeof answer.approved === "boolean";
+
 /**
  * `POST /api/approvals/{run}` with `{answer, note}`: validated against the
- * shape before the run resumes; 400 names the field, 403 names the missing
- * role. The signer is the session. A decision also carries `approved` at the
- * top level, which is what the door read before answers had a shape.
+ * shape before the run resumes; a refusal is a DoorError, 400 naming the
+ * field, 403 naming the missing role. The signer is the session. A decision
+ * also carries `approved` at the top level, which the door reads first.
  */
 export async function answerGate(run: string, answer: Answer, note: string): Promise<AnswerResult> {
-  const approved = "approved" in answer && typeof answer.approved === "boolean" ? answer.approved : undefined;
-  return call("POST", `/api/approvals/${encodeURIComponent(run)}`, { answer, note, ...(approved === undefined ? {} : { approved }) }, (j) => {
-    const o = obj(j);
-    // The door may answer the result itself, or wrap it as the batch does.
-    const first = Array.isArray(o.results) ? o.results[0] : o;
-    return resultOf(first, run);
-  });
+  return call("POST", `/api/approvals/${encodeURIComponent(run)}`, { answer, note, ...(isDecision(answer) ? { approved: answer.approved } : {}) }, (j) => resultOf(j, run));
 }
 
 /**
- * `POST /api/approvals` with `{runs, answer, note}`: one answer for several
- * gates of the same agent and shape. The signer is the session; `by` is
- * what the record shows beside it.
+ * One answer for several gates of the same agent and shape. The batch door
+ * (`POST /api/approvals` with `{runs, approved, note}`) answers decisions
+ * only and refuses anything else up front, so a form or a verdicts answer
+ * goes to each gate's own door in turn, and every run's outcome is a row of
+ * the result either way. The signer is the session; `by` is what the door
+ * records beside a machine key's answer.
  */
 export async function answerGates(runs: string[], answer: Answer, note: string, by: string): Promise<BatchResult> {
-  const approved = "approved" in answer && typeof answer.approved === "boolean" ? answer.approved : undefined;
-  return call("POST", "/api/approvals", { runs, answer, note, by, ...(approved === undefined ? {} : { approved }) }, (j) => {
+  if (!isDecision(answer)) {
+    const results: AnswerResult[] = [];
+    for (const run of runs) {
+      try {
+        results.push(await answerGate(run, answer, note));
+      } catch (e) {
+        results.push({ run, ok: false, state: "", continuing: false, delivered: "", error: (e as Error).message });
+      }
+    }
+    return { answered: results.filter((r) => r.ok).length, of: runs.length, remaining: 0, by, results };
+  }
+  return call("POST", "/api/approvals", { runs, answer, note, by, approved: answer.approved }, (j) => {
     const o = obj(j);
     const results = (Array.isArray(o.results) ? o.results : []).map((r, i) => resultOf(r, runs[i] ?? ""));
     return {
@@ -463,67 +664,94 @@ export async function answerGates(runs: string[], answer: Answer, note: string, 
   });
 }
 
+/** The answer page's address in full: an absolute `url` as the backend gave it, else this console's public origin before the path. */
+export function absoluteLink(url: string): string {
+  if (/^https?:\/\//i.test(url)) return url;
+  return url.startsWith("/") ? `${PUBLIC_ORIGIN}${url}` : url;
+}
+
 /** `POST /api/approvals/{run}/links` with `{email, expires_s?}` → the signed URL, shown once, never sent from here. */
 export async function mintLink(run: string, email: string, expiresS?: number): Promise<MintedLink> {
   return call("POST", `/api/approvals/${encodeURIComponent(run)}/links`, { email, ...(expiresS ? { expires_s: expiresS } : {}) }, (j) => {
     const o = obj(j);
-    return { url: str(o.url), expires_at: str(o.expires_at) || null, email: str(o.email, email) };
+    return { url: absoluteLink(str(o.url)), path: str(o.path), expires_at: str(o.expires_at) || null, deadline: str(o.deadline) || null, email: str(o.email, email) };
   });
 }
 
-/** `GET /api/answer/{token}`: the gate's evidence and shape for an outside participant. */
+/**
+ * `GET /api/answer/{token}`: the gate's shape and evidence for an outside
+ * participant, flat (run, agent, node, asks, shape, fields, items, verdicts,
+ * transitions, deadline, evidence, next) beside the link's `email` and
+ * `expires_at`. A spent or expired link, or a gate no longer open, is a 410
+ * DoorError; a token that is not one is a 404; a run running right now, 409.
+ */
 export async function readExternalGate(token: string): Promise<ExternalGate> {
   return call("GET", `/api/answer/${encodeURIComponent(token)}`, undefined, (j) => {
     const o = obj(j);
-    const raw = o.gate && typeof o.gate === "object" ? o.gate : o;
-    return { gate: gateOf(raw), answered_as: str(o.answered_as) || str(o.as), expires_at: str(o.expires_at) || null, spent: o.spent === true };
+    const email = str(o.email);
+    return { gate: gateOf(o), email, answered_as: email ? `external:${email}` : "", expires_at: str(o.expires_at) || null };
   });
 }
 
 /** `POST /api/answer/{token}` with `{answer, note}`; the token is spent on answer. */
 export async function submitExternalAnswer(token: string, answer: Answer, note: string): Promise<AnswerResult> {
-  const approved = "approved" in answer && typeof answer.approved === "boolean" ? answer.approved : undefined;
-  return call("POST", `/api/answer/${encodeURIComponent(token)}`, { answer, note, ...(approved === undefined ? {} : { approved }) }, (j) => resultOf(j, ""));
+  return call("POST", `/api/answer/${encodeURIComponent(token)}`, { answer, note }, (j) => resultOf(j, ""));
 }
 
 /** `GET /api/attention`: ranked, each row with the action that clears it. */
 export async function listAttention(): Promise<AttentionItem[]> {
   return call("GET", "/api/attention", undefined, (j) => {
     const o = obj(j);
-    const rows = Array.isArray(o.items) ? o.items : Array.isArray(o.attention) ? o.attention : Array.isArray(j) ? j : [];
-    return rows.map(attentionOf);
+    return (Array.isArray(o.items) ? o.items : []).map(attentionOf);
   });
 }
 
-/** Call the door an attention row names to clear itself (replay, acknowledge). */
+/** Call the door an attention row names (replay a dead letter, re-read a health door), with the body the backend laid out. */
 export async function clearAttention(item: AttentionItem): Promise<void> {
-  const path = item.action.path ?? (item.action.kind === "replay" && item.job ? `/api/queue/jobs/${encodeURIComponent(item.job)}/replay` : item.action.kind === "acknowledge" ? `/api/attention/${encodeURIComponent(item.id)}/acknowledge` : "");
-  if (!path) throw new Error("this row names no door to clear it");
-  await call(item.action.method ?? "POST", path, {});
+  const { method, path, body } = item.action;
+  if (!path.startsWith("/api/") || (method !== "POST" && method !== "GET")) throw new Error("this row names no door to call");
+  await call(method === "GET" ? "GET" : "POST", path, method === "POST" && body ? body : undefined);
 }
 
-/** `POST /api/runs/{id}/steer`: guidance, a hold at the next gate, the next step's model; journalled with who and when. */
+/** `POST /api/runs/{id}/steer`: guidance, a hold at the next gate, the next call's model; journalled with who and when. 409 unless the run is in flight. */
 export async function steerRun(id: string, req: SteerRequest): Promise<SteerResult> {
-  return call("POST", `/api/runs/${encodeURIComponent(id)}/steer`, req, (j) => {
+  return call("POST", `/api/runs/${encodeURIComponent(id)}/steer`, req, (j): SteerResult => {
     const o = obj(j);
-    return { run: str(o.run, id), applied: obj(o.applied) as SteerRequest, by: str(o.by), at: str(o.at) || new Date().toISOString() };
+    const s = obj(o.steer);
+    const applied: SteerRequest = {};
+    if (str(s.guidance)) applied.guidance = str(s.guidance);
+    if (s.hold_at_next_gate === true) applied.hold_at_next_gate = true;
+    if (str(s.model)) applied.model = str(s.model);
+    return { run: str(o.run, id), state: str(o.state), applied, by: str(s.by), at: str(s.at), delivery: DELIVERIES.find((d) => d === o.delivery) ?? "in-process" };
   });
 }
 
 /** `POST /api/fleet` with `{action, agents, reason}`: one audit event. */
 export async function fleet(action: FleetAction, agents: string[], reason: string): Promise<FleetResult> {
-  return call("POST", "/api/fleet", { action, agents, reason }, (j) => {
+  return call("POST", "/api/fleet", { action, agents, reason }, (j): FleetResult => {
     const o = obj(j);
-    const affected = typeof o.affected === "number" ? o.affected : typeof o.killed === "number" ? o.killed : Array.isArray(o.killed) ? o.killed.length : Array.isArray(o.runs) ? o.runs.length : 0;
-    return { action, agents: strs(o.agents).length ? strs(o.agents) : agents, affected, audit: str(o.audit) || str(o.event) };
+    return {
+      action,
+      agents: strs(o.agents).length ? strs(o.agents) : agents,
+      reason: str(o.reason, reason),
+      by: str(o.by),
+      at: str(o.at),
+      killed: strs(o.killed),
+      paused: pausesOf(o.paused),
+    };
   });
+}
+
+/** `GET /api/fleet`: which agents are paused or draining, the lockdown, and what is in flight in-process. */
+export async function getFleet(): Promise<FleetState> {
+  return call("GET", "/api/fleet", undefined, fleetStateOf);
 }
 
 export async function getLockdown(): Promise<LockdownState> {
   return call("GET", "/api/lockdown", undefined, lockdownOf);
 }
 
-/** `POST /api/lockdown` with `{on, reason}`: every gate threshold becomes read-only, the queue pauses, sinks are held. */
+/** `POST /api/lockdown` with `{on, reason}`: every call above read in a new or resumed run waits for a person, every sink is held; the doors keep accepting work. */
 export async function setLockdown(on: boolean, reason: string): Promise<LockdownState> {
   return call("POST", "/api/lockdown", { on, reason }, (j) => {
     const s = lockdownOf(j);

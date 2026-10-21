@@ -1,6 +1,7 @@
 import { admit, type AgentPolicy } from "@/lib/server/attached";
 import { entry, newRecord, readRecord, writeRecord, type RunRecord } from "@/lib/server/journal-store";
 import { callTool, registryTools, riskOf, RISK_ORDER, type Granted } from "@/lib/server/mcp-call";
+import { attachable, brokerRefusal } from "@/lib/server/mcp";
 import { policyOf } from "@/lib/server/attached";
 import { ENDPOINTS } from "@/lib/attached";
 
@@ -8,10 +9,16 @@ import { ENDPOINTS } from "@/lib/attached";
  * The tool broker: one MCP server per attached agent, serving exactly the
  * registry tools that agent has been granted, through the policy engine.
  *
- *   tools/list   the grants, with the upstream's own descriptions and hints
- *   tools/call   refused when ungranted (and recorded); stopped for a person
- *                when at or above the agent's gate risk; otherwise forwarded
- *                to the registered server and journalled as a tool call
+ *   tools/list   the grants on servers whose pinned tool list was approved
+ *                and which this broker can start as registered, with the
+ *                upstream's own descriptions and hints
+ *   tools/call   refused when ungranted, or when its server is pending,
+ *                changed or refused, or registered in a way only the
+ *                backend can honour (`isolate`, `${secret:…}` references,
+ *                an HTTP endpoint), each recorded under the supply-chain
+ *                control; stopped for a person when at or above the agent's
+ *                gate risk; otherwise forwarded to the registered server and
+ *                journalled as a tool call
  *
  * Sessions: `initialize` opens a run and returns it as Mcp-Session-Id, the
  * header MCP clients echo on every later request, so a session's calls land
@@ -33,10 +40,16 @@ const fail = (id: Rpc["id"], code: number, message: string, status = 200) =>
 const toolError = (id: Rpc["id"], message: string, headers: Record<string, string> = {}) =>
   ok(id, { content: [{ type: "text", text: JSON.stringify({ error: message }) }], isError: true }, headers);
 
-async function grantedTools(agent: AgentPolicy): Promise<Granted[]> {
+/**
+ * The registry tools granted to the agent. Only a server whose pinned tool
+ * list a person approved is served (phase L6); `any` includes the rest, so
+ * a call to a granted tool on a server that is pending, changed or refused
+ * is refused by the supply-chain control rather than as never granted.
+ */
+async function grantedTools(agent: AgentPolicy, any = false): Promise<Granted[]> {
   const all = await registryTools();
   const set = new Set(agent.grants);
-  return all.filter((g) => set.has(g.name));
+  return all.filter((g) => set.has(g.name) && (any || (attachable(g.server) && !brokerRefusal(g.server))));
 }
 
 /** The run this request writes into: the session's, or a fresh one for a lone call. */
@@ -158,12 +171,26 @@ export async function POST(req: Request, ctx: { params: Promise<{ agent: string 
       };
       const headers = session ? { "mcp-session-id": session } : { "mcp-session-id": rec.id };
 
-      const grants = await grantedTools(agent);
+      const grants = await grantedTools(agent, true);
       const granted = grants.find((g) => g.name === name);
       if (!granted) {
         rec.journal.entries.push(entry(at(), "denied", node, name, "tool not granted to this agent", { control: "capability", tool: name, args }));
         await close(owned ? "failed" : "done", owned ? "tool not granted" : "");
         return toolError(id, `${name} is not granted to ${agent.id}; the refusal is on run ${rec.id}`, headers);
+      }
+      // Granted, but its server's tool list is not the one a person approved.
+      if (!attachable(granted.server)) {
+        const why = `${granted.server.label} is ${granted.server.status}; only a tool server whose pinned tool list was approved attaches`;
+        rec.journal.entries.push(entry(at(), "denied", node, name, why, { control: "supply_chain", tool: name, args, server: granted.server.id, status: granted.server.status }));
+        await close(owned ? "failed" : "done", owned ? "tool server not approved" : "");
+        return toolError(id, `${name} is refused: ${why}. The refusal is on run ${rec.id}`, headers);
+      }
+      // Approved, but registered in a way only the backend can honour: refused before anything is started.
+      const cannot = brokerRefusal(granted.server);
+      if (cannot) {
+        rec.journal.entries.push(entry(at(), "denied", node, name, cannot, { control: "supply_chain", tool: name, args, server: granted.server.id, status: granted.server.status, broker: "cannot start" }));
+        await close(owned ? "failed" : "done", owned ? "tool server cannot be started by the broker" : "");
+        return toolError(id, `${name} is refused: ${cannot}. The refusal is on run ${rec.id}`, headers);
       }
       const risk = riskOf(granted.tool);
       rec.journal.entries.push(entry(at(), "tool.call", node, name, "", { args, risk, server: granted.server.id }));

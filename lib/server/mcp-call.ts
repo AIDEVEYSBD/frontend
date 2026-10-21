@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
-import { loadServers, type McpServer, type McpTool } from "@/lib/server/mcp";
+import { brokerRefusal, loadServers, type McpServer, type McpTool } from "@/lib/server/mcp";
 import { spawnEnv } from "@/lib/server/spawn-env";
 
 /**
@@ -11,7 +11,21 @@ import { spawnEnv } from "@/lib/server/spawn-env";
  * workflow node would have received. The server is started for the call and
  * stopped after it: correct first, and the pool the worker keeps warm is the
  * optimisation to reach for when the broker carries volume.
+ *
+ * A server the broker cannot start as it was registered (an `isolate` it
+ * has no container for, `${secret:…}` references it has no vault for, an
+ * HTTP endpoint) is refused before anything is spawned: BrokerRefusal,
+ * naming the control and the reason (lib/server/mcp.ts brokerRefusal).
  */
+
+/** A server the broker will not start, refused before any process exists. */
+export class BrokerRefusal extends Error {
+  readonly control = "supply_chain";
+  constructor(message: string) {
+    super(message);
+    this.name = "BrokerRefusal";
+  }
+}
 
 const ROOT = path.resolve(process.cwd(), "..", "runtime");
 
@@ -22,7 +36,11 @@ export interface Granted {
   name: string;
 }
 
-/** Every tool the registry offers, as `server.tool`. */
+/**
+ * Every tool the registry holds, as `server.tool`, whatever its server's
+ * status: the broker lists only those on an approved pin (attachable in
+ * lib/server/mcp.ts) and refuses a call to the rest by name.
+ */
 export async function registryTools(): Promise<Granted[]> {
   const out: Granted[] = [];
   for (const server of await loadServers()) for (const tool of server.tools) out.push({ server, tool, name: `${server.id}.${tool.name}` });
@@ -48,6 +66,9 @@ export interface CallResult {
 }
 
 export function callTool(server: McpServer, tool: string, args: Record<string, unknown>, timeoutMs = 60_000): Promise<CallResult> {
+  // Never spawned with a literal reference, never uncontained: refused first.
+  const refusal = brokerRefusal(server);
+  if (refusal) return Promise.reject(new BrokerRefusal(refusal));
   return new Promise((resolve, reject) => {
     const started = Date.now();
     const child = spawn(server.command, server.args, { cwd: ROOT, env: spawnEnv(server.env), stdio: ["pipe", "pipe", "pipe"] });

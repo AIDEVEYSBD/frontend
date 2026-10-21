@@ -12,14 +12,23 @@ import { signerName, useSession } from "@/lib/use-session";
  * Steering a live run.
  *
  * Three controls on the same channel as the cancel: guidance appended to
- * the next model prompt, a hold so the next risky call gates even if no
- * gate names it, and the model the next step runs on (from what the
- * deployment offers, `GET /api/models`). Each is `POST /api/runs/{id}/steer`
- * and is journalled as an operator action with who and when; the transcript
- * shows that entry when the stream delivers it, and the panel keeps its own
- * receipt until then.
+ * the next model prompt, a hold so the next call at or above write waits
+ * for a person even if no gate names it, and the model the next model call
+ * goes to (from what the deployment offers, `GET /api/models`). Each is
+ * `POST /api/runs/{id}/steer` and is journalled as an operator action with
+ * who and when; the transcript shows that entry when the stream delivers
+ * it, and the panel keeps the backend's receipt until then. Only a run in
+ * flight can be steered (the door answers 409 otherwise), and a hold, once
+ * asked, cannot be withdrawn: the door has no lever for that.
  */
-export function SteerPanel({ runId, suspended }: { runId: string; suspended: boolean }) {
+/** Where the backend says the steer went, in words. */
+const DELIVERED: Record<SteerResult["delivery"], string> = {
+  "in-process": "taken at the run's next step",
+  worker: "handed to the worker at its next heartbeat",
+  sdk: "handed to the agent on its next control poll",
+};
+
+export function SteerPanel({ runId }: { runId: string }) {
   const { session } = useSession();
   const by = signerName(session, CURRENT_USER.name);
   const [guidance, setGuidance] = useState("");
@@ -61,7 +70,7 @@ export function SteerPanel({ runId, suspended }: { runId: string; suspended: boo
       <span className="absolute inset-y-0 left-0 w-[3px] bg-run" />
       <span className="flex items-center gap-2">
         <span className="text-[12px] font-semibold text-fg">Steer this run</span>
-        <span className="text-[10.5px] text-faint">{suspended ? "applies when it resumes" : "applies to the next step"}</span>
+        <span className="text-[10.5px] text-faint">applies to the next step</span>
       </span>
 
       <Field label="Guidance for the next step" hint="Appended to the next model prompt, journalled with your name.">
@@ -74,21 +83,23 @@ export function SteerPanel({ runId, suspended }: { runId: string; suspended: boo
       <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
         <span className="flex flex-col">
           <span className="text-[12.5px] font-medium text-mist">Hold at next gate</span>
-          <span className="text-[11px] text-faint">The next risky call gates even if no gate names it.</span>
+          <span className="text-[11px] text-faint">
+            {hold ? "Asked. The next call at or above write waits for a person; a hold cannot be withdrawn." : "The next call at or above write waits for a person, even if no gate names it."}
+          </span>
         </span>
         <Switch
           checked={hold}
-          disabled={busy !== null}
+          disabled={busy !== null || hold}
           onChange={async (on) => {
-            const ok = await send("hold", { hold_at_next_gate: on }, on ? "Hold at next gate" : "Hold lifted");
-            if (ok) setHold(on);
+            if (!on) return;
+            if (await send("hold", { hold_at_next_gate: true }, "Hold at next gate")) setHold(true);
           }}
           label={hold ? "holding" : "not holding"}
         />
       </div>
 
       <div className="flex flex-col gap-1.5 border-t border-line pt-3">
-        <span className="text-[12.5px] font-medium text-mist">Model for the next step</span>
+        <span className="text-[12.5px] font-medium text-mist">Model for the next model call</span>
         <div className="flex items-center gap-2">
           <div className="min-w-0 grow">
             <Pick
@@ -96,7 +107,7 @@ export function SteerPanel({ runId, suspended }: { runId: string; suspended: boo
               onChange={setModel}
               options={[{ value: "", label: models.length ? "as the spec routes it" : "no models offered" }, ...models.map((m) => ({ value: m.id, label: m.label }))]}
               disabled={busy !== null || models.length === 0}
-              aria-label="Model for the next step"
+              aria-label="Model for the next model call"
             />
           </div>
           <Button size="sm" variant="solid" tone="ink" permission="run" loading={busy === "model"} disabled={!model || busy !== null} onClick={() => send("model", { model }, `Model ${model}`)}>
@@ -112,7 +123,13 @@ export function SteerPanel({ runId, suspended }: { runId: string; suspended: boo
             <span key={i} className="flex items-center gap-2 text-[11px] text-faint">
               <span className="size-1.5 shrink-0 rounded-[2px] bg-ok" />
               <span className="min-w-0 truncate">
-                {what} queued · {r.by || by} · <Mono className="text-[10px]">{new Date(r.at).toLocaleTimeString()}</Mono>
+                {what} · {DELIVERED[r.delivery]} · {r.by || by}
+                {r.at ? (
+                  <>
+                    {" · "}
+                    <Mono className="text-[10px]">{new Date(r.at).toLocaleTimeString()}</Mono>
+                  </>
+                ) : null}
               </span>
             </span>
           ))}

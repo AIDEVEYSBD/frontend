@@ -1,16 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { TOOL_CARDS, TOOL_BY_ID, type ToolCard } from "@/lib/catalogue";
 import { CONNECTOR_DEFS, type ConnectorDef } from "@/lib/connections";
 import { VENDORS, VENDOR_GROUPS, type Vendor } from "@/lib/vendors";
 import { toolOf, type McpServer, type McpTool } from "@/lib/use-mcp";
+import { pinnedTools, railOf, type HeldServer } from "@/lib/mcp-registry";
 import { HARNESS, HARNESS_ORDER, OUTPUT_META, TRIGGER_META, type AgentSystem } from "@/lib/spec";
 import type { HarnessKind } from "@/lib/spec";
 import { Icon } from "./icons";
-import { Button, IconButton } from "../ui";
+import { Button } from "../ui";
 import { Skeleton } from "../loaders";
-import { Area, Row, Text } from "./controls";
+import { AddServerForm, ServerStatusTag } from "../tool-servers";
+import { Text } from "./controls";
 import { ConnectorMark, Grip, RiskPill, ServerMark, Tile, ToolMark, cardRisk, cardVerbs } from "./marks";
 import { BrandMark } from "../brand";
 
@@ -84,15 +87,17 @@ export function Palette({
   selected?: string | null;
   /** Clicking a card grants it with the same payload the drag would carry. */
   onGrant?: (kind: "tool" | "connector" | "system" | "harness" | "workflow" | "custom", payload: string) => void;
-  /** The connected MCP servers, owned by the shell so the canvas and the
-      inspector draw the same marks the rail does. */
-  mcp: { servers: McpServer[] | null; refresh: () => void };
+  /** The registered MCP servers, owned by the shell so the canvas and the
+      inspector draw the same marks the rail does. Only an approved server's
+      pinned tools are offered; the rest are listed held, with the reason. */
+  mcp: { servers: McpServer[] | null; error?: string; refresh: () => void };
 }) {
   const [cat, setCat] = useState<Cat>("agents");
   const [saved, setSaved] = useState<SavedAgent[] | null>(null);
   const [query, setQuery] = useState("");
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const { servers: mcpServers, refresh: refreshMcp } = mcp;
+  const rail = railOf(mcpServers);
 
   useEffect(() => {
     let stop = false;
@@ -314,9 +319,11 @@ export function Palette({
     ? {
         agents: HARNESS_ORDER.filter((k) => hit(HARNESS[k].name, HARNESS[k].does)),
         tools: TOOL_CARDS.filter((t) => hit(t.label, t.blurb, ...t.capabilities)),
-        custom: (mcpServers ?? []).flatMap((s) =>
-          s.tools.filter((t) => hit(t.name, t.description, s.label, s.id)).map((t) => [s, t] as const),
+        custom: rail.usable.flatMap((s) =>
+          pinnedTools(s).filter((t) => hit(t.name, t.description, s.label, s.id)).map((t) => [s, t] as const),
         ),
+        // A held server that matches says why its tools are not on offer.
+        held: rail.held.filter((h) => hit(h.server.label, h.server.id, ...pinnedTools(h.server).map((t) => t.name))),
         connectors: CONNECTOR_DEFS.filter((c) => hit(c.label, c.blurb, c.tool, c.kind)),
         vendors: VENDORS.filter((v) => hit(v.name, v.group)),
         system: (["input", "output"] as const).filter((s) =>
@@ -391,9 +398,12 @@ export function Palette({
             {found.tools.length > 0 && (
               <div className="flex flex-col gap-1.5">{found.tools.map(toolCard)}</div>
             )}
-            {found.custom.length > 0 && cap("Custom tools")}
+            {found.custom.length + found.held.length > 0 && cap("Custom tools")}
             {found.custom.length > 0 && (
               <div className="flex flex-col gap-1.5">{found.custom.map(([s, t]) => customCard(s, t, true))}</div>
+            )}
+            {found.held.length > 0 && (
+              <div className="flex flex-col gap-1.5">{found.held.map((h) => <HeldServerRow key={h.server.id} held={h} />)}</div>
             )}
             {found.connectors.length > 0 && cap("Connectors")}
             {found.connectors.length > 0 && (
@@ -411,7 +421,7 @@ export function Palette({
             {found.workflows.length > 0 && (
               <div className="flex flex-col gap-1.5">{found.workflows.map(workflowCard)}</div>
             )}
-            {found.agents.length + found.tools.length + found.custom.length + found.connectors.length + found.vendors.length + found.system.length + found.workflows.length === 0 && (
+            {found.agents.length + found.tools.length + found.custom.length + found.held.length + found.connectors.length + found.vendors.length + found.system.length + found.workflows.length === 0 && (
               <p className="text-[11px] text-faint">Nothing matches &ldquo;{query.trim()}&rdquo;.</p>
             )}
           </>
@@ -438,15 +448,29 @@ export function Palette({
 
                 {cap("Custom tools · MCP")}
                 <p className="text-[11.5px] leading-[1.5] text-faint">
-                  Your team&rsquo;s own tools, served over MCP. Connect a server once and every
-                  tool it lists becomes a card here; the same server is attached at run time.
+                  Your team&rsquo;s own tools, served over MCP. A registered server&rsquo;s tools
+                  become cards here once a person approves its pinned tool list; the same pin is
+                  what attaches at run time. Approve, rescan and remove servers under{" "}
+                  <Link href="/configuration#registry" target="_blank" className="focusable rounded-sm font-medium text-fg underline decoration-line-strong underline-offset-2 hover:decoration-fg">
+                    Configuration · Tool servers
+                  </Link>
+                  .
                 </p>
                 {mcpServers === null && <Skeleton lines={2} />}
-                {(mcpServers ?? []).map((s) => (
-                  <McpServerRail key={s.id} server={s} onChanged={refreshMcp}>
-                    <div className="flex flex-col gap-1.5">{s.tools.map((t) => customCard(s, t))}</div>
+                {mcp.error && <p className="text-[10.5px] leading-[1.4] text-err">{mcp.error}</p>}
+                {rail.usable.map((s) => (
+                  <McpServerRail key={s.id} server={s}>
+                    <div className="flex flex-col gap-1.5">{pinnedTools(s).map((t) => customCard(s, t))}</div>
                   </McpServerRail>
                 ))}
+                {rail.held.length > 0 && (
+                  <div className="flex flex-col gap-1.5">
+                    <span className="pt-1 text-[10.5px] font-medium text-faint">Held back · not attachable</span>
+                    {rail.held.map((h) => (
+                      <HeldServerRow key={h.server.id} held={h} />
+                    ))}
+                  </div>
+                )}
                 <McpConnect onConnected={refreshMcp} />
               </>
             )}
@@ -559,90 +583,17 @@ export function Palette({
 
 /* ═══════════════════ custom tools over MCP ═══════════════════ */
 
-/** A square icon action for the server header — small enough that the
- *  header keeps room for the name it exists to show. */
-function RailBtn({
-  label,
-  onClick,
-  disabled = false,
-  loading = false,
-  tone = "neutral",
-  children,
-}: {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  loading?: boolean;
-  tone?: "neutral" | "err";
-  children: React.ReactNode;
-}) {
-  // Destructive from the first click: solid err, never a hover tint.
-  return (
-    <IconButton
-      size="sm"
-      label={label}
-      onClick={onClick}
-      disabled={disabled}
-      loading={loading}
-      className={`shrink-0 rounded-sm ${tone === "err" ? "!bg-err text-on-solid" : ""}`}
-    >
-      {children}
-    </IconButton>
-  );
-}
-
-function McpServerRail({
-  server,
-  onChanged,
-  children,
-}: {
-  server: McpServer;
-  onChanged: () => void;
-  children: React.ReactNode;
-}) {
-  const [busy, setBusy] = useState<"refresh" | "remove" | null>(null);
-  const [confirm, setConfirm] = useState(false);
-  const [error, setError] = useState("");
+function McpServerRail({ server, children }: { server: McpServer; children: React.ReactNode }) {
   const [open, setOpen] = useState(true);
-
-  const refresh = async () => {
-    setBusy("refresh");
-    setError("");
-    try {
-      const r = await fetch("/api/mcp", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: server.id, refresh: true }),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(String(d.error ?? r.status));
-      onChanged();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const remove = async () => {
-    if (!confirm) {
-      setConfirm(true);
-      setTimeout(() => setConfirm(false), 3000);
-      return;
-    }
-    setBusy("remove");
-    await fetch(`/api/mcp?id=${encodeURIComponent(server.id)}`, { method: "DELETE" });
-    setBusy(null);
-    onChanged();
-  };
-
-  const n = server.tools.length;
+  const n = pinnedTools(server).length;
 
   return (
     <div className="flex flex-col gap-1.5">
       {/* The header is the server's identity: its mark, its name, how many
-          tools it lists. It folds, because thirteen servers of three tools
-          each is a rail nobody can scan otherwise. */}
+          tools its approved pin lists. It folds, because thirteen servers of
+          three tools each is a rail nobody can scan otherwise. Approving,
+          rescanning and removing live in Configuration, beside the pin and
+          the scan they act on. */}
       <div className="-mx-1 flex items-center gap-0.5">
         <button
           type="button"
@@ -671,118 +622,62 @@ function McpServerRail({
             {n}
           </span>
         </button>
-        <RailBtn
-          label="Refresh — ask the server for its tools again"
-          onClick={refresh}
-          disabled={!!busy}
-          loading={busy === "refresh"}
-        >
-          <Icon name="refresh" size={11} />
-        </RailBtn>
-        {confirm ? (
-          <Button
-            size="sm"
-            variant="solid"
-            tone="err"
-            permission="configure"
-            disabled={!!busy}
-            loading={busy === "remove"}
-            onClick={remove}
-          >
-            Remove server and its tools?
-          </Button>
-        ) : (
-          <RailBtn label={`Remove ${server.label}`} onClick={remove} disabled={!!busy} tone="err">
-            <Icon name="cross" size={11} strokeWidth={2.25} />
-          </RailBtn>
-        )}
       </div>
-      {error && <p className="text-[10px] text-err">{error}</p>}
       {open && children}
+    </div>
+  );
+}
+
+/** A server whose tools are not on offer: not draggable, saying why in one line. */
+function HeldServerRow({ held }: { held: HeldServer }) {
+  const { server, reason } = held;
+  return (
+    <div className="flex items-start gap-2 rounded-md border border-dashed border-line-strong bg-surface py-1.5 pr-2 pl-2.5" title={`${server.label}: ${reason}`} aria-disabled="true">
+      <span className="opacity-50">
+        <ServerMark id={server.id} label={server.label} size={20} />
+      </span>
+      <span className="flex min-w-0 grow flex-col gap-0.5">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="min-w-0 truncate text-[11.5px] font-medium text-faint">{shortLabel(server.label)}</span>
+          <span className="grow" />
+          <ServerStatusTag status={server.status} />
+        </span>
+        <span className="line-clamp-2 text-[10px] leading-[1.45] text-faint">{reason}</span>
+      </span>
     </div>
   );
 }
 
 function McpConnect({ onConnected }: { onConnected: () => void }) {
   const [open, setOpen] = useState(false);
-  const [label, setLabel] = useState("");
-  const [command, setCommand] = useState("");
-  const [env, setEnv] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  const connect = async () => {
-    setBusy(true);
-    setError("");
-    try {
-      const r = await fetch("/api/mcp", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ label, command, env }),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(String(d.error ?? r.status));
-      setLabel("");
-      setCommand("");
-      setEnv("");
-      setOpen(false);
-      onConnected();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const [admitted, setAdmitted] = useState("");
 
   if (!open) {
     return (
-      <Button size="sm" variant="outline" permission="configure" className="self-start" onClick={() => setOpen(true)}>
-        <Icon name="server" size={13} />
-        Connect an MCP server
-      </Button>
+      <div className="flex flex-col gap-1.5">
+        {admitted && (
+          <p className="text-[10.5px] leading-[1.45] text-faint">
+            {admitted} is registered and pending: its tools appear here once its pin is approved in Configuration.
+          </p>
+        )}
+        <Button size="sm" variant="solid" tone="neutral" permission="configure" className="self-start" onClick={() => setOpen(true)}>
+          <Icon name="server" size={13} />
+          Register an MCP server
+        </Button>
+      </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-2.5 rounded-md border border-line bg-surface p-2.5">
-      <span className="text-[11.5px] font-medium text-fg">Connect an MCP server</span>
-      <Row label="Name" tight>
-        <Text value={label} onChange={setLabel} placeholder="Risk engine" aria-label="Name" />
-      </Row>
-      <Row label="Command that starts it (stdio)" tight>
-        <Text
-          mono
-          value={command}
-          onChange={setCommand}
-          placeholder="python3 tools/risk_server.py"
-          aria-label="Command that starts it"
-        />
-      </Row>
-      <Row label="Environment, one KEY=VALUE per line (optional)" tight>
-        <Area
-          mono
-          rows={2}
-          spellCheck={false}
-          value={env}
-          onChange={setEnv}
-          placeholder={"API_BASE=https://…\nAPI_KEY=${secret:risk-key}"}
-          aria-label="Environment variables"
-        />
-      </Row>
-      <p className="text-[10px] leading-[1.5] text-faint">
-        The server is started once now to list its tools, then again by the runtime whenever an
-        agent that holds one of them runs. It runs beside the runtime, never inside it.
-      </p>
-      {error && <p className="text-[10px] leading-[1.4] text-err">{error}</p>}
-      <div className="flex items-center gap-2">
-        <Button size="sm" variant="solid" tone="err" onClick={() => setOpen(false)}>
-          Cancel
-        </Button>
-        <span className="grow" />
-        <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={busy || !command.trim()} loading={busy} onClick={connect}>
-          {busy ? "Discovering tools…" : "Connect"}
-        </Button>
-      </div>
-    </div>
+    <AddServerForm
+      stacked
+      onCancel={() => setOpen(false)}
+      onRefused={onConnected}
+      onAdded={(s) => {
+        setAdmitted(s.label || s.id);
+        setOpen(false);
+        onConnected();
+      }}
+    />
   );
 }

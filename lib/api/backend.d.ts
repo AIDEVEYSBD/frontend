@@ -109,6 +109,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/answer/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The gate a link answers: its shape and evidence (the token is the identity) */
+        get: operations["readExternalGate"];
+        put?: never;
+        /** Answer the gate through the link: validated against its shape, signed external:<email>, and the link is spent */
+        post: operations["answerExternalGate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/applications": {
         parameters: {
             query?: never;
@@ -224,8 +242,59 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Answer one gate: resume the run, or write the answer onto an attached agent's record */
+        /** Answer one gate (a decision, a form, or verdicts): checked against the gate's shape and approvers, then the run resumes */
         post: operations["answerApproval"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/approvals/{run_id}/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mint a single-use signed link for an external participant to answer this gate */
+        post: operations["mintApprovalLink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/apps/{app_id}/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** One turn of a chatbot built here: the registered prompt, the policy's model, the gateway's screening and journal */
+        post: operations["appChat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/apps/{app_id}/conversations/{cid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The conversation's replay, as /api/applications/{id}/conversations/{cid} answers it */
+        get: operations["appConversation"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -261,6 +330,23 @@ export interface paths {
         };
         /** The tools an attached agent can be granted: the MCP registry as server.tool with risk */
         get: operations["attachableTools"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/attention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Everything that needs a person, ranked by severity × age, each with the action that clears it */
+        get: operations["getAttention"];
         put?: never;
         post?: never;
         delete?: never;
@@ -333,6 +419,24 @@ export interface paths {
         post?: never;
         /** Discard a draft */
         delete: operations["deleteDraft"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fleet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Which agents are paused or draining, the lockdown, and what is in flight here */
+        get: operations["getFleet"];
+        put?: never;
+        /** Pause, drain, resume or kill a set of agents: one decision, one audit event */
+        post: operations["fleetAction"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -446,6 +550,93 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lockdown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether the estate is locked down, by whom and why */
+        get: operations["getLockdown"];
+        put?: never;
+        /** Lock the estate down (every call above read and every sink waits for a human) or lift it; one audit event */
+        post: operations["setLockdown"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every registered MCP server: status, pinned tool list and digest, last scan (env and header names only) */
+        get: operations["listMcpServers"];
+        put?: never;
+        /** Admit an MCP server: discover its tools, screen each, pin the list; it waits as pending until a person approves it */
+        post: operations["addMcpServer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mcp/{server_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a server from the registry (both records) */
+        delete: operations["deleteMcpServer"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mcp/{server_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve a server's pinned tool list; only an approved server attaches to a run (a second person when MCP_TWO_PERSON is on) */
+        post: operations["approveMcpServer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mcp/{server_id}/rescan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Discover a server's tools again; a list whose digest moved from the pin marks it changed and detaches it until approved again */
+        post: operations["rescanMcpServer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/queue": {
         parameters: {
             query?: never;
@@ -474,6 +665,40 @@ export interface paths {
         put?: never;
         /** Re-queue a dead-lettered job as a fresh attempt */
         post: operations["replayJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retrieval/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** A grounded answer with citations and a grounding verdict, journalled as a retrieval plus a completion */
+        post: operations["retrievalAnswer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retrieval/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Screened passages from the corpus, scoped by the policy's namespaces and the principal's entitlements */
+        post: operations["retrievalSearch"];
         delete?: never;
         options?: never;
         head?: never;
@@ -549,6 +774,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runs/{run_id}/artefacts.zip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every file the run wrote, as one zip (with a manifest of what the journal named) */
+        get: operations["downloadRunArtefacts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runs/{run_id}/events": {
         parameters: {
             query?: never;
@@ -600,6 +842,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runs/{run_id}/steer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Steer a run in flight: guidance for its next prompt, a hold at its next risky call, a model for its next call */
+        post: operations["steerRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/screener/health": {
         parameters: {
             query?: never;
@@ -611,6 +870,125 @@ export interface paths {
         get: operations["screenerHealth"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sdk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What an agent's SDK talks to, in what shape, and what is recorded from it */
+        get: operations["describeSdk"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sdk/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open a live SDK run (run without journal or state), or take a whole run record (the 1.4 protocol) */
+        post: operations["sdkPostRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sdk/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One SDK-reported run as its agent sees it: the 1.4 poll for an answer while it waits at a gate */
+        get: operations["sdkPollRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sdk/runs/{run_id}/control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The long-poll: a kill (until the run finishes), a gate's answer (once), a steer (once); nulls after `wait` */
+        get: operations["sdkControl"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sdk/runs/{run_id}/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Append journal entries to a live SDK run (idempotent on entry id); they feed /api/runs/{id}/events */
+        post: operations["sdkPostEntries"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sdk/runs/{run_id}/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** The final state of a live SDK run: done, failed or killed */
+        post: operations["sdkFinishRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sdk/runs/{run_id}/gate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open a gate on a live SDK run: suspended at once, in the approvals inbox, its deadline walked here */
+        post: operations["sdkOpenGate"];
         delete?: never;
         options?: never;
         head?: never;
@@ -794,6 +1172,29 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * Action
+         * @description What clears the item: a door to call with a body, or, when the
+         *     remedy is a page or a setting, where to go.
+         */
+        Action: {
+            /** Body */
+            body?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Method
+             * @default
+             */
+            method: string;
+            /**
+             * Path
+             * @default
+             */
+            path: string;
+            /** Says */
+            says: string;
+        };
         /** AgentDeployed */
         AgentDeployed: {
             /** At */
@@ -971,37 +1372,6 @@ export interface components {
             /** Version */
             version?: number | null;
         };
-        /** AnswerResult */
-        AnswerResult: {
-            /**
-             * Continuing
-             * @default false
-             */
-            continuing: boolean;
-            /**
-             * Delivered
-             * @default
-             */
-            delivered: string;
-            /**
-             * Error
-             * @default
-             */
-            error: string;
-            /** Ok */
-            ok: boolean;
-            /** Result */
-            result?: {
-                [key: string]: unknown;
-            } | null;
-            /** Run */
-            run: string;
-            /**
-             * State
-             * @default
-             */
-            state: string;
-        };
         /** ApplicationChanged */
         ApplicationChanged: {
             application: components["schemas"]["ApplicationView"];
@@ -1046,6 +1416,16 @@ export interface components {
              * @enum {string}
              */
             class: "chatbot" | "rag" | "agent" | "multi_agent";
+            /**
+             * Controls Fired 30D
+             * @default 0
+             */
+            controls_fired_30d: number;
+            /**
+             * Cost 30D
+             * @default 0
+             */
+            cost_30d: number;
             /** Created At */
             created_at: string;
             /**
@@ -1062,6 +1442,11 @@ export interface components {
             id: string;
             /** Key Prefix */
             key_prefix: string;
+            /**
+             * Last Seen
+             * @default
+             */
+            last_seen: string;
             /** Name */
             name: string;
             /** Owner */
@@ -1075,9 +1460,11 @@ export interface components {
         };
         /**
          * ApprovalAnswer
-         * @description `approved` (or `answer.approved`) and a note. The signer is always the
-         *     session identity; `by` is read only for a machine key, which cannot be a
-         *     person, and lands in the note as "on behalf of".
+         * @description `approved` (or `answer.approved`) and a note for a decision gate; the
+         *     typed fields under `answer` for a form gate; `answer.verdicts` (item id
+         *     → verdict) for a verdicts gate. The signer is always the session
+         *     identity; `by` is read only for a machine key, which cannot be a person,
+         *     and lands in the note as "on behalf of".
          */
         ApprovalAnswer: {
             /** Answer */
@@ -1241,6 +1628,66 @@ export interface components {
             /** Store */
             store: string;
         };
+        /** AttentionItem */
+        AttentionItem: {
+            action: components["schemas"]["Action"];
+            /** Age S */
+            age_s: number;
+            /**
+             * Agent
+             * @default
+             */
+            agent: string;
+            /** Deadline */
+            deadline?: string | null;
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+            /**
+             * Holds
+             * @default
+             */
+            holds: string;
+            /** Id */
+            id: string;
+            /**
+             * Job
+             * @default
+             */
+            job: string;
+            /** Kind */
+            kind: string;
+            /** Rank */
+            rank: number;
+            /**
+             * Run
+             * @default
+             */
+            run: string;
+            /** Severity */
+            severity: number;
+            /**
+             * Since
+             * @default
+             */
+            since: string;
+            /** Title */
+            title: string;
+        };
+        /** AttentionList */
+        AttentionList: {
+            /** Count */
+            count: number;
+            /**
+             * How
+             * @default rank = severity × (1 + min(age in hours, 48) / 24); each item carries the action that clears it
+             */
+            how: string;
+            /** Items */
+            items: components["schemas"]["AttentionItem"][];
+        };
         /** AuthEventView */
         AuthEventView: {
             /** At */
@@ -1280,7 +1727,7 @@ export interface components {
             /** Remaining */
             remaining: number;
             /** Results */
-            results: components["schemas"]["AnswerResult"][];
+            results: components["schemas"]["app__approvals__AnswerResult"][];
         };
         /** BudgetRefusal */
         BudgetRefusal: {
@@ -1341,6 +1788,119 @@ export interface components {
             /** To */
             to?: unknown;
         };
+        /** ChatReply */
+        ChatReply: {
+            /** Conversation */
+            conversation: string;
+            /** Principal */
+            principal: string;
+            /** Reply */
+            reply: string;
+            /** Screened */
+            screened: {
+                [key: string]: unknown;
+            }[];
+            /** Turn */
+            turn: number;
+            usage: components["schemas"]["ChatUsage"];
+        };
+        /** ChatRequest */
+        ChatRequest: {
+            /** Conversation */
+            conversation?: string | null;
+            /** Message */
+            message: string;
+            /** Principal */
+            principal?: string | null;
+        };
+        /** ChatUsage */
+        ChatUsage: {
+            /** Completion */
+            completion: string;
+            /** Cost */
+            cost: number;
+            /** Estimated */
+            estimated: boolean;
+            /** Latency Ms */
+            latency_ms: number;
+            /** Model */
+            model: string;
+            /** Run */
+            run: string;
+            tokens: components["schemas"]["Tokens"];
+        };
+        /** CitationView */
+        CitationView: {
+            /** Body */
+            body: string;
+            /**
+             * Documentid
+             * @default
+             */
+            documentId: string;
+            /**
+             * Flagged
+             * @default false
+             */
+            flagged: boolean;
+            /**
+             * Heading
+             * @default
+             */
+            heading: string;
+            /** Id */
+            id: string;
+            /** N */
+            n: number;
+            /**
+             * Ordinal
+             * @default 0
+             */
+            ordinal: number;
+            /**
+             * Publisher
+             * @default
+             */
+            publisher: string;
+            /** Relevance */
+            relevance?: number | null;
+            /**
+             * Score
+             * @default 0
+             */
+            score: number;
+            /** Similarity */
+            similarity?: number | null;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /**
+             * Sourceid
+             * @default
+             */
+            sourceId: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Url
+             * @default
+             */
+            url: string;
+            /**
+             * Used
+             * @default false
+             */
+            used: boolean;
+            /** Verdict */
+            verdict?: {
+                [key: string]: unknown;
+            } | null;
+        };
         /** ClaimRequest */
         ClaimRequest: {
             /** Agent Cap */
@@ -1378,6 +1938,11 @@ export interface components {
             };
             /** Lease Until */
             lease_until: string;
+            /**
+             * Lockdown
+             * @default false
+             */
+            lockdown: boolean;
             /** Max Attempts */
             max_attempts: number;
             /**
@@ -1461,6 +2026,19 @@ export interface components {
                 [key: string]: unknown;
             }[];
         };
+        /** ControlAnswer */
+        ControlAnswer: {
+            /** Answer */
+            answer: {
+                [key: string]: unknown;
+            };
+            /** At */
+            at: string;
+            /** By */
+            by: string;
+            /** Gate */
+            gate: string;
+        };
         /** ConversationList */
         ConversationList: {
             /** Application */
@@ -1502,6 +2080,8 @@ export interface components {
             last: string;
             /** Principal */
             principal: string;
+            /** Retrievals */
+            retrievals?: components["schemas"]["RetrievalView"][];
             /** Started */
             started: string;
         };
@@ -1622,8 +2202,9 @@ export interface components {
         /**
          * Evidence
          * @description What the run had in hand when it stopped: the last node's emitted
-         *     decision (scalars), what the gate was shown, and whether any of it came
-         *     from outside.
+         *     decision (scalars), what the gate was shown, whether any of it came
+         *     from outside, and the trail of entries the gate cites, walked
+         *     backwards along `because` from the gate itself (L5).
          */
         Evidence: {
             /** Decided */
@@ -1636,6 +2217,91 @@ export interface components {
             };
             /** Tainted By */
             tainted_by?: string[];
+            /** Trail */
+            trail?: components["schemas"]["TrailEntry"][];
+        };
+        /** ExternalAnswer */
+        ExternalAnswer: {
+            /** Answer */
+            answer: {
+                [key: string]: unknown;
+            };
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+        };
+        /** ExternalAnswered */
+        ExternalAnswered: {
+            /** By */
+            by: string;
+            /** Delivered */
+            delivered: string;
+            /** Ok */
+            ok: boolean;
+            /** Run */
+            run: string;
+            /** State */
+            state: string;
+        };
+        /**
+         * ExternalGate
+         * @description What an external participant sees: the gate's interface and evidence.
+         */
+        ExternalGate: {
+            /** Agent */
+            agent: string;
+            /**
+             * Answer With
+             * @default
+             */
+            answer_with: string;
+            /**
+             * Asks
+             * @default
+             */
+            asks: string;
+            /** Deadline */
+            deadline?: string | null;
+            /** Decided */
+            decided?: {
+                [key: string]: unknown;
+            };
+            /** Email */
+            email: string;
+            evidence: components["schemas"]["Evidence"];
+            /** Expires At */
+            expires_at: string;
+            /** Fields */
+            fields?: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * How
+             * @default POST the same URL with {answer: {...}, note?}; the answer is signed as external:<your email> and the link is spent
+             */
+            how: string;
+            /** Items */
+            items?: {
+                [key: string]: unknown;
+            }[];
+            next: components["schemas"]["NextSteps"];
+            /** Node */
+            node: string;
+            /** Run */
+            run: string;
+            /**
+             * Shape
+             * @default decision
+             */
+            shape: string;
+            /** Transitions */
+            transitions?: {
+                [key: string]: string[];
+            };
+            /** Verdicts */
+            verdicts?: string[];
         };
         /** Finding */
         Finding: {
@@ -1699,6 +2365,49 @@ export interface components {
              */
             status: "done" | "failed" | "suspended";
         };
+        /** FleetRequest */
+        FleetRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "pause" | "resume" | "drain" | "kill";
+            /** Agents */
+            agents: string[];
+            /** Reason */
+            reason: string;
+        };
+        /** FleetResult */
+        FleetResult: {
+            /** Action */
+            action: string;
+            /** Agents */
+            agents: string[];
+            /** At */
+            at: string;
+            /** By */
+            by: string;
+            /** Killed */
+            killed?: string[];
+            /** Paused */
+            paused?: {
+                [key: string]: components["schemas"]["PauseInfo"];
+            };
+            /** Reason */
+            reason: string;
+        };
+        /** FleetState */
+        FleetState: {
+            /** Live */
+            live?: {
+                [key: string]: number;
+            };
+            lockdown: components["schemas"]["LockdownState"];
+            /** Paused */
+            paused?: {
+                [key: string]: components["schemas"]["PauseInfo"];
+            };
+        };
         /** GateChange */
         GateChange: {
             /** Approvers */
@@ -1760,6 +2469,38 @@ export interface components {
             removed?: string[];
             /** Scope Changed */
             scope_changed?: string[];
+        };
+        /** GroundingView */
+        GroundingView: {
+            /**
+             * Checked
+             * @default 0
+             */
+            checked: number;
+            /**
+             * Rounds
+             * @default 0
+             */
+            rounds: number;
+            /**
+             * Supported
+             * @default 0
+             */
+            supported: number;
+            /**
+             * Unsupported
+             * @default 0
+             */
+            unsupported: number;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "grounded" | "partial" | "ungrounded" | "empty";
+            /** Verdicts */
+            verdicts?: {
+                [key: string]: unknown;
+            }[];
         };
         /**
          * GuardChange
@@ -1831,6 +2572,7 @@ export interface components {
              * @enum {string}
              */
             status: "queued" | "running" | "done" | "failed" | "suspended";
+            steer?: components["schemas"]["SteerInfo"] | null;
         };
         /** Hierarchy */
         Hierarchy: {
@@ -2230,6 +2972,258 @@ export interface components {
             /** Tokens Per Day */
             tokens_per_day?: number | null;
         };
+        /** LinkMinted */
+        LinkMinted: {
+            /** By */
+            by: string;
+            /** Deadline */
+            deadline?: string | null;
+            /** Email */
+            email: string;
+            /** Expires At */
+            expires_at: string;
+            /** Gate */
+            gate: string;
+            /** Path */
+            path: string;
+            /** Run */
+            run: string;
+            /** Token */
+            token: string;
+            /** Url */
+            url: string;
+        };
+        /** LinkRequest */
+        LinkRequest: {
+            /** Email */
+            email: string;
+            /** Expires S */
+            expires_s?: number | null;
+        };
+        /** LockdownRequest */
+        LockdownRequest: {
+            /** On */
+            on: boolean;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+        };
+        /** LockdownState */
+        LockdownState: {
+            /**
+             * At
+             * @default
+             */
+            at: string;
+            /**
+             * By
+             * @default
+             */
+            by: string;
+            /** Controls */
+            controls?: string[];
+            /**
+             * On
+             * @default false
+             */
+            on: boolean;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+        };
+        /** McpAddRequest */
+        McpAddRequest: {
+            /** Command */
+            command?: string | null;
+            /** Env */
+            env?: {
+                [key: string]: string;
+            } | string | null;
+            /** Headers */
+            headers?: {
+                [key: string]: string;
+            } | string | null;
+            /** Id */
+            id?: string | null;
+            /** Isolate */
+            isolate?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /** Url */
+            url?: string | null;
+            /**
+             * Version
+             * @default
+             */
+            version: string;
+        };
+        /** McpApproval */
+        McpApproval: {
+            /** At */
+            at: string;
+            /** By */
+            by: string;
+            /**
+             * Digest
+             * @default
+             */
+            digest: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** McpHit */
+        McpHit: {
+            /** Control */
+            control: string;
+            /** Detail */
+            detail: string;
+            /**
+             * Field
+             * @enum {string}
+             */
+            field: "name" | "description" | "schema";
+            /** Tool */
+            tool: string;
+        };
+        /** McpPin */
+        McpPin: {
+            /**
+             * At
+             * @default
+             */
+            at: string;
+            /** Digest */
+            digest: string;
+            /** Tools */
+            tools?: components["schemas"]["McpTool"][];
+        };
+        /** McpRefusal */
+        McpRefusal: {
+            /** Control */
+            control: string;
+            /** Error */
+            error: string;
+            /** Hits */
+            hits?: components["schemas"]["McpHit"][];
+            server?: components["schemas"]["McpServer"] | null;
+        };
+        /** McpRegistry */
+        McpRegistry: {
+            /** Count */
+            count: number;
+            /** Servers */
+            servers: components["schemas"]["McpServer"][];
+            /** Two Person */
+            two_person: boolean;
+        };
+        /** McpRescanned */
+        McpRescanned: {
+            /** Changed */
+            changed: boolean;
+            server: components["schemas"]["McpServer"];
+        };
+        /** McpScan */
+        McpScan: {
+            /** At */
+            at: string;
+            /** By */
+            by: string;
+            /** Digest */
+            digest: string;
+            /** Hits */
+            hits?: components["schemas"]["McpHit"][];
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * McpServer
+         * @description A registered server. Env and header values are never here, only their names.
+         */
+        McpServer: {
+            /**
+             * Added At
+             * @default
+             */
+            added_at: string;
+            /**
+             * Added By
+             * @default
+             */
+            added_by: string;
+            /** Adopted */
+            adopted?: {
+                [key: string]: string;
+            } | null;
+            /** Approvals */
+            approvals?: components["schemas"]["McpApproval"][];
+            /** Args */
+            args?: string[] | null;
+            /** Command */
+            command?: string | null;
+            /** Env Names */
+            env_names?: string[];
+            /** Header Names */
+            header_names?: string[];
+            /** Id */
+            id: string;
+            /** Isolate */
+            isolate?: {
+                [key: string]: unknown;
+            } | null;
+            /** Label */
+            label: string;
+            last_scan?: components["schemas"]["McpScan"] | null;
+            pin?: components["schemas"]["McpPin"] | null;
+            previous_pin?: components["schemas"]["McpPin"] | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "approved" | "refused" | "changed";
+            /**
+             * Transport
+             * @enum {string}
+             */
+            transport: "stdio" | "http";
+            /** Url */
+            url?: string | null;
+            /**
+             * Version
+             * @default
+             */
+            version: string;
+        };
+        /** McpServerEnvelope */
+        McpServerEnvelope: {
+            server: components["schemas"]["McpServer"];
+        };
+        /** McpTool */
+        McpTool: {
+            /** Annotations */
+            annotations?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Inputschema */
+            inputSchema?: unknown;
+            /** Name */
+            name: string;
+        } & {
+            [key: string]: unknown;
+        };
         /**
          * MetricsView
          * @description What the journalled completions say about one application in a window.
@@ -2252,6 +3246,7 @@ export interface components {
             models: components["schemas"]["ModelMix"][];
             /** Principals */
             principals: number;
+            rag?: components["schemas"]["RagMetrics"] | null;
             /** Refusals */
             refusals: number;
             /** Refusals By Reason */
@@ -2264,6 +3259,8 @@ export interface components {
             screened: {
                 [key: string]: number;
             };
+            /** Series */
+            series?: components["schemas"]["SeriesPoint"][];
             /** Since */
             since: string;
             /** Streamed */
@@ -2277,7 +3274,7 @@ export interface components {
              * Window
              * @enum {string}
              */
-            window: "24h" | "7d" | "30d";
+            window: "24h" | "7d" | "30d" | "90d" | "all";
         };
         /** MintKeyRequest */
         MintKeyRequest: {
@@ -2435,10 +3432,94 @@ export interface components {
             /** Updated By */
             updated_by: string;
         };
+        /** PassageView */
+        PassageView: {
+            /** Body */
+            body: string;
+            /**
+             * Documentid
+             * @default
+             */
+            documentId: string;
+            /**
+             * Flagged
+             * @default false
+             */
+            flagged: boolean;
+            /**
+             * Heading
+             * @default
+             */
+            heading: string;
+            /** Id */
+            id: string;
+            /**
+             * Ordinal
+             * @default 0
+             */
+            ordinal: number;
+            /**
+             * Publisher
+             * @default
+             */
+            publisher: string;
+            /** Relevance */
+            relevance?: number | null;
+            /**
+             * Score
+             * @default 0
+             */
+            score: number;
+            /** Similarity */
+            similarity?: number | null;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /**
+             * Sourceid
+             * @default
+             */
+            sourceId: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Url
+             * @default
+             */
+            url: string;
+            /** Verdict */
+            verdict?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** PauseInfo */
+        PauseInfo: {
+            /** At */
+            at: string;
+            /** By */
+            by: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "pause" | "drain";
+            /** Reason */
+            reason: string;
+        };
         /** PendingGate */
         PendingGate: {
             /** Agent */
             agent: string;
+            /**
+             * Answer With
+             * @default
+             */
+            answer_with: string;
             /** Approvers */
             approvers?: string[];
             /**
@@ -2446,6 +3527,10 @@ export interface components {
              * @default
              */
             asks: string;
+            /** Chain */
+            chain?: string[];
+            /** Deadline */
+            deadline?: string | null;
             /** Decided */
             decided?: {
                 [key: string]: unknown;
@@ -2455,7 +3540,25 @@ export interface components {
              * @default
              */
             deployed_digest: string;
+            /**
+             * Escalations
+             * @default 0
+             */
+            escalations: number;
             evidence: components["schemas"]["Evidence"];
+            /**
+             * External
+             * @default false
+             */
+            external: boolean;
+            /** Fields */
+            fields?: {
+                [key: string]: unknown;
+            }[];
+            /** Items */
+            items?: {
+                [key: string]: unknown;
+            }[];
             job?: components["schemas"]["JobContext"] | null;
             /**
              * Kind
@@ -2472,6 +3575,11 @@ export interface components {
             on_timeout: string;
             /** Run */
             run: string;
+            /**
+             * Shape
+             * @default decision
+             */
+            shape: string;
             /** Source */
             source: string;
             /**
@@ -2481,6 +3589,12 @@ export interface components {
             spec_digest: string;
             /** Timeout S */
             timeout_s?: number | null;
+            /** Transitions */
+            transitions?: {
+                [key: string]: string[];
+            };
+            /** Verdicts */
+            verdicts?: string[];
             /** Waiting Since */
             waiting_since: string;
             /**
@@ -2602,6 +3716,64 @@ export interface components {
             workers: components["schemas"]["WorkerLease"][];
         };
         /**
+         * RagMetrics
+         * @description What the journalled retrievals say. Figures come from the `retrievals`
+         *     rows the retrieval door writes, never an estimate.
+         */
+        RagMetrics: {
+            /** Answered */
+            answered: number;
+            /** Answers */
+            answers: number;
+            /** Grounded */
+            grounded: number;
+            /** Grounding Rate */
+            grounding_rate: number | null;
+            /** Hit Rate */
+            hit_rate: number | null;
+            /** Hits */
+            hits: number;
+            /** Namespaces */
+            namespaces: {
+                [key: string]: number;
+            };
+            /** Partial */
+            partial: number;
+            passages: components["schemas"]["RagPassages"];
+            /** Refused */
+            refused: number;
+            /** Retrievals */
+            retrievals: number;
+            /** Searches */
+            searches: number;
+            sentences: components["schemas"]["RagSentences"];
+            /** Unanswerable */
+            unanswerable: number;
+        };
+        /** RagPassages */
+        RagPassages: {
+            /** Dropped */
+            dropped: number;
+            /** Flagged */
+            flagged: number;
+            /** Found */
+            found: number;
+            /** Returned */
+            returned: number;
+        };
+        /**
+         * RagSentences
+         * @description The grounding judge's sentence counts across every answer in the window.
+         */
+        RagSentences: {
+            /** Checked */
+            checked: number;
+            /** Supported */
+            supported: number;
+            /** Unsupported */
+            unsupported: number;
+        };
+        /**
          * Reference
          * @description `agentfactory.authoring.reference()`: harnesses, capabilities with
          *     their risk and taint facts, connector kinds with their config fields,
@@ -2709,6 +3881,152 @@ export interface components {
             /** Removed */
             removed: string;
         };
+        /** RerankView */
+        RerankView: {
+            /** Kind */
+            kind?: string | null;
+            /** Model */
+            model?: string | null;
+        };
+        /** RetrievalPassage */
+        RetrievalPassage: {
+            /**
+             * Control
+             * @default
+             */
+            control: string;
+            /**
+             * Document
+             * @default
+             */
+            document: string;
+            /**
+             * Dropped
+             * @default false
+             */
+            dropped: boolean;
+            /**
+             * Flagged
+             * @default false
+             */
+            flagged: boolean;
+            /**
+             * Heading
+             * @default
+             */
+            heading: string;
+            /** Id */
+            id: string;
+            /**
+             * Ordinal
+             * @default 0
+             */
+            ordinal: number;
+            /** Relevance */
+            relevance?: number | null;
+            /**
+             * Score
+             * @default 0
+             */
+            score: number;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+        };
+        /** RetrievalRequest */
+        RetrievalRequest: {
+            /** Conversation */
+            conversation?: string | null;
+            /** K */
+            k?: number | null;
+            /** Namespace */
+            namespace?: string | null;
+            /** Principal */
+            principal?: string | null;
+            /** Query */
+            query: string;
+        };
+        /**
+         * RetrievalView
+         * @description One retrieval the conversation made: what was asked of the corpus and
+         *     what came back, ids and scores rather than bodies; the answer, redacted.
+         */
+        RetrievalView: {
+            /**
+             * Answer
+             * @default
+             */
+            answer: string;
+            /** At */
+            at: string;
+            /**
+             * Completion Id
+             * @default
+             */
+            completion_id: string;
+            /**
+             * Control
+             * @default
+             */
+            control: string;
+            /** Dropped */
+            dropped: number;
+            /** Entitled */
+            entitled: boolean;
+            /** Flagged */
+            flagged: number;
+            /** Found */
+            found: number;
+            /** Grounding */
+            grounding?: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /**
+             * Latency Ms
+             * @default 0
+             */
+            latency_ms: number;
+            /** Namespace */
+            namespace: string;
+            /**
+             * Outcome
+             * @default ok
+             */
+            outcome: string;
+            /** Passages */
+            passages: components["schemas"]["RetrievalPassage"][];
+            /** Principal */
+            principal: string;
+            /** Query */
+            query: string;
+            /** Returned */
+            returned: number;
+            /**
+             * Run Id
+             * @default
+             */
+            run_id: string;
+            /**
+             * Verdict
+             * @default
+             */
+            verdict: string;
+            /** Verdicts */
+            verdicts: {
+                [key: string]: unknown;
+            }[];
+        };
         /** RoleView */
         RoleView: {
             /** Permissions */
@@ -2812,7 +4130,7 @@ export interface components {
              * Delivery
              * @enum {string}
              */
-            delivery: "in-process" | "worker";
+            delivery: "in-process" | "worker" | "sdk";
             kill: components["schemas"]["KillInfo"];
             /** Run */
             run: string;
@@ -2887,10 +4205,32 @@ export interface components {
             models: string[];
             /** Ms */
             ms: number;
+            /**
+             * Source
+             * @default console
+             */
+            source: string;
             /** Started */
             started: string;
             /** State */
             state: string;
+            /**
+             * Step
+             * @default
+             */
+            step: string;
+            /**
+             * Step Ms
+             * @default 0
+             */
+            step_ms: number;
+            /** Step P95 Ms */
+            step_p95_ms?: number | null;
+            /**
+             * Stuck
+             * @default false
+             */
+            stuck: boolean;
             /**
              * Suspendedat
              * @default
@@ -2901,6 +4241,11 @@ export interface components {
             tokens: components["schemas"]["TokenCount"];
             /** Toolcalls */
             toolCalls: number;
+            /**
+             * Waiting On
+             * @default
+             */
+            waiting_on: string;
         };
         /**
          * RunStartRequest
@@ -3002,6 +4347,19 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** RunSteered */
+        RunSteered: {
+            /**
+             * Delivery
+             * @enum {string}
+             */
+            delivery: "in-process" | "worker" | "sdk";
+            /** Run */
+            run: string;
+            /** State */
+            state: string;
+            steer: components["schemas"]["SteerInfo"];
+        };
         /** ScheduleView */
         ScheduleView: {
             /** Agent */
@@ -3034,6 +4392,7 @@ export interface components {
             fail_closed: boolean;
             /** Implementation */
             implementation: string;
+            latency?: components["schemas"]["ScreenerLatency"];
             /** Ok */
             ok: boolean;
             /**
@@ -3041,6 +4400,305 @@ export interface components {
              * @default
              */
             region: string;
+        };
+        /** ScreenerLatency */
+        ScreenerLatency: {
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /**
+             * P50 Ms
+             * @default 0
+             */
+            p50_ms: number;
+            /**
+             * P95 Ms
+             * @default 0
+             */
+            p95_ms: number;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /**
+             * Window
+             * @default 500
+             */
+            window: number;
+        };
+        /**
+         * SdkControl
+         * @description What the control poll hands over. A kill comes on every poll until the
+         *     run finishes; an answer and a steer come once each.
+         */
+        SdkControl: {
+            answer?: components["schemas"]["ControlAnswer"] | null;
+            kill?: components["schemas"]["KillInfo"] | null;
+            steer?: components["schemas"]["SteerInfo"] | null;
+        };
+        /** SdkDescription */
+        SdkDescription: {
+            /** Auth */
+            auth: string;
+            /** Contract */
+            contract: string;
+            /** Endpoints */
+            endpoints: {
+                [key: string]: components["schemas"]["SdkEndpoint"];
+            };
+            /** Packages */
+            packages: {
+                [key: string]: string;
+            }[];
+            /** Protocols */
+            protocols: {
+                [key: string]: string;
+            };
+            /** Records */
+            records: {
+                [key: string]: string;
+            }[];
+            /** Sdk */
+            sdk: {
+                [key: string]: string;
+            };
+            /** Source */
+            source: {
+                [key: string]: string;
+            };
+        } & {
+            [key: string]: unknown;
+        };
+        /** SdkEndpoint */
+        SdkEndpoint: {
+            /** Method */
+            method: string;
+            /** Url */
+            url: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** SdkEntries */
+        SdkEntries: {
+            /** Entries */
+            entries?: {
+                [key: string]: unknown;
+            }[];
+        };
+        /** SdkEntriesAccepted */
+        SdkEntriesAccepted: {
+            /** Accepted */
+            accepted: number;
+            /** Run */
+            run: string;
+            /** Total */
+            total: number;
+        };
+        /** SdkFinishRequest */
+        SdkFinishRequest: {
+            /** Dropped Entries */
+            dropped_entries?: number | null;
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /** Result */
+            result?: unknown;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "done" | "failed" | "killed";
+        };
+        /** SdkGateOpened */
+        SdkGateOpened: {
+            /** Deadline */
+            deadline?: string | null;
+            /** Gate */
+            gate: string;
+            /** Run */
+            run: string;
+            /** State */
+            state: string;
+        };
+        /** SdkGateRequest */
+        SdkGateRequest: {
+            /** Approvers */
+            approvers?: string[];
+            /** Escalate To */
+            escalate_to?: string[] | null;
+            /**
+             * External
+             * @default false
+             */
+            external: boolean;
+            /** Fields */
+            fields?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** Items */
+            items?: unknown[] | null;
+            /**
+             * Node
+             * @default
+             */
+            node: string;
+            /**
+             * On Timeout
+             * @default abort
+             */
+            on_timeout: string;
+            /**
+             * Prompt
+             * @default
+             */
+            prompt: string;
+            /**
+             * Shape
+             * @default decision
+             */
+            shape: string;
+            /**
+             * Timeout S
+             * @default 86400
+             */
+            timeout_s: number;
+            /** Tool */
+            tool?: string | null;
+            /** Transitions */
+            transitions?: {
+                [key: string]: string[];
+            } | null;
+            /** Verdicts */
+            verdicts?: string[] | null;
+        };
+        /** SdkRunAccepted */
+        SdkRunAccepted: {
+            /** Entries */
+            entries: number;
+            /**
+             * Protocol
+             * @enum {string}
+             */
+            protocol: "live" | "upload";
+            /** Run Id */
+            run_id: string;
+            /** Run Url */
+            run_url: string;
+            /** State */
+            state: string;
+        };
+        /**
+         * SdkRunBody
+         * @description `run` without `journal` or `state` opens a live run (`{id, started_at,
+         *     input?, trace_id?}`); with either, it is the older protocol's whole record
+         *     (`{id?, state, values?, result?, error?, suspension?, journal: {entries}}`).
+         */
+        SdkRunBody: {
+            /**
+             * Agent
+             * @default
+             */
+            agent: string;
+            /** Run */
+            run?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * SdkRunStatus
+         * @description The older protocol's poll: what the agent reads while it waits at a gate.
+         */
+        SdkRunStatus: {
+            /** Agent */
+            agent: string;
+            /** Answer */
+            answer?: unknown;
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /** Id */
+            id: string;
+            /**
+             * Reported By
+             * @default sdk
+             */
+            reported_by: string;
+            /** State */
+            state: string;
+            /** Suspension */
+            suspension?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** SearchResult */
+        SearchResult: {
+            /** Application */
+            application: string;
+            /** Conversation */
+            conversation: string;
+            /** Dropped */
+            dropped: number;
+            /** Entitled */
+            entitled: boolean;
+            /** Flagged */
+            flagged: number;
+            /** Found */
+            found: number;
+            /** Hits */
+            hits: components["schemas"]["PassageView"][];
+            /** K */
+            k: number;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /** Namespace */
+            namespace: string;
+            /** Note */
+            note?: string | null;
+            /** Principal */
+            principal: string;
+            /** Query */
+            query: string;
+            rerank?: components["schemas"]["RerankView"];
+            /** Retrieval */
+            retrieval: string;
+            /** Returned */
+            returned: number;
+            /** Run */
+            run: string;
+            /** Screened */
+            screened: {
+                [key: string]: unknown;
+            }[];
+            /** Timings */
+            timings?: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * SeriesPoint
+         * @description One UTC day of the window, for the chart; every day is present, zeros included.
+         */
+        SeriesPoint: {
+            /** Completions */
+            completions: number;
+            /** Cost */
+            cost: number;
+            /** Day */
+            day: string;
+            /** Refusals */
+            refusals: number;
+            /** Screened */
+            screened: number;
         };
         /** SignedOut */
         SignedOut: {
@@ -3100,6 +4758,53 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /**
+         * SteerInfo
+         * @description A steer as the worker's heartbeat receives it (and as the record keeps
+         *     it): only the levers set, plus who asked and when.
+         */
+        SteerInfo: {
+            /**
+             * At
+             * @default
+             */
+            at: string;
+            /**
+             * By
+             * @default
+             */
+            by: string;
+            /** Guidance */
+            guidance?: string | null;
+            /** Hold At Next Gate */
+            hold_at_next_gate?: boolean | null;
+            /** Model */
+            model?: string | null;
+        };
+        /**
+         * SteerRequest
+         * @description The operator's levers, each optional, at least one given: `guidance`
+         *     is appended to the run's next model prompt, `hold_at_next_gate` makes
+         *     the next call at or above write wait for a human, `model` sends the
+         *     next model call elsewhere.
+         */
+        SteerRequest: {
+            /**
+             * Guidance
+             * @default
+             */
+            guidance: string;
+            /**
+             * Hold At Next Gate
+             * @default false
+             */
+            hold_at_next_gate: boolean;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+        };
         /** StepChange */
         StepChange: {
             /** Attributes */
@@ -3116,10 +4821,38 @@ export interface components {
             /** Removed */
             removed?: string[];
         };
-        /** Suspension */
+        /**
+         * Suspension
+         * @description What the run is waiting for, as the runtime's `Suspension` serialises
+         *     (L5): the shape of the answer it collects, the typed fields, the items a
+         *     verdicts gate is about, the escalation chain and how far along it is,
+         *     the absolute deadline, and whether a signed link may answer it.
+         */
         Suspension: {
             /** Approvers */
             approvers?: string[];
+            /** Chain */
+            chain?: string[];
+            /** Deadline */
+            deadline?: string | null;
+            /**
+             * Escalations
+             * @default 0
+             */
+            escalations: number;
+            /**
+             * External
+             * @default false
+             */
+            external: boolean;
+            /** Fields */
+            fields?: {
+                [key: string]: unknown;
+            }[];
+            /** Items */
+            items?: {
+                [key: string]: unknown;
+            }[];
             /** Kind */
             kind: string;
             /** Node */
@@ -3139,10 +4872,23 @@ export interface components {
                 [key: string]: unknown;
             };
             /**
+             * Shape
+             * @default decision
+             */
+            shape: string;
+            /**
              * Timeout S
              * @default 86400
              */
             timeout_s: number;
+            /** Transitions */
+            transitions?: {
+                [key: string]: string[];
+            };
+            /** Verdicts */
+            verdicts?: string[];
+        } & {
+            [key: string]: unknown;
         };
         /** TokenCount */
         TokenCount: {
@@ -3198,6 +4944,50 @@ export interface components {
             changed?: components["schemas"]["ToolChange"][];
             /** Removed */
             removed?: components["schemas"]["ToolRef"][];
+        };
+        /**
+         * TrailEntry
+         * @description One journal entry the gate rests on, laid out for a reviewer: what
+         *     it was, where in the run, and a one-line summary (a tool's result is
+         *     described, never dumped).
+         */
+        TrailEntry: {
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /**
+             * Node
+             * @default
+             */
+            node: string;
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /** T */
+            t: number;
+            /**
+             * Tainted
+             * @default false
+             */
+            tainted: boolean;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Tool
+             * @default
+             */
+            tool: string;
         };
         /** TriggerDescription */
         TriggerDescription: {
@@ -3457,6 +5247,117 @@ export interface components {
             name: string;
             /** Running */
             running: number;
+        };
+        /** AnswerResult */
+        app__approvals__AnswerResult: {
+            /**
+             * Continuing
+             * @default false
+             */
+            continuing: boolean;
+            /**
+             * Delivered
+             * @default
+             */
+            delivered: string;
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /** Ok */
+            ok: boolean;
+            /** Result */
+            result?: {
+                [key: string]: unknown;
+            } | null;
+            /** Run */
+            run: string;
+            /**
+             * State
+             * @default
+             */
+            state: string;
+        };
+        /** AnswerResult */
+        app__retrieval__AnswerResult: {
+            /** Answer */
+            answer: string;
+            /** Application */
+            application: string;
+            /** Attempts */
+            attempts?: {
+                [key: string]: unknown;
+            }[];
+            /** Citations */
+            citations: components["schemas"]["CitationView"][];
+            /**
+             * Completion
+             * @default
+             */
+            completion: string;
+            /** Conversation */
+            conversation: string;
+            /**
+             * Cost
+             * @default 0
+             */
+            cost: number;
+            /**
+             * Covered
+             * @default true
+             */
+            covered: boolean;
+            /** Dropped */
+            dropped: number;
+            /** Entitled */
+            entitled: boolean;
+            /**
+             * Estimated
+             * @default false
+             */
+            estimated: boolean;
+            /** Flagged */
+            flagged: number;
+            /** Found */
+            found: number;
+            /**
+             * Gap
+             * @default
+             */
+            gap: string;
+            grounding: components["schemas"]["GroundingView"];
+            /** Models */
+            models?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Ms
+             * @default 0
+             */
+            ms: number;
+            /** Namespace */
+            namespace: string;
+            /** Note */
+            note?: string | null;
+            /** Principal */
+            principal: string;
+            /** Question */
+            question: string;
+            /** Retrieval */
+            retrieval: string;
+            /** Returned */
+            returned: number;
+            /** Run */
+            run: string;
+            /** Screened */
+            screened: {
+                [key: string]: unknown;
+            }[];
+            /** Tokens */
+            tokens?: {
+                [key: string]: number;
+            };
         };
     };
     responses: never;
@@ -3950,6 +5851,117 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    readExternalGate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalGate"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    answerExternalGate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalAnswer"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalAnswered"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Gone */
+            410: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4546,7 +6558,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AnswerResult"];
+                    "application/json": components["schemas"]["app__approvals__AnswerResult"];
                 };
             };
             /** @description Bad Request */
@@ -4556,6 +6568,234 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    mintApprovalLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkMinted"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    appChat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatReply"];
+                };
+            };
+            /** @description A screened message or reply (`control` names what ruled), a leaked prompt, a bad conversation id, a missing principal */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No application key and no session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Over the tokens or cost per day */
+            402: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description A key of another application, or a session without `run` */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not a registered application */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not a chatbot */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The application is blocked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Over the requests per minute, with `Retry-After` */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The model resource did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    appConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app_id: string;
+                cid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationView"];
                 };
             };
             /** @description Unauthorized */
@@ -4869,6 +7109,44 @@ export interface operations {
             };
         };
     };
+    getAttention: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttentionList"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     authorPropose: {
         parameters: {
             query?: never;
@@ -5110,6 +7388,104 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getFleet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetState"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    fleetAction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FleetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5713,6 +8089,428 @@ export interface operations {
             };
         };
     };
+    getLockdown: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LockdownState"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    setLockdown: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LockdownRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LockdownState"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    listMcpServers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpRegistry"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    addMcpServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpAddRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpServerEnvelope"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpRefusal"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    deleteMcpServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    approveMcpServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpServerEnvelope"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpRefusal"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    rescanMcpServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpRescanned"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     getQueue: {
         parameters: {
             query?: never;
@@ -5817,6 +8615,180 @@ export interface operations {
                 };
             };
             /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    retrievalAnswer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetrievalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["app__retrieval__AnswerResult"];
+                };
+            };
+            /** @description A bad namespace or conversation id, a missing principal, or (answer) an answer withheld: a passage it was built on or the answer itself was screened (`control` names what ruled) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No application key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Over the tokens or cost per day */
+            402: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The key belongs to no RAG application, or the namespace is outside the application's policy */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The application is blocked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Over the requests per minute, with `Retry-After` */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The console's knowledge pipeline did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The knowledge index is unreachable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    retrievalSearch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetrievalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchResult"];
+                };
+            };
+            /** @description A bad namespace or conversation id, a missing principal, or (answer) an answer withheld: a passage it was built on or the answer itself was screened (`control` names what ruled) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No application key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The key belongs to no RAG application, or the namespace is outside the application's policy */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The application is blocked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The console's knowledge pipeline did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The knowledge index is unreachable */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -6095,6 +9067,55 @@ export interface operations {
             };
         };
     };
+    downloadRunArtefacts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The archive */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": string;
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     streamRunEvents: {
         parameters: {
             query?: never;
@@ -6295,6 +9316,77 @@ export interface operations {
             };
         };
     };
+    steerRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SteerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunSteered"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     screenerHealth: {
         parameters: {
             query?: never;
@@ -6324,6 +9416,436 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    describeSdk: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SdkDescription"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    sdkPostRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SdkRunBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SdkRunAccepted"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    sdkPollRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SdkRunStatus"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    sdkControl: {
+        parameters: {
+            query?: {
+                /** @description Seconds to hold for something to deliver, at most 25 */
+                wait?: number;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SdkControl"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    sdkPostEntries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SdkEntries"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SdkEntriesAccepted"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    sdkFinishRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SdkFinishRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SdkRunAccepted"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    sdkOpenGate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SdkGateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SdkGateOpened"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

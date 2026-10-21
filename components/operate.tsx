@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Status } from "./ui";
 import { Field, Switch, Textarea } from "./forms";
-import { fleet, FLEET_ACTIONS, getLockdown, setLockdown, type FleetAction, type FleetResult, type LockdownState } from "@/lib/api/l5";
+import { fleet, FLEET_ACTIONS, getFleet, getLockdown, setLockdown, type FleetAction, type FleetResult, type FleetState, type LockdownState } from "@/lib/api/l5";
 import { soon } from "@/lib/soon";
 
 /**
@@ -13,7 +13,8 @@ import { soon } from "@/lib/soon";
  * a reason and who, so each is a dialog that names what it is about to do
  * and takes the reason before anything is sent (the shape of
  * components/kill-dialog.tsx). Fleet needs the run permission, lockdown
- * configure; the buttons say so when the person lacks it.
+ * configure; the buttons say so when the person lacks it. Which agents
+ * stand paused or draining is the backend's to say (`GET /api/fleet`).
  */
 
 /* ═══════════════════ a reason dialog ═══════════════════ */
@@ -162,6 +163,26 @@ export function FleetBar({ agents, names, onDone, onClear }: { agents: string[];
   );
 }
 
+/** Which agents are paused or draining (`GET /api/fleet`), re-read every `everyMs` while `active`; null until the first read lands. */
+export function useFleet(active = true, everyMs = 8000) {
+  const [state, setState] = useState<FleetState | null>(null);
+  const load = useCallback(() => {
+    getFleet()
+      .then(setState)
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (!active) return;
+    const cancel = soon(load);
+    const id = setInterval(load, everyMs);
+    return () => {
+      cancel();
+      clearInterval(id);
+    };
+  }, [active, everyMs, load]);
+  return { fleet: state, reload: load };
+}
+
 /* ═══════════════════ lockdown ═══════════════════ */
 
 export function useLockdown(active = true, everyMs = 8000) {
@@ -198,7 +219,7 @@ export function LockdownSwitch({ state, onChanged, onNotice }: { state: Lockdown
     try {
       const s = await setLockdown(ask, reason);
       onChanged(s);
-      onNotice(ask ? "Lockdown on: gates read-only, queue paused, sinks held" : "Lockdown lifted");
+      onNotice(ask ? "Lockdown on: every call above read and every sink waits for a person" : "Lockdown lifted");
       setAsk(null);
     } catch (e) {
       onNotice(`Lockdown refused: ${(e as Error).message.slice(0, 140)}`);
@@ -214,8 +235,8 @@ export function LockdownSwitch({ state, onChanged, onNotice }: { state: Lockdown
           title={ask ? "Lock the estate down?" : "Lift the lockdown?"}
           what={
             ask
-              ? "Every gate threshold becomes read-only for new and resumed runs, the trigger queue pauses, and every sink is held until this is lifted. One audit event names the controls."
-              : `Gates, the queue and the sinks return to their specs. The lockdown was set${state?.by ? ` by ${state.by}` : ""}${state?.reason ? ` because: ${state.reason}` : ""}.`
+              ? "In every new or resumed run, each tool call above read waits for a person and every call to a sink is held, until this is lifted. The runs, trigger and webhook doors keep accepting work, and workers claim it locked down: it runs gated. Runs already in flight carry on as they started. One audit event names the controls."
+              : `Gates and sinks return to their specs for new and resumed runs. The lockdown was set${state?.by ? ` by ${state.by}` : ""}${state?.reason ? ` because: ${state.reason}` : ""}.`
           }
           confirm={ask ? "Lock down" : "Lift lockdown"}
           tone={ask ? "err" : "ink"}
@@ -238,12 +259,18 @@ export function LockdownBanner({ state }: { state: LockdownState | null }) {
       <Status tone="err">Lockdown</Status>
       <span className="text-[13px] font-medium text-fg">The estate is locked down</span>
       <span className="min-w-0 text-[12.5px] leading-[1.5] text-dim">
-        Every call above read gates, the queue is paused and every sink is held.
+        Every call above read in a new or resumed run waits for a person and every sink is held; work is still accepted and runs gated.
         {state.reason ? ` Reason: ${state.reason}.` : ""}
         {state.by ? ` Set by ${state.by}` : ""}
         {state.at ? ` at ${new Date(state.at).toLocaleString()}` : ""}
-        {state.controls.length ? ` · controls: ${state.controls.join(", ")}` : ""}
       </span>
+      {state.controls.length > 0 && (
+        <ul className="flex w-full flex-col gap-0.5 text-[11.5px] leading-[1.5] text-faint">
+          {state.controls.map((c) => (
+            <li key={c}>{c}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

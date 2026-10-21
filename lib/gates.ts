@@ -145,6 +145,60 @@ export function bulkVerdict(items: VerdictItem[], verdicts: string[], transition
   return next;
 }
 
+/* ═══════════════════ the answer, as the doors read it ═══════════════════ */
+
+/**
+ * Whether a form declares its own `note` field. The approvals and answer
+ * doors take the body's `note` over the answer's whenever the body's is not
+ * empty, so a separate note box beside such a form would overwrite the
+ * field; the field is the note.
+ */
+export function declaresNote(gate: Pick<Gate, "shape" | "fields">): boolean {
+  return gate.shape === "form" && gate.fields.some((f) => f.name === "note");
+}
+
+/**
+ * Where a 400's `field` belongs in the dialog: a form field by its name,
+ * one verdict by its item id (`verdicts.<id>`), the decision itself
+ * (`approved`, shown as `decision`). The message loses its `field: `
+ * prefix, which the place it is shown already says. Empty when the field
+ * is none of these (the answer as a whole, `aborted`): the message is shown
+ * as the dialog's failure instead.
+ */
+export function refusalErrors(gate: Pick<Gate, "fields" | "items">, field: string | undefined, message: string): Record<string, string> {
+  if (!field) return {};
+  const text = message.startsWith(`${field}: `) ? message.slice(field.length + 2) : message;
+  if (field === "approved") return { decision: text };
+  if (field.startsWith("verdicts.")) {
+    const id = field.slice("verdicts.".length);
+    return gate.items.some((i) => i.id === id) ? { [id]: text } : {};
+  }
+  return gate.fields.some((f) => f.name === field) ? { [field]: text } : {};
+}
+
+/* ═══════════════════ the chain ═══════════════════ */
+
+export interface ChainPosition {
+  /** The gate has walked at least once, so its first approvers were passed over. The row no longer names them: each escalation replaces the approvers. */
+  passedFirst: boolean;
+  /** Roles of the chain already walked past, before the current one. */
+  passed: string[];
+  current: string[];
+  /** What the gate walks to next if this deadline passes too; empty when the chain is spent. */
+  ahead: string[];
+}
+
+/**
+ * Where an unanswered gate stands on its escalation chain. The backend
+ * serves `chain` as the spec's `escalate_to`, never trimmed, and
+ * `escalations` as the steps walked; after k steps the approvers are
+ * chain[k-1] and what is ahead is the rest of the chain.
+ */
+export function chainOf(gate: Pick<Gate, "approvers" | "chain" | "escalations">): ChainPosition {
+  const k = Math.max(0, Math.min(gate.escalations, gate.chain.length));
+  return { passedFirst: k > 0, passed: gate.chain.slice(0, Math.max(0, k - 1)), current: gate.approvers, ahead: gate.chain.slice(k) };
+}
+
 /* ═══════════════════ who may answer ═══════════════════ */
 
 export interface Who {
@@ -226,9 +280,20 @@ export const ATTENTION_LABEL: Record<AttentionItem["kind"], string> = {
 export const ACTION_LABEL: Record<AttentionItem["action"]["kind"], string> = {
   answer: "Answer",
   replay: "Replay",
-  acknowledge: "Acknowledge",
+  check: "Re-check",
   open: "Open",
 };
+
+/**
+ * The severity (1 to 10) from which a row reads as urgent: a gate past its
+ * deadline (10) or due within the hour (9), a breached budget or a failing
+ * port (8), a gate due within the day that holds a sink or a destructive
+ * call (8).
+ */
+export const URGENT_SEVERITY = 8;
+
+/** What a gate stands in front of (`holds`), as its tag reads. */
+export const HOLDS_LABEL: Record<string, string> = { sink: "holds a sink", destructive: "destructive call", risky: "risky call", write: "write call" };
 
 /**
  * The order the queue reads in: the backend's rank (severity × age) first,
@@ -243,5 +308,5 @@ export function orderAttention(items: readonly AttentionItem[]): AttentionItem[]
 
 /** The one verb that clears a row, as the button reads. */
 export function attentionVerb(item: AttentionItem): string {
-  return item.action.label ?? ACTION_LABEL[item.action.kind];
+  return ACTION_LABEL[item.action.kind];
 }
