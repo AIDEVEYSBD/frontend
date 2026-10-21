@@ -16,6 +16,10 @@ jobs:
           cache: npm
       - name: Install
         run: npm ci
+      - name: Route types
+        # Next generates LayoutProps and the route types into .next/types; a
+        # clean checkout has none, so the typecheck needs them first.
+        run: npx next typegen
       - name: Typecheck
         run: npx tsc --noEmit
       - name: Tests
