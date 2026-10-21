@@ -28,6 +28,7 @@ describe("backend-owned paths", () => {
       "/api/webhooks",
       "/api/queue",
       "/api/worker",
+      "/api/screener",
     ]) {
       expect(BACKEND_PREFIXES, `${p} is the backend's`).toContain(p);
     }
@@ -52,6 +53,9 @@ describe("backend-owned paths", () => {
     expect(isBackendPath("/api/webhooks/aegis")).toBe(true);
     expect(isBackendPath("/api/worker/claim")).toBe(true);
     expect(isBackendPath("/api/queue/jobs/j-1/replay")).toBe(true);
+    expect(isBackendPath("/api/screener")).toBe(true);
+    expect(isBackendPath("/api/screener/health")).toBe(true);
+    expect(isBackendPath("/api/screenerx")).toBe(false);
     expect(isBackendPath("/api/runsx")).toBe(false);
     expect(isBackendPath("/api/agentsx")).toBe(false);
     expect(isBackendPath("/api/sdk/runs")).toBe(false);
@@ -87,6 +91,7 @@ describe("upstreamFor", () => {
       to: "backend",
       url: "http://localhost:8000/api/vault?name=foundry",
     });
+    expect(upstreamFor("/api/screener/health", "", BOTH)).toEqual({ to: "backend", url: "http://localhost:8000/api/screener/health" });
   });
 
   it("sends every other API path to RUNTIME_ORIGIN when that is set", () => {

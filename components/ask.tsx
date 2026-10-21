@@ -80,9 +80,12 @@ const STAGE_LABEL: Record<string, string> = {
 };
 
 export function AskCorpus({
+  namespace,
   onLocate,
   onResult,
 }: {
+  /** Which corpus to search and answer from. */
+  namespace: string;
   /** Open a document at a passage. */
   onLocate: (documentId: string, body: string) => void;
   /** What the page should tell the assistant about the last thing asked. */
@@ -108,14 +111,14 @@ export function AskCorpus({
     setAnswer(null);
     setNotice(null);
     try {
-      const res = await fetch("/api/knowledge/search", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query: probe, limit: 6 }) });
+      const res = await fetch("/api/knowledge/search", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query: probe, namespace, limit: 6 }) });
       const d = await res.json();
       if (d.error) setNotice(d.error);
       else {
         setHits(d.hits ?? []);
         setStages({ stages: d.stages, timings: d.timings, rerankModel: d.rerankModel, rerankKind: d.rerankKind });
-        if (!(d.hits ?? []).length) setNotice(d.note ?? "Nothing in the corpus answers that.");
-        onResult?.({ mode: "search", query: probe, stages: d.stages, hits: (d.hits ?? []).map((h: Hit) => h.source) });
+        if (!(d.hits ?? []).length) setNotice(d.note ?? `Nothing in the "${namespace}" corpus answers that.`);
+        onResult?.({ mode: "search", namespace, query: probe, stages: d.stages, hits: (d.hits ?? []).map((h: Hit) => h.source) });
       }
     } catch (e) {
       setNotice((e as Error).message);
@@ -138,7 +141,7 @@ export function AskCorpus({
     setLive([]);
     setShowEvidence(false);
     try {
-      const res = await fetch("/api/knowledge/answer", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ question: probe }), signal: ctl.signal });
+      const res = await fetch("/api/knowledge/answer", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ question: probe, namespace }), signal: ctl.signal });
       if (!res.ok || !res.body) {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error ?? `HTTP ${res.status}`);
@@ -164,6 +167,7 @@ export function AskCorpus({
             if (e.note) setNotice(e.note);
             onResult?.({
               mode: "answer",
+              namespace,
               question: probe,
               attempts: (e.attempts as Attempt[]).map((a) => ({ n: a.n, queries: a.queries, strong: a.strong, verdict: a.verdict })),
               answer: String(e.answer ?? "").slice(0, 1200),
@@ -207,6 +211,9 @@ export function AskCorpus({
         />
         <Button size="md" variant="solid" tone="ink" loading={busy && mode === "answer"} disabled={busy} onClick={ask}>Answer</Button>
         <Button size="md" variant="solid" loading={busy && mode === "search"} disabled={busy} onClick={search}>Search</Button>
+        <span className="basis-full text-[10.5px] text-ghost">
+          Searching the <span className="font-mono text-faint">{namespace}</span> corpus
+        </span>
       </div>
 
       {notice && <p className="border-t border-line px-4 py-2.5 text-[11.5px] text-faint">{notice}</p>}

@@ -5,6 +5,7 @@ import { knowledgeReady, kq } from "@/lib/server/knowledge-db";
 import { foundry } from "@/lib/server/foundry";
 import { search, type Hit } from "@/app/api/knowledge/search/route";
 import { permit } from "@/lib/server/auth";
+import { NAMESPACE_RULE, parseNamespace } from "@/lib/knowledge";
 
 /**
  * Agentic retrieval with a grounded answer.
@@ -55,8 +56,8 @@ class Journal {
   private readonly started = Date.now();
   readonly entries: JournalEntry[] = [];
   private node = "";
-  constructor(question: string) {
-    this.add("run.start", "", `Run ${this.id}`, { system: SYSTEM, question: question.slice(0, 400) });
+  constructor(question: string, namespace: string) {
+    this.add("run.start", "", `Run ${this.id}`, { system: SYSTEM, question: question.slice(0, 400), namespace });
   }
   private add(kind: string, node: string, title: string, data: Record<string, unknown>, detail = ""): JournalEntry {
     const e: JournalEntry = { t: Date.now() - this.started, kind, node, title, ...(detail ? { detail } : {}), data, because: [], id: randomUUID().replace(/-/g, "").slice(0, 12), tainted: false };
@@ -182,14 +183,17 @@ function sentences(text: string): string[] {
 const citesOf = (s: string) => [...s.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1]));
 
 /** A document's shape: its item headings in order, each with the opening of its text. */
-async function outlineOf(documentId: string): Promise<string> {
-  const [doc] = await kq<{ title: string; pages: string[] | null; parts: number }>("SELECT title, pages, parts FROM documents WHERE id = $1", [documentId]);
+async function outlineOf(documentId: string, namespace: string): Promise<string> {
+  const [doc] = await kq<{ title: string; pages: string[] | null; parts: number }>(
+    "SELECT title, pages, parts FROM documents WHERE id = $1 AND namespace = $2",
+    [documentId, namespace],
+  );
   if (!doc) return "";
   const rows = await kq<{ heading: string; body: string; n: string }>(
-    `SELECT s.heading, (SELECT c.body FROM chunks c WHERE c.section_id = s.id ORDER BY c.ordinal LIMIT 1) AS body,
-            (SELECT count(*) FROM chunks c WHERE c.section_id = s.id) AS n
-       FROM sections s WHERE s.document_id = $1 ORDER BY s.ordinal LIMIT 400`,
-    [documentId],
+    `SELECT s.heading, (SELECT c.body FROM chunks c WHERE c.section_id = s.id AND c.namespace = $2 ORDER BY c.ordinal LIMIT 1) AS body,
+            (SELECT count(*) FROM chunks c WHERE c.section_id = s.id AND c.namespace = $2) AS n
+       FROM sections s WHERE s.document_id = $1 AND s.namespace = $2 ORDER BY s.ordinal LIMIT 400`,
+    [documentId, namespace],
   );
   if (!rows.length) return "";
   // The items of a list are the headings that carry an identifier (LLM01,
@@ -219,7 +223,7 @@ async function outlineOf(documentId: string): Promise<string> {
 
 export async function POST(req: Request) {
   { const gate = await permit(req, "view"); if (gate) return gate; }
-  let body: { question?: string; limit?: number; sources?: string[] };
+  let body: { question?: string; namespace?: string; limit?: number; sources?: string[] };
   try {
     body = await req.json();
   } catch {
@@ -227,6 +231,8 @@ export async function POST(req: Request) {
   }
   const question = String(body.question ?? "").trim();
   if (!question) return Response.json({ error: "send a question" }, { status: 400 });
+  const namespace = parseNamespace(body.namespace ?? new URL(req.url).searchParams.get("namespace"));
+  if (!namespace) return Response.json({ error: NAMESPACE_RULE }, { status: 400 });
   if (!(await knowledgeReady())) return Response.json({ error: "the knowledge index is unreachable" }, { status: 503 });
   const limit = Math.max(3, Math.min(16, Number(body.limit ?? 12)));
   const scoped = Array.isArray(body.sources) && body.sources.length ? body.sources.map(String) : undefined;
@@ -249,7 +255,7 @@ export async function POST(req: Request) {
         }
       }, 15_000);
       const started = Date.now();
-      const journal = new Journal(question);
+      const journal = new Journal(question, namespace);
       const models = { rerank: null as string | null, answer: "", judge: "" };
       const tokens = { in: 0, out: 0 };
       const attempts: Attempt[] = [];
@@ -264,7 +270,7 @@ export async function POST(req: Request) {
           send({ type: "stage", stage: "retrieve", attempt: n, queries, reason });
           journal.enter("retrieve", `Retrieve · attempt ${n}`, { queries, reason });
           const poolBefore = pool.size;
-          const results = await Promise.all(queries.map((q) => search({ query: q, limit, sources: scoped, adjacent: false })));
+          const results = await Promise.all(queries.map((q) => search({ query: q, namespace, limit, sources: scoped, adjacent: false })));
           for (const r of results) {
             models.rerank = r.rerankModel ?? models.rerank;
             for (const h of r.hits) {
@@ -298,7 +304,7 @@ export async function POST(req: Request) {
             // otherwise a list question is judged incomplete on every round.
             try {
               for (const docId of [...new Set(ranked.slice(0, 8).map((h) => h.documentId))].slice(0, 2)) {
-                const outline = await outlineOf(docId);
+                const outline = await outlineOf(docId, namespace);
                 if (outline) seen += `\n\n[outline] ${outline.slice(0, 3500)}`;
               }
             } catch {
@@ -385,8 +391,11 @@ export async function POST(req: Request) {
           const have = new Set(evidence.map((h) => h.id));
           try {
             const rest = await kq<{ id: string; ordinal: number; heading: string; body: string }>(
-              "SELECT id::text AS id, ordinal, heading, body FROM chunks WHERE document_id = $1 AND (SELECT count(*) FROM chunks WHERE document_id = $1) <= 30 ORDER BY ordinal",
-              [top],
+              `SELECT id::text AS id, ordinal, heading, body FROM chunks
+                WHERE document_id = $1 AND namespace = $2
+                  AND (SELECT count(*) FROM chunks WHERE document_id = $1 AND namespace = $2) <= 30
+                ORDER BY ordinal`,
+              [top, namespace],
             );
             const like = evidence.find((h) => h.documentId === top)!;
             for (const r of rest) if (!have.has(r.id)) evidence.push({ ...like, id: r.id, ordinal: r.ordinal, heading: r.heading, body: r.body, similarity: null, lexicalRank: null, denseRank: null, score: 0, relevance: null, meta: {} });
@@ -395,7 +404,7 @@ export async function POST(req: Request) {
           }
           for (const docId of docIds) {
             try {
-              const outline = await outlineOf(docId);
+              const outline = await outlineOf(docId, namespace);
               if (outline) evidence.push({ ...evidence.find((h) => h.documentId === docId)!, id: `outline:${docId}`, heading: "Outline", ordinal: 0, similarity: null, lexicalRank: null, denseRank: null, score: 0, relevance: null, meta: {}, body: outline });
             } catch {
               /* the outline is a help, not a requirement */
@@ -409,6 +418,7 @@ export async function POST(req: Request) {
           send({
             type: "done",
             question,
+            namespace,
             answer: "",
             citations: [],
             grounding: null,
@@ -527,6 +537,7 @@ export async function POST(req: Request) {
         send({
           type: "done",
           question,
+          namespace,
           answer: draft.answer,
           covered: draft.covered,
           gap: draft.gap,

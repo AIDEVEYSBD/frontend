@@ -1,20 +1,22 @@
 import path from "node:path";
 import { readFile, readdir, stat } from "node:fs/promises";
-import { SOURCES } from "@/lib/knowledge";
-import { ensureAnnIndex, knowledgeReady, kq } from "@/lib/server/knowledge-db";
+import { DEFAULT_NAMESPACE, NAMESPACE_RULE, SOURCES, parseNamespace } from "@/lib/knowledge";
+import { ensureAnnIndex, knowledgeReady, kq, listNamespaces, seedNamespace } from "@/lib/server/knowledge-db";
 import { embeddingModel, embeddingReady } from "@/lib/server/embed";
 import { permit } from "@/lib/server/auth";
 
 /**
- * The knowledge base, as it actually stands.
+ * The knowledge base, as it actually stands, for one namespace.
  *
- * The curated list is seeded from the catalogue on first read, so a fresh
- * deployment has the corpus a GRC team would expect without anybody typing it
- * in. Everything after that — what has been fetched, what is waiting for a
- * person, what is indexed — is read from the index itself.
+ * The curated list is seeded from the catalogue on the first read of a
+ * namespace, so a fresh deployment (or a fresh engagement) has the corpus a
+ * GRC team would expect without anybody typing it in. Everything after that
+ * — what has been fetched, what is waiting for a person, what is indexed —
+ * is read from the index itself, for that namespace only.
  *
- * Retrieval activity comes from the run journals rather than a counter, so a
- * source nobody queries is visible as exactly that.
+ * `?namespaces=1` answers with the namespaces that exist instead, for the
+ * picker. Retrieval activity comes from the run journals rather than a
+ * counter, so a source nobody queries is visible as exactly that.
  */
 
 export const runtime = "nodejs";
@@ -22,26 +24,6 @@ export const dynamic = "force-dynamic";
 
 const ROOT = path.resolve(process.cwd(), "..", "runtime");
 const RUNS = path.join(ROOT, "workspace", "runs");
-
-/**
- * Fill gaps in the register from the catalogue.
- *
- * Idempotent: the catalogue in lib/knowledge.ts is the register's source of
- * truth for what a source is and where it is fetched from, so a change there
- * (a better URL, a corrected licence) reaches every deployment on the next
- * read. Fetched documents and admissions are never touched by the seed.
- */
-async function seed(): Promise<void> {
-  for (const s of SOURCES) {
-    await kq(
-      `INSERT INTO sources (id, name, publisher, family, licence, use_for, url, cadence)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, publisher = EXCLUDED.publisher, family = EXCLUDED.family,
-         licence = EXCLUDED.licence, use_for = EXCLUDED.use_for, url = EXCLUDED.url, cadence = EXCLUDED.cadence`,
-      [s.id, s.name, s.publisher, s.family, s.licence, s.use, s.url, s.cadence],
-    );
-  }
-}
 
 /** How often agents actually searched, from the record. */
 async function retrievalActivity(): Promise<{ calls: number; byAgent: Record<string, number>; lastAt: string | null }> {
@@ -81,12 +63,23 @@ async function retrievalActivity(): Promise<{ calls: number; byAgent: Record<str
 
 export async function GET(req: Request) {
   { const gate = await permit(req, "view"); if (gate) return gate; }
+  const url = new URL(req.url);
+  const namespace = parseNamespace(url.searchParams.get("namespace"));
+  if (!namespace) return Response.json({ error: NAMESPACE_RULE }, { status: 400 });
+
+  if (url.searchParams.get("namespaces")) {
+    const ready = await knowledgeReady();
+    return Response.json({ ready, namespaces: ready ? await listNamespaces() : [DEFAULT_NAMESPACE] });
+  }
+
   if (!(await knowledgeReady())) {
     // The same shape, with nothing in it. A degraded response that omits half
     // its fields turns a missing container into a client-side crash, and the
     // page can no longer tell anyone what is wrong.
     return Response.json({
       ready: false,
+      namespace,
+      namespaces: [DEFAULT_NAMESPACE],
       error:
         "The vector store is not reachable, so nothing is indexed. Start it with `docker compose up -d vectors`, or set KNOWLEDGE_DB_HOST to reach it.",
       sources: SOURCES.map((s) => ({
@@ -117,37 +110,43 @@ export async function GET(req: Request) {
       basis: "the curated catalogue this deployment seeds on first connection; nothing is indexed yet",
     });
   }
-  await seed();
+  await seedNamespace(namespace);
   await ensureAnnIndex();
 
   const sources = await kq(
     `SELECT s.*,
-            (SELECT count(*) FROM documents d WHERE d.source_id = s.id AND d.status = 'admitted') AS documents,
-            (SELECT count(*) FROM documents d WHERE d.source_id = s.id AND d.status = 'staged')   AS staged,
-            (SELECT count(*) FROM chunks c WHERE c.source_id = s.id)                              AS chunks,
-            (SELECT max(d.decided_at) FROM documents d WHERE d.source_id = s.id AND d.status = 'admitted') AS last_admitted
-       FROM sources s ORDER BY s.family, s.name`,
+            (SELECT count(*) FROM documents d WHERE d.namespace = s.namespace AND d.source_id = s.id AND d.status = 'admitted') AS documents,
+            (SELECT count(*) FROM documents d WHERE d.namespace = s.namespace AND d.source_id = s.id AND d.status = 'staged')   AS staged,
+            (SELECT count(*) FROM chunks c WHERE c.namespace = s.namespace AND c.source_id = s.id)                              AS chunks,
+            (SELECT max(d.decided_at) FROM documents d WHERE d.namespace = s.namespace AND d.source_id = s.id AND d.status = 'admitted') AS last_admitted
+       FROM sources s WHERE s.namespace = $1 ORDER BY s.family, s.name`,
+    [namespace],
   );
 
   const staged = await kq(
     `SELECT id, source_id, title, url, bytes, chunks, digest, fetched_at, excerpt
-       FROM documents WHERE status = 'staged' ORDER BY fetched_at DESC LIMIT 50`,
+       FROM documents WHERE namespace = $1 AND status = 'staged' ORDER BY fetched_at DESC LIMIT 50`,
+    [namespace],
   );
 
   const admissions = await kq(
-    `SELECT a.*, d.title FROM admissions a LEFT JOIN documents d ON d.id = a.document_id
-      ORDER BY a.at DESC LIMIT 25`,
+    `SELECT a.*, d.title FROM admissions a LEFT JOIN documents d ON d.namespace = a.namespace AND d.id = a.document_id
+      WHERE a.namespace = $1 ORDER BY a.at DESC LIMIT 25`,
+    [namespace],
   );
 
   const [totals] = await kq<{ chunks: string; documents: string; admitted: string; tokens: string }>(
-    `SELECT (SELECT count(*) FROM chunks) AS chunks,
-            (SELECT count(*) FROM documents) AS documents,
-            (SELECT count(*) FROM documents WHERE status = 'admitted') AS admitted,
-            (SELECT coalesce(sum(tokens),0) FROM chunks) AS tokens`,
+    `SELECT (SELECT count(*) FROM chunks WHERE namespace = $1) AS chunks,
+            (SELECT count(*) FROM documents WHERE namespace = $1) AS documents,
+            (SELECT count(*) FROM documents WHERE namespace = $1 AND status = 'admitted') AS admitted,
+            (SELECT coalesce(sum(tokens),0) FROM chunks WHERE namespace = $1) AS tokens`,
+    [namespace],
   );
 
   return Response.json({
     ready: true,
+    namespace,
+    namespaces: await listNamespaces(),
     sources,
     staged,
     admissions,
@@ -166,14 +165,14 @@ export async function GET(req: Request) {
     },
     retrieval: await retrievalActivity(),
     basis:
-      "sources are the curated list; document, chunk and admission counts are read from the index; retrieval activity is counted from run journals",
+      `sources are the curated list for the "${namespace}" namespace; document, chunk and admission counts are read from that namespace of the index; retrieval activity is counted from run journals`,
   });
 }
 
-/** Enable or disable a source for retrieval. Curation, not deletion. */
+/** Enable or disable a source for retrieval, in one namespace. Curation, not deletion. */
 export async function POST(req: Request) {
   { const gate = await permit(req, "configure"); if (gate) return gate; }
-  let body: { id?: string; enabled?: boolean };
+  let body: { id?: string; namespace?: string; enabled?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -182,7 +181,9 @@ export async function POST(req: Request) {
   if (!body.id || typeof body.enabled !== "boolean") {
     return Response.json({ error: "send { id, enabled }" }, { status: 400 });
   }
+  const namespace = parseNamespace(body.namespace ?? new URL(req.url).searchParams.get("namespace"));
+  if (!namespace) return Response.json({ error: NAMESPACE_RULE }, { status: 400 });
   if (!(await knowledgeReady())) return Response.json({ error: "the knowledge index is unreachable" }, { status: 503 });
-  await kq("UPDATE sources SET enabled = $2 WHERE id = $1", [body.id, body.enabled]);
-  return Response.json({ id: body.id, enabled: body.enabled });
+  await kq("UPDATE sources SET enabled = $2 WHERE id = $1 AND namespace = $3", [body.id, body.enabled, namespace]);
+  return Response.json({ id: body.id, namespace, enabled: body.enabled });
 }

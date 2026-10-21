@@ -44,7 +44,7 @@ export const STRICT_READS: Record<string, string> = { "app/api/iam/": "iam" };
  * them (tests/routes.test.ts checks). Slice 1 was the runs door and the
  * health check; slice 2 the trigger, webhook, queue and worker doors; slice
  * 3 approvals, agents, authoring, drafts, the roster, keys, attached agents,
- * IAM and the vault.
+ * IAM and the vault; phase L3 the screener.
  */
 export const BACKEND_PREFIXES = [
   "/api/runs",
@@ -62,6 +62,7 @@ export const BACKEND_PREFIXES = [
   "/api/webhooks",
   "/api/queue",
   "/api/worker",
+  "/api/screener",
 ];
 
 /**

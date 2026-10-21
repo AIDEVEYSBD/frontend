@@ -476,6 +476,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/screener/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Which screener this deployment runs, and whether it answers */
+        get: operations["screenerHealth"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/trigger/{agent}": {
         parameters: {
             query?: never;
@@ -1180,6 +1197,10 @@ export interface components {
             priority: number;
             /** Run Id */
             run_id: string;
+            /** Secrets */
+            secrets?: {
+                [key: string]: string;
+            };
             /**
              * Source
              * @default api
@@ -2548,6 +2569,30 @@ export interface components {
             /** Next Fire */
             next_fire?: string | null;
         };
+        /** ScreenerHealth */
+        ScreenerHealth: {
+            /**
+             * Detail
+             * @default {}
+             */
+            detail: {
+                [key: string]: unknown;
+            };
+            /**
+             * Fail Closed
+             * @default true
+             */
+            fail_closed: boolean;
+            /** Implementation */
+            implementation: string;
+            /** Ok */
+            ok: boolean;
+            /**
+             * Region
+             * @default
+             */
+            region: string;
+        };
         /** SignedOut */
         SignedOut: {
             /** Signedout */
@@ -2841,9 +2886,14 @@ export interface components {
         VaultList: {
             /**
              * Encrypted
-             * @default false
+             * @default true
              */
             encrypted: boolean;
+            /**
+             * Implementation
+             * @default local
+             */
+            implementation: string;
             /** Keys */
             keys: components["schemas"]["VaultKeyView"][];
         };
@@ -5125,6 +5175,44 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    screenerHealth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScreenerHealth"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

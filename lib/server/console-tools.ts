@@ -1,4 +1,5 @@
 import { internalHeaders } from "@/lib/server/auth";
+import { NAMESPACE_RULE, parseNamespace } from "@/lib/knowledge";
 /**
  * The console's tools, as one catalogue.
  *
@@ -34,8 +35,15 @@ export const CONSOLE_TOOLS: ToolDef[] = [
   },
   {
     name: "search_knowledge",
-    description: "Run the platform's retrieval over the admitted corpus: hybrid search over meaning and words, a cross-encoder rerank against the question, adjacent chunks and the guardrails in the query. Use it for questions about standards, frameworks, threats and guidance that the curated sources cover; cite the source and heading of each passage you rely on.",
-    inputSchema: { type: "object", properties: { query: { type: "string", description: "The question, in natural language." } }, required: ["query"] },
+    description: "Run the platform's retrieval over the admitted corpus: hybrid search over meaning and words, a cross-encoder rerank against the question, adjacent chunks and the guardrails in the query. Use it for questions about standards, frameworks, threats and guidance that the curated sources cover; cite the source and heading of each passage you rely on. Corpora are namespaced per engagement; without a namespace the default corpus is searched.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "The question, in natural language." },
+        namespace: { type: "string", description: "Which corpus to search: an engagement's namespace (lowercase letters, digits, hyphens). Omit for the default corpus." },
+      },
+      required: ["query"],
+    },
   },
   {
     name: "configuration",
@@ -116,9 +124,11 @@ export async function runTool(origin: string, name: string, args: Record<string,
         return clip({ ready: d.ready, totals: d.totals, index: d.index, staged: d.staged, admissions: (d.admissions as unknown[] | undefined)?.slice(0, 10), sources });
       }
       case "search_knowledge": {
-        const d = (await readApi(origin, "/api/knowledge/search", { method: "POST", body: JSON.stringify({ query: String(args.query ?? ""), limit: 4 }) })) as Record<string, unknown>;
+        const namespace = parseNamespace(args.namespace);
+        if (!namespace) return JSON.stringify({ error: NAMESPACE_RULE });
+        const d = (await readApi(origin, "/api/knowledge/search", { method: "POST", body: JSON.stringify({ query: String(args.query ?? ""), namespace, limit: 4 }) })) as Record<string, unknown>;
         const hits = ((d.hits as Record<string, unknown>[] | undefined) ?? []).map((h) => ({ source: h.source, heading: h.heading, url: h.url, score: h.score, refs: (h.meta as { refs?: unknown } | undefined)?.refs, body: String(h.body ?? "").slice(0, 900) }));
-        return clip({ stages: d.stages, rerankModel: d.rerankModel, note: d.note, error: d.error, hits }, 9000);
+        return clip({ namespace, stages: d.stages, rerankModel: d.rerankModel, note: d.note, error: d.error, hits }, 9000);
       }
       case "configuration": {
         const d = (await readApi(origin, "/api/configuration")) as Record<string, unknown>;

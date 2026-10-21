@@ -1,9 +1,11 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Meter, Status, Tag } from "./ui";
+import { Pick } from "./select";
 import { CURRENT_USER } from "@/lib/user";
 import { useSession, signerName } from "@/lib/use-session";
+import { soon } from "@/lib/soon";
 import { Markdown, headingsOf } from "./markdown";
 import { BrandMark } from "./brand";
 import { Donut } from "./charts";
@@ -11,7 +13,7 @@ import { PipelineView, TelemetryRegister } from "./pipeline";
 import { AskCorpus } from "./ask";
 import { FetchModal } from "./fetch-modal";
 import { usePageFacts } from "./assistant";
-import { FAMILIES, LICENCE_NOTE, type Licence } from "@/lib/knowledge";
+import { DEFAULT_NAMESPACE, FAMILIES, LICENCE_NOTE, NAMESPACE_RE, NAMESPACE_RULE, NAMESPACE_SLOT, type Licence } from "@/lib/knowledge";
 
 /**
  * The knowledge base.
@@ -23,6 +25,11 @@ import { FAMILIES, LICENCE_NOTE, type Licence } from "@/lib/knowledge";
  *
  * The licence column is load-bearing. It is why some of the biggest names in
  * the register are cited and never stored.
+ *
+ * Everything on the page is one namespace's: the corpus picked in the header
+ * (remembered per browser) is sent on every call the page makes, so what is
+ * staged, admitted, searched and answered here is one engagement's and no
+ * other's.
  */
 
 interface Source {
@@ -56,6 +63,8 @@ interface Staged {
 interface Data {
   ready: boolean;
   error?: string;
+  namespace?: string;
+  namespaces?: string[];
   sources?: Source[];
   staged?: Staged[];
   admissions?: { document_id: string; source_id: string; admitted: boolean; by_whom: string; note: string; chunks: number; at: string; title: string }[];
@@ -84,6 +93,9 @@ function ago(iso: string | null): string {
 
 export function Knowledge() {
   const [data, setData] = useState<Data | null>(null);
+  /** Which corpus. Null until the browser's remembered choice is read, so the first paint matches the server's. */
+  const [namespace, setNamespace] = useState<string | null>(null);
+  const [namespaces, setNamespaces] = useState<string[]>([DEFAULT_NAMESPACE]);
   const [family, setFamily] = useState("");
   const [q, setQ] = useState("");
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
@@ -101,10 +113,48 @@ export function Knowledge() {
       return n;
     });
 
-  const load = () => {
-    fetch("/api/knowledge").then((r) => r.json()).then(setData).catch(() => setData(null));
+  const load = useCallback(() => {
+    if (!namespace) return;
+    fetch(`/api/knowledge?namespace=${encodeURIComponent(namespace)}`)
+      .then((r) => r.json())
+      .then((d: Data) => {
+        setData(d);
+        if (Array.isArray(d.namespaces) && d.namespaces.length) setNamespaces(d.namespaces);
+      })
+      .catch(() => setData(null));
+  }, [namespace]);
+
+  // The remembered corpus is read after the first paint, so the server and
+  // the client render the same page; the load follows a tick later.
+  useEffect(
+    () =>
+      soon(() => {
+        let saved = "";
+        try {
+          saved = localStorage.getItem(NAMESPACE_SLOT) ?? "";
+        } catch {
+          /* fresh */
+        }
+        setNamespace(NAMESPACE_RE.test(saved) ? saved : DEFAULT_NAMESPACE);
+      }),
+    [],
+  );
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const pickNamespace = (next: string) => {
+    if (!NAMESPACE_RE.test(next) || next === namespace) return;
+    try {
+      localStorage.setItem(NAMESPACE_SLOT, next);
+    } catch {
+      /* fine */
+    }
+    setData(null);
+    setNotice(null);
+    setAskFacts(null);
+    setNamespace(next);
   };
-  useEffect(load, []);
 
   const sources = useMemo(() => data?.sources ?? [], [data]);
   const staged = data?.staged ?? [];
@@ -142,6 +192,8 @@ export function Knowledge() {
     data
       ? {
           ready: data.ready,
+          namespace: data.namespace ?? namespace,
+          namespacesAvailable: namespaces,
           totals: data.totals,
           index: data.index,
           sourcesIndexed: indexed,
@@ -157,14 +209,19 @@ export function Knowledge() {
       <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7">
         {/* ── hero ── */}
         <header className="flex flex-col gap-2">
-          <span className="text-[11px] font-medium tracking-[0.08em] text-faint uppercase">Knowledge base</span>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-[11px] font-medium tracking-[0.08em] text-faint uppercase">Knowledge base</span>
+            <span className="grow" />
+            <NamespacePicker value={namespace ?? DEFAULT_NAMESPACE} options={namespaces} loading={!namespace} onChange={pickNamespace} />
+          </div>
           <h1 className="max-w-[30ch] text-[26px] leading-[1.15] font-semibold tracking-[-0.02em]">
             Curate the knowledge available to every workflow.
           </h1>
           <p className="max-w-[78ch] text-[13px] leading-[1.6] text-faint">
             Review authoritative sources, licensing and indexing status before content becomes
             available for retrieval. Human admission and passage-level provenance help teams
-            control what workflows can use and trace responses to supporting material.
+            control what workflows can use and trace responses to supporting material. Each
+            engagement has its own corpus; the one open here is <span className="font-mono text-fg">{namespace ?? DEFAULT_NAMESPACE}</span>.
           </p>
         </header>
 
@@ -235,6 +292,7 @@ export function Knowledge() {
 
         {/* ── ask it ── */}
         <AskCorpus
+          namespace={namespace ?? DEFAULT_NAMESPACE}
           onLocate={(documentId, body) => {
             setLocate(body);
             setReview(documentId);
@@ -365,6 +423,7 @@ export function Knowledge() {
         <FetchModal
           sourceId={fetching.id}
           sourceName={fetching.name}
+          namespace={namespace ?? DEFAULT_NAMESPACE}
           onClose={() => {
             setFetching(null);
             load();
@@ -383,6 +442,7 @@ export function Knowledge() {
       {review && (
         <DocumentModal
           id={review}
+          namespace={namespace ?? DEFAULT_NAMESPACE}
           locate={locate}
           onClose={() => {
             setReview(null);
@@ -406,6 +466,72 @@ function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
       <span className="text-faint">{k}</span>
       <span className={`tnum truncate text-fg ${mono ? "font-mono text-[11px]" : ""}`}>{v}</span>
     </span>
+  );
+}
+
+const NEW_NAMESPACE = "__new__";
+
+/**
+ * Which corpus the page is looking at.
+ *
+ * The list is what exists in the index (the default always among them) and
+ * one more entry, "new…", which takes a name. A namespace exists once it has
+ * been opened: the first read seeds the catalogue into it, so the next load
+ * lists it.
+ */
+function NamespacePicker({ value, options, loading, onChange }: { value: string; options: string[]; loading?: boolean; onChange: (next: string) => void }) {
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState("");
+  const listed = options.includes(value) ? options : [value, ...options];
+  const valid = NAMESPACE_RE.test(draft);
+  const create = () => {
+    if (!valid) return;
+    onChange(draft);
+    setAdding(false);
+    setDraft("");
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-[11px] text-faint">Corpus</span>
+      <div className="w-[200px]">
+        <Pick<string>
+          value={adding ? NEW_NAMESPACE : value}
+          loading={loading}
+          aria-label="Corpus namespace"
+          options={[...listed.map((n) => ({ value: n, label: n })), { value: NEW_NAMESPACE, label: "new…" }]}
+          onChange={(v) => {
+            if (v === NEW_NAMESPACE) setAdding(true);
+            else {
+              setAdding(false);
+              onChange(v);
+            }
+          }}
+        />
+      </div>
+      {adding && (
+        <>
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value.toLowerCase())}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") create();
+              if (e.key === "Escape") {
+                setAdding(false);
+                setDraft("");
+              }
+            }}
+            placeholder="client-name"
+            aria-label="New namespace"
+            aria-invalid={draft.length > 0 && !valid ? true : undefined}
+            title={NAMESPACE_RULE}
+            className={`focusable h-8 w-[180px] rounded-md border bg-canvas px-2.5 font-mono text-[12px] text-fg placeholder:text-ghost ${draft && !valid ? "border-err" : "border-line"}`}
+          />
+          <Button size="sm" variant="solid" tone="ink" disabled={!valid} onClick={create}>Open</Button>
+          <Button size="sm" variant="solid" tone="err" onClick={() => { setAdding(false); setDraft(""); }}>Cancel</Button>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -462,7 +588,7 @@ function kb(n: number): string {
   return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)} MB` : n >= 1000 ? `${Math.round(n / 1000)} kB` : `${n} B`;
 }
 
-function DocumentModal({ id, locate, onClose, onDone }: { id: string; locate?: string | null; onClose: () => void; onDone: (text: string, ok: boolean) => void }) {
+function DocumentModal({ id, namespace, locate, onClose, onDone }: { id: string; namespace: string; locate?: string | null; onClose: () => void; onDone: (text: string, ok: boolean) => void }) {
   const [doc, setDoc] = useState<Doc | null>(null);
   const [failed, setFailed] = useState("");
   const [note, setNote] = useState("");
@@ -475,7 +601,7 @@ function DocumentModal({ id, locate, onClose, onDone }: { id: string; locate?: s
 
   useEffect(() => {
     let stop = false;
-    fetch(`/api/knowledge/document?id=${encodeURIComponent(id)}`)
+    fetch(`/api/knowledge/document?id=${encodeURIComponent(id)}&namespace=${encodeURIComponent(namespace)}`)
       .then((r) => r.json())
       .then((d) => {
         if (stop) return;
@@ -486,7 +612,7 @@ function DocumentModal({ id, locate, onClose, onDone }: { id: string; locate?: s
     return () => {
       stop = true;
     };
-  }, [id]);
+  }, [id, namespace]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -504,7 +630,7 @@ function DocumentModal({ id, locate, onClose, onDone }: { id: string; locate?: s
     setBusy(admit ? "admit" : "refuse");
     setError("");
     try {
-      const res = await fetch("/api/knowledge/admit", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ document: doc.id, admit, by, note: note.trim() }) });
+      const res = await fetch("/api/knowledge/admit", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ document: doc.id, namespace, admit, by, note: note.trim() }) });
       const d = await res.json();
       if (d.error) setError(d.error);
       else onDone(d.note, true);

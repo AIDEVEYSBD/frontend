@@ -58,12 +58,15 @@ type Phase = "fetching" | "raw" | "morph" | "table" | "failed";
 export function FetchModal({
   sourceId,
   sourceName,
+  namespace,
   onClose,
   onReview,
   onDone,
 }: {
   sourceId: string;
   sourceName: string;
+  /** The corpus the document is staged into, and decided in. */
+  namespace: string;
   onClose: () => void;
   /** Open the full document. */
   onReview: (documentId: string) => void;
@@ -90,12 +93,12 @@ export function FetchModal({
     const tick = setInterval(() => setElapsed((e) => e + 1), 1000);
     (async () => {
       try {
-        const res = await fetch("/api/knowledge/fetch", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ source: sourceId }) });
+        const res = await fetch("/api/knowledge/fetch", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ source: sourceId, namespace }) });
         const d = (await res.json()) as Staged;
         if (stop) return;
         if (d.error) throw new Error(d.error);
         setStaged(d);
-        const r = await fetch(`/api/knowledge/document?id=${encodeURIComponent(d.document)}`);
+        const r = await fetch(`/api/knowledge/document?id=${encodeURIComponent(d.document)}&namespace=${encodeURIComponent(namespace)}`);
         const full = (await r.json()) as Doc & { error?: string };
         if (stop) return;
         if (full.error) throw new Error(full.error);
@@ -124,7 +127,7 @@ export function FetchModal({
       stop = true;
       clearInterval(tick);
     };
-  }, [sourceId]);
+  }, [sourceId, namespace]);
 
   /* ── 2. the raw record arrives line by line, and the pane follows it ── */
   useEffect(() => {
@@ -165,7 +168,7 @@ export function FetchModal({
     setBusy(admit ? "admit" : "refuse");
     setDecideError("");
     try {
-      const res = await fetch("/api/knowledge/admit", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ document: doc.id, admit, by, note: note.trim() }) });
+      const res = await fetch("/api/knowledge/admit", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ document: doc.id, namespace, admit, by, note: note.trim() }) });
       const d = await res.json();
       if (d.error) setDecideError(d.error);
       else onDone(d.note, true);
@@ -204,7 +207,7 @@ export function FetchModal({
               {phase === "fetching"
                 ? "Pulling every page the source has, normalising it, and stripping site chrome, repeats and fragments before anything is staged."
                 : doc
-                  ? `${doc.source_name} · ${doc.publisher}${doc.pages?.length > 1 ? ` · ${doc.pages.length} pages` : ""}${staged?.unchanged ? " · byte-identical to a fetch already on record" : ""}`
+                  ? `${doc.source_name} · ${doc.publisher} · ${namespace} corpus${doc.pages?.length > 1 ? ` · ${doc.pages.length} pages` : ""}${staged?.unchanged ? " · byte-identical to a fetch already on record" : ""}`
                   : ""}
             </span>
           </span>

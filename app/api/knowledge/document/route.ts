@@ -1,10 +1,13 @@
 import { knowledgeReady, kq } from "@/lib/server/knowledge-db";
 import { permit } from "@/lib/server/auth";
+import { NAMESPACE_RULE, parseNamespace } from "@/lib/knowledge";
 
 /**
  * One fetched document, in full: what was fetched, how it was split, and the
  * identifiers found in it. This is what a person reviews before admitting it,
- * and what the register shows for anything already admitted.
+ * and what the register shows for anything already admitted. The document is
+ * read from the namespace the request names; an id from another corpus is
+ * not found, not disclosed.
  */
 
 export const runtime = "nodejs";
@@ -12,26 +15,30 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   { const gate = await permit(req, "view"); if (gate) return gate; }
-  const id = new URL(req.url).searchParams.get("id") ?? "";
+  const url = new URL(req.url);
+  const id = url.searchParams.get("id") ?? "";
   if (!/^[a-zA-Z0-9._-]+$/.test(id)) return Response.json({ error: "which document?" }, { status: 400 });
+  const namespace = parseNamespace(url.searchParams.get("namespace"));
+  if (!namespace) return Response.json({ error: NAMESPACE_RULE }, { status: 400 });
   if (!(await knowledgeReady())) return Response.json({ error: "the knowledge index is unreachable" }, { status: 503 });
 
   const [doc] = await kq<Record<string, unknown>>(
-    `SELECT d.id, d.source_id, d.title, d.url, d.status, d.bytes, d.chunks, d.digest, d.fetched_at, d.decided_at, d.decided_by, d.note, d.text, d.parts, d.pages, d.cleaning,
+    `SELECT d.id, d.namespace, d.source_id, d.title, d.url, d.status, d.bytes, d.chunks, d.digest, d.fetched_at, d.decided_at, d.decided_by, d.note, d.text, d.parts, d.pages, d.cleaning,
             s.name AS source_name, s.publisher, s.family, s.licence, s.cadence, s.use_for
-       FROM documents d LEFT JOIN sources s ON s.id = d.source_id WHERE d.id = $1`,
-    [id],
+       FROM documents d LEFT JOIN sources s ON s.namespace = d.namespace AND s.id = d.source_id
+      WHERE d.id = $1 AND d.namespace = $2`,
+    [id, namespace],
   );
   if (!doc) return Response.json({ error: "no such document" }, { status: 404 });
 
   const sections = await kq<{ ordinal: number; heading: string; bytes: number; chunks: string }>(
-    `SELECT s.ordinal, s.heading, s.bytes, (SELECT count(*) FROM chunks c WHERE c.section_id = s.id) AS chunks
-       FROM sections s WHERE s.document_id = $1 ORDER BY s.ordinal`,
-    [id],
+    `SELECT s.ordinal, s.heading, s.bytes, (SELECT count(*) FROM chunks c WHERE c.section_id = s.id AND c.namespace = $2) AS chunks
+       FROM sections s WHERE s.document_id = $1 AND s.namespace = $2 ORDER BY s.ordinal`,
+    [id, namespace],
   );
 
   // The references every chunk's metadata carries, counted across the document.
-  const metas = await kq<{ meta: Record<string, unknown> }>("SELECT meta FROM chunks WHERE document_id = $1", [id]);
+  const metas = await kq<{ meta: Record<string, unknown> }>("SELECT meta FROM chunks WHERE document_id = $1 AND namespace = $2", [id, namespace]);
   const refs: Record<string, Map<string, number>> = {};
   const kinds: Record<string, number> = {};
   for (const { meta } of metas) {
@@ -49,8 +56,8 @@ export async function GET(req: Request) {
   );
 
   const sample = await kq<{ ordinal: number; heading: string; body: string; tokens: number; meta: Record<string, unknown> }>(
-    "SELECT ordinal, heading, left(body, 280) AS body, tokens, meta FROM chunks WHERE document_id = $1 ORDER BY ordinal LIMIT 24",
-    [id],
+    "SELECT ordinal, heading, left(body, 280) AS body, tokens, meta FROM chunks WHERE document_id = $1 AND namespace = $2 ORDER BY ordinal LIMIT 24",
+    [id, namespace],
   );
   const text = String(doc.text ?? "");
   return Response.json({

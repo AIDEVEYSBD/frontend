@@ -28,10 +28,11 @@ Point it at a backend before opening anything beyond the landing page: without `
 | `NEXT_PUBLIC_ORIGIN` | The console's public origin (`lib/site.ts`), used in everything user-facing; never localhost. |
 | `FOUNDRY_ENDPOINT`, `FOUNDRY_API_KEY` | The model gateway, for the parts of the console that call a model themselves: the assistant, the authoring conversation, knowledge answers. |
 | `AGENTFACTORY_DB_*` | Postgres, for the domains that still read it here (below). |
+| `KNOWLEDGE_DB_*` / `KNOWLEDGE_DB_DSN` | The knowledge index (pgvector, `docker compose up -d vectors`, port 5458 on a laptop): host, port, name, user and password, or one connection string. The DSN also switches on the DB-backed test in `tests/knowledge-db.test.ts`. |
 
 ## What the backend owns
 
-Every request under these prefixes is the backend's (`lib/route-policy.ts` `BACKEND_PREFIXES`, the contract in `backend/CONTRACT.md`): `/api/runs`, `/api/approvals`, `/api/agents`, `/api/author`, `/api/drafts`, `/api/roster`, `/api/keys`, `/api/attached`, `/api/iam`, `/api/vault`, `/api/trigger`, `/api/webhooks`, `/api/queue`, `/api/worker` and `/api/healthz`. No route file under `app/api` answers for them (`tests/routes.test.ts`); the typed client in `lib/api/client.ts` is generated from the backend's OpenAPI document and calls them same-origin.
+Every request under these prefixes is the backend's (`lib/route-policy.ts` `BACKEND_PREFIXES`, the contract in `backend/CONTRACT.md`): `/api/runs`, `/api/approvals`, `/api/agents`, `/api/author`, `/api/drafts`, `/api/roster`, `/api/keys`, `/api/attached`, `/api/iam`, `/api/vault`, `/api/trigger`, `/api/webhooks`, `/api/queue`, `/api/worker`, `/api/screener` and `/api/healthz`. No route file under `app/api` answers for them (`tests/routes.test.ts`); the typed client in `lib/api/client.ts` is generated from the backend's OpenAPI document and calls them same-origin.
 
 One exception, named in `CONSOLE_UNDER_BACKEND`: `/api/author/chat` is the console's own authoring loop (the conversation goes to Foundry; every runtime step is a call to the backend's `/api/author/reference` and `/api/author/propose`).
 
@@ -50,3 +51,11 @@ Until later phases move them, these answer from `app/api` here, against Postgres
 - Sign-in (`/api/auth/*`) and the UI preferences (`/api/ui`).
 
 The machine doors among these (`/api/sdk*`, `/api/a2a*`, `/api/mcp/server`) keep their own API keys and stay outside the cookie gate, as do the backend's trigger, webhook and worker doors.
+
+## Knowledge namespaces
+
+The knowledge index holds one corpus per engagement, in one store. Every row (sources, documents, sections, chunks, admissions) carries a `namespace`, and every read and write under `/api/knowledge/*` names one: `namespace` in the JSON body or the query string, matching `^[a-z0-9][a-z0-9-]{0,62}$`. A search in one namespace never returns another's passages; the predicate is in the SQL (`lib/server/knowledge-sql.ts`), not applied after, and `tests/knowledge-namespace.test.ts` holds every statement to it.
+
+- **The default.** A request that names no namespace reads and writes `default`, which is where an index built before namespaces keeps everything it had. The console assistant's `search_knowledge` tool and the platform MCP server search `default` unless the call passes `namespace`.
+- **Picking one.** The Knowledge page has a corpus picker in its header, fed by `GET /api/knowledge?namespaces=1` (the namespaces that exist, the default always among them) plus "new…", which takes a name and opens it. The choice is remembered per browser and sent on every call the page makes: status, fetch, document, admit, search and answer.
+- **What a new namespace starts with.** The curated catalogue, seeded on first read, with every source enabled; nothing fetched, nothing admitted. Curation (enabling a source, admitting a document, superseding an older version) acts on that namespace alone.

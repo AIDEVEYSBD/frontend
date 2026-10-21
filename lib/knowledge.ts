@@ -128,3 +128,29 @@ export const LICENCE_NOTE: Record<Licence, string> = {
 };
 
 export const SOURCE_BY_ID = new Map(SOURCES.map((s) => [s.id, s]));
+
+/* ── namespaces: one corpus per engagement ── */
+
+/**
+ * Every row in the knowledge index belongs to a namespace, and every read
+ * and write names one. An engagement's corpus is its own: what one client's
+ * team admitted is never a neighbour in another's search. The default
+ * namespace is where a deployment with no engagements keeps its corpus.
+ */
+export const DEFAULT_NAMESPACE = "default";
+
+/** Lowercase letters, digits and hyphens, starting with a letter or digit; 1 to 63 characters. */
+export const NAMESPACE_RE = /^[a-z0-9][a-z0-9-]{0,62}$/;
+
+export const NAMESPACE_RULE = "a namespace is 1 to 63 lowercase letters, digits and hyphens, starting with a letter or digit";
+
+/** The namespace a request named: the default when it named none, null when the name is malformed. */
+export function parseNamespace(raw: unknown): string | null {
+  if (raw === undefined || raw === null) return DEFAULT_NAMESPACE;
+  const s = String(raw).trim();
+  if (!s) return DEFAULT_NAMESPACE;
+  return NAMESPACE_RE.test(s) ? s : null;
+}
+
+/** The localStorage slot that remembers, per browser, which corpus the Knowledge page is looking at. */
+export const NAMESPACE_SLOT = "af.knowledge.namespace";

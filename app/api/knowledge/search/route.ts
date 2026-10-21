@@ -1,7 +1,9 @@
 import { knowledgeReady, kq } from "@/lib/server/knowledge-db";
+import { adjacentQuery, denseQuery, lexicalQuery } from "@/lib/server/knowledge-sql";
 import { embed, embeddingModel } from "@/lib/server/embed";
 import { rerank } from "@/lib/server/rerank";
 import { permit } from "@/lib/server/auth";
+import { DEFAULT_NAMESPACE, NAMESPACE_RULE, parseNamespace } from "@/lib/knowledge";
 
 /**
  * Agentic retrieval: hybrid search, adjacency, reranking, guardrails.
@@ -20,9 +22,12 @@ import { permit } from "@/lib/server/auth";
  *   3. Reranking. The fused order is cheap and approximate; a cross-encoder
  *      reads the question and each candidate together and scores them
  *      directly (lib/server/rerank.ts).
- *   4. Guardrails. Disabled sources, unadmitted documents and anything outside
- *      the caller's scope are excluded in the query rather than filtered after,
- *      so a curator's decision takes effect on the next question.
+ *   4. Guardrails. Disabled sources, unadmitted documents, other namespaces
+ *      and anything outside the caller's scope are excluded in the query
+ *      rather than filtered after, so a curator's decision takes effect on
+ *      the next question. The statements are built in
+ *      lib/server/knowledge-sql.ts, where a test holds each to the
+ *      namespace predicate.
  */
 
 /** Words that carry no retrieval signal and would match every chunk. */
@@ -73,6 +78,8 @@ function fuse(dense: Row[], lexical: Row[], k = 60): Map<string, { row: Row; sco
 
 export interface SearchOptions {
   query?: string;
+  /** Which corpus. Validated by the route; `search()` trusts it. */
+  namespace?: string;
   limit?: number;
   sources?: string[];
   floor?: number;
@@ -102,6 +109,7 @@ export interface Hit {
 
 export interface SearchResult {
   query: string;
+  namespace: string;
   model: string;
   rerankModel: string | null;
   rerankKind: "cross-encoder" | "llm" | null;
@@ -124,11 +132,13 @@ export async function POST(req: Request) {
   }
   const query = String(body.query ?? "").trim();
   if (!query) return Response.json({ error: "send a query" }, { status: 400 });
+  const namespace = parseNamespace(body.namespace ?? new URL(req.url).searchParams.get("namespace"));
+  if (!namespace) return Response.json({ error: NAMESPACE_RULE }, { status: 400 });
   if (!(await knowledgeReady())) {
     return Response.json({ error: "the knowledge index is unreachable" }, { status: 503 });
   }
   try {
-    return Response.json(await search({ ...body, query }));
+    return Response.json(await search({ ...body, query, namespace }));
   } catch (e) {
     return Response.json({ error: (e as Error).message }, { status: 502 });
   }
@@ -137,6 +147,7 @@ export async function POST(req: Request) {
 /** The retrieval pipeline as a function, so the answer route runs it in a loop. */
 export async function search(body: SearchOptions & { query: string }): Promise<SearchResult> {
   const query = body.query;
+  const namespace = body.namespace ?? DEFAULT_NAMESPACE;
 
   const limit = Math.max(1, Math.min(25, Number(body.limit ?? 8)));
   const floor = Number.isFinite(Number(body.floor)) ? Number(body.floor) : 0.15;
@@ -154,17 +165,8 @@ export async function search(body: SearchOptions & { query: string }): Promise<S
   }
   const embeddedAt = Date.now();
 
-  const SELECT = `c.id::text AS id, c.body, c.ordinal, c.heading, c.document_id, c.source_id, c.meta,
-                  s.name AS source, s.publisher, d.url, d.title`;
-  const GUARD = `c.embedding IS NOT NULL AND s.enabled AND d.status = 'admitted'`;
-
-  const dense = await kq<Row>(
-    `SELECT ${SELECT}, 1 - (c.embedding <=> $1::vector) AS similarity, NULL::float AS lexical
-       FROM chunks c JOIN sources s ON s.id = c.source_id JOIN documents d ON d.id = c.document_id
-      WHERE ${GUARD} ${scoped ? "AND c.source_id = ANY($3)" : ""}
-      ORDER BY c.embedding <=> $1::vector LIMIT $2`,
-    scoped ? [`[${vector.join(",")}]`, pool, scoped] : [`[${vector.join(",")}]`, pool],
-  );
+  const denseQ = denseQuery(namespace, vector, pool, scoped);
+  const dense = await kq<Row>(denseQ.sql, denseQ.params);
 
   /* The lexical query is OR over the query's terms, not AND.
      `websearch_to_tsquery` reads spaces as AND, so a natural question demands
@@ -177,16 +179,8 @@ export async function search(body: SearchOptions & { query: string }): Promise<S
     .split(/[^a-z0-9._-]+/i)
     .filter((t) => t.length > 2 && !STOP.has(t))
     .slice(0, 12);
-  const lexical = terms.length
-    ? await kq<Row>(
-        `SELECT ${SELECT}, NULL::float AS similarity, ts_rank_cd(c.lexeme, to_tsquery('english', $1)) AS lexical
-           FROM chunks c JOIN sources s ON s.id = c.source_id JOIN documents d ON d.id = c.document_id
-          WHERE ${GUARD} AND c.lexeme @@ to_tsquery('english', $1)
-            ${scoped ? "AND c.source_id = ANY($3)" : ""}
-          ORDER BY lexical DESC LIMIT $2`,
-        scoped ? [terms.join(" | "), pool, scoped] : [terms.join(" | "), pool],
-      ).catch(() => [] as Row[])
-    : [];
+  const lexicalQ = lexicalQuery(namespace, terms.join(" | "), pool, scoped);
+  const lexical = terms.length ? await kq<Row>(lexicalQ.sql, lexicalQ.params).catch(() => [] as Row[]) : [];
 
   const fused = [...fuse(dense, lexical).values()].sort((a, b) => b.score - a.score);
   const searchedAt = Date.now();
@@ -223,16 +217,17 @@ export async function search(body: SearchOptions & { query: string }): Promise<S
     const have = new Set(top.map((r) => `${r.row.document_id}:${r.row.ordinal}`));
     const pairs = wanted.filter((w) => w.o >= 0 && !have.has(`${w.d}:${w.o}`));
     if (pairs.length) {
-      context = await kq<{ document_id: string; ordinal: number; heading: string; body: string }>(
-        `SELECT document_id, ordinal, heading, body FROM chunks
-          WHERE (document_id, ordinal) IN (${pairs.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(",")})`,
-        pairs.flatMap((p) => [p.d, p.o]),
-      ).catch(() => []);
+      const adjacentQ = adjacentQuery(
+        namespace,
+        pairs.map((p) => ({ document_id: p.d, ordinal: p.o })),
+      );
+      context = await kq<{ document_id: string; ordinal: number; heading: string; body: string }>(adjacentQ.sql, adjacentQ.params).catch(() => []);
     }
   }
 
   return {
     query,
+    namespace,
     model: embeddingModel(),
     rerankModel,
     rerankKind,
