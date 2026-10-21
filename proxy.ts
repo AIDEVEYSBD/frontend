@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, readSessionCookie } from "@/lib/auth-cookie";
-import { upstreamFor } from "@/lib/route-policy";
+import { isMachineDoor, upstreamFor } from "@/lib/route-policy";
 
 /**
  * The seam between the console and the control plane.
@@ -10,7 +10,8 @@ import { upstreamFor } from "@/lib/route-policy";
  *   BACKEND_ORIGIN set: the API paths the backend owns (BACKEND_PREFIXES in
  *   lib/route-policy.ts: runs, approvals, agents, authoring, drafts, roster,
  *   keys, attached agents, IAM, the vault, the trigger, webhook, queue and
- *   worker doors, and the health check) are forwarded there at request
+ *   worker doors, the applications register with its gateway, retrieval and
+ *   chatbot doors, and the health check) are forwarded there at request
  *   time, with the shared secret attached and the session cookie forwarded.
  *   This happens before, and independently of, the RUNTIME_ORIGIN rewrite
  *   below. The local backend is `http://localhost:8000`
@@ -46,15 +47,15 @@ const PUBLIC_ORIGIN = (process.env.NEXT_PUBLIC_ORIGIN ?? process.env.PUBLIC_ORIG
 
 // The doors a machine opens with an API key (or, for a webhook, the spec's
 // own secret), so the cookie gate never stands in front of them: the
-// backend's trigger, webhook and worker doors, and the console's SDK, A2A
-// and platform-MCP doors. Sign-in itself is open too, or nobody could start.
-const MACHINE_DOORS = ["/api/trigger/", "/api/webhooks/", "/api/worker/", "/api/sdk/", "/api/sdk", "/api/a2a", "/api/mcp/server", "/api/auth/"];
+// backend's trigger, webhook and worker doors, the L4 gateway, retrieval and
+// chatbot doors (application keys), and the console's SDK, A2A and
+// platform-MCP doors. The list is MACHINE_DOORS in lib/route-policy.ts, so
+// tests/proxy.test.ts holds it. Sign-in itself is open too, or nobody could
+// start.
 const OPEN_PAGES = ["/", "/login", "/no-access"];
 const OPEN_PREFIXES = ["/_next/", "/logos/", "/media/", "/.well-known/", "/favicon.ico", "/icon.svg"];
 
-function machineDoor(pathname: string): boolean {
-  return MACHINE_DOORS.some((d) => (d.endsWith("/") ? pathname.startsWith(d) : pathname === d || pathname.startsWith(`${d}/`)));
-}
+const machineDoor = isMachineDoor;
 
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;

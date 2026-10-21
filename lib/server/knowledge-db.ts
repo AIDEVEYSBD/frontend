@@ -1,5 +1,6 @@
 import { Pool } from "pg";
 import { DEFAULT_NAMESPACE, SOURCES } from "@/lib/knowledge";
+import { indexDigest, type DigestParts } from "./knowledge-digest";
 
 /**
  * The knowledge index.
@@ -186,6 +187,13 @@ BEGIN
   END IF;
 END $$;
 
+-- What embedded the admitted chunks, written on the admission, and the
+-- integrity digest of the namespace as it stood when the admission finished
+-- (lib/server/knowledge-digest.ts); the status read recomputes and compares.
+ALTER TABLE admissions ADD COLUMN IF NOT EXISTS model text NOT NULL DEFAULT '';
+ALTER TABLE admissions ADD COLUMN IF NOT EXISTS dimensions integer NOT NULL DEFAULT 0;
+ALTER TABLE admissions ADD COLUMN IF NOT EXISTS index_digest text NOT NULL DEFAULT '';
+
 -- Every read filters on namespace first; these are the shapes the routes ask for.
 CREATE INDEX IF NOT EXISTS documents_namespace_status ON documents (namespace, status);
 CREATE INDEX IF NOT EXISTS documents_namespace_source ON documents (namespace, source_id);
@@ -274,4 +282,67 @@ export async function ensureAnnIndex(): Promise<void> {
   await kq(
     "CREATE INDEX IF NOT EXISTS chunks_embedding ON chunks USING hnsw (embedding vector_cosine_ops)",
   ).catch(() => {});
+}
+
+/* ── index integrity ── */
+
+
+/**
+ * The parts the integrity digest is computed over, read from the live
+ * tables for one namespace: every admitted document with the chunks it
+ * holds, and every admission row. One read for the status route, the
+ * admission and the re-embed, so the stored digest and the recomputed one
+ * can only differ when the tables did.
+ */
+export async function digestParts(namespace: string): Promise<DigestParts> {
+  const documents = await kq<{ id: string; chunks: string }>(
+    `SELECT d.id, (SELECT count(*) FROM chunks c WHERE c.namespace = d.namespace AND c.document_id = d.id) AS chunks
+       FROM documents d WHERE d.namespace = $1 AND d.status = 'admitted' ORDER BY d.id`,
+    [namespace],
+  );
+  const admissions = await kq<{ id: string }>("SELECT id FROM admissions WHERE namespace = $1 ORDER BY id", [namespace]);
+  return { namespace, documents: documents.map((d) => ({ id: d.id, chunks: Number(d.chunks) })), admissions: admissions.map((a) => a.id) };
+}
+
+export async function namespaceDigest(namespace: string): Promise<string> {
+  return indexDigest(await digestParts(namespace));
+}
+
+/** Stamp the digest of the namespace as it stands now on one admission row (the one that just changed it). */
+export async function stampAdmission(namespace: string, admissionId: number | string, model: string, dimensions: number): Promise<string> {
+  const digest = await namespaceDigest(namespace);
+  await kq("UPDATE admissions SET index_digest = $3, model = $4, dimensions = $5 WHERE namespace = $1 AND id = $2", [namespace, admissionId, digest, model, dimensions]);
+  return digest;
+}
+
+export interface Integrity {
+  ok: boolean | null;
+  /** The digest the latest admission stored; empty when no admission has stamped one yet. */
+  expected: string;
+  /** The digest of the tables as they stand. */
+  actual: string;
+  /** The admission the expectation comes from. */
+  admission: { id: string; at: string; by_whom: string; model: string; dimensions: number } | null;
+  note: string;
+}
+
+/** Recompute the digest and compare it with the one the latest admission stored. */
+export async function integrityOf(namespace: string): Promise<Integrity> {
+  const [latest] = await kq<{ id: string; at: string; by_whom: string; model: string; dimensions: number; index_digest: string }>(
+    "SELECT id, at, by_whom, model, dimensions, index_digest FROM admissions WHERE namespace = $1 ORDER BY id DESC LIMIT 1",
+    [namespace],
+  );
+  const actual = await namespaceDigest(namespace);
+  if (!latest) return { ok: null, expected: "", actual, admission: null, note: "nothing has been admitted in this namespace yet, so there is no expectation to check against" };
+  if (!latest.index_digest) {
+    return { ok: null, expected: "", actual, admission: { id: latest.id, at: latest.at, by_whom: latest.by_whom, model: latest.model, dimensions: Number(latest.dimensions) }, note: "the latest admission predates the integrity digest; the next admission or re-embed records one" };
+  }
+  const ok = latest.index_digest === actual;
+  return {
+    ok,
+    expected: latest.index_digest,
+    actual,
+    admission: { id: latest.id, at: latest.at, by_whom: latest.by_whom, model: latest.model, dimensions: Number(latest.dimensions) },
+    note: ok ? "the index matches the state the latest admission recorded" : "index changed outside admission: the documents, chunk counts or admission rows differ from what the latest admission recorded",
+  };
 }

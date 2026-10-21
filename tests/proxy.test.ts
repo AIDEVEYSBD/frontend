@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BACKEND_PREFIXES, CONSOLE_UNDER_BACKEND, isBackendPath, upstreamFor } from "@/lib/route-policy";
+import { BACKEND_PREFIXES, CONSOLE_UNDER_BACKEND, MACHINE_DOORS, isBackendPath, isMachineDoor, upstreamFor } from "@/lib/route-policy";
 
 /**
  * The path router's decision (proxy.ts), as a pure function of the path and
@@ -29,9 +29,33 @@ describe("backend-owned paths", () => {
       "/api/queue",
       "/api/worker",
       "/api/screener",
+      "/api/applications",
+      "/api/gateway",
+      "/api/retrieval",
+      "/api/apps",
     ]) {
       expect(BACKEND_PREFIXES, `${p} is the backend's`).toContain(p);
     }
+  });
+
+  // Phase L4: the register, the OpenAI-compatible gateway, the retrieval
+  // door and the chatbots built here all move to the backend together.
+  it("hands the L4 doors to the backend, and only those", () => {
+    expect(isBackendPath("/api/applications")).toBe(true);
+    expect(isBackendPath("/api/applications/app-1/metrics")).toBe(true);
+    expect(isBackendPath("/api/applications/app-1/conversations/c-1")).toBe(true);
+    expect(isBackendPath("/api/gateway/v1/chat/completions")).toBe(true);
+    expect(isBackendPath("/api/gateway/v1/embeddings")).toBe(true);
+    expect(isBackendPath("/api/retrieval/search")).toBe(true);
+    expect(isBackendPath("/api/retrieval/answer")).toBe(true);
+    expect(isBackendPath("/api/apps/app-1/chat")).toBe(true);
+    expect(isBackendPath("/api/applicationsx")).toBe(false);
+    expect(isBackendPath("/api/appsx")).toBe(false);
+    expect(isBackendPath("/api/app")).toBe(false);
+    // The console's own A2A alias of the gateway stays in Next.
+    expect(isBackendPath("/api/a2a/gateway/v1/chat/completions")).toBe(false);
+    expect(upstreamFor("/api/gateway/v1/chat/completions", "", BOTH)).toEqual({ to: "backend", url: "http://localhost:8000/api/gateway/v1/chat/completions" });
+    expect(upstreamFor("/api/applications/app-1/metrics", "?window=7d", BOTH)).toEqual({ to: "backend", url: "http://localhost:8000/api/applications/app-1/metrics?window=7d" });
   });
 
   it("matches the prefix itself and anything beneath it, never a sibling", () => {
@@ -133,5 +157,55 @@ describe("upstreamFor", () => {
   it("tolerates a trailing slash on either origin", () => {
     expect(upstreamFor("/api/runs", "", { backendOrigin: "http://localhost:8000/" })).toEqual({ to: "backend", url: "http://localhost:8000/api/runs" });
     expect(upstreamFor("/api/control", "", { runtimeOrigin: "https://x.example//" })).toEqual({ to: "runtime", url: "https://x.example/api/control" });
+  });
+});
+
+/**
+ * The cookie gate's exemptions (proxy.ts). A machine door is opened with an
+ * API key, an application key or a webhook secret; a session cookie never
+ * stands in front of it. Everything else under /api needs the cookie once
+ * AUTH_SECRET is set. The register itself (/api/applications) is a console
+ * route: a person reads and changes it, so it is not a door.
+ */
+describe("machine doors", () => {
+  it("names the backend's keyed doors and the console's own", () => {
+    for (const d of ["/api/trigger/", "/api/webhooks/", "/api/worker/", "/api/gateway/", "/api/retrieval/", "/api/apps/", "/api/sdk/", "/api/sdk", "/api/a2a", "/api/mcp/server", "/api/auth/"]) {
+      expect(MACHINE_DOORS, `${d} is a machine door`).toContain(d);
+    }
+  });
+
+  it("exempts the L4 doors from the cookie gate", () => {
+    expect(isMachineDoor("/api/gateway/v1/chat/completions")).toBe(true);
+    expect(isMachineDoor("/api/gateway/v1/embeddings")).toBe(true);
+    expect(isMachineDoor("/api/retrieval/search")).toBe(true);
+    expect(isMachineDoor("/api/retrieval/answer")).toBe(true);
+    expect(isMachineDoor("/api/apps/app-1/chat")).toBe(true);
+    expect(isMachineDoor("/api/trigger/aegis")).toBe(true);
+    expect(isMachineDoor("/api/webhooks/aegis")).toBe(true);
+    expect(isMachineDoor("/api/worker/claim")).toBe(true);
+    expect(isMachineDoor("/api/a2a")).toBe(true);
+    expect(isMachineDoor("/api/a2a/gateway/v1/chat/completions")).toBe(true);
+    expect(isMachineDoor("/api/mcp/server")).toBe(true);
+    expect(isMachineDoor("/api/sdk")).toBe(true);
+    expect(isMachineDoor("/api/sdk/runs")).toBe(true);
+    expect(isMachineDoor("/api/auth/login")).toBe(true);
+  });
+
+  it("keeps the register, the console routes and every page behind the cookie", () => {
+    expect(isMachineDoor("/api/applications")).toBe(false);
+    expect(isMachineDoor("/api/applications/app-1/metrics")).toBe(false);
+    expect(isMachineDoor("/api/gateway")).toBe(false);
+    expect(isMachineDoor("/api/gatewayx/v1")).toBe(false);
+    expect(isMachineDoor("/api/retrieval")).toBe(false);
+    expect(isMachineDoor("/api/apps")).toBe(false);
+    expect(isMachineDoor("/api/appsx/chat")).toBe(false);
+    expect(isMachineDoor("/api/mcp")).toBe(false);
+    expect(isMachineDoor("/api/mcp/serverx")).toBe(false);
+    expect(isMachineDoor("/api/a2ax")).toBe(false);
+    expect(isMachineDoor("/api/runs")).toBe(false);
+    expect(isMachineDoor("/api/guardrails")).toBe(false);
+    expect(isMachineDoor("/api/knowledge/reembed")).toBe(false);
+    expect(isMachineDoor("/applications")).toBe(false);
+    expect(isMachineDoor("/")).toBe(false);
   });
 });

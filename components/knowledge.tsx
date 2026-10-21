@@ -12,6 +12,7 @@ import { Donut } from "./charts";
 import { PipelineView, TelemetryRegister } from "./pipeline";
 import { AskCorpus } from "./ask";
 import { FetchModal } from "./fetch-modal";
+import { Dialog } from "./overlays";
 import { usePageFacts } from "./assistant";
 import { DEFAULT_NAMESPACE, FAMILIES, LICENCE_NOTE, NAMESPACE_RE, NAMESPACE_RULE, NAMESPACE_SLOT, type Licence } from "@/lib/knowledge";
 
@@ -69,9 +70,34 @@ interface Data {
   staged?: Staged[];
   admissions?: { document_id: string; source_id: string; admitted: boolean; by_whom: string; note: string; chunks: number; at: string; title: string }[];
   totals?: { chunks: number; documents: number; admitted: number; tokens: number; sources: number };
-  index?: { store: string; model: string; dimensions: number; embeddingReady: boolean };
+  index?: {
+    store: string;
+    model: string;
+    dimensions: number;
+    embeddingReady: boolean;
+    /** The provider as configured: host, sources, and the dimension it has answered with in this process. */
+    embedding?: { ready: boolean; model: string; host: string; endpointSource: string; keySource: string; dimension: number | null; columnDimensions: number };
+    /** Recomputed on every read against what the latest admission recorded. */
+    integrity?: {
+      ok: boolean | null;
+      expected: string;
+      actual: string;
+      admission: { id: string; at: string; by_whom: string; model: string; dimensions: number } | null;
+      note: string;
+    } | null;
+  };
   retrieval?: { calls: number; byAgent: Record<string, number> };
   basis: string;
+}
+
+/** What the re-embed door answers when the provider's width differs from the column's. */
+interface ReembedRefusal {
+  error: string;
+  dimension?: number;
+  columnDimensions?: number;
+  model?: string;
+  mustChange?: string[];
+  hint?: string;
 }
 
 const LICENCE_TONE: Record<Licence, "ok" | "warn" | "neutral"> = { open: "ok", registration: "warn", licensed: "neutral" };
@@ -104,6 +130,9 @@ export function Knowledge() {
   const [locate, setLocate] = useState<string | null>(null);
   const [askFacts, setAskFacts] = useState<Record<string, unknown> | null>(null);
   const [fetching, setFetching] = useState<{ id: string; name: string } | null>(null);
+  /** The re-embed: confirming, running, or refused with what must change. */
+  const [reembed, setReembed] = useState<null | { stage: "confirm" | "busy"; force: boolean } | { stage: "refused"; refusal: ReembedRefusal }>(null);
+  const { session } = useSession();
   const [folded, setFolded] = useState<Set<string>>(new Set());
   const toggleFold = (p: string) =>
     setFolded((f) => {
@@ -154,6 +183,33 @@ export function Knowledge() {
     setNotice(null);
     setAskFacts(null);
     setNamespace(next);
+  };
+
+  /* Re-embed the namespace with the current provider. A width that differs
+     from the column's is refused by the door with what must change; the
+     dialog shows that and offers force, which alters the column. */
+  const runReembed = async (force: boolean) => {
+    if (!namespace) return;
+    setReembed({ stage: "busy", force });
+    try {
+      const r = await fetch("/api/knowledge/reembed", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ namespace, force, by: signerName(session, CURRENT_USER.name) }),
+      });
+      const j = (await r.json().catch(() => ({}))) as ReembedRefusal & { note?: string; chunks?: number; model?: string; dimension?: number; needsReembed?: string[] };
+      if (r.status === 409 && j.mustChange) {
+        setReembed({ stage: "refused", refusal: j });
+        return;
+      }
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+      setNotice({ ok: true, text: `${j.note ?? "Re-embedded."}${j.needsReembed?.length ? ` Next: ${j.needsReembed.join(", ")}.` : ""}` });
+      setReembed(null);
+      load();
+    } catch (e) {
+      setNotice({ ok: false, text: (e as Error).message });
+      setReembed(null);
+    }
   };
 
   const sources = useMemo(() => data?.sources ?? [], [data]);
@@ -283,9 +339,39 @@ export function Knowledge() {
             <div className="mt-4 flex flex-col gap-2 border-t border-line pt-3 text-[11.5px]">
               <Row k="Store" v={data?.index?.store ?? "—"} />
               <Row k="Embedding" v={data?.index?.model ?? "—"} mono />
-              <Row k="Dimensions" v={data?.index ? String(data.index.dimensions) : "—"} />
+              <Row k="Provider" v={data?.index?.embedding ? (data.index.embedding.host || "not configured") : "—"} mono />
+              <Row
+                k="Dimensions"
+                v={
+                  data?.index
+                    ? `${data.index.dimensions} column${data.index.embedding?.dimension && data.index.embedding.dimension !== data.index.dimensions ? ` · provider answers ${data.index.embedding.dimension}` : ""}`
+                    : "—"
+                }
+              />
               <Row k="Sources indexed" v={data ? `${indexed} of ${sources.length}` : "—"} />
               <Meter value={sources.length ? indexed / sources.length : 0} tone="ok" />
+            </div>
+            {/* Integrity: recomputed on this read against what the latest admission recorded. */}
+            <div className="mt-3 flex flex-col gap-2 border-t border-line pt-3">
+              {data?.index?.integrity === undefined || data?.index?.integrity === null ? (
+                <span className="text-[11px] text-faint">{data?.ready === false ? "Integrity is checked once the index is reachable." : "Integrity: reading…"}</span>
+              ) : (
+                <span className="flex flex-col gap-0.5">
+                  <Status tone={data.index.integrity.ok === true ? "ok" : data.index.integrity.ok === false ? "err" : "neutral"}>
+                    {data.index.integrity.ok === true ? "index matches the latest admission" : data.index.integrity.ok === false ? "index changed outside admission" : "no integrity expectation yet"}
+                  </Status>
+                  <span className="text-[10.5px] leading-[1.5] text-faint">
+                    {data.index.integrity.note}
+                    {data.index.integrity.admission ? ` Latest admission #${data.index.integrity.admission.id} by ${data.index.integrity.admission.by_whom}${data.index.integrity.admission.model ? ` with ${data.index.integrity.admission.model} (${data.index.integrity.admission.dimensions}d)` : ""}.` : ""}
+                  </span>
+                </span>
+              )}
+              <span className="flex items-center gap-2">
+                <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={!data?.ready || !totals?.admitted || reembed?.stage === "busy"} loading={reembed?.stage === "busy"} onClick={() => setReembed({ stage: "confirm", force: false })}>
+                  Re-embed namespace
+                </Button>
+                <span className="text-[10.5px] text-ghost">every admitted chunk, with the current provider</span>
+              </span>
             </div>
           </section>
         </div>
@@ -418,6 +504,41 @@ export function Knowledge() {
 
         <p className="pb-2 text-[10.5px] text-ghost">{data?.basis ?? ""}</p>
       </div>
+
+      {reembed && reembed.stage !== "refused" && (
+        <Dialog
+          title={reembed.force ? `Widen the column and re-embed "${namespace}"?` : `Re-embed "${namespace}"?`}
+          confirm={reembed.force ? "Alter the column and re-embed" : "Re-embed"}
+          cancel="Cancel"
+          tone={reembed.force ? "err" : "ink"}
+          loading={reembed.stage === "busy"}
+          onConfirm={() => runReembed(reembed.force)}
+          onClose={() => setReembed(null)}
+        >
+          {reembed.force
+            ? "The vector column is shared by every namespace. Changing its width empties every namespace's vectors; this one is re-embedded now and the others must be re-embedded before their searches answer again. The act is recorded as an admission."
+            : `Every admitted chunk in this namespace is embedded again with ${data?.index?.model ?? "the current model"} on ${data?.index?.embedding?.host || "the configured provider"}. Searches keep answering from the old vectors until each chunk is rewritten. The act is recorded as an admission with the model and dimension.`}
+        </Dialog>
+      )}
+      {reembed && reembed.stage === "refused" && (
+        <Dialog
+          title="The provider's width differs from the column's"
+          confirm="Force: alter the column and re-embed"
+          cancel="Cancel"
+          tone="err"
+          onConfirm={() => runReembed(true)}
+          onClose={() => setReembed(null)}
+        >
+          <span className="flex flex-col gap-2">
+            <span>{reembed.refusal.error}</span>
+            <span className="text-[11.5px] font-medium text-fg">What must change:</span>
+            <ul className="list-disc pl-4 text-[11.5px] leading-[1.55]">
+              {(reembed.refusal.mustChange ?? []).map((m) => <li key={m}>{m}</li>)}
+            </ul>
+            {reembed.refusal.hint && <span className="text-[11px] text-faint">{reembed.refusal.hint}</span>}
+          </span>
+        </Dialog>
+      )}
 
       {fetching && (
         <FetchModal

@@ -44,7 +44,9 @@ export const STRICT_READS: Record<string, string> = { "app/api/iam/": "iam" };
  * them (tests/routes.test.ts checks). Slice 1 was the runs door and the
  * health check; slice 2 the trigger, webhook, queue and worker doors; slice
  * 3 approvals, agents, authoring, drafts, the roster, keys, attached agents,
- * IAM and the vault; phase L3 the screener.
+ * IAM and the vault; phase L3 the screener; phase L4 the applications
+ * register, the OpenAI-compatible gateway, the retrieval door and the
+ * chatbots built here (`/api/apps`).
  */
 export const BACKEND_PREFIXES = [
   "/api/runs",
@@ -63,7 +65,39 @@ export const BACKEND_PREFIXES = [
   "/api/queue",
   "/api/worker",
   "/api/screener",
+  "/api/applications",
+  "/api/gateway",
+  "/api/retrieval",
+  "/api/apps",
 ];
+
+/**
+ * The doors a machine opens with an API key (or, for a webhook, the spec's
+ * own secret), so the cookie gate in proxy.ts never stands in front of them:
+ * the backend's trigger, webhook and worker doors; the L4 gateway, retrieval
+ * and chatbot doors (application keys); the console's SDK, A2A and
+ * platform-MCP doors. Sign-in itself is open too, or nobody could start.
+ * An entry ending in "/" matches anything beneath it; a bare entry matches
+ * itself and anything beneath it.
+ */
+export const MACHINE_DOORS = [
+  "/api/trigger/",
+  "/api/webhooks/",
+  "/api/worker/",
+  "/api/gateway/",
+  "/api/retrieval/",
+  "/api/apps/",
+  "/api/sdk/",
+  "/api/sdk",
+  "/api/a2a",
+  "/api/mcp/server",
+  "/api/auth/",
+];
+
+/** Whether a URL path is a machine door: exempt from the session cookie, guarded by its own key. */
+export function isMachineDoor(pathname: string): boolean {
+  return MACHINE_DOORS.some((d) => (d.endsWith("/") ? pathname.startsWith(d) : pathname === d || pathname.startsWith(`${d}/`)));
+}
 
 /**
  * Console routes that live under a backend-owned prefix on purpose. The

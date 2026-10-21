@@ -21,6 +21,7 @@ import { ControlRef, KILL_CONTROL } from "./control-ref";
 import { RunBoard, ViewSwitch, useRunView, type BoardEdge } from "./run-board";
 import { api, errorText, subscribeRunEvents, type RunEnd, type RunRow } from "@/lib/api/client";
 import { KillDialog } from "./kill-dialog";
+import { LineageDrawer } from "./lineage";
 
 /**
  * The runs console: where a workflow actually runs.
@@ -42,6 +43,8 @@ interface Entry {
   title?: string;
   detail?: string;
   tainted?: boolean;
+  /** The entries this one was derived from; the lineage drawer walks it both ways. */
+  because?: string[];
   data?: {
     tool?: string;
     args?: Record<string, unknown>;
@@ -929,6 +932,7 @@ function ReplayTheater({ id }: { id: string }) {
     <Theater
       title={meta.system}
       subtitle={meta.runId}
+      runId={meta.runId}
       nodes={nodes}
       edges={specEdges}
       entries={visible}
@@ -1240,6 +1244,7 @@ function Theater({
   traceOf,
   segments,
   tNow,
+  runId,
 }: {
   title: string;
   subtitle: string;
@@ -1266,6 +1271,8 @@ function Theater({
   tNow?: number;
   /** Run id whose trace the theater may show. Absent on a live run. */
   traceOf?: string;
+  /** The run's id, for the lineage drawer's link to the record. Absent on a live run that has not started. */
+  runId?: string;
 }) {
   const draftId =
     result && typeof result.draft_id === "string" && /^[a-z][a-z0-9-]{0,62}$/.test(result.draft_id)
@@ -1413,7 +1420,7 @@ function Theater({
         </aside>
 
         {/* ── transcript ── */}
-        <TheaterTranscript entries={entries} live={live} />
+        <TheaterTranscript entries={entries} live={live} runId={runId ?? traceOf ?? ""} />
 
         {/* ── artifact rail ── */}
         <aside className="flex min-h-0 min-w-0 flex-col md:col-span-2 xl:col-span-1">
@@ -1775,11 +1782,13 @@ const FILTERS: { id: string; label: string; kinds: string[] }[] = [
   { id: "taints", label: "Taints", kinds: ["taint"] },
 ];
 
-function TheaterTranscript({ entries, live }: { entries: Entry[]; live: boolean }) {
+function TheaterTranscript({ entries, live, runId = "" }: { entries: Entry[]; live: boolean; runId?: string }) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const [unseen, setUnseen] = useState(0);
   const [filter, setFilter] = useState("all");
+  /** The entry whose lineage is open: what it was derived from, what it fed. */
+  const [lineage, setLineage] = useState<string | null>(null);
 
   useEffect(() => {
     const el = scroller.current;
@@ -1838,12 +1847,14 @@ function TheaterTranscript({ entries, live }: { entries: Entry[]; live: boolean 
 
       <div ref={scroller} onScroll={onScroll} className="flex min-h-0 grow flex-col gap-3.5 overflow-y-auto px-4 py-4">
         {shown.map((e, i) => (
-          <JournalRow key={e.id ?? i} e={e} entries={entries} />
+          <JournalRow key={e.id ?? i} e={e} entries={entries} onLineage={setLineage} />
         ))}
         {shown.length === 0 && (
           <p className="text-[12px] text-faint">Nothing of this kind in the journal{live ? " yet" : ""}.</p>
         )}
       </div>
+
+      {lineage && <LineageDrawer runId={runId} entryId={lineage} entries={entries} onClose={() => setLineage(null)} />}
 
       {/* Events landing below the fold while scrolled up — say so. */}
       {unseen > 0 && live && (
@@ -1943,8 +1954,11 @@ function parseJsonText(text: string): [string, string][] | null {
   return out.length ? out : null;
 }
 
-function JournalRow({ e, entries }: { e: Entry; entries: Entry[] }) {
+function JournalRow({ e, entries, onLineage }: { e: Entry; entries: Entry[]; onLineage?: (id: string) => void }) {
   const [open, setOpen] = useState(false);
+  const lineageButton = onLineage && e.id ? (
+    <Button size="sm" variant="quiet" onClick={() => onLineage(e.id)}>Lineage</Button>
+  ) : null;
 
   /* Reasoning: the model's own words, as prose — the landing's signature row.
      Never silently cut: long thoughts get a labelled expander. */
@@ -1959,6 +1973,7 @@ function JournalRow({ e, entries }: { e: Entry; entries: Entry[] }) {
           <span className="flex items-center gap-2">
             <span className="text-[10.5px] font-medium text-run">reasoning</span>
             {e.tainted && <Tag tone="warn">tainted input</Tag>}
+            {e.tainted && lineageButton}
           </span>
           {e.tainted && (
             <span className="text-[11px] text-faint">
@@ -2062,6 +2077,8 @@ function JournalRow({ e, entries }: { e: Entry; entries: Entry[] }) {
               <span className="text-[12.5px] font-medium text-fg">{why.name}</span>
               <ControlRef control={control} />
               {tool && <Mono className="text-[10.5px] text-mist">{tool}</Mono>}
+              <span className="grow" />
+              {lineageButton}
             </span>
             {/* The rule, in full. Truncating the reason is how a refusal turns
                 into a mystery two weeks later. */}

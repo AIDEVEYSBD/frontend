@@ -1,52 +1,113 @@
+import path from "node:path";
+import { readFile } from "node:fs/promises";
+import { embedConfig, endpointHost, type EmbedConfig } from "@/lib/embed-config";
+
 /**
- * Embeddings, from the same resource that serves the models.
+ * Embeddings, from any OpenAI-compatible `/embeddings` endpoint.
  *
  * One rule governs this file: the model that indexes a chunk must be the model
  * that embeds the query. A mismatch there produces confident, wrong neighbours
  * and no error at all, which is the worst failure a retrieval system has. So
- * the model name is recorded with the index and read back rather than assumed.
+ * the model name is recorded with the index and read back rather than assumed,
+ * and the dimension is read from the provider's first answer rather than
+ * typed in: a provider that says 1024 when the column holds 1536 is caught
+ * at the re-embed, not at the first wrong search.
+ *
+ * Configuration (lib/embed-config.ts): EMBEDDING_ENDPOINT, EMBEDDING_API_KEY
+ * (or the vault's `embedding` entry), EMBEDDING_MODEL; without them the
+ * model gateway's own endpoint and key serve, as before.
  */
 
-const MODEL = process.env.EMBEDDING_MODEL ?? "text-embedding-3-small";
+/** Width of the pgvector column (`chunks.embedding vector(1536)`). A provider that answers another width needs the column changed. */
+export const COLUMN_DIMENSIONS = 1536;
+/** @deprecated the column's width; use COLUMN_DIMENSIONS. */
+export const DIMENSIONS = COLUMN_DIMENSIONS;
 
-/** Dimensions of the model above. Recorded in the schema; changing one means reindexing. */
-export const DIMENSIONS = 1536;
+const VAULT = path.resolve(process.cwd(), "..", "runtime", "workspace", "vault.json");
 
-function endpoint(): string {
-  const chat = process.env.FOUNDRY_ENDPOINT ?? "";
-  if (!chat) return "";
-  // .../openai/v1/chat/completions → .../openai/v1/embeddings
-  return chat.replace(/\/chat\/completions$/, "/embeddings");
+/** The vault's `embedding` entry, when the file is readable. The backend's encrypted vault is not read here; set EMBEDDING_API_KEY there. */
+async function vaultKey(): Promise<string> {
+  try {
+    const vault = JSON.parse(await readFile(VAULT, "utf-8")) as { keys?: Record<string, { value?: unknown }> };
+    const v = vault.keys?.embedding?.value;
+    return typeof v === "string" ? v : "";
+  } catch {
+    return "";
+  }
+}
+
+/** The configuration as the environment alone states it (synchronous; the vault is consulted by `config()`). */
+export function envConfig(): EmbedConfig {
+  return embedConfig(process.env);
+}
+
+export async function config(): Promise<EmbedConfig> {
+  return embedConfig(process.env, await vaultKey());
 }
 
 export function embeddingModel(): string {
-  return MODEL;
+  return envConfig().model;
 }
 
+/** Whether the environment names an endpoint and a key. A vault-only key is seen by `embeddingStatus()`. */
 export function embeddingReady(): boolean {
-  return Boolean(endpoint() && (process.env.FOUNDRY_API_KEY || process.env.AZURE_AI_KEY));
+  const c = envConfig();
+  return Boolean(c.endpoint && c.key);
+}
+
+/** The dimension the provider last answered with, per model. Null until the first call of this process. */
+const seenDimensions = new Map<string, number>();
+
+export function embeddingDimension(model = embeddingModel()): number | null {
+  return seenDimensions.get(model) ?? null;
+}
+
+export interface EmbeddingStatus {
+  ready: boolean;
+  model: string;
+  /** The provider's host, never its path or key. */
+  host: string;
+  endpointSource: EmbedConfig["endpointSource"];
+  keySource: EmbedConfig["keySource"];
+  /** The dimension this process has seen the model answer with; null until an embedding call has happened. */
+  dimension: number | null;
+  columnDimensions: number;
+}
+
+export async function embeddingStatus(): Promise<EmbeddingStatus> {
+  const c = await config();
+  return {
+    ready: Boolean(c.endpoint && c.key),
+    model: c.model,
+    host: endpointHost(c.endpoint),
+    endpointSource: c.endpointSource,
+    keySource: c.keySource,
+    dimension: embeddingDimension(c.model),
+    columnDimensions: COLUMN_DIMENSIONS,
+  };
 }
 
 /**
  * Embed a batch. Returns one vector per input, in order.
  *
  * Batches are capped because a request that carries a whole document is a
- * request that times out on the one document you most wanted indexed.
+ * request that times out on the one document you most wanted indexed. The
+ * dimension of the first vector back is recorded for the model, and every
+ * later vector in the batch is held to it.
  */
 export async function embed(inputs: string[]): Promise<number[][]> {
-  const url = endpoint();
-  const key = process.env.FOUNDRY_API_KEY || process.env.AZURE_AI_KEY || "";
-  if (!url || !key) {
-    throw new Error("no embedding endpoint configured: set FOUNDRY_ENDPOINT and FOUNDRY_API_KEY");
+  const c = await config();
+  if (!c.endpoint || !c.key) {
+    throw new Error("no embedding endpoint configured: set EMBEDDING_ENDPOINT and EMBEDDING_API_KEY (or FOUNDRY_ENDPOINT and FOUNDRY_API_KEY)");
   }
 
   const out: number[][] = [];
   for (let i = 0; i < inputs.length; i += 16) {
     const batch = inputs.slice(i, i + 16);
-    const res = await fetch(url, {
+    const res = await fetch(c.endpoint, {
       method: "POST",
-      headers: { "content-type": "application/json", "api-key": key, authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model: MODEL, input: batch }),
+      headers: { "content-type": "application/json", "api-key": c.key, authorization: `Bearer ${c.key}` },
+      body: JSON.stringify({ model: c.model, input: batch }),
       signal: AbortSignal.timeout(60_000),
     });
     const data = await res.json();
@@ -55,7 +116,13 @@ export async function embed(inputs: string[]): Promise<number[][]> {
     }
     const rows = (data.data ?? []) as { index: number; embedding: number[] }[];
     rows.sort((a, b) => a.index - b.index);
-    for (const r of rows) out.push(r.embedding);
+    for (const r of rows) {
+      if (!Array.isArray(r.embedding) || !r.embedding.length) throw new Error("the embedding endpoint returned an empty vector");
+      const dim = seenDimensions.get(c.model);
+      if (dim === undefined) seenDimensions.set(c.model, r.embedding.length);
+      else if (dim !== r.embedding.length) throw new Error(`the embedding endpoint answered ${r.embedding.length} dimensions for ${c.model} after answering ${dim}`);
+      out.push(r.embedding);
+    }
   }
   return out;
 }

@@ -1,8 +1,8 @@
 import path from "node:path";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { DEFAULT_NAMESPACE, NAMESPACE_RULE, SOURCES, parseNamespace } from "@/lib/knowledge";
-import { ensureAnnIndex, knowledgeReady, kq, listNamespaces, seedNamespace } from "@/lib/server/knowledge-db";
-import { embeddingModel, embeddingReady } from "@/lib/server/embed";
+import { ensureAnnIndex, integrityOf, knowledgeReady, kq, listNamespaces, seedNamespace } from "@/lib/server/knowledge-db";
+import { COLUMN_DIMENSIONS, embeddingStatus } from "@/lib/server/embed";
 import { permit } from "@/lib/server/auth";
 
 /**
@@ -72,6 +72,15 @@ export async function GET(req: Request) {
     return Response.json({ ready, namespaces: ready ? await listNamespaces() : [DEFAULT_NAMESPACE] });
   }
 
+  const embedding = await embeddingStatus();
+  const index = {
+    store: "pgvector",
+    model: embedding.model,
+    dimensions: COLUMN_DIMENSIONS,
+    embeddingReady: embedding.ready,
+    embedding,
+  };
+
   if (!(await knowledgeReady())) {
     // The same shape, with nothing in it. A degraded response that omits half
     // its fields turns a missing container into a client-side crash, and the
@@ -100,12 +109,7 @@ export async function GET(req: Request) {
       staged: [],
       admissions: [],
       totals: { chunks: 0, documents: 0, admitted: 0, tokens: 0, sources: SOURCES.length },
-      index: {
-        store: "pgvector",
-        model: embeddingModel(),
-        dimensions: 1536,
-        embeddingReady: embeddingReady(),
-      },
+      index: { ...index, integrity: null },
       retrieval: { calls: 0, byAgent: {}, lastAt: null },
       basis: "the curated catalogue this deployment seeds on first connection; nothing is indexed yet",
     });
@@ -134,6 +138,9 @@ export async function GET(req: Request) {
       WHERE a.namespace = $1 ORDER BY a.at DESC LIMIT 25`,
     [namespace],
   );
+  // Recomputed on every read and compared with what the latest admission
+  // stored: a difference is the index having changed outside admission.
+  const integrity = await integrityOf(namespace);
 
   const [totals] = await kq<{ chunks: string; documents: string; admitted: string; tokens: string }>(
     `SELECT (SELECT count(*) FROM chunks WHERE namespace = $1) AS chunks,
@@ -157,15 +164,10 @@ export async function GET(req: Request) {
       tokens: Number(totals.tokens),
       sources: sources.length,
     },
-    index: {
-      store: "pgvector",
-      model: embeddingModel(),
-      dimensions: 1536,
-      embeddingReady: embeddingReady(),
-    },
+    index: { ...index, integrity },
     retrieval: await retrievalActivity(),
     basis:
-      `sources are the curated list for the "${namespace}" namespace; document, chunk and admission counts are read from that namespace of the index; retrieval activity is counted from run journals`,
+      `sources are the curated list for the "${namespace}" namespace; document, chunk and admission counts are read from that namespace of the index; retrieval activity is counted from run journals; the integrity digest is recomputed on this read and compared with the latest admission's`,
   });
 }
 

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button, Mono, Status, Tag } from "./ui";
 import { Pick } from "./select";
+import { Code, CopyButton } from "./code";
 import {
   A2A_STEPS,
   ENDPOINTS,
@@ -60,71 +61,6 @@ function host(url: string): string {
   } catch {
     return url;
   }
-}
-
-/* ═══════════════════ code ═══════════════════ */
-
-type CodeLang = Language | "env" | "json" | "http";
-
-const KEYWORDS: Record<CodeLang, string[]> = {
-  python: ["from", "import", "def", "return", "with", "as", "if", "else", "elif", "for", "in", "not", "and", "or", "class", "None", "True", "False", "async", "await", "try", "except", "raise"],
-  typescript: ["import", "from", "const", "let", "var", "new", "async", "await", "if", "else", "return", "function", "export", "default", "true", "false", "null", "class", "try", "catch"],
-  java: ["import", "new", "try", "if", "else", "return", "void", "public", "private", "static", "final", "class", "var", "true", "false", "null"],
-  csharp: ["using", "var", "new", "await", "async", "public", "private", "static", "string", "void", "if", "else", "return", "true", "false", "null", "class"],
-  go: ["import", "func", "defer", "if", "else", "return", "var", "map", "any", "string", "nil", "true", "false", "go", "range", "for", "package", "type", "struct", "error"],
-  env: [],
-  json: [],
-  http: ["GET", "POST", "PUT", "DELETE"],
-};
-
-const TOKEN = /(#[^\n]*|\/\/[^\n]*|"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|@[A-Za-z_][\w.]*|\b\d+(?:\.\d+)?\b|\b[A-Za-z_]\w*\b)/g;
-
-/** A small highlighter: comments, strings, keywords, decorators, numbers. Enough to read as code. */
-function Code({ text, lang, className = "" }: { text: string; lang: CodeLang; className?: string }) {
-  const keywords = new Set(KEYWORDS[lang]);
-  const hashComments = lang === "python" || lang === "env";
-  const parts: React.ReactNode[] = [];
-  let last = 0;
-  let k = 0;
-  for (const m of text.matchAll(TOKEN)) {
-    const i = m.index ?? 0;
-    if (i > last) parts.push(text.slice(last, i));
-    const tok = m[0];
-    let cls = "";
-    if (tok.startsWith("#") && hashComments) cls = "text-ghost";
-    else if (tok.startsWith("//") && !hashComments && lang !== "http") cls = "text-ghost";
-    else if (/^["'`]/.test(tok)) cls = "text-c4";
-    else if (tok.startsWith("@")) cls = "text-c7";
-    else if (/^\d/.test(tok)) cls = "text-c8";
-    else if (keywords.has(tok)) cls = "text-c10";
-    parts.push(cls ? <span key={k++} className={cls}>{tok}</span> : tok);
-    last = i + tok.length;
-  }
-  if (last < text.length) parts.push(text.slice(last));
-  return (
-    <pre className={`m-0 overflow-x-auto px-4 py-3 font-mono text-[10.5px] leading-[1.65] text-mist ${className}`}>
-      {parts}
-    </pre>
-  );
-}
-
-function CopyButton({ text }: { text: string }) {
-  const [done, setDone] = useState(false);
-  return (
-    <Button
-      size="sm"
-      variant="solid"
-      tone={done ? "ok" : "ink"}
-      onClick={() => {
-        navigator.clipboard?.writeText(text).then(() => {
-          setDone(true);
-          setTimeout(() => setDone(false), 1600);
-        });
-      }}
-    >
-      {done ? "Copied" : "Copy"}
-    </Button>
-  );
 }
 
 function Seg<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: { id: T; label: string }[] }) {

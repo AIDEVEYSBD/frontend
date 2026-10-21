@@ -17,6 +17,7 @@ const NAV = [
   { href: "/finops", label: "FinOps" },
   { href: "/builder", label: "Builder" },
   { href: "/workflows", label: "Workflows" },
+  { href: "/applications", label: "Applications" },
   { href: "/roster", label: "Roster" },
   { href: "/runs", label: "Runs" },
   { href: "/evals", label: "Evals" },

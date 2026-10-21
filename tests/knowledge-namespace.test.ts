@@ -116,6 +116,7 @@ describe("every knowledge route's statements", () => {
       "app/api/knowledge/answer/route.ts",
       "app/api/knowledge/document/route.ts",
       "app/api/knowledge/fetch/route.ts",
+      "app/api/knowledge/reembed/route.ts",
       "app/api/knowledge/route.ts",
       "app/api/knowledge/search/route.ts",
     ]);

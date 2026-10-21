@@ -2,6 +2,8 @@ import path from "node:path";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { dbReady, query } from "@/lib/server/db";
 import { permit } from "@/lib/server/auth";
+import { liveSecrets } from "@/lib/server/redact";
+import { watchEventsOf, type WatchEvent, type WatchRecord } from "@/lib/guardrails-watch";
 
 /**
  * What the guardrails actually did, counted from the record.
@@ -87,35 +89,63 @@ function hasControl(e: Entry): boolean {
   return Array.isArray(named) ? named.length > 0 : Boolean(named);
 }
 
-export async function GET(req: Request) {
-  { const gate = await permit(req, "view"); if (gate) return gate; }
-  const counts = new Map<string, number>();
-  const byAgent = new Map<string, Map<string, number>>();
-  const recent: Event[] = [];
-  let runs = 0;
-  let runsWithARefusal = 0;
-
+/**
+ * Every run record this deployment holds: the files in the workspace, and
+ * the registry rows for runs reported through a door that wrote no file
+ * here (a worker, the backend's gateway on another host). Keyed by id, the
+ * file winning, so a run on both counts once.
+ */
+async function records(): Promise<{ id: string; doc: WatchRecord & { journal?: { entries?: Entry[] } }; at: string }[]> {
+  const out = new Map<string, { id: string; doc: WatchRecord & { journal?: { entries?: Entry[] } }; at: string }>();
   let files: string[] = [];
   try {
     files = (await readdir(RUNS)).filter((f) => f.endsWith(".json"));
   } catch {
     /* no runs yet on this deployment */
   }
-
   for (const f of files) {
-    let doc: { system?: string; journal?: { entries?: Entry[] } };
-    let at = "";
     try {
       const full = path.join(RUNS, f);
       const [raw, st] = await Promise.all([readFile(full, "utf-8"), stat(full)]);
-      doc = JSON.parse(raw);
-      at = st.mtime.toISOString();
+      const id = f.replace(/\.json$/, "");
+      out.set(id, { id, doc: { ...(JSON.parse(raw) as WatchRecord), id }, at: st.mtime.toISOString() });
     } catch {
-      continue;
+      /* torn write, skip */
     }
+  }
+  if (await dbReady()) {
+    try {
+      const rows = await query<{ id: string; run: WatchRecord | null; at: string }>("SELECT id, run, at FROM runs WHERE run IS NOT NULL ORDER BY at DESC LIMIT 2000");
+      for (const r of rows) {
+        if (out.has(r.id) || !r.run) continue;
+        out.set(r.id, { id: r.id, doc: { ...r.run, id: r.id }, at: new Date(r.at).toISOString() });
+      }
+    } catch {
+      /* the registry may predate the run column; the files are the record either way */
+    }
+  }
+  return [...out.values()];
+}
+
+export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
+  const counts = new Map<string, number>();
+  const byAgent = new Map<string, Map<string, number>>();
+  const recent: Event[] = [];
+  const events: WatchEvent[] = [];
+  let runs = 0;
+  let runsWithARefusal = 0;
+
+  const live = await liveSecrets();
+  for (const { id: runId, doc, at } of await records()) {
     runs += 1;
     const agent = String(doc.system ?? "");
     let refusedHere = false;
+    const f = `${runId}.json`;
+
+    // The watch: screened hits, taint-to-sink refusals and egress refusals,
+    // with the excerpt the control saw, redacted on the way out.
+    events.push(...watchEventsOf(doc, at, live));
 
     for (const e of doc.journal?.entries ?? []) {
       // Counted: the engine's own kinds, and any entry the runtime stamped
@@ -143,6 +173,7 @@ export async function GET(req: Request) {
   }
 
   recent.sort((a, b) => b.at.localeCompare(a.at));
+  events.sort((a, b) => b.at.localeCompare(a.at) || b.t - a.t);
 
   /* ── what the deployed workflows declare ──
      Counting the posture, not the traffic: how many tools taint, how many act
@@ -210,8 +241,9 @@ export async function GET(req: Request) {
     counts: Object.fromEntries(counts),
     byAgent: Object.fromEntries([...byAgent].map(([a, m]) => [a, Object.fromEntries(m)])),
     recent: recent.slice(0, 40),
+    events: events.slice(0, 300),
     posture,
     basis:
-      "counted from run journals in the workspace and the deployed specs in the registry; a control that never fired reports zero",
+      "counted from run journals in the workspace and the registry's run records, and the deployed specs; a control that never fired reports zero; watch excerpts are redacted of every secret this deployment holds",
   });
 }

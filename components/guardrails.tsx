@@ -9,6 +9,8 @@ import { usePageFacts } from "./assistant";
 import { CORE_PRINCIPLE, DOMAINS, EXECUTIVE_TAKEAWAY, GUARDRAILS, SCOPE } from "@/lib/data-guardrails";
 import { CLIENT_RESPONSIBILITIES, CONTROLS, FAMILIES, RESIDUAL_RISK, STANDARDS, type Control } from "@/lib/guardrails";
 import { GROUPINGS, GROUPING_BY_ID } from "@/lib/control-domains";
+import type { WatchEvent } from "@/lib/guardrails-watch";
+import { GuardrailsWatch } from "./guardrails-watch";
 
 /**
  * The control register, and the framework it is assessed against.
@@ -28,8 +30,13 @@ interface Data {
   counts: Record<string, number>;
   byAgent: Record<string, Record<string, number>>;
   recent: { control: string; run: string; agent: string; node: string; title: string; detail: string; at: string }[];
+  /** The injection and exfiltration watch: screened hits, taint-to-sink and egress refusals, excerpts redacted. */
+  events?: WatchEvent[];
   posture: { agents: number; tools: number; tainting: number; sinks: number; gatedWorkflows: number; byRisk: Record<string, number> };
 }
+
+type View = "register" | "framework" | "watch";
+const VIEW_LABEL: Record<View, string> = { register: "What the platform enforces", framework: "Data security guardrails", watch: "Injection and exfiltration watch" };
 
 const STD_TONE: Record<string, string> = {
   "OWASP Agentic": "var(--t-c2)", "OWASP LLM": "var(--t-c7)", "NIST AI RMF": "var(--t-c5)", "ISO/IEC 42001": "var(--t-c1)", "EU AI Act": "var(--t-c8)",
@@ -53,7 +60,7 @@ export function Guardrails() {
   const [data, setData] = useState<Data | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [std, setStd] = useState("");
-  const [view, setView] = useState<"register" | "framework">("register");
+  const [view, setView] = useState<View>("register");
   const [domain, setDomain] = useState("");
   const [groupBy, setGroupBy] = useState<"family" | string>("family");
   // Collapsed groups, by group id. Every group starts open; the choice is the reader's for the visit.
@@ -74,6 +81,12 @@ export function Guardrails() {
 
   // Arriving from a firing elsewhere in the console: open that control and
   // bring it into view, so the link from the evidence lands on the statement.
+  // Arriving from an application's dashboard: open the watch.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("view") !== "watch") return;
+    return soon(() => setView("watch"));
+  }, []);
+
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("control");
     if (!id || !CONTROLS.some((c) => c.id === id)) return;
@@ -125,19 +138,31 @@ export function Guardrails() {
         <span className="flex flex-wrap items-center gap-3">
           <span className="text-[11px] font-medium tracking-[0.08em] text-faint uppercase">Controls</span>
           <span className="flex items-center rounded-md border border-line bg-canvas p-0.5">
-            {(["register", "framework"] as const).map((v) => (
+            {(["register", "framework", "watch"] as const).map((v) => (
               <button
                 key={v}
                 type="button"
                 onClick={() => { setView(v); setOpen(null); }}
                 className={`focusable rounded-[5px] px-2.5 py-1 text-[11.5px] font-medium transition-colors ${view === v ? "bg-surface text-fg elev-1" : "text-faint hover:text-fg"}`}
               >
-                {v === "register" ? "What the platform enforces" : "Data security guardrails"}
+                {VIEW_LABEL[v]}
+                {v === "watch" && data?.events?.length ? <span className="tnum ml-1.5 font-mono text-[10px] text-faint">{data.events.length}</span> : null}
               </button>
             ))}
           </span>
         </span>
-        {view === "register" ? (
+        {view === "watch" ? (
+          <>
+            <h1 className="max-w-[26ch] text-[26px] leading-[1.15] font-semibold tracking-[-0.02em]">
+              What the screener caught, and what the taint rules stopped.
+            </h1>
+            <p className="max-w-[78ch] text-[13px] leading-[1.6] text-faint">
+              Every prompt or response the screener matched, every call where untrusted content reached a tool that acts outside the box, and every
+              host the egress policy refused, read from the journals of every application and agent. Excerpts are redacted of every secret this
+              deployment holds. Open an event for its lineage: what the content came from, and what it fed.
+            </p>
+          </>
+        ) : view === "register" ? (
           <>
             <h1 className="max-w-[24ch] text-[26px] leading-[1.15] font-semibold tracking-[-0.02em]">
               Controls applied across every workflow.
@@ -402,6 +427,8 @@ export function Guardrails() {
           })}
         </>
       )}
+
+      {view === "watch" && <GuardrailsWatch events={data ? data.events ?? [] : null} />}
 
       {/* ── the open control, as a dialog rather than a card that grows ── */}
       {openControl && (

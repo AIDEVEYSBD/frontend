@@ -1,6 +1,6 @@
-import { ensureAnnIndex, knowledgeReady, kq } from "@/lib/server/knowledge-db";
+import { ensureAnnIndex, knowledgeReady, kq, stampAdmission } from "@/lib/server/knowledge-db";
 import { permit, session as whoIs, signer, ssoEnabled } from "@/lib/server/auth";
-import { embed, embeddingModel } from "@/lib/server/embed";
+import { embed, embeddingDimension, embeddingModel } from "@/lib/server/embed";
 import { NAMESPACE_RULE, parseNamespace } from "@/lib/knowledge";
 
 /**
@@ -64,10 +64,13 @@ export async function POST(req: Request) {
       "UPDATE documents SET status = 'rejected', decided_at = now(), decided_by = $2, note = $3 WHERE id = $1 AND namespace = $4",
       [documentId, by, note, namespace],
     );
-    await kq(
-      "INSERT INTO admissions (namespace, document_id, source_id, admitted, by_whom, note, chunks) VALUES ($5,$1,$2,false,$3,$4,0)",
+    const [refusal] = await kq<{ id: string }>(
+      "INSERT INTO admissions (namespace, document_id, source_id, admitted, by_whom, note, chunks) VALUES ($5,$1,$2,false,$3,$4,0) RETURNING id",
       [documentId, doc.source_id, by, note, namespace],
     );
+    // A refusal changes nothing retrievable, but it is an admission row, so
+    // the digest the next read checks against is the one after it.
+    await stampAdmission(namespace, refusal.id, "", 0);
     return Response.json({
       document: documentId,
       namespace,
@@ -122,10 +125,14 @@ export async function POST(req: Request) {
     "UPDATE documents SET status = 'admitted', decided_at = now(), decided_by = $2, note = $3 WHERE id = $1 AND namespace = $4",
     [documentId, by, note, namespace],
   );
-  await kq(
-    "INSERT INTO admissions (namespace, document_id, source_id, admitted, by_whom, note, chunks) VALUES ($6,$1,$2,true,$3,$4,$5)",
+  const [admission] = await kq<{ id: string }>(
+    "INSERT INTO admissions (namespace, document_id, source_id, admitted, by_whom, note, chunks) VALUES ($6,$1,$2,true,$3,$4,$5) RETURNING id",
     [documentId, doc.source_id, by, note, pieces.length, namespace],
   );
+  // The admission records what embedded the index and the digest of the
+  // namespace as it now stands; the status read checks against it.
+  const dimensions = vectors[0]?.length ?? embeddingDimension() ?? 0;
+  const digest = await stampAdmission(namespace, admission.id, embeddingModel(), dimensions);
   await ensureAnnIndex();
 
   return Response.json({
@@ -135,6 +142,8 @@ export async function POST(req: Request) {
     by,
     chunks: pieces.length,
     model: embeddingModel(),
+    dimensions,
+    digest,
     note: `Admitted and indexed. ${pieces.length} chunks are now retrievable; any earlier version of this source was superseded.`,
   });
 }
