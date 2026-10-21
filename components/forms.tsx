@@ -103,7 +103,7 @@ export function Input({
   prefix?: ReactNode;
   id?: string;
   name?: string;
-  type?: "text" | "password" | "email" | "url" | "number" | "search";
+  type?: "text" | "password" | "email" | "url" | "number" | "search" | "datetime-local";
   mono?: boolean;
   "aria-label"?: string;
   autoComplete?: string;

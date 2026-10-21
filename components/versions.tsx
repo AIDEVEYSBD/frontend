@@ -155,12 +155,39 @@ function PickDot({ on, label, onPick }: { on: boolean; label: string; onPick: ()
 }
 
 function DiffView({ from, to, shown, sections }: { from: number; to: number; shown: { diff: SpecDiff | null; error: string } | null; sections: DiffSection[] }) {
+  return <SpecDiffView fromLabel={`v${from}`} toLabel={`v${to}`} fromDigestLabel={`Version ${from} digest`} toDigestLabel={`Version ${to} digest`} shown={shown} sections={sections} />;
+}
+
+/**
+ * A spec-vocabulary diff (`SpecDiff`, lib/versions.ts diffSections), between
+ * any two documents: two versions here, a template and the agent cut from
+ * it on the lifecycle page (the lineage's drift). `shown` null reads as
+ * loading. A diff whose digests match says nothing that runs changed; one
+ * whose digests differ with nothing named says `quietNote`.
+ */
+export function SpecDiffView({
+  fromLabel,
+  toLabel,
+  fromDigestLabel,
+  toDigestLabel,
+  shown,
+  sections,
+  quietNote = "The digests differ, but nothing the comparison names moved; read the two documents side by side in the builder.",
+}: {
+  fromLabel: string;
+  toLabel: string;
+  fromDigestLabel?: string;
+  toDigestLabel?: string;
+  shown: { diff: SpecDiff | null; error: string } | null;
+  sections: DiffSection[];
+  quietNote?: string;
+}) {
   const counts = diffCounts(sections);
   return (
     <div className="flex flex-col">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 bg-raise/55 px-4 py-2.5">
         <span className="text-[12.5px] font-semibold">
-          v{from} → v{to}
+          {fromLabel} → {toLabel}
         </span>
         {shown?.diff && !shown.diff.same && (
           <span className="flex items-center gap-2 text-[11px]">
@@ -172,9 +199,9 @@ function DiffView({ from, to, shown, sections }: { from: number; to: number; sho
         <span className="grow" />
         {shown?.diff && (
           <span className="flex items-center gap-1.5 text-[10.5px] text-faint">
-            <DigestChip digest={shown.diff.from.digest} label={`Version ${from} digest`} />
+            <DigestChip digest={shown.diff.from.digest} label={fromDigestLabel ?? `${fromLabel} digest`} />
             <span>→</span>
-            <DigestChip digest={shown.diff.to.digest} label={`Version ${to} digest`} />
+            <DigestChip digest={shown.diff.to.digest} label={toDigestLabel ?? `${toLabel} digest`} />
           </span>
         )}
       </div>
@@ -189,9 +216,7 @@ function DiffView({ from, to, shown, sections }: { from: number; to: number; sho
           Nothing that runs changed: the two versions have the same digest. What moved was layout or a field left at its default.
         </p>
       )}
-      {shown?.diff && !shown.diff.same && sections.length === 0 && (
-        <p className="px-4 py-3 text-[11.5px] leading-[1.55] text-faint">The digests differ, but nothing the comparison names moved; read the two documents side by side in the builder.</p>
-      )}
+      {shown?.diff && !shown.diff.same && sections.length === 0 && <p className="px-4 py-3 text-[11.5px] leading-[1.55] text-faint">{quietNote}</p>}
       {sections.map((s) => (
         <section key={s.id} className="border-t border-line px-4 py-2.5">
           <span className="text-[11px] font-semibold text-dim">{s.title}</span>

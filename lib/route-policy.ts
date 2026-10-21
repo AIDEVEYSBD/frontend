@@ -77,7 +77,15 @@ export const STRICT_READS: Record<string, string> = { "app/api/iam/": "iam" };
  * `/api/agents`: reviews, deploy, deployments, the spine, rollback, retire,
  * the benchmark, a version's document) and read at `/api/evals/runs/{id}`,
  * the one prefix beneath `/api/evals` that is the backend's; the eval sets
- * and their history (`/api/evals` itself) stay the console's.
+ * and their history (`/api/evals` itself) stay the console's. Phase L8
+ * (second round) the templates (`/api/templates`, with the certify door
+ * beneath it), the deliverables (`/api/deliverables`, with one
+ * deliverable's file beneath it), the registers (`/api/registers`, with a
+ * register's items beneath it) and the eval sets as the backend reads them
+ * (`/api/eval-sets/{id}`), every one a console door behind the cookie; the
+ * canary, the lineage and an agent's eval sets travel with `/api/agents`,
+ * the queue's jobs (`/api/queue/jobs`) with `/api/queue`. The console's own
+ * eval-set door (`/api/evals`) is a different prefix and stays here.
  */
 export const BACKEND_PREFIXES = [
   "/api/runs",
@@ -114,6 +122,10 @@ export const BACKEND_PREFIXES = [
   "/api/peers",
   "/api/breakers",
   "/api/evals/runs",
+  "/api/templates",
+  "/api/deliverables",
+  "/api/registers",
+  "/api/eval-sets",
 ];
 
 /**

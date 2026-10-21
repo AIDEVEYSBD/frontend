@@ -3,6 +3,7 @@ import { permit } from "@/lib/server/auth";
 import { backendConfigured, backendFetch } from "@/lib/server/backend";
 import { readRuns, type RunRow } from "@/lib/server/runs";
 import { budgetState, PERIODS, writeBudget, type Period } from "@/lib/server/budget";
+import { productionRuns, shadowRuns, shadowSummary } from "@/lib/production";
 import { peerRegistryOf } from "@/lib/api/l7b";
 import { skillsOf } from "@/lib/peers";
 import type { PartnerPeer } from "@/lib/peers";
@@ -45,8 +46,9 @@ async function liveRuns(req: Request): Promise<{ id: string; system: string; sta
   try {
     const res = await backendFetch(req, "/api/runs", { signal: AbortSignal.timeout(8_000) });
     if (!res.ok) return [];
-    const d = (await res.json()) as { runs?: { id: string; system: string; started: string; live?: boolean }[] };
-    return (d.runs ?? []).filter((r) => r.live).map((r) => ({ id: r.id, system: r.system, startedAt: r.started }));
+    const d = (await res.json()) as { runs?: { id: string; system: string; started: string; live?: boolean; shadow?: boolean }[] };
+    // A shadow run in flight is a canary's mirror, not production's work (lib/production.ts).
+    return productionRuns(d.runs ?? []).filter((r) => r.live).map((r) => ({ id: r.id, system: r.system, startedAt: r.started }));
   } catch {
     return [];
   }
@@ -124,11 +126,17 @@ async function partnerPeers(
 export async function GET(req: Request) {
   { const gate = await permit(req, "view"); if (gate) return gate; }
   const sheet = await prices();
-  const runs = await readRuns(sheet);
+  const all = await readRuns(sheet);
+  // Every figure below is production's: a canary's shadow runs are listed
+  // apart (`shadow`), never counted (lib/production.ts).
+  const runs = productionRuns(all);
+  const shadows = shadowRuns(all);
 
   // The deets, durably: every run's tokens/cost/time land in Postgres so any
   // reporting tool can query them without parsing journals. The journal stays
-  // the source of truth; this is its indexed shadow.
+  // the source of truth; this is its indexed shadow. The table has no column
+  // to mark a canary's shadow run, so shadow runs stay out of it, as they stay
+  // out of every production figure.
   if (await dbReady()) {
     try {
       for (const r of runs.slice(0, 200)) {
@@ -327,6 +335,8 @@ export async function GET(req: Request) {
       budgetState: budgetNow,
       spend7d: sum(recent.map((r) => r.cost)),
       unpriced7d: unpriced(recent),
+      /** What a canary's shadow runs spent in the last 7 days: beside the spend, never in it. */
+      shadowSpend7d: shadowSummary(shadows, new Date(week)).cost,
     },
     ledger: {
       entries: runs.reduce((s, r) => s + r.entries, 0),
@@ -352,6 +362,8 @@ export async function GET(req: Request) {
     models,
     /** Every recent run, newest first — the substance behind every click. */
     runs: runs.slice(0, 2000).map((r) => withoutCalls(r)),
+    /** A canary's shadow runs in the last 7 days, listed apart: left out of every figure above. */
+    shadow: shadowSummary(shadows, new Date(week)),
     store: db ? "db" : "file (db unreachable)",
     costBasis: `configured price per model × journalled tokens; the scripted provider is zero${assumedPrices().length ? `; list price assumed for ${assumedPrices().join(", ")}` : ""}; any other unpriced model is estimated at the sheet's median rate and counted as estimated`,
   });

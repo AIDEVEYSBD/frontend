@@ -30,6 +30,15 @@ import {
  * it gets that far. Pure: components/lifecycle.tsx and components/deploy-gate.tsx
  * render these, tests/l8-logic.test.ts and tests/l8-contract.test.ts hold
  * them.
+ *
+ * The second round: the spine's `canary` stage, lit by a deployment row in
+ * environment `canary` or `shadow` (`record.current` while the canary
+ * stands); a deployment made before L8 lighting `deployed` (`record.adopted`);
+ * `current`, where the digest stands now (the furthest stage lit that still
+ * holds), so a stage lit by a record that no longer holds (a canary ended, a
+ * version rolled back from) reads as past; a run's shadow and canary marks;
+ * a paused agent's refusal. tests/l8b-logic.test.ts and
+ * tests/l8b-contract.test.ts hold these.
  */
 
 /** An ISO time as the console prints a record's: `2026-10-21 13:50:29 UTC`; "" for none. */
@@ -69,7 +78,8 @@ export const STAGE_RECORD: Record<StageName, string> = {
 
 export const stageLabel = (s: string): string => STAGE_LABEL[s as StageName] ?? s.replace(/_/g, " ");
 
-export type StageTone = "ok" | "warn" | "err" | "neutral";
+/** past: lit by its own record, which no longer holds (a canary that ended): what happened, not where the digest stands. */
+export type StageTone = "ok" | "warn" | "err" | "neutral" | "past";
 
 /** One stage as the spine draws it: lit or dark, who and when, and what its record says. */
 export interface SpineStage {
@@ -80,14 +90,16 @@ export interface SpineStage {
   who: string;
   /** What the record says beyond who and when: the review's note, an override's reason, a rollback, that it no longer runs. */
   note: string;
-  /** ok: lit by its own record; warn: lit by an override, or deployed and no longer running; err: retired; neutral: dark. */
+  /** ok: lit by its own record; warn: lit by an override, or deployed and no longer running; err: retired; past: a canary that ended; neutral: dark. */
   tone: StageTone;
   /** The record to look for when it is dark. */
   needs: string;
+  /** Where the digest stands now: the backend's `current`, the furthest stage lit that still holds. */
+  now: boolean;
 }
 
 /** The spine in reading order: the backend's stages (STAGE_NAMES first, anything newer after), each with its line. */
-export function spineOf(l: Pick<Lifecycle, "stages" | "deployed" | "digest" | "retired">): SpineStage[] {
+export function spineOf(l: Pick<Lifecycle, "stages" | "deployed" | "digest" | "retired"> & { current?: string | null }): SpineStage[] {
   const order = (s: Stage) => {
     const i = STAGE_NAMES.indexOf(s.stage as StageName);
     return i === -1 ? STAGE_NAMES.length : i;
@@ -114,9 +126,25 @@ export function spineOf(l: Pick<Lifecycle, "stages" | "deployed" | "digest" | "r
           } else if (s.lit) note = "the gate passed on its own records";
           break;
         }
+        case "canary": {
+          if (s.lit) {
+            const env = s_(r.environment) || "canary";
+            const parts: string[] = [];
+            // The deployment row's own words: "canary: 0.5 of queued and triggered starts", "shadow: 1 of production runs, mirrored".
+            parts.push(s_(r.reason) || (env === "shadow" ? "shadow: a share of production runs, mirrored" : "canary: a share of queued and triggered starts"));
+            if (r.current === false) {
+              tone = "past";
+              parts.push(env === "shadow" ? "the shadow has ended" : "the canary has ended");
+            } else if (r.current === true) parts.push(env === "shadow" ? "mirroring production now" : "taking its share now");
+            note = parts.join("; ");
+          }
+          break;
+        }
         case "deployed": {
           if (s.lit) {
             const parts: string[] = [];
+            // Deployed before L8 kept deployment rows: the version marked deployed stands in for its deployment.
+            if (r.adopted === true) parts.push("deployed before deployments were recorded (adopted)");
             if (s_(r.kind) === "rollback") parts.push(`reinstated by a rollback${s_(r.reason) ? `: ${s_(r.reason)}` : ""}`);
             if (s_(o_(r.override).reason)) parts.push(`deployed past the gate by override: ${s_(o_(r.override).reason)}`);
             if (r.current === false) {
@@ -138,15 +166,42 @@ export function spineOf(l: Pick<Lifecycle, "stages" | "deployed" | "digest" | "r
           }
           break;
       }
-      return { stage: s.stage, label: stageLabel(s.stage), lit: s.lit, who, note, tone, needs: STAGE_RECORD[s.stage as StageName] ?? "" };
+      return { stage: s.stage, label: stageLabel(s.stage), lit: s.lit, who, note, tone, needs: STAGE_RECORD[s.stage as StageName] ?? "", now: Boolean(l.current) && s.stage === l.current };
     });
 }
 
+/**
+ * The stages lit by a record that no longer holds, beyond where the digest
+ * stands now, in a person's words: a canary that ended, a deployment
+ * production no longer runs. The backend's `current` already steps back
+ * past them; this says why.
+ */
+export function pastOf(l: Pick<Lifecycle, "stages" | "current">): string[] {
+  const order = (stage: string) => STAGE_NAMES.indexOf(stage as StageName);
+  const at = l.current ? order(l.current) : -1;
+  const out: string[] = [];
+  for (const s of l.stages) {
+    if (!s.lit || order(s.stage) <= at) continue;
+    const r = o_(s.record);
+    if (r.current !== false) continue;
+    if (s.stage === "canary") out.push(s_(r.environment) === "shadow" ? "its shadow beside production has ended" : "its canary has ended");
+    else if (s.stage === "deployed") out.push("it was deployed, and production no longer runs it");
+  }
+  return out;
+}
+
 /** The spine's headline: where this digest stands, and what production runs beside it. */
-export function spineHeadline(l: Pick<Lifecycle, "current" | "version" | "digest" | "deployed" | "retired">): string {
+export function spineHeadline(l: Pick<Lifecycle, "current" | "version" | "digest" | "deployed" | "retired"> & { stages?: Lifecycle["stages"] }): string {
   const v = l.version !== null ? `Version ${l.version} (${shortDigest(l.digest)})` : `Digest ${shortDigest(l.digest)}`;
   if (l.retired) return `Retired ${whenText(l.retired.at)} by ${l.retired.by}${l.retired.replacement ? `; replaced by ${l.retired.replacement}` : ""}.`;
-  const stage = l.current ? stageLabel(l.current).toLowerCase() : "not yet designed";
+  let stage = l.current ? stageLabel(l.current).toLowerCase() : "not yet designed";
+  const stages = l.stages ?? [];
+  if (l.current === "canary") {
+    const reason = s_(o_(stages.find((s) => s.stage === "canary")?.record).reason).replace(/^canary: /, "");
+    if (reason) stage = `canary (${reason})`;
+  }
+  const past = pastOf({ stages, current: l.current });
+  if (past.length) stage = `${stage}; ${past.join("; ")}`;
   const running = l.deployed
     ? l.deployed.digest === l.digest
       ? " Production runs it."
@@ -388,6 +443,13 @@ export function retiredLine(r: Pick<Retired, "reason" | "replacement" | "by" | "
   return `Retired${r.by ? ` by ${r.by}` : ""}${r.at ? ` ${whenText(r.at)}` : ""}: ${r.reason}.${r.replacement ? ` Replaced by ${r.replacement}.` : ""} It takes no new runs or triggers; its runs and versions stay readable.`;
 }
 
+/** A paused agent's refusal (409 `control: "paused"`) where the run was started: why, who, when, and how it ends. */
+export function pausedLine(agent: string, p: { mode: string; reason: string; by: string; at: string }): string {
+  const what = p.mode === "drain" ? "draining" : "paused";
+  const who = [p.by ? `by ${p.by}` : "", whenText(p.at)].filter(Boolean).join(", ");
+  return `${agent || "This agent"} is ${what}${p.reason ? `: ${p.reason}` : ""}${who ? ` (${who})` : ""}. It takes no new runs or triggers until it is resumed on the Control page.`;
+}
+
 /** What the backend would refuse before anything is sent: a reason (400), and a replacement that is another saved agent (400/404 `field: replacement`). */
 export function retireProblem(agent: string, reason: string, replacement: string, saved: readonly string[]): string {
   if (!reason.trim()) return "a retirement needs a reason";
@@ -466,6 +528,51 @@ export interface Inbound {
   signed: boolean;
 }
 
+/**
+ * Which version a run used while a canary stood (phase L8, second round):
+ * the record's (and its job's) `canary`. `variant` candidate: the canary's
+ * version ran instead of production's (canary mode), or a shadow mirrored a
+ * production run (`of`, `of_job`); production: production's arm, mirrored
+ * by `shadow_run` or `shadow_job` in shadow mode.
+ */
+export interface CanaryAssignment {
+  id: string;
+  mode: string;
+  variant: string;
+  /** The version this run used. */
+  version: number | null;
+  digest: string;
+  share: number | null;
+  candidate: { version: number | null; digest: string } | null;
+  production: { version: number | null; digest: string } | null;
+  /** A shadow's production run, and its job on the queue. */
+  of: string;
+  of_job: string;
+  /** A production run's mirror: its shadow run (in process) or shadow job (on the queue). */
+  shadow_run: string;
+  shadow_job: string;
+}
+
+export function canaryAssignmentOf(v: unknown): CanaryAssignment | null {
+  const c = o_(v);
+  if (!s_(c.id) && !s_(c.variant)) return null;
+  const point = (x: unknown) => (x && typeof x === "object" ? { version: n_(o_(x).version), digest: s_(o_(x).digest) } : null);
+  return {
+    id: s_(c.id),
+    mode: s_(c.mode) || "canary",
+    variant: s_(c.variant),
+    version: n_(c.version),
+    digest: s_(c.digest),
+    share: n_(c.share),
+    candidate: point(c.candidate),
+    production: point(c.production),
+    of: s_(c.of),
+    of_job: s_(c.of_job),
+    shadow_run: s_(c.shadow_run),
+    shadow_job: s_(c.shadow_job),
+  };
+}
+
 /** What a run's record says beyond its journal: a rollback's flag, the taint of its input, the eval it is a case of, the job behind it. */
 export interface RunFlags {
   review: RunFlag | null;
@@ -476,6 +583,10 @@ export interface RunFlags {
   eval: { id: string; case: string; set: string } | null;
   /** The trigger job it ran for (a worker's run). */
   job: string;
+  /** A canary's shadow run (`shadow: true`): nothing above read executed, and it counts toward no production figure. */
+  shadow: boolean;
+  /** Which version it used while a canary stood. */
+  canary: CanaryAssignment | null;
 }
 
 export function runFlagsOf(record: unknown): RunFlags {
@@ -491,11 +602,13 @@ export function runFlagsOf(record: unknown): RunFlags {
     inbound: msg ? { peer: s_(d.peer) || s_(d.agent), digest: s_(d.digest), bytes: n_(d.bytes) ?? 0, screen: s_(d.screen), task: s_(d.task), signed: d.signed === true } : null,
     eval: s_(ev.id) ? { id: s_(ev.id), case: s_(ev.case), set: s_(ev.set) } : null,
     job: s_(r.job),
+    shadow: r.shadow === true,
+    canary: canaryAssignmentOf(r.canary),
   };
 }
 
 /** Whether a record carries anything RunFlagsBanner would say. */
-export const hasRunFlags = (f: RunFlags): boolean => Boolean(f.review || f.taint || f.inbound || f.eval);
+export const hasRunFlags = (f: RunFlags): boolean => Boolean(f.review || f.taint || f.inbound || f.eval || f.shadow || f.canary);
 
 /** The inbound message in a line: who sent it, its size and digest, and what the screener said. */
 export function inboundLine(m: Inbound): string {

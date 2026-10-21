@@ -164,6 +164,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agents/{agent}/canary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The agent's canary (the latest, or one by id): whether it stands, its runs, and for shadow the disagreement rate between each production run and its shadow */
+        get: operations["getAgentCanary"];
+        /** Run a version beside production: a share of queued starts (canary) or a shadow mirror of a share of production runs (shadow); the version must pass the promotion gate except regression */
+        put: operations["putAgentCanary"];
+        post?: never;
+        /** End the agent's canary: no more starts go to the candidate, no more runs are mirrored; its queued shadow jobs are withdrawn */
+        delete: operations["deleteAgentCanary"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agents/{agent}/deploy": {
         parameters: {
             query?: never;
@@ -215,6 +234,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agents/{agent}/eval-sets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The agent's eval sets (the eval_sets table, then workspace/evals), each with its case count, and which one its spec names as its suite */
+        get: operations["listAgentEvalSets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agents/{agent}/evals/run": {
         parameters: {
             query?: never;
@@ -241,6 +277,23 @@ export interface paths {
         };
         /** The lifecycle spine for one digest (default: the latest version's): designed, reviewed, approved, canary, deployed, retired, each lit only by its own record */
         get: operations["getAgentLifecycle"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/{agent}/lineage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The template an agent was cut from, the digest it was cut from, and the drift since in the spec's vocabulary */
+        get: operations["getAgentLineage"];
         put?: never;
         post?: never;
         delete?: never;
@@ -666,6 +719,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/deliverables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every document a run wrote (report, contract, register), with its state: draft, reviewed, published, withdrawn */
+        get: operations["listDeliverables"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deliverables/{deliverable_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One deliverable with its history: written, reviewed (by whom), published (through which sink), withdrawn */
+        get: operations["getDeliverable"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deliverables/{deliverable_id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The deliverable's file: only one the runtime wrote here, only from the outbox, only with the digest it was registered with */
+        get: operations["downloadDeliverable"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dependencies": {
         parameters: {
             query?: never;
@@ -744,6 +848,23 @@ export interface paths {
         };
         /** Drift per agent: the last day against the thirty before it, on disposition mix, confidence, cost per run, tool mix and refusal rate */
         get: operations["getDrift"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/eval-sets/{set_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One eval set with its cases */
+        get: operations["getEvalSet"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1120,6 +1241,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/queue/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Jobs on the trigger queue, newest first, by status and agent: a cancelled one with its cancel_reason, a dead letter, a shadow job */
+        get: operations["listQueueJobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/queue/jobs/{job_id}/replay": {
         parameters: {
             query?: never;
@@ -1131,6 +1269,40 @@ export interface paths {
         put?: never;
         /** Re-queue a dead-lettered job as a fresh attempt */
         post: operations["replayJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/registers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every register a records backend wrote to, with its items' states */
+        get: operations["listRegisters"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/registers/{name}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One register's items, newest first, with their states */
+        get: operations["listRegisterItems"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1478,6 +1650,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every template, newest first: pending or certified, with who made and who certified it */
+        get: operations["listTemplates"];
+        put?: never;
+        /** Make a template of one saved version's document; pending until a certifier who is not its author certifies it */
+        post: operations["createTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/templates/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One template with its document and the params it takes */
+        get: operations["getTemplate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/templates/{template_id}/certify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Certify a pending template: the certifier holds TEMPLATE_CERTIFIER_ROLE and is not its author */
+        post: operations["certifyTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/trigger/{agent}": {
         parameters: {
             query?: never;
@@ -1761,6 +1985,10 @@ export interface components {
             digest: string;
             /** Id */
             id: string;
+            /** Lineage */
+            lineage?: {
+                [key: string]: unknown;
+            } | null;
             /** Name */
             name: string;
             /** Retired */
@@ -1900,6 +2128,12 @@ export interface components {
          *     production in the same request, through the promotion gate (L8); a
          *     refused deploy answers 409 with the gate's unmet conditions and the
          *     version stays saved as a draft.
+         *
+         *     Or (L8) a new agent cut from a certified template: `{from_template, id,
+         *     params?}` instead of `spec`. The template's document becomes the new
+         *     agent's first version, `metadata.id` the given id and its
+         *     `${param:name}` references filled from `params`; the agent records its
+         *     lineage.
          */
         AgentSaveRequest: {
             /**
@@ -1907,11 +2141,19 @@ export interface components {
              * @default false
              */
             deploy: boolean;
+            /** From Template */
+            from_template?: string | null;
+            /** Id */
+            id?: string | null;
             override?: components["schemas"]["OverrideBody"] | null;
-            /** Spec */
-            spec: {
+            /** Params */
+            params?: {
                 [key: string]: unknown;
-            };
+            } | null;
+            /** Spec */
+            spec?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** AgentSaved */
         AgentSaved: {
@@ -1931,6 +2173,10 @@ export interface components {
             draft: boolean;
             /** Id */
             id: string;
+            /** Lineage */
+            lineage?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Saved
              * @default true
@@ -2587,6 +2833,11 @@ export interface components {
             period: "day" | "week" | "month";
             /** Remaining */
             remaining: number | null;
+            /**
+             * Shadow Spent
+             * @default 0
+             */
+            shadow_spent: number;
             /** Since */
             since: string;
             /** Spent */
@@ -2614,6 +2865,265 @@ export interface components {
             out: number;
             /** Tools */
             tools: number;
+        };
+        /** CanaryArm */
+        CanaryArm: {
+            /**
+             * Finished
+             * @default 0
+             */
+            finished: number;
+            /** Outcomes */
+            outcomes?: {
+                [key: string]: number;
+            };
+            /**
+             * Runs
+             * @default 0
+             */
+            runs: number;
+        };
+        /**
+         * CanaryClosed
+         * @description DELETE's answer: the canary as it ended, with the queue it left.
+         */
+        CanaryClosed: {
+            /** Active */
+            active: boolean;
+            /** Agent */
+            agent: string;
+            /** Arms */
+            arms?: {
+                [key: string]: components["schemas"]["CanaryArm"];
+            };
+            /** At */
+            at: string;
+            /** By */
+            by: string;
+            /** Cancelled Jobs */
+            cancelled_jobs?: string[];
+            /**
+             * Compared
+             * @default 0
+             */
+            compared: number;
+            /** Conditions */
+            conditions?: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Decision
+             * @default
+             */
+            decision: string;
+            /**
+             * Deployment
+             * @default
+             */
+            deployment: string;
+            /** Digest */
+            digest: string;
+            /**
+             * Disagreements
+             * @default 0
+             */
+            disagreements: number;
+            ended?: components["schemas"]["CanaryEnded"] | null;
+            /** Examples */
+            examples?: components["schemas"]["CanaryExample"][];
+            /** Field */
+            field?: string | null;
+            /** Id */
+            id: string;
+            /** Mode */
+            mode: string;
+            /**
+             * Pending
+             * @default 0
+             */
+            pending: number;
+            /** Production */
+            production?: {
+                [key: string]: unknown;
+            } | null;
+            /** Production Now */
+            production_now?: {
+                [key: string]: unknown;
+            } | null;
+            /** Rate */
+            rate?: number | null;
+            /** Released Jobs */
+            released_jobs?: string[];
+            /**
+             * Runs
+             * @default 0
+             */
+            runs: number;
+            /** Share */
+            share: number;
+            /**
+             * Skipped
+             * @default 0
+             */
+            skipped: number;
+            /** Skipped Why */
+            skipped_why?: {
+                [key: string]: number;
+            };
+            /** Until */
+            until?: string | null;
+            /** Version */
+            version: number;
+        };
+        /** CanaryEnded */
+        CanaryEnded: {
+            /** At */
+            at?: string | null;
+            /**
+             * By
+             * @default
+             */
+            by: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+        };
+        /** CanaryExample */
+        CanaryExample: {
+            /** At */
+            at?: string | null;
+            /** Production */
+            production: string;
+            /** Production Run */
+            production_run: string;
+            /** Shadow */
+            shadow: string;
+            /** Shadow Run */
+            shadow_run: string;
+        };
+        /** CanaryRequest */
+        CanaryRequest: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "canary" | "shadow";
+            /** Share */
+            share: number;
+            /** Until */
+            until?: string | null;
+            /** Version */
+            version: number;
+        };
+        /**
+         * CanaryView
+         * @description One canary configuration and what it has seen.
+         */
+        CanaryView: {
+            /** Active */
+            active: boolean;
+            /** Agent */
+            agent: string;
+            /** Arms */
+            arms?: {
+                [key: string]: components["schemas"]["CanaryArm"];
+            };
+            /** At */
+            at: string;
+            /** By */
+            by: string;
+            /**
+             * Compared
+             * @default 0
+             */
+            compared: number;
+            /** Conditions */
+            conditions?: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Decision
+             * @default
+             */
+            decision: string;
+            /**
+             * Deployment
+             * @default
+             */
+            deployment: string;
+            /** Digest */
+            digest: string;
+            /**
+             * Disagreements
+             * @default 0
+             */
+            disagreements: number;
+            ended?: components["schemas"]["CanaryEnded"] | null;
+            /** Examples */
+            examples?: components["schemas"]["CanaryExample"][];
+            /** Field */
+            field?: string | null;
+            /** Id */
+            id: string;
+            /** Mode */
+            mode: string;
+            /**
+             * Pending
+             * @default 0
+             */
+            pending: number;
+            /** Production */
+            production?: {
+                [key: string]: unknown;
+            } | null;
+            /** Production Now */
+            production_now?: {
+                [key: string]: unknown;
+            } | null;
+            /** Rate */
+            rate?: number | null;
+            /**
+             * Runs
+             * @default 0
+             */
+            runs: number;
+            /** Share */
+            share: number;
+            /**
+             * Skipped
+             * @default 0
+             */
+            skipped: number;
+            /** Skipped Why */
+            skipped_why?: {
+                [key: string]: number;
+            };
+            /** Until */
+            until?: string | null;
+            /** Version */
+            version: number;
+        };
+        /** Certified */
+        Certified: {
+            /** At */
+            at?: string | null;
+            /** By */
+            by: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+        };
+        /** CertifyRequest */
+        CertifyRequest: {
+            /**
+             * Note
+             * @default
+             */
+            note: string;
         };
         /**
          * Change
@@ -2811,6 +3321,11 @@ export interface components {
                 [key: string]: string;
             };
             /**
+             * Shadow
+             * @default false
+             */
+            shadow: boolean;
+            /**
              * Source
              * @default api
              */
@@ -2953,6 +3468,157 @@ export interface components {
             retrievals?: components["schemas"]["RetrievalView"][];
             /** Started */
             started: string;
+        };
+        /**
+         * CutFrom
+         * @description The agent's own first version, cut from the template.
+         */
+        CutFrom: {
+            /** At */
+            at: string;
+            /** By */
+            by: string;
+            /** Digest */
+            digest: string;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+            /** Version */
+            version?: number | null;
+        };
+        /** DeliverableFile */
+        DeliverableFile: {
+            /** Available */
+            available: boolean;
+            /**
+             * Says
+             * @default
+             */
+            says: string;
+            /**
+             * Why
+             * @default
+             */
+            why: string;
+        };
+        /** DeliverableList */
+        DeliverableList: {
+            /** Count */
+            count: number;
+            /** Deliverables */
+            deliverables: components["schemas"]["DeliverableSummary"][];
+            /** States */
+            states?: {
+                [key: string]: number;
+            };
+        };
+        /** DeliverableSummary */
+        DeliverableSummary: {
+            /** Agent */
+            agent: string;
+            /** At */
+            at: string;
+            /** Bytes */
+            bytes?: number | null;
+            /** Digest */
+            digest: string;
+            /** Download */
+            download?: string | null;
+            /**
+             * Format
+             * @default
+             */
+            format: string;
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /**
+             * Node
+             * @default
+             */
+            node: string;
+            /**
+             * Origin
+             * @default
+             */
+            origin: string;
+            /** Path */
+            path: string;
+            /** Run */
+            run: string;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /** State */
+            state: string;
+            /**
+             * Sub Run
+             * @default
+             */
+            sub_run: string;
+            /** Title */
+            title: string;
+            /** Updated At */
+            updated_at: string;
+        };
+        /** DeliverableView */
+        DeliverableView: {
+            /** Agent */
+            agent: string;
+            /** At */
+            at: string;
+            /** Bytes */
+            bytes?: number | null;
+            /** Digest */
+            digest: string;
+            /** Download */
+            download?: string | null;
+            file: components["schemas"]["DeliverableFile"];
+            /**
+             * Format
+             * @default
+             */
+            format: string;
+            /** History */
+            history?: components["schemas"]["HistoryStep"][];
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /**
+             * Node
+             * @default
+             */
+            node: string;
+            /**
+             * Origin
+             * @default
+             */
+            origin: string;
+            /** Path */
+            path: string;
+            /** Run */
+            run: string;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /** State */
+            state: string;
+            /**
+             * Sub Run
+             * @default
+             */
+            sub_run: string;
+            /** Title */
+            title: string;
+            /** Updated At */
+            updated_at: string;
         };
         /** DepCounts */
         DepCounts: {
@@ -3606,6 +4272,82 @@ export interface components {
              */
             version_digest: string;
         };
+        /** EvalSetDocument */
+        EvalSetDocument: {
+            /** Agent */
+            agent: string;
+            /** Cases */
+            cases: {
+                [key: string]: unknown;
+            }[];
+            /** Count */
+            count: number;
+            /** Id */
+            id: string;
+            /** Labels */
+            labels?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /** Name */
+            name: string;
+            /** Source */
+            source: string;
+            /**
+             * Suite
+             * @default false
+             */
+            suite: boolean;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** EvalSetList */
+        EvalSetList: {
+            /** Agent */
+            agent: string;
+            /** Count */
+            count: number;
+            /** Sets */
+            sets: components["schemas"]["EvalSetSummary"][];
+            /** Suite */
+            suite?: string | null;
+        };
+        /**
+         * EvalSetSummary
+         * @description One benchmark: real inputs with checkable expectations, bound to one agent.
+         */
+        EvalSetSummary: {
+            /** Agent */
+            agent: string;
+            /** Count */
+            count: number;
+            /** Id */
+            id: string;
+            /** Labels */
+            labels?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /** Name */
+            name: string;
+            /** Source */
+            source: string;
+            /**
+             * Suite
+             * @default false
+             */
+            suite: boolean;
+            /** Updated At */
+            updated_at?: string | null;
+        };
         /**
          * Evidence
          * @description What the run had in hand when it stopped: the last node's emitted
@@ -4239,6 +4981,70 @@ export interface components {
             /** Stage */
             stage?: number | null;
         };
+        /** HistoryStep */
+        HistoryStep: {
+            /**
+             * Aborted
+             * @default false
+             */
+            aborted: boolean;
+            /**
+             * Applied
+             * @default true
+             */
+            applied: boolean;
+            /** At */
+            at?: string | null;
+            /**
+             * By
+             * @default
+             */
+            by: string;
+            /**
+             * Digest
+             * @default
+             */
+            digest: string;
+            /**
+             * Entry
+             * @default
+             */
+            entry: string;
+            /**
+             * Gate
+             * @default
+             */
+            gate: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /**
+             * Origin
+             * @default
+             */
+            origin: string;
+            /**
+             * Reviewed By
+             * @default
+             */
+            reviewed_by: string;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /** State */
+            state: string;
+            /** T */
+            t?: number | null;
+            /**
+             * Tool
+             * @default
+             */
+            tool: string;
+        };
         /** IdentityCounts */
         IdentityCounts: {
             /** Bykind */
@@ -4328,6 +5134,10 @@ export interface components {
             agent: string;
             /** Attempts */
             attempts: number;
+            /** Canary */
+            canary?: {
+                [key: string]: unknown;
+            } | null;
             /** Cancel Reason */
             cancel_reason?: string | null;
             /** Claimed By */
@@ -4372,6 +5182,11 @@ export interface components {
             run_id?: string | null;
             /** Run Url */
             run_url?: string | null;
+            /**
+             * Shadow
+             * @default false
+             */
+            shadow: boolean;
             /** Source */
             source: string;
             /** Started At */
@@ -4406,6 +5221,10 @@ export interface components {
             agent: string;
             /** Attempts */
             attempts: number;
+            /** Canary */
+            canary?: {
+                [key: string]: unknown;
+            } | null;
             /** Cancel Reason */
             cancel_reason?: string | null;
             /** Claimed By */
@@ -4442,6 +5261,11 @@ export interface components {
             run_id?: string | null;
             /** Run Url */
             run_url?: string | null;
+            /**
+             * Shadow
+             * @default false
+             */
+            shadow: boolean;
             /** Source */
             source: string;
             /** Started At */
@@ -4462,6 +5286,16 @@ export interface components {
             trace_id: string;
         };
         /**
+         * JobList
+         * @description Jobs on the trigger queue, newest first (L8).
+         */
+        JobList: {
+            /** Count */
+            count: number;
+            /** Jobs */
+            jobs: components["schemas"]["JobView"][];
+        };
+        /**
          * JobView
          * @description One job on the trigger queue, as the console's `jobView` shapes it.
          */
@@ -4470,6 +5304,10 @@ export interface components {
             agent: string;
             /** Attempts */
             attempts: number;
+            /** Canary */
+            canary?: {
+                [key: string]: unknown;
+            } | null;
             /** Cancel Reason */
             cancel_reason?: string | null;
             /** Claimed By */
@@ -4501,6 +5339,11 @@ export interface components {
             run_id?: string | null;
             /** Run Url */
             run_url?: string | null;
+            /**
+             * Shadow
+             * @default false
+             */
+            shadow: boolean;
             /** Source */
             source: string;
             /** Started At */
@@ -4683,6 +5526,20 @@ export interface components {
             requests_per_minute?: number | null;
             /** Tokens Per Day */
             tokens_per_day?: number | null;
+        };
+        /** Lineage */
+        Lineage: {
+            /** Agent */
+            agent: string;
+            current: components["schemas"]["VersionPoint"];
+            cut: components["schemas"]["CutFrom"];
+            deployed?: components["schemas"]["VersionPoint"] | null;
+            drift: components["schemas"]["SpecDiff"];
+            /** Drifted */
+            drifted: boolean;
+            template: components["schemas"]["TemplateView"];
+            /** Template Digest */
+            template_digest: string;
         };
         /** LinkMinted */
         LinkMinted: {
@@ -5440,12 +6297,21 @@ export interface components {
             asks: string;
             /** Chain */
             chain?: string[];
+            /**
+             * Control
+             * @default
+             */
+            control: string;
             /** Deadline */
             deadline?: string | null;
             /** Decided */
             decided?: {
                 [key: string]: unknown;
             };
+            /** Deliverables */
+            deliverables?: {
+                [key: string]: unknown;
+            }[];
             /**
              * Deployed Digest
              * @default
@@ -5887,6 +6753,58 @@ export interface components {
              */
             example: boolean;
         };
+        /** RegisterItemView */
+        RegisterItemView: {
+            /** Agent */
+            agent: string;
+            /** At */
+            at: string;
+            /** Backend */
+            backend: string;
+            /** Digest */
+            digest: string;
+            /** History */
+            history?: {
+                [key: string]: unknown;
+            }[];
+            /** Id */
+            id: string;
+            /** Item */
+            item: string;
+            /**
+             * Origin
+             * @default
+             */
+            origin: string;
+            /** Register */
+            register: string;
+            /** Run */
+            run: string;
+            /** State */
+            state: string;
+            /** Updated At */
+            updated_at: string;
+        };
+        /** RegisterItems */
+        RegisterItems: {
+            /** Count */
+            count: number;
+            /** Items */
+            items: components["schemas"]["RegisterItemView"][];
+            /** Register */
+            register: string;
+            /** States */
+            states?: {
+                [key: string]: number;
+            };
+        };
+        /** RegisterList */
+        RegisterList: {
+            /** Count */
+            count: number;
+            /** Registers */
+            registers: components["schemas"]["RegisterSummary"][];
+        };
         /** RegisterRequest */
         RegisterRequest: {
             /** Autonomy */
@@ -5907,6 +6825,23 @@ export interface components {
              */
             owner: string;
             policy?: components["schemas"]["PolicyView"] | null;
+        };
+        /** RegisterSummary */
+        RegisterSummary: {
+            /** Agents */
+            agents?: string[];
+            /** Backends */
+            backends?: string[];
+            /** Items */
+            items: number;
+            /** Latest */
+            latest?: string | null;
+            /** Name */
+            name: string;
+            /** States */
+            states?: {
+                [key: string]: number;
+            };
         };
         /**
          * Registered
@@ -5982,6 +6917,8 @@ export interface components {
             by: string;
             /** Cancelled Jobs */
             cancelled_jobs?: string[];
+            /** Id */
+            id: string;
             /** Reason */
             reason: string;
             /**
@@ -6400,6 +7337,10 @@ export interface components {
             byModel: components["schemas"]["ModelShare"][];
             /** Calls */
             calls: components["schemas"]["CallRow"][];
+            /** Canary */
+            canary?: {
+                [key: string]: unknown;
+            } | null;
             /** Cost */
             cost: number;
             /** Denials */
@@ -6408,6 +7349,10 @@ export interface components {
             entries: number;
             /** Estimated */
             estimated: number;
+            /** Eval */
+            eval?: {
+                [key: string]: unknown;
+            } | null;
             /** Finished */
             finished?: string | null;
             /** Id */
@@ -6423,6 +7368,15 @@ export interface components {
             models: string[];
             /** Ms */
             ms: number;
+            /** Review */
+            review?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Shadow
+             * @default false
+             */
+            shadow: boolean;
             /**
              * Source
              * @default console
@@ -6456,6 +7410,10 @@ export interface components {
             suspendedAt: string;
             /** System */
             system: string;
+            /** Taint */
+            taint?: {
+                [key: string]: unknown;
+            } | null;
             tokens: components["schemas"]["TokenCount"];
             /** Toolcalls */
             toolCalls: number;
@@ -6501,6 +7459,8 @@ export interface components {
         RunStarted: {
             /** Run */
             run: string;
+            /** Shadow Run */
+            shadow_run?: string | null;
             /** State */
             state: string;
         };
@@ -7249,6 +8209,80 @@ export interface components {
             set_at: string;
             /** Set By */
             set_by: string;
+            /** Version */
+            version: number;
+        };
+        /** TemplateDocument */
+        TemplateDocument: {
+            /** Agent */
+            agent: string;
+            /** At */
+            at: string;
+            /** Authors */
+            authors?: string[];
+            /** By */
+            by: string;
+            certified?: components["schemas"]["Certified"] | null;
+            /** Digest */
+            digest: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Params */
+            params?: {
+                [key: string]: string | null;
+            };
+            /** Spec */
+            spec: {
+                [key: string]: unknown;
+            };
+            /** State */
+            state: string;
+            /** Version */
+            version: number;
+        };
+        /** TemplateList */
+        TemplateList: {
+            /** Count */
+            count: number;
+            /** Role */
+            role: string;
+            /** Templates */
+            templates: components["schemas"]["TemplateView"][];
+        };
+        /** TemplateRequest */
+        TemplateRequest: {
+            /** From Agent */
+            from_agent: string;
+            /** Name */
+            name: string;
+            /** Version */
+            version: number;
+        };
+        /** TemplateView */
+        TemplateView: {
+            /** Agent */
+            agent: string;
+            /** At */
+            at: string;
+            /** Authors */
+            authors?: string[];
+            /** By */
+            by: string;
+            certified?: components["schemas"]["Certified"] | null;
+            /** Digest */
+            digest: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Params */
+            params?: {
+                [key: string]: string | null;
+            };
+            /** State */
+            state: string;
             /** Version */
             version: number;
         };
@@ -8755,6 +9789,213 @@ export interface operations {
             };
         };
     };
+    getAgentCanary: {
+        parameters: {
+            query?: {
+                id?: string | null;
+            };
+            header?: never;
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanaryView"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    putAgentCanary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CanaryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanaryView"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The version has not passed the promotion gate (regression aside), or nothing is deployed, or it is what production runs */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateRefusal"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    deleteAgentCanary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanaryClosed"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     deployAgent: {
         parameters: {
             query?: never;
@@ -8958,6 +10199,64 @@ export interface operations {
             };
         };
     };
+    listAgentEvalSets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalSetList"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     runAgentEval: {
         parameters: {
             query?: never;
@@ -9076,6 +10375,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Lifecycle"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getAgentLineage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Lineage"];
                 };
             };
             /** @description Bad Request */
@@ -11029,6 +12386,166 @@ export interface operations {
             };
         };
     };
+    listDeliverables: {
+        parameters: {
+            query?: {
+                /** @description draft | reviewed | published | withdrawn */
+                state?: string | null;
+                agent?: string | null;
+                run?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliverableList"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getDeliverable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deliverable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliverableView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    downloadDeliverable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deliverable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The file, with `x-deliverable-digest` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     getDependencies: {
         parameters: {
             query?: {
@@ -11361,6 +12878,55 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getEvalSet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalSetDocument"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13084,6 +14650,67 @@ export interface operations {
             };
         };
     };
+    listQueueJobs: {
+        parameters: {
+            query?: {
+                /** @description queued | running | done | failed | suspended | cancelled */
+                status?: ("queued" | "running" | "done" | "failed" | "suspended" | "cancelled") | null;
+                agent?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobList"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     replayJob: {
         parameters: {
             query?: never;
@@ -13142,6 +14769,107 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    listRegisters: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegisterList"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    listRegisterItems: {
+        parameters: {
+            query?: {
+                /** @description draft | reviewed | published | withdrawn */
+                state?: string | null;
+                agent?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegisterItems"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14466,6 +16194,245 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    listTemplates: {
+        parameters: {
+            query?: {
+                state?: ("pending" | "certified") | null;
+                agent?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateList"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    createTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateView"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateDocument"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    certifyTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CertifyRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

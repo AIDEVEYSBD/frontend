@@ -26,9 +26,11 @@ import { exitText, sandboxLine, sandboxOfEntry, sandboxRunOf, SANDBOX_TOOL } fro
 import { RunSourceTag } from "./run-source";
 import { SandboxOutput, SandboxSummary } from "./sandbox-result";
 import { KillDialog } from "./kill-dialog";
-import { RunFlagsBanner } from "./run-flags";
-import { retiredLine, runFlagsOf, type RunFlags } from "@/lib/lifecycle";
+import { RunFlagsBanner, RunMarkers } from "./run-flags";
+import { pausedLine, retiredLine, runFlagsOf, type RunFlags } from "@/lib/lifecycle";
 import { retiredOf, type Retired } from "@/lib/api/l8";
+import { pausedRefusalOf } from "@/lib/api/l8b";
+import { wouldCallOf, wouldCallLine } from "@/lib/canary";
 import { KillAlreadyView, KillReceiptView, RunTreePanel } from "./run-tree";
 import { RateLimitNote, useRetryReady } from "./rate-limit";
 import { killRefusalOf, killRun, rateLimitOf, type KillReceipt, type KillRefusal, type RateLimit } from "@/lib/api/l7";
@@ -157,7 +159,7 @@ interface SavedAgent {
 }
 
 /** A row of the backend's run ledger, as the list shows it. `stuck` and `waiting_on` are L5's; `source` (an attached agent's SDK, or A2A) is L6's. */
-type RunSummary = Pick<RunRowL6, "id" | "system" | "state" | "at" | "ms" | "denials" | "live" | "stuck" | "waiting_on" | "source">;
+type RunSummary = Pick<RunRowL6, "id" | "system" | "state" | "at" | "ms" | "denials" | "live" | "stuck" | "waiting_on" | "source" | "shadow" | "review" | "taint" | "eval" | "canary">;
 
 const ago = (iso: string) => {
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -176,6 +178,9 @@ function Launcher() {
   const [agents, setAgents] = useState<SavedAgent[] | null>(null);
   const [history, setHistory] = useState<RunSummary[] | null>(null);
   const [stateFilter, setStateFilter] = useState("");
+  /** L8, second round: a canary's shadow runs are listed, marked; a person may set them aside. */
+  const [hideShadows, setHideShadows] = useState(false);
+  const shadows = (history ?? []).filter((r) => r.shadow === true).length;
   const router = useRouter();
 
   useEffect(() => {
@@ -280,6 +285,16 @@ function Launcher() {
                   {s && history ? ` (${history.filter((r) => r.state === s).length})` : ""}
                 </button>
               ))}
+              {shadows > 0 && (
+                <button
+                  onClick={() => setHideShadows((h) => !h)}
+                  aria-pressed={hideShadows}
+                  title="A shadow run is a canary's mirror of a production run: nothing above read executed, and it counts toward no production figure."
+                  className={`focusable ml-2 cursor-pointer rounded-sm px-2 py-0.5 text-[11px] transition-colors ${hideShadows ? "bg-raise font-semibold text-fg" : "font-medium text-faint hover:text-dim"}`}
+                >
+                  {hideShadows ? `Show shadow runs (${shadows})` : `Hide shadow runs (${shadows})`}
+                </button>
+              )}
             </div>
           </div>
           <div className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
@@ -293,6 +308,7 @@ function Launcher() {
             )}
             {(history ?? [])
               .filter((r) => !stateFilter || r.state === stateFilter)
+              .filter((r) => !hideShadows || r.shadow !== true)
               .map((r, i) => (
                 <button
                   key={r.id}
@@ -303,8 +319,9 @@ function Launcher() {
                 >
                   <div className="flex min-w-0 grow flex-col">
                     <span className="flex min-w-0 items-center gap-2">
-                      <span className="truncate text-[13px] font-semibold text-fg">{r.system || r.id}</span>
+                      <span className={`truncate text-[13px] font-semibold ${r.shadow ? "text-dim" : "text-fg"}`}>{r.system || r.id}</span>
                       <RunSourceTag run={r} />
+                      <RunMarkers run={r} />
                     </span>
                     <Mono className={`truncate text-[10.5px] ${r.stuck ? "text-warn" : "text-faint"}`}>
                       {r.id} · {ago(r.at)} · {(r.ms / 1000).toFixed(1)}s
@@ -365,6 +382,8 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
   // renders by it (the steering panel, the artefact bundle link).
   const runId = useRef("");
   const [liveRunId, setLiveRunId] = useState("");
+  /** L8, second round: the shadow run a canary started beside this one (`RunStarted.shadow_run`), or "". */
+  const [shadowRun, setShadowRun] = useState("");
   const abort = useRef<AbortController | null>(null);
   // Closes the event stream. The backend replays the whole journal on every
   // (re)connection, so entries are deduplicated by id across legs here.
@@ -530,13 +549,24 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
         const locked = lockdownRefusalOf(response.status, error);
         // A retired agent takes no new runs (409 retired, L8): who retired it, why, and what replaces it.
         const retired = response.status === 409 ? retiredOf((error as { retired?: unknown } | undefined)?.retired) : null;
-        setError(locked ? lockdownRefusalText(locked) : retired ? `${agentId || "This agent"} is retired. ${retiredLine(retired)}` : errorText(error, response));
+        // A paused (or draining) agent takes none either (409 `control: "paused"`, L8 second round): who paused it, why, and where it is resumed.
+        const paused = pausedRefusalOf(response.status, error);
+        setError(
+          locked
+            ? lockdownRefusalText(locked)
+            : retired
+              ? `${agentId || "This agent"} is retired. ${retiredLine(retired)}`
+              : paused
+                ? pausedLine(agentId || system?.id || "", paused)
+                : errorText(error, response),
+        );
         setPhase("done");
         setFinalState("failed");
         return;
       }
       runId.current = data.run;
       setLiveRunId(data.run);
+      setShadowRun(data.shadow_run ?? "");
       follow(data.run);
     } catch (e) {
       if ((e as Error).name === "AbortError") return;
@@ -589,6 +619,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
     setLimited(null);
     runId.current = "";
     setLiveRunId("");
+    setShadowRun("");
     maxT.current = 0;
     seen.current = new Set();
     legOffset.current = 0;
@@ -660,7 +691,21 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
       suspension={suspension}
       onAnswered={answered}
       runLive={phase === "live" && !suspension}
-      notice={receipt ? <KillReceiptView receipt={receipt} onDismiss={() => setReceipt(null)} /> : already ? <KillAlreadyView refusal={already} onDismiss={() => setAlready(null)} /> : null}
+      notice={
+        receipt ? (
+          <KillReceiptView receipt={receipt} onDismiss={() => setReceipt(null)} />
+        ) : already ? (
+          <KillAlreadyView refusal={already} onDismiss={() => setAlready(null)} />
+        ) : shadowRun ? (
+          <Banner tone="neutral" title="Mirrored in shadow mode">
+            A canary&rsquo;s candidate is running on the same input as shadow run{" "}
+            <Link href={`/runs?id=${encodeURIComponent(shadowRun)}`} className="focusable rounded-sm font-mono text-fg underline">
+              {shadowRun}
+            </Link>
+            : nothing above read executes there, and it counts toward no production figure. The pair is compared on the lifecycle page.
+          </Banner>
+        ) : null
+      }
       steer={liveRunId && phase === "live" && !suspension ? <SteerPanel runId={liveRunId} /> : null}
       setup={
         phase === "setup" ? (
@@ -1624,6 +1669,8 @@ function Theater({
   const modelCalls = entries.filter((e) => e.kind === "model.call").length;
   const denied = entries.filter((e) => e.kind === "denied" || e.kind === "contract.breach").length;
   const artifacts = useMemo(() => artifactsOf(entries), [entries]);
+  /** The documents the run registered as deliverables (`deliverable.written`, L8 second round). */
+  const deliverablesWritten = useMemo(() => entries.filter((e) => e.kind === "deliverable.written").length, [entries]);
   // Theatre or agents: the same journal, read as one transcript or as a card
   // per agent. The choice is the reader's and it sticks across runs.
   const [view, setView, fold, setFold] = useRunView();
@@ -1780,6 +1827,12 @@ function Theater({
             {artifacts.length > 0 && runId && (
               <Button size="sm" variant="quiet" className="shrink-0" href={artefactsZipUrl(runId)}>
                 Download all ({artifacts.length})
+              </Button>
+            )}
+            {/* L8, second round: what the run wrote as deliverables, with their states, history and files. */}
+            {runId && deliverablesWritten > 0 && (
+              <Button size="sm" variant="quiet" className="shrink-0" href={`/deliverables?run=${encodeURIComponent(runId)}`}>
+                Deliverables ({deliverablesWritten})
               </Button>
             )}
             <Mono className="shrink-0 text-[11px] text-faint">{artifacts.length} produced</Mono>
@@ -2097,6 +2150,12 @@ const ROW: Record<string, { dot: string; text: string; label: string }> = {
   "contract.breach": { dot: "bg-err", text: "text-err", label: "contract" },
   error: { dot: "bg-err", text: "text-err", label: "error" },
   note: { dot: "bg-faint", text: "text-dim", label: "note" },
+  // L8, second round: what a run wrote, as deliverables and register items, and each move of a deliverable.
+  "deliverable.written": { dot: "bg-c2", text: "text-c2", label: "deliverable" },
+  "deliverable.reviewed": { dot: "bg-warn", text: "text-warn", label: "reviewed" },
+  "deliverable.published": { dot: "bg-ok", text: "text-ok", label: "published" },
+  "deliverable.withdrawn": { dot: "bg-faint", text: "text-dim", label: "withdrawn" },
+  "register.item": { dot: "bg-c2", text: "text-c2", label: "register" },
 };
 
 /** Filter families — the rows a reviewer wants to isolate, by what they mean. */
@@ -2107,6 +2166,8 @@ const FILTERS: { id: string; label: string; kinds: string[] }[] = [
   { id: "refused", label: "Refused", kinds: ["denied", "contract.breach", "error"] },
   { id: "gates", label: "Gates", kinds: ["gate.open", "gate.answer", "suspend", "resume"] },
   { id: "taints", label: "Taints", kinds: ["taint"] },
+  // A shadow run's calls it did not make (L8, second round).
+  { id: "would", label: "Would call", kinds: ["would_call"] },
 ];
 
 function TheaterTranscript({ entries, live, runId = "" }: { entries: Entry[]; live: boolean; runId?: string }) {
@@ -2482,6 +2543,37 @@ function JournalRow({ e, entries, onLineage }: { e: Entry; entries: Entry[]; onL
               </span>
             </span>
             {operator.detail && <span className="text-[11.5px] leading-[1.55] whitespace-pre-wrap text-mist">{operator.detail}</span>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* A shadow run's call it did not make (L8, second round): nothing above
+     read executes in shadow mode, so the call is journalled with its
+     arguments instead. The row says so, so it never reads as a call made. */
+  const would = wouldCallOf({ kind: e.kind, data: e.data ?? null });
+  if (would) {
+    return (
+      <div className="flex gap-3">
+        <Mono className="w-9 shrink-0 pt-2 text-[10.5px] text-ghost">{clock(e.t)}</Mono>
+        <div className="min-w-0 grow rounded-md border border-dashed border-line-strong bg-canvas">
+          <div className="flex flex-col gap-1 px-3 py-2">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="size-1.5 shrink-0 rounded-[2px] bg-faint" />
+              <span className="text-[10.5px] font-medium text-dim">would call</span>
+              <Mono className="text-[11.5px] text-mist">{would.tool}</Mono>
+              {would.sink && <Tag tone="warn">sink</Tag>}
+              {would.risk && <Tag>{would.risk}</Tag>}
+              <Tag tone="queue">not executed</Tag>
+            </span>
+            <span className="text-[11.5px] leading-[1.55] text-faint">{wouldCallLine(would)}</span>
+            {Object.keys(would.args).length > 0 && (
+              <details className="pt-0.5">
+                <summary className="focusable cursor-pointer text-[10.5px] text-ghost">what it would have sent</summary>
+                <pre className="mt-1 max-h-40 overflow-auto rounded-sm border border-line bg-canvas px-2 py-1.5 font-mono text-[10px] leading-[1.5] whitespace-pre-wrap text-faint">{JSON.stringify(would.args, null, 2)}</pre>
+              </details>
+            )}
           </div>
         </div>
       </div>

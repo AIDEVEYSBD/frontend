@@ -243,3 +243,24 @@ export async function readQueue(): Promise<QueueSummary> {
   if (!data) throw doorError(error, response);
   return queueOf(data);
 }
+
+export type JobView = Schemas["JobView"];
+export type JobList = Schemas["JobList"];
+export type JobQuery = NonNullable<NonNullable<import("./backend").operations["listQueueJobs"]["parameters"]["query"]>>;
+
+/**
+ * `GET /api/queue/jobs?status=&agent=&limit=` (L8, second round): the jobs
+ * themselves, newest first: a cancelled one with its `cancel_reason`, a dead
+ * letter, a shadow job and the canary assignment each job carries. 400
+ * `field: status` for a status the queue does not hold; 403 for a key scoped
+ * to another agent.
+ */
+export async function listJobs(query: JobQuery = {}): Promise<JobList> {
+  const q: JobQuery = {};
+  if (query.status) q.status = query.status;
+  if (query.agent) q.agent = query.agent;
+  if (query.limit !== undefined) q.limit = query.limit;
+  const { data, error, response } = await api.GET("/api/queue/jobs", { params: { query: q } });
+  if (!data) throw doorError(error, response);
+  return { jobs: data.jobs ?? [], count: data.count ?? (data.jobs ?? []).length };
+}

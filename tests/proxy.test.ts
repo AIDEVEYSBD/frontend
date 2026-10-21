@@ -62,10 +62,46 @@ describe("backend-owned paths", () => {
       "/api/peers",
       "/api/breakers",
       "/api/evals/runs",
+      "/api/templates",
+      "/api/deliverables",
+      "/api/registers",
+      "/api/eval-sets",
     ]) {
       expect(BACKEND_PREFIXES, `${p} is the backend's`).toContain(p);
     }
     expect(BACKEND_PATHS).toEqual(["/.well-known/agent.json"]);
+  });
+
+  // Phase L8 (second round): the templates, the deliverables, the registers
+  // and the eval sets are the backend's; the canary, the lineage and an
+  // agent's eval sets travel with /api/agents, the queue's jobs with
+  // /api/queue. Each is a console door behind the cookie, never a machine
+  // door. The console's own eval-set door (/api/evals) is another prefix.
+  it("hands the L8 second-round doors to the backend, behind the cookie", () => {
+    for (const p of [
+      "/api/templates",
+      "/api/templates/tpl-5191b2102b4f41d5",
+      "/api/templates/tpl-5191b2102b4f41d5/certify",
+      "/api/deliverables",
+      "/api/deliverables/dlv-5ce430d8cea9",
+      "/api/deliverables/dlv-5ce430d8cea9/file",
+      "/api/registers",
+      "/api/registers/finding/items",
+      "/api/eval-sets/triage-bench",
+      "/api/agents/triage/canary",
+      "/api/agents/triage-emea/lineage",
+      "/api/agents/triage/eval-sets",
+      "/api/queue/jobs",
+    ]) {
+      expect(isBackendPath(p), `${p} is the backend's`).toBe(true);
+      expect(isMachineDoor(p), `${p} is a person's, behind the cookie`).toBe(false);
+      expect(isPassthroughPath(p), `${p} is rewritten, not passed through`).toBe(false);
+      expect(upstreamFor(p, "?state=draft", BOTH)).toEqual({ to: "backend", url: `http://localhost:8000${p}?state=draft` });
+    }
+    for (const p of ["/api/templatesx", "/api/deliverablesx", "/api/registersx", "/api/eval-setsx", "/api/eval-set", "/api/evals", "/api/evals/run"]) {
+      expect(isBackendPath(p), `${p} is not the backend's`).toBe(false);
+    }
+    expect(upstreamFor("/api/evals", "?id=triage-bench", { backendOrigin: "http://localhost:8000" })).toEqual({ to: "next" });
   });
 
   // Phase L7 (second round): the A2A doors move to the backend whole (the

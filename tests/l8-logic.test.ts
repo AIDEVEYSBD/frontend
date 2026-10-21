@@ -163,7 +163,8 @@ describe("rollback and retirement", () => {
   it("a run nobody flagged reads as such", () => {
     expect([runFlagOf({}), runFlagOf(null), runFlagOf({ review: { flag: "" } })]).toEqual([null, null, null]);
     const f = runFlagsOf({ journal: { entries: [{ kind: "a2a.message", data: { direction: "out" } }] } });
-    expect(f).toEqual({ review: null, taint: null, inbound: null, eval: null, job: "" });
+    // L8 (second round) added the shadow mark and the canary assignment: neither on a plain run.
+    expect(f).toEqual({ review: null, taint: null, inbound: null, eval: null, job: "", shadow: false, canary: null });
     expect(inboundLine({ peer: "", digest: "", bytes: 0, screen: "", task: "", signed: false })).toBe("Message from peer an A2A caller: 0 bytes, no digest, screened ?.");
   });
 });

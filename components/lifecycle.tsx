@@ -8,6 +8,9 @@ import { Banner } from "./overlays";
 import { Field, Input, Textarea } from "./forms";
 import { Pick } from "./select";
 import { DeployDialog, DeployedReceipt } from "./deploy-gate";
+import { CanaryPanel } from "./canary";
+import { LineageView } from "./templates";
+import { getLineage, type Lineage } from "@/lib/api/l8b";
 import { hueFor } from "@/lib/hue";
 import { soon } from "@/lib/soon";
 import { useSession } from "@/lib/use-session";
@@ -68,13 +71,17 @@ import {
  *   retired   the agent's retirement
  *
  * The spine is drawn for one digest (the latest version's, or one picked),
- * with what production runs beside it. Below: the benchmark of what
- * production runs; the policy reviews, and a review to sign (the approve
- * permission, the reviewer role, and never by an author of the version:
- * separation of duties); the deployments per environment; a rollback to a
- * version that ran in production before, with the runs it flags; and
- * retirement, after which the agent refuses new work everywhere and its
- * records stay readable. Every door is the backend's (lib/api/l8.ts).
+ * with what production runs beside it, and where the digest stands now
+ * (`current`: the furthest stage lit that still holds). Below: the
+ * benchmark of what production runs; the policy reviews, and a review to
+ * sign (the approve permission, the reviewer role, and never by an author of
+ * the version: separation of duties); the deployments per environment; a
+ * rollback to a version that ran in production before, with the runs it
+ * flags; canary and shadow beside production (L8, second round:
+ * components/canary.tsx); the lineage of an agent cut from a template, with
+ * the drift since (components/templates.tsx); and retirement, after which
+ * the agent refuses new work everywhere and its records stay readable. Every
+ * door is the backend's (lib/api/l8.ts, lib/api/l8b.ts).
  */
 
 const STAGE_TONE: Record<SpineStage["tone"], { dot: string; text: string }> = {
@@ -82,6 +89,8 @@ const STAGE_TONE: Record<SpineStage["tone"], { dot: string; text: string }> = {
   warn: { dot: "border-warn bg-warn", text: "text-fg" },
   err: { dot: "border-err bg-err", text: "text-fg" },
   neutral: { dot: "border-line-strong bg-surface", text: "text-faint" },
+  // Lit by its own record, which no longer holds (a canary that ended): what happened, not where the digest stands.
+  past: { dot: "border-ok bg-surface", text: "text-dim" },
 };
 
 /** The spine: six stages, lit only by their records, with who and when. Presentational, so tests render it from a captured spine. */
@@ -96,19 +105,21 @@ export function SpineView({ lifecycle }: { lifecycle: Lifecycle }) {
           return (
             <li
               key={st.stage}
-              className={`flex min-w-0 flex-col gap-1 rounded-md border px-3 py-2 ${st.lit ? "border-line-strong bg-surface" : "border-dashed border-line bg-canvas"}`}
-              title={st.lit ? undefined : `Dark: waiting on ${st.needs}`}
+              aria-current={st.now ? "step" : undefined}
+              className={`flex min-w-0 flex-col gap-1 rounded-md border px-3 py-2 ${st.now ? "border-fg bg-surface" : st.lit ? "border-line-strong bg-surface" : "border-dashed border-line bg-canvas"}`}
+              title={st.lit ? (st.now ? "Where this digest stands now" : undefined) : `Dark: waiting on ${st.needs}`}
             >
               <span className="flex items-center gap-2">
                 <span className={`size-2.5 shrink-0 rounded-[3px] border ${tone.dot}`} aria-hidden />
                 <span className={`text-[12.5px] font-semibold ${tone.text}`}>{st.label}</span>
+                {st.now && <Tag tone="ink">now</Tag>}
                 <span className="grow" />
                 <Mono className="text-[9.5px] text-ghost">{i + 1}</Mono>
               </span>
               {st.lit ? (
                 <>
                   {st.who && <span className="text-[10.5px] leading-[1.45] text-dim">{st.who}</span>}
-                  {st.note && <span className={`text-[10.5px] leading-[1.45] ${st.tone === "warn" ? "text-warn" : st.tone === "err" ? "text-err" : "text-faint"}`}>{st.note}</span>}
+                  {st.note && <span className={`text-[10.5px] leading-[1.45] ${st.tone === "warn" ? "text-warn" : st.tone === "err" ? "text-err" : st.tone === "past" ? "text-dim" : "text-faint"}`}>{st.note}</span>}
                 </>
               ) : (
                 <span className="text-[10.5px] leading-[1.45] text-ghost">{st.note || `waiting on ${st.needs}`}</span>
@@ -223,7 +234,13 @@ export function DeploymentsView({ list }: { list: DeploymentList }) {
             <span className="flex items-center gap-2">
               <span className="text-[12px] font-semibold text-fg">{env}</span>
               {now ? <Mono className="text-[10.5px] text-dim">runs version {now.version ?? "?"} ({shortDigest(now.digest)})</Mono> : <span className="text-[10.5px] text-faint">nothing current</span>}
-              {env !== "production" && <span className="text-[10.5px] text-faint">recorded only: what production runs does not move</span>}
+              {env === "canary" || env === "shadow" ? (
+                <span className="text-[10.5px] text-faint">
+                  {env === "shadow" ? "mirrored beside production in shadow mode" : "a share of queued starts beside production"}; current only while its canary stands
+                </span>
+              ) : (
+                env !== "production" && <span className="text-[10.5px] text-faint">recorded only: what production runs does not move</span>
+              )}
             </span>
             <ul className="flex flex-col overflow-hidden rounded-md border border-line">
               {rows.map((d) => (
@@ -274,6 +291,7 @@ export function RetiredView({ retired, cancelled = [] }: { retired: Retired; can
         </>
       )}
       {cancelled.length > 0 && <span className="mt-0.5 block text-[11px] text-faint">{cancelled.length} queued job{cancelled.length === 1 ? " was" : "s were"} cancelled with the reason.</span>}
+      {retired.id && <span className="mt-0.5 block font-mono text-[10px] text-faint">retirement {retired.id}</span>}
     </Banner>
   );
 }
@@ -510,6 +528,8 @@ interface Loaded {
   deployments: DeploymentList | null;
   benchmark: Benchmark | null;
   versions: VersionView[];
+  /** An agent cut from a template: its lineage and drift; null for one made by hand. */
+  lineage: Lineage | null;
   error: string;
 }
 
@@ -534,6 +554,8 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
     ]);
     const val = <T,>(r: PromiseSettledResult<T>): T | null => (r.status === "fulfilled" ? r.value : null);
     const firstError = [detail, lifecycle].find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+    // Only an agent cut from a template has a lineage to read.
+    const lineage = val(detail)?.lineage ? await getLineage(agent).catch(() => null) : null;
     setData({
       detail: val(detail),
       lifecycle: val(lifecycle),
@@ -541,6 +563,7 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
       deployments: val(deployments),
       benchmark: val(benchmark),
       versions: val(versions)?.versions ?? [],
+      lineage,
       error: firstError ? (firstError.reason as Error).message : "",
     });
   }, [agent, digest]);
@@ -651,6 +674,20 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
           />
         )}
       </Section>
+
+      <Section id="canary" title="Canary and shadow" meta="a version beside production: a share of starts, or a mirror in shadow mode">
+        {data ? (
+          <CanaryPanel agent={agent} versions={data.versions} production={data.detail?.deployed_version ?? null} retired={Boolean(retired)} onChanged={load} />
+        ) : (
+          <p className="text-[12px] text-faint">Reading…</p>
+        )}
+      </Section>
+
+      {data?.lineage && (
+        <Section id="lineage" title="Lineage" meta="the certified template it was cut from, and the drift since">
+          <LineageView lineage={data.lineage} />
+        </Section>
+      )}
 
       <Section title="Retirement" meta="refuses new work everywhere; its records stay">
         {retired ? (

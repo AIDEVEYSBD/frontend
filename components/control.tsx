@@ -26,12 +26,14 @@ import { getLifecycle, STAGE_NAMES, type Lifecycle } from "@/lib/api/l8";
 import { STAGE_LABEL, spineOf } from "@/lib/lifecycle";
 import { DeployDialog } from "./deploy-gate";
 import { JOB_STATUS_META, countOf, jobLine } from "@/lib/queue";
+import { productionRuns, shadowBesideLine, shadowSpentLine } from "@/lib/production";
 import { partnerStatus, type PartnerPeer } from "@/lib/peers";
 import { auditLine, inFlight, type RunRowL5 } from "@/lib/api/l5";
 import { KillDialog } from "./kill-dialog";
 import { killRefusalOf, killRun } from "@/lib/api/l7";
 import { alreadySummary, killSummary } from "@/lib/run-tree";
 import { RunSourceTag } from "./run-source";
+import { JobsList } from "./jobs";
 import { runSourceOf } from "@/lib/api/l6";
 import { AttentionPanel } from "./attention";
 import { FleetBar, LockdownBanner, LockdownSwitch, useFleet, useLockdown } from "./operate";
@@ -146,9 +148,12 @@ interface ControlData {
     };
     budget: number | null;
     period: "day" | "week" | "month";
-    budgetState: { since: string; spent: number; unpriced: number; remaining: number | null; exceeded: boolean; used: number | null };
+    /** `shadow_spent` (L8, second round): what a canary's shadow runs spent in the period, beside the budget, never in `spent`. */
+    budgetState: { since: string; spent: number; unpriced: number; remaining: number | null; exceeded: boolean; used: number | null; shadow_spent?: number };
     spend7d: number | null;
     unpriced7d?: number;
+    /** What a canary's shadow runs spent in the last 7 days: beside the spend, never in it. */
+    shadowSpend7d?: number;
   };
   ledger: { entries: number; runs: number; lastWrite: string | null };
   totals: {
@@ -170,6 +175,8 @@ interface ControlData {
   days: DayRow[];
   models: ModelRow[];
   runs: RunRow[];
+  /** A canary's shadow runs in the last 7 days (L8, second round): listed apart, left out of every figure on the page. */
+  shadow?: { runs: number; cost: number; ids: string[] };
   store: string;
   costBasis: string;
   /** The window every "7d"-shaped figure was actually cut over (client-side). */
@@ -427,7 +434,8 @@ export function Control() {
     // and a worker's or an attached agent's run in flight reads `running`.
     try {
       const { data } = await api.GET("/api/runs");
-      setLiveRows(data ? inFlight(data.runs) : null);
+      // Production's runs in flight: a canary's shadow runs are listed on the Runs page, never counted here (lib/production.ts).
+      setLiveRows(data ? inFlight(productionRuns(data.runs)) : null);
     } catch {
       setLiveRows(null);
     }
@@ -635,7 +643,7 @@ export function Control() {
         <Kpi label="Awaiting approval" value={t ? String(t.pending) : "…"} sub={t?.pending ? "a person is next" : "no gates open"}
           tone={t?.pending ? "warn" : undefined} active={drill?.kind === "kpi" && drill.which === "pending"}
           onOpen={() => open({ kind: "kpi", which: "pending" })} />
-        <Kpi label="Runs" value={cut("runs")?.totals ? String(cut("runs")!.totals.runs7d) : "…"} sub="every journal counted"
+        <Kpi label="Runs" value={cut("runs")?.totals ? String(cut("runs")!.totals.runs7d) : "…"} sub={raw?.shadow?.runs ? `${raw.shadow.runs} shadow run${raw.shadow.runs === 1 ? "" : "s"} left out (7d)` : "every journal counted"}
           win={wf("runs")} onWin={() => tile("runs")} spark={cut("runs")?.days.map((d) => d.runs)} active={drill?.kind === "kpi" && drill.which === "runs"}
           onOpen={() => open({ kind: "kpi", which: "runs" })} />
         <Kpi label="Spend" value={cut("spend")?.totals ? fmtCost(cut("spend")!.totals.cost7d) : "…"} sub={cut("spend")?.totals ? `${fmtTokens(cut("spend")!.totals.tokens7d)} tokens${cut("spend")!.totals.unpriced7d ? ` · ${cut("spend")!.totals.unpriced7d} estimated` : ""}` : ""}
@@ -1011,6 +1019,12 @@ export function Control() {
                     <span className="flex items-center gap-2">
                       <span className="truncate text-[12.5px] font-medium text-fg">{g.agent}</span>
                       <ShapeTag shape={g.shape} />
+                      {/* A report gate (L8, second round): what the run wrote waits for this review. */}
+                      {(g.control === "report" || g.deliverables.length > 0) && (
+                        <Tag tone="warn">
+                          report · {g.deliverables.length} deliverable{g.deliverables.length === 1 ? "" : "s"}
+                        </Tag>
+                      )}
                     </span>
                     <span className="truncate font-mono text-[10px] text-warn">
                       {g.asks ? g.asks.slice(0, 60) : `paused at ${g.node}`} · {ago(g.waiting_since)}
@@ -1089,6 +1103,10 @@ export function Control() {
             </span>
           } />
           <ActivityChart days={cut("activity")?.days ?? []} selected={drill?.kind === "day" ? drill.day : null} onPick={(day) => open({ kind: "day", day })} />
+          {/* A canary's shadow runs (L8, second round) are listed on the Runs page, marked; they are counted in none of these figures. */}
+          {raw?.shadow && shadowBesideLine(raw.shadow, (n) => fmtCost(n)) && (
+            <p className="border-t border-line px-3 py-2 text-[10.5px] text-faint">{shadowBesideLine(raw.shadow, (n) => fmtCost(n))} (last 7 days).</p>
+          )}
         </section>
 
         <section className="mb-4 flex break-inside-avoid flex-col overflow-hidden rounded-md border border-line bg-surface">
@@ -1105,6 +1123,8 @@ export function Control() {
             right={<Mono className="text-[10px] text-ghost">{queue ? `${queue.workers.length} worker${queue.workers.length === 1 ? "" : "s"} live` : ""}</Mono>}
           />
           <QueuePanel queue={queue} now={now} />
+          {/* The jobs themselves (L8, second round): a cancelled one with its reason, a dead letter, a shadow job, a canary's arm. */}
+          {queue && <JobsList agents={Object.keys(queue.agents)} />}
         </section>
 
         {/* The optimizing triangle: cost, accuracy, time. Every model sits
@@ -1392,7 +1412,11 @@ function FinOpsPanel({
           <span className="tnum">{fmtCost(state.spent)} of ${finops.budget.toFixed(2)}{usedPct !== null ? ` · ${usedPct}%` : ""}</span>
           {state.remaining !== null && !state.exceeded && <span className="tnum">{fmtCost(Math.max(0, state.remaining))} left</span>}
           {state.unpriced > 0 && <span>{state.unpriced} run{state.unpriced === 1 ? "" : "s"} at estimated prices</span>}
+          {shadowSpentLine(state.shadow_spent, fmtCost) && <span className="text-faint">{shadowSpentLine(state.shadow_spent, fmtCost)}</span>}
         </div>
+      )}
+      {(finops?.shadowSpend7d ?? 0) > 0 && (finops?.budget == null || !state) && (
+        <div className="border-b border-line px-3 py-2 text-[10.5px] text-faint">{shadowSpentLine(finops?.shadowSpend7d, fmtCost)} (7 days)</div>
       )}
       {burnPct !== null && windowBudget !== null && (
         <div className="flex flex-col gap-1 px-3 pt-2.5">

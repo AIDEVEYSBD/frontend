@@ -85,13 +85,33 @@ export function taintLine(t: Taint): string {
   return `Untrusted input (taint ${t.source}): a sink it reaches is gated as any outside text is.`;
 }
 
-/** One job in a line: its status, then why it was withdrawn, why it failed, or what its input is. */
-export function jobLine(job: Pick<Schemas["JobView"], "status" | "source" | "attempts" | "max_attempts" | "error" | "dead"> & { cancel_reason?: string | null; taint?: string | null }): string {
+/** One job in a line: its status, then why it was withdrawn, why it failed, or what its input is; L8 (second round): a shadow job, or which arm of a canary it ran on. */
+export function jobLine(
+  job: Pick<Schemas["JobView"], "status" | "source" | "attempts" | "max_attempts" | "error" | "dead"> & { cancel_reason?: string | null; taint?: string | null; shadow?: boolean | null; canary?: Record<string, unknown> | null },
+): string {
   const meta = JOB_STATUS_META[job.dead ? "dead" : job.status];
   const parts = [`${meta?.label ?? job.status}`, `from ${job.source || "an unnamed source"}`, `attempt ${job.attempts} of ${job.max_attempts}`];
   if (job.status === "cancelled" && job.cancel_reason) parts.push(`withdrawn: ${job.cancel_reason}`);
   else if (job.error) parts.push(job.error);
   const t = taintOf(job.taint);
   if (t) parts.push(t.kind === "a2a" ? `untrusted input from ${t.from || t.source}` : `tainted (${t.source})`);
+  const arm = canaryArmOf(job);
+  if (arm) parts.push(arm);
   return parts.join(" · ");
+}
+
+/**
+ * A job's place in a canary, in words, or "": a shadow job mirroring a
+ * production job (`shadow`, `canary.of_job`), the candidate's job (canary
+ * mode), production's job mirrored by a shadow job, or production's arm.
+ */
+export function canaryArmOf(job: { shadow?: boolean | null; canary?: Record<string, unknown> | null }): string {
+  const c = job.canary ?? null;
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  const version = typeof c?.version === "number" ? ` (version ${c.version})` : "";
+  if (job.shadow) return `shadow job${version}${str(c?.of_job) ? ` mirroring job ${str(c?.of_job).slice(0, 8)}` : ""}: a worker running shadow mode claims it`;
+  if (!c || !str(c.id)) return "";
+  if (str(c.variant) === "candidate") return `canary candidate${version}`;
+  if (str(c.shadow_job)) return `production, mirrored by shadow job ${str(c.shadow_job).slice(0, 8)}`;
+  return `production arm of canary${version}`;
 }

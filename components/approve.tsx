@@ -9,6 +9,7 @@ import { useSession, signerName } from "@/lib/use-session";
 import { answerGate, answerGates, DoorError, listGates, mintLink, type Answer, type AnswerResult, type Gate, type MintedLink } from "@/lib/api/l5";
 import { SAMPLE_SIZE, batchCount, batchable, declaresNote, emptyForm, gateAccess, nextSample, refusalErrors, sampleGates, validateForm, validateVerdicts, type Access, type FormState } from "@/lib/gates";
 import { Deadline, EvidencePanel, GateFields, GateMeta, ShapeTag, SignerLine, VerdictTable, useNow } from "./gate-form";
+import { ReportGateDeliverables } from "./deliverables";
 
 /**
  * Answering a gate, from the console.
@@ -238,6 +239,8 @@ export function ApproveDialog({
         <div className="min-h-0 grow overflow-y-auto">
           <p className="border-b border-line px-4 py-3 text-[11.5px] leading-[1.6] text-faint">{gate.asks || "The workflow paused here for a person."}</p>
 
+          {/* A report gate (L8, second round): the deliverables it names, so the reviewer sees what they approve. */}
+          {!batch && <ReportGateDeliverables gate={gate} />}
           {!batch && <EvidencePanel evidence={gate.evidence} />}
           {!batch && (
             <div className="border-b border-line">
@@ -263,7 +266,7 @@ export function ApproveDialog({
               {sample.runs.map((run) => {
                 const g = gates.find((x) => x.run === run);
                 if (!g) return null;
-                const bare = !Object.keys(g.evidence.decided).length && !Object.keys(g.evidence.presented).length && !g.evidence.tainted_by.length && !g.evidence.trail.length;
+                const bare = !Object.keys(g.evidence.decided).length && !Object.keys(g.evidence.presented).length && !g.evidence.tainted_by.length && !g.evidence.trail.length && !g.deliverables.length;
                 return (
                   <div key={run} className="mx-4 mb-2.5 overflow-hidden rounded-md border border-line bg-canvas">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-3 py-2">
@@ -274,6 +277,7 @@ export function ApproveDialog({
                       <Deadline deadline={g.deadline} now={now} />
                       {overrides[run] && <Tag tone="queue">on its own</Tag>}
                     </div>
+                    <ReportGateDeliverables gate={g} />
                     <EvidencePanel evidence={g.evidence} />
                     {g.shape === "verdicts" && <p className="px-3 py-2 text-[11px] text-faint">{g.items.length} item{g.items.length === 1 ? "" : "s"} on the register to rule on.</p>}
                     {bare && g.shape !== "verdicts" && <p className="px-3 py-2 text-[11px] text-faint">The backend laid out no evidence for this gate; open the run to read its journal.</p>}

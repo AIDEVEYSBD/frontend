@@ -1,6 +1,7 @@
 import { dbReady, query } from "@/lib/server/db";
 import { priceSheet } from "@/lib/server/prices";
 import { readRuns } from "@/lib/server/runs";
+import { spendSplit } from "@/lib/production";
 
 /**
  * The spend budget, with the period it is for.
@@ -36,6 +37,13 @@ export interface BudgetState extends Budget {
   exceeded: boolean;
   /** Share of the budget used, 0 to 1 and beyond. */
   used: number | null;
+  /**
+   * What a canary's shadow runs spent in the period (phase L8, second
+   * round), as the backend's BudgetState names it: shown beside the budget,
+   * never counted in `spent`. A shadow is a candidate's mirror, not
+   * production's work.
+   */
+  shadow_spent: number;
 }
 
 export async function readBudget(): Promise<Budget> {
@@ -68,9 +76,8 @@ export async function budgetState(): Promise<BudgetState> {
   // the journals costs a directory scan, which is fine for a decision that
   // is made once per run start.
   const runs = await readRuns(await priceSheet());
-  const inPeriod = runs.filter((r) => new Date(r.at).getTime() >= since.getTime());
-  const spent = inPeriod.reduce((s, r) => s + r.cost, 0);
-  const unpriced = inPeriod.filter((r) => r.estimated > 0).length;
+  // Production's spend only: a shadow run's is shown beside it, as the backend does.
+  const { spent, unpriced, shadow_spent } = spendSplit(runs, since);
   const remaining = b.budget_usd === null ? null : b.budget_usd - spent;
   return {
     ...b,
@@ -80,6 +87,7 @@ export async function budgetState(): Promise<BudgetState> {
     remaining,
     exceeded: b.budget_usd !== null && spent >= b.budget_usd,
     used: b.budget_usd ? spent / b.budget_usd : null,
+    shadow_spent,
   };
 }
 

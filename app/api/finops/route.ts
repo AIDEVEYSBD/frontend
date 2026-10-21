@@ -5,6 +5,7 @@ import { azureSpend } from "@/lib/server/azure-spend";
 import { readConfig } from "@/app/api/config/route";
 import { permit } from "@/lib/server/auth";
 import { budgetState, PERIODS, writeBudget, type Period } from "@/lib/server/budget";
+import { productionRuns, shadowRuns } from "@/lib/production";
 
 /**
  * FinOps: the primary records behind every cost figure, in one read.
@@ -37,7 +38,9 @@ interface SpecRow {
 export async function GET(req: Request) {
   { const gate = await permit(req, "view"); if (gate) return gate; }
   const sheet = await priceSheet();
-  const [runs, cfg, azure] = await Promise.all([readRuns(sheet), readConfig(), azureSpend()]);
+  const [all, cfg, azure] = await Promise.all([readRuns(sheet), readConfig(), azureSpend()]);
+  // Every figure is production's: a canary's shadow runs are returned apart (`shadow`), never as calls (lib/production.ts).
+  const runs = productionRuns(all);
   const db = await dbReady();
 
   let specs: SpecRow[] = [];
@@ -108,6 +111,8 @@ export async function GET(req: Request) {
     agents,
     runs: runs.map(({ calls: _c, byModel: _b, artifactNames: _a, ...r }) => r),
     calls: calls.slice(0, 40_000),
+    /** A canary's shadow runs, each with its cost: shown beside the spend for any window, counted in none of it. */
+    shadow: shadowRuns(all).map((r) => ({ id: r.id, system: r.system, at: r.at, state: r.state, cost: r.cost, estimated: r.estimated })),
     evals,
     azure,
     /** The $/M rate an unpriced model is estimated at, so the calculator never says "unknown". */

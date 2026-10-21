@@ -821,6 +821,8 @@ export interface RetireRequest {
 
 /** `POST /api/agents/{id}/retire` (201) */
 export interface Retirement {
+  /** The retirement row (`rt-…`), as `GET /api/agents/{id}/lifecycle` names it under `retired.id`; "" from a backend older than L8's second round. */
+  id: string;
   agent: string;
   reason: string;
   replacement: string;
@@ -874,7 +876,7 @@ export function rollbackResultOf(v: unknown): RollbackResult {
 
 export function retirementOf(v: unknown): Retirement {
   const o = obj(v);
-  return { agent: str(o.agent), reason: str(o.reason), replacement: str(o.replacement), by: str(o.by), at: str(o.at), cancelled_jobs: strs(o.cancelled_jobs), audit_id: numOrNull(o.audit_id) };
+  return { id: str(o.id), agent: str(o.agent), reason: str(o.reason), replacement: str(o.replacement), by: str(o.by), at: str(o.at), cancelled_jobs: strs(o.cancelled_jobs), audit_id: numOrNull(o.audit_id) };
 }
 
 export function versionDocumentOf(v: unknown): VersionDocument {
@@ -931,6 +933,8 @@ export interface AgentLifecycleDetail {
   updated_at: string | null;
   store: string;
   retired: Retired | null;
+  /** An agent cut from a certified template (L8, second round): the template and the digest it was cut from; null for one made by hand. */
+  lineage: { template: string; template_digest: string } | null;
 }
 
 export function agentDetailOf(v: unknown): AgentLifecycleDetail {
@@ -949,6 +953,7 @@ export function agentDetailOf(v: unknown): AgentLifecycleDetail {
     updated_at: strOrNull(o.updated_at),
     store: str(o.store),
     retired: retiredOf(o.retired),
+    lineage: isObj(o.lineage) && str(obj(o.lineage).template) ? { template: str(obj(o.lineage).template), template_digest: str(obj(o.lineage).template_digest) } : null,
   };
 }
 

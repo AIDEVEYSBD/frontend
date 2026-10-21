@@ -9,6 +9,7 @@ import { DrillModal } from "./drill";
 import { VersionHistory } from "./versions";
 import { useSession } from "@/lib/use-session";
 import { agentDocument, listAgents, listRuns, retireAgent } from "@/lib/api/l2";
+import { productionRuns } from "@/lib/production";
 import { retiredOf, type Retired } from "@/lib/api/l8";
 import { retiredLine } from "@/lib/lifecycle";
 
@@ -86,7 +87,8 @@ export function Workflows() {
 
   useEffect(() => {
     listRuns()
-      .then((rows) => setRuns(rows.map((r) => ({ id: r.id, system: r.system, state: r.state, at: r.at }))))
+      // An agent's last run is production's: a canary's shadow run is a mirror, never the agent's own (lib/production.ts).
+      .then((rows) => setRuns(productionRuns(rows).map((r) => ({ id: r.id, system: r.system, state: r.state, at: r.at }))))
       .catch(() => setRuns([]));
   }, []);
 

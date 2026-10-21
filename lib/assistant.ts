@@ -39,6 +39,24 @@ export const PAGES: Record<string, PageInfo> = {
     shows: "The registry of saved workflow specifications, including their versions, digests, model requirements and permitted tools.",
     suggested: ["What is a spec digest and why does it matter?", "How does a workflow get deployed?"],
   },
+  "/lifecycle": {
+    title: "Lifecycle",
+    shows:
+      "Each agent from design to retirement: designed, reviewed, approved, canary, deployed, retired, every stage lit only by its own record, with where the version stands now. It holds the policy reviews (signed by someone who did not author the version), the promotion gate's deploys with an administrator's override, deployments per environment, rollback with the runs it flags, canary and shadow beside production (a share of queued starts on the candidate, or a mirror of production runs in shadow mode, where nothing above read executes, with the disagreement rate between the pairs), the lineage of an agent cut from a template with the drift since, and retirement.",
+    suggested: ["What does the promotion gate need for this version?", "How does a shadow run differ from a canary?", "Why is this stage dark?"],
+  },
+  "/templates": {
+    title: "Templates",
+    shows:
+      "Templates of saved versions: made from an agent's version, pending until a certifier who holds the certifier role and did not author it signs it, then cut into new agents with their params filled. Each agent cut from one keeps its lineage: the template, the digest it was cut from and the drift since.",
+    suggested: ["Who may certify a template?", "What happens to a param with no default?", "How is drift from a template measured?"],
+  },
+  "/deliverables": {
+    title: "Deliverables",
+    shows:
+      "What runs write, as records: each document (report, contract, register export) with its state (draft, reviewed at the report gate, published through the sink the gate held, or withdrawn), its history and its file, served only from the outbox with the digest it was written with; and the registers a records backend wrote to, each item with its state and the runs that wrote it.",
+    suggested: ["Why is this deliverable not downloadable?", "How does the report gate review a deliverable?", "What does a withdrawn deliverable mean?"],
+  },
   "/roster": {
     title: "Roster",
     shows: "The agents within each deployed workflow, including their purpose, execution pattern, permitted tools, derived autonomy and recent activity.",

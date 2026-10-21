@@ -53,6 +53,12 @@ export interface RunRow {
   calls: CallRow[];
   /** `sdk` or `a2a` when an attached agent opened the run (the record's `reported_by.mode`); "" for the platform's own. */
   source: string;
+  /**
+   * A canary's shadow run (phase L8, second round: the record's `shadow:
+   * true`): the candidate mirrored a production run in shadow mode. Listed,
+   * marked, and left out of every production figure (lib/production.ts).
+   */
+  shadow: boolean;
 }
 
 export function costOf(model: string, tk: { in: number; out: number }, sheet: Sheet | null): number {
@@ -147,6 +153,7 @@ export async function readRuns(sheet: Sheet | null): Promise<RunRow[]> {
         byModel,
         calls,
         source: String(run?.source ?? run?.reported_by?.mode ?? ""),
+        shadow: run?.shadow === true,
       });
     } catch {
       /* torn write — skip */

@@ -310,3 +310,60 @@ export function rowStateText(r: Pick<HistoryRow, "state" | "results" | "total" |
   if (r.state === "failed") return `failed${r.error ? `: ${r.error}` : ""}`;
   return r.state;
 }
+
+/* ═══════════════════ the sets, as the backend reads them (L8, second round) ═══════════════════ */
+
+/** The latest finished eval of a set, from the console's history read (the shared `eval_runs` table: the backend has no door that lists it). */
+export interface SetLatest {
+  passed: number;
+  total: number;
+  model: string;
+  at: string;
+  matrix?: Matrix | null;
+  threshold?: number | null;
+  passed_threshold?: boolean | null;
+  by?: string;
+  version?: number | null;
+}
+
+/** A set as the Evals page lists it. */
+export interface SetRow {
+  id: string;
+  agent: string;
+  name: string;
+  model: string;
+  /** Cases. */
+  n: number;
+  labeled?: boolean;
+  latest: SetLatest | null;
+  /** The agent's spec names it as its own suite (`evals.dataset`): its threshold gates a deploy. */
+  suite?: boolean;
+  /** Where the eval runner reads it: the shared table (`db`), the workspace file (`file`); `console` when only the console's own read named it. */
+  source?: string;
+}
+
+/**
+ * The page's set list: the sets as the backend's eval runner reads them
+ * (`GET /api/agents/{id}/eval-sets`: the shared table, then the workspace
+ * files, with which one each spec names as its suite), each with its latest
+ * finished score from the console's history read. A set only the console's
+ * read names (its agent gone, or no backend to ask) is kept, marked
+ * `console`, so nothing a team made disappears from the page. Newest first
+ * by the backend's `updated_at`; a set from a file (no time) after them.
+ */
+export function mergeSetRows(
+  backend: readonly { id: string; agent: string; name: string; model: string; labels: Record<string, unknown> | null; count: number; updated_at: string | null; source: string; suite: boolean }[],
+  consoleRows: readonly SetRow[],
+): SetRow[] {
+  const latest = new Map(consoleRows.map((r) => [r.id, r.latest]));
+  const updated = new Map<string, string>();
+  const rows: SetRow[] = [];
+  for (const s of backend) {
+    if (updated.has(s.id)) continue;
+    updated.set(s.id, s.updated_at ?? "");
+    rows.push({ id: s.id, agent: s.agent, name: s.name, model: s.model, n: s.count, labeled: s.labels !== null, latest: latest.get(s.id) ?? null, suite: s.suite, source: s.source });
+  }
+  const at = (r: SetRow) => updated.get(r.id) ?? "";
+  rows.sort((a, b) => (at(a) === at(b) ? 0 : !at(a) ? 1 : !at(b) ? -1 : at(a) < at(b) ? 1 : -1));
+  return [...rows, ...consoleRows.filter((r) => !updated.has(r.id)).map((r) => ({ ...r, source: r.source ?? "console" }))];
+}

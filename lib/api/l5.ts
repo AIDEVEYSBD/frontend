@@ -126,6 +126,15 @@ export interface Gate {
   decided: Record<string, unknown>;
   job: { id: string; external_id: string | null; source: string } | null;
   warning: string;
+  /**
+   * L8 (second round): the control that opened the gate, as its `gate.open`
+   * entry names it: `report` for the report gate (a sink call in a run that
+   * holds a deliverable nobody reviewed), or the policy gate's when one holds
+   * the same call; "" for a gate the spec's own await node opened.
+   */
+  control: string;
+  /** L8 (second round): the deliverables the report gate names, so a reviewer sees what they approve; approving reviews them, refusing withdraws them. Empty for any other gate. */
+  deliverables: GateDeliverable[];
 }
 
 /**
@@ -499,6 +508,41 @@ export function escalationStepOf(v: unknown): EscalationStep {
   };
 }
 
+/** A deliverable the report gate names (`PendingGate.deliverables`, from the gate's `suspension.resume.deliverables`): what the reviewer approves. */
+export interface GateDeliverable {
+  id: string;
+  kind: string;
+  title: string;
+  path: string;
+  digest: string;
+  /** As the gate named it. */
+  state: string;
+  /** The registry holds it. */
+  registered: boolean;
+  /** As the registry holds it now. */
+  current_state: string;
+  bytes: number | null;
+  format: string;
+  download: string | null;
+}
+
+export function gateDeliverableOf(v: unknown): GateDeliverable {
+  const o = obj(v);
+  return {
+    id: str(o.id),
+    kind: str(o.kind) || "report",
+    title: str(o.title) || str(o.id),
+    path: str(o.path),
+    digest: str(o.digest),
+    state: str(o.state) || "draft",
+    registered: o.registered === true,
+    current_state: str(o.current_state) || str(o.state) || "draft",
+    bytes: typeof o.bytes === "number" && Number.isFinite(o.bytes) ? o.bytes : null,
+    format: str(o.format),
+    download: typeof o.download === "string" && o.download ? o.download : null,
+  };
+}
+
 export function gateOf(v: unknown): Gate {
   const g = obj(v);
   const answer = obj(g.answer);
@@ -539,6 +583,8 @@ export function gateOf(v: unknown): Gate {
     decided,
     job: job ? { id: str(job.id), external_id: job.external_id === null || job.external_id === undefined ? null : str(job.external_id), source: str(job.source) } : null,
     warning: str(g.warning),
+    control: str(g.control),
+    deliverables: (Array.isArray(g.deliverables) ? g.deliverables : []).map(gateDeliverableOf).filter((d) => d.id),
   };
 }
 

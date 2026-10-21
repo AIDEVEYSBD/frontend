@@ -17,7 +17,8 @@ import { RateLimitNote } from "./rate-limit";
 import type { RateLimit } from "@/lib/api/l7";
 import { listAgents } from "@/lib/api/l2";
 import { editableDocument, followEval, retiredOf, retiredRefusalOf, saveAgent, startEval, type EvalCaseResult, type EvalRunView, type ModelSummary, type Retired } from "@/lib/api/l8";
-import { historyRowFromView, historyRowOf, lastComparison, liveOf, mergeHistory, rowStateText, settleOf, thresholdText, thresholdTone, throttleOf, type CompareResult, type HistoryRow } from "@/lib/evals";
+import { historyRowFromView, historyRowOf, lastComparison, liveOf, mergeHistory, mergeSetRows, rowStateText, settleOf, thresholdText, thresholdTone, throttleOf, type CompareResult, type HistoryRow, type SetRow } from "@/lib/evals";
+import { getEvalSet, listEvalSets, type EvalSetDocument } from "@/lib/api/l8b";
 import { retiredLine, savedLine } from "@/lib/lifecycle";
 
 /**
@@ -36,22 +37,17 @@ import { retiredLine, savedLine } from "@/lib/lifecycle";
  * limit a case waits on, and a comparison's recommendation are read off the
  * eval's view. A deploy gate trusts only a score the backend produced
  * itself, so the score carries the spec's threshold and whether it was met,
- * and who started it. The sets and their history stay the console's
- * (/api/evals); a set's latest score is its latest finished eval.
+ * and who started it. Phase L8 (second round): the sets are read as the
+ * backend's runner reads them, through `GET /api/agents/{id}/eval-sets`
+ * (agent by agent: the shared table, then the workspace files, with the one
+ * each spec names as its suite) and `GET /api/eval-sets/{id}` (a set with
+ * its cases), lib/api/l8b.ts. A set's history and its latest finished score
+ * stay the console's read of the shared `eval_runs` table (/api/evals: the
+ * backend has no door that lists them), and saving or deleting a set stays
+ * the console's door too: the backend has none.
  */
 
 /* ═══════════════════ shapes ═══════════════════ */
-
-interface SetRow {
-  id: string;
-  agent: string;
-  name: string;
-  model: string;
-  n: number;
-  labeled?: boolean;
-  /** The latest finished eval of the set (a row still running is not it). */
-  latest: { passed: number; total: number; model: string; at: string; matrix?: Matrix | null; threshold?: number | null; passed_threshold?: boolean | null; by?: string; version?: number | null } | null;
-}
 
 interface Check {
   kind: "contains" | "not_contains" | "field" | "state";
@@ -77,6 +73,34 @@ interface FullSet {
   model: string;
   labels?: Labels;
   cases: EvalCase[];
+}
+
+/** A set as the backend's door answers it, as the builder and the save take it. */
+const fullSetOf = (d: EvalSetDocument): FullSet => ({
+  id: d.id,
+  agent: d.agent,
+  name: d.name,
+  model: d.model,
+  ...(d.labels ? { labels: d.labels as unknown as Labels } : {}),
+  cases: d.cases as unknown as EvalCase[],
+});
+
+/**
+ * One set with its cases: as the backend's runner reads it (`GET
+ * /api/eval-sets/{id}`), else, with no backend to ask, the console's own
+ * read of the shared table; null when neither has it.
+ */
+async function readSet(id: string): Promise<FullSet | null> {
+  try {
+    return fullSetOf(await getEvalSet(id));
+  } catch {
+    try {
+      const d = await (await fetch(`/api/evals?id=${encodeURIComponent(id)}`)).json();
+      return d.set ? (d.set as FullSet) : null;
+    } catch {
+      return null;
+    }
+  }
 }
 
 const REDUCER_KINDS = [
@@ -337,22 +361,33 @@ export function Evals() {
   /* Which agents are retired (L8): their benchmarks still read, and take no new eval. */
   const [retired, setRetired] = useState<Record<string, Retired>>({});
   const refresh = useCallback(async () => {
+    // The latest finished score per set: the console's read of the shared history.
+    let consoleRows: SetRow[] = [];
     try {
       const d = await (await fetch("/api/evals")).json();
-      setSets(d.sets ?? []);
+      consoleRows = Array.isArray(d.sets) ? d.sets : [];
     } catch {
-      setSets([]);
+      consoleRows = [];
+    }
+    // The sets themselves, as the backend's runner reads them, agent by agent.
+    let agents: Awaited<ReturnType<typeof listAgents>> = [];
+    try {
+      agents = await listAgents();
+    } catch {
+      agents = [];
     }
     try {
-      const out: Record<string, Retired> = {};
-      for (const a of await listAgents()) {
-        const r = retiredOf(a.retired);
-        if (r) out[a.id] = r;
-      }
-      setRetired(out);
+      setSets(mergeSetRows(await listEvalSets(agents.map((a) => a.id)), consoleRows));
     } catch {
-      /* no registry: nothing reads as retired */
+      // No backend to ask: the console's own read is what there is.
+      setSets(consoleRows);
     }
+    const out: Record<string, Retired> = {};
+    for (const a of agents) {
+      const r = retiredOf(a.retired);
+      if (r) out[a.id] = r;
+    }
+    setRetired(out);
   }, []);
 
   useEffect(() => soon(refresh), [refresh]);
@@ -411,8 +446,9 @@ export function Evals() {
             onToggle={() => setOpenId(openId === s.id ? null : s.id)}
             onChanged={refresh}
             onEdit={async () => {
-              const d = await (await fetch(`/api/evals?id=${encodeURIComponent(s.id)}`)).json();
-              if (d.set) setBuilding(d.set as FullSet);
+              // The set as the backend's runner reads it: the shared table, else its workspace file.
+              const d = await readSet(s.id);
+              if (d) setBuilding(d);
               window.scrollTo({ top: 0, behavior: "smooth" });
             }}
           />
@@ -1155,9 +1191,18 @@ function SetCard({
   useEffect(() => {
     if (!open) return;
     let stop = false;
-    fetch(`/api/evals?id=${encodeURIComponent(row.id)}`)
-      .then((r) => r.json())
-      .then((d) => !stop && setDetail({ runs: (Array.isArray(d.runs) ? d.runs : []).map(historyRowOf), labels: d.set?.labels ?? undefined }))
+    // The set's labels from the backend's door; its history from the console's read of the shared table.
+    Promise.all([
+      getEvalSet(row.id).catch(() => null),
+      fetch(`/api/evals?id=${encodeURIComponent(row.id)}`)
+        .then((r) => r.json())
+        .catch(() => ({})),
+    ])
+      .then(([set, d]) => {
+        if (stop) return;
+        const labels = (set?.labels as unknown as Labels | null) ?? (d as { set?: { labels?: Labels } }).set?.labels ?? undefined;
+        setDetail({ runs: (Array.isArray((d as { runs?: unknown[] }).runs) ? (d as { runs: unknown[] }).runs : []).map(historyRowOf), labels });
+      })
       .catch(() => !stop && setDetail({ runs: [] }));
     return () => {
       stop = true;
@@ -1218,12 +1263,13 @@ function SetCard({
   };
 
   const useModel = async (id: string) => {
-    const d = await (await fetch(`/api/evals?id=${encodeURIComponent(row.id)}`)).json();
-    if (!d.set) return;
+    // Read through the backend's door; the save stays the console's (the backend has no door that writes a set).
+    const d = await readSet(row.id);
+    if (!d) return;
     await fetch("/api/evals", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ set: { ...d.set, model: id } }),
+      body: JSON.stringify({ set: { ...d, model: id } }),
     });
     onChanged();
   };
@@ -1257,6 +1303,9 @@ function SetCard({
           <span className="flex items-center gap-2">
             <span className="text-[13.5px] font-semibold text-fg">{row.name}</span>
             {retired && <Tag>agent retired</Tag>}
+            {/* L8, second round: the set the agent's spec names as its suite; its threshold gates a deploy. */}
+            {row.suite && <Tag tone="run">the spec&rsquo;s suite</Tag>}
+            {row.source === "file" && <Tag>workspace file</Tag>}
           </span>
           <span className="truncate font-mono text-[10.5px] text-faint">
             benchmarks <span className="text-dim">{row.agent}</span> · {row.n} case

@@ -11,6 +11,7 @@ import { Pick } from "./select";
 import { hueFor } from "@/lib/hue";
 import { FOUNDRY_ID, kindOf, type Provider } from "@/lib/providers";
 import { WindowPick, winMs, type Win } from "./window-pick";
+import { shadowBesideLine, shadowSpentLine, shadowSummary } from "@/lib/production";
 
 /**
  * FinOps: where the money goes, step by step, and where it could go instead.
@@ -37,8 +38,11 @@ interface Eval { id: string; agent: string; model: string; passed: number; total
 interface Azure { configured: boolean; currency: string | null; mtd: number | null; last7d: number | null; error: string | null }
 type Period = "day" | "week" | "month";
 const PERIOD_DAYS: Record<Period, number> = { day: 1, week: 7, month: 30 };
-interface BudgetState { since: string; spent: number; unpriced: number; remaining: number | null; exceeded: boolean; used: number | null }
-interface Data { now: string; config: Config; agents: AgentSpec[]; runs: Run[]; calls: Call[]; evals: Eval[]; azure: Azure; estimate?: { in: number; out: number }; budget: number | null; period: Period; budgetState: BudgetState; costBasis: string }
+/** `shadow_spent` (L8, second round): what a canary's shadow runs spent in the period, beside the budget, never in `spent`. */
+interface BudgetState { since: string; spent: number; unpriced: number; remaining: number | null; exceeded: boolean; used: number | null; shadow_spent?: number }
+/** A canary's shadow run, with its cost: shown beside the spend for a window, counted in none of it (lib/production.ts). */
+interface ShadowRun { id: string; system: string; at: string; state: string; cost: number; estimated: number }
+interface Data { now: string; config: Config; agents: AgentSpec[]; runs: Run[]; calls: Call[]; evals: Eval[]; azure: Azure; estimate?: { in: number; out: number }; budget: number | null; period: Period; budgetState: BudgetState; costBasis: string; shadow?: ShadowRun[] }
 
 /* ═══════════════════ formatting ═══════════════════ */
 
@@ -1016,6 +1020,9 @@ function Billing({ data, totals, windowBudget, window, onSaved }: { data: Data |
   const [busy, setBusy] = useState(false);
   const az = data?.azure;
   const st = data?.budgetState;
+  // The shadows in this window, from their own list: none of them is in a figure above.
+  const [now] = useState(() => Date.now());
+  const shadowWindow = shadowSummary(data?.shadow ?? [], window === "all" ? undefined : new Date(now - winMs(window)));
   const save = async () => {
     setBusy(true);
     try {
@@ -1032,6 +1039,9 @@ function Billing({ data, totals, windowBudget, window, onSaved }: { data: Data |
       {st && data?.budget != null && (
         <Fact k={`This ${data.period} so far`} v={st.exceeded ? `${fmtCost(st.spent)} of ${fmtCost(data.budget)} · exhausted, runs refused` : `${fmtCost(st.spent)} of ${fmtCost(data.budget)} · ${fmtCost(Math.max(0, st.remaining ?? 0))} left`} tone={st.exceeded ? "text-err" : undefined} />
       )}
+      {/* L8, second round: a canary's shadow runs, beside the budget, never in it. */}
+      {st && (st.shadow_spent ?? 0) > 0 && <Fact k={`Shadow runs · this ${data?.period ?? "period"}`} v={shadowSpentLine(st.shadow_spent, (n) => fmtCost(n))} tone="text-faint" />}
+      {shadowWindow.runs > 0 && <Fact k={`Shadow runs · ${window}`} v={shadowBesideLine(shadowWindow, (n) => fmtCost(n))} tone="text-faint" />}
       <Fact k="Run rate · month" v={fmtCost(totals.monthly)} />
       <Fact k="Cloud billed · month to date" v={az?.configured && !az.error ? `${az.currency ?? ""} ${az.mtd?.toFixed(2) ?? "—"}` : "billing connector not configured"} tone={az?.configured ? undefined : "text-faint"} />
       <Fact k="Cloud billed · 7d" v={az?.configured && !az.error ? `${az.currency ?? ""} ${az.last7d?.toFixed(2) ?? "—"}` : "—"} />
