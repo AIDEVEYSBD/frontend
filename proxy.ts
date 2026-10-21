@@ -13,7 +13,8 @@ import { isMachineDoor, isOpenPage, upstreamFor } from "@/lib/route-policy";
  *   worker doors, the applications register with its gateway, retrieval and
  *   chatbot doors, the attention, fleet, lockdown and external answer doors,
  *   the MCP registry (not the platform's own MCP server at /api/mcp/server,
- *   which stays here), the SDK door, and the health check) are forwarded
+ *   which stays here), the SDK door, the ports' health doors, and the
+ *   health check) are forwarded
  *   there at request time, with the shared secret attached and the session
  *   cookie forwarded. This happens before, and independently of, the
  *   RUNTIME_ORIGIN rewrite below. The local backend is `http://localhost:8000`

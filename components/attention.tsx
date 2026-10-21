@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button, Mono, Status, Tag } from "./ui";
 import { hueFor } from "@/lib/hue";
 import { soon } from "@/lib/soon";
-import { clearAttention, listAttention, type AttentionItem } from "@/lib/api/l5";
+import { clearAttention, listAttention, portHealthLine, type AttentionItem, type PortHealth } from "@/lib/api/l5";
 import { ATTENTION_LABEL, HOLDS_LABEL, URGENT_SEVERITY, attentionVerb, countdown, orderAttention } from "@/lib/gates";
 import { useNow } from "./gate-form";
 
@@ -20,6 +20,8 @@ import { useNow } from "./gate-form";
  * the row: answer the gate, replay the dead letter, re-read the health
  * door, or open the page or the run. The rank is severity (1 to 10) × an
  * age weight; lib/gates.ts orderAttention holds the order between reads.
+ * A failing port's row re-reads that port's own check (`GET
+ * /api/ports/{name}/health`) and keeps what it answered under the row.
  */
 
 const KIND_TONE: Record<AttentionItem["kind"], "warn" | "err" | "queue" | "run"> = {
@@ -74,6 +76,8 @@ export function AttentionPanel({
   const { items, error, reload } = useAttention();
   const now = useNow();
   const [busy, setBusy] = useState<string | null>(null);
+  /* What a re-read port answered, by row: kept under the row until the row clears. */
+  const [checked, setChecked] = useState<Record<string, PortHealth>>({});
 
   const act = async (item: AttentionItem) => {
     const a = item.action;
@@ -91,9 +95,16 @@ export function AttentionPanel({
     }
     setBusy(item.id);
     try {
-      await clearAttention(item);
+      const { health } = await clearAttention(item);
+      if (health) setChecked((c) => ({ ...c, [item.id]: health }));
       // A re-read clears nothing by itself: the row goes once the port reads healthy.
-      onNotice(a.kind === "check" ? `Re-read. ${a.says ? `To clear it: ${a.says}.` : "The row clears once it reads healthy."}` : `${attentionVerb(item)}: ${item.title}`);
+      onNotice(
+        health
+          ? `${portHealthLine(health)}${health.ok === true ? " The row clears on the next read." : a.says ? ` To clear it: ${a.says}.` : ""}`
+          : a.kind === "check"
+            ? `Re-read. ${a.says ? `To clear it: ${a.says}.` : "The row clears once it reads healthy."}`
+            : `${attentionVerb(item)}: ${item.title}`,
+      );
       reload();
     } catch (e) {
       onNotice(`${attentionVerb(item)} refused: ${(e as Error).message.slice(0, 140)}`);
@@ -136,6 +147,11 @@ export function AttentionPanel({
                 <span className="truncate font-mono text-[9.5px] text-faint">
                   {[it.agent, it.run ?? (it.job ? `job ${it.job}` : ""), it.detail].filter(Boolean).join(" · ")}
                 </span>
+                {checked[it.id] && (
+                  <span className={`truncate text-[10.5px] ${checked[it.id].ok === true ? "text-ok" : checked[it.id].ok === false ? "text-err" : "text-faint"}`} title={JSON.stringify(checked[it.id].detail)}>
+                    Read {checked[it.id].checked_at ? new Date(checked[it.id].checked_at).toLocaleTimeString() : "just now"}: {portHealthLine(checked[it.id])}
+                  </span>
+                )}
               </button>
               <span className="hidden shrink-0 items-center gap-2 sm:flex">
                 {it.holds && <Tag tone={HOLDS_TONE[it.holds] ?? "warn"}>{HOLDS_LABEL[it.holds] ?? it.holds}</Tag>}

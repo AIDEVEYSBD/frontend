@@ -18,6 +18,8 @@ import {
   type Turn,
 } from "@/lib/api/l4";
 import { fmtMs } from "@/lib/run-fold";
+import { corporaOf, type StaleReport } from "@/lib/knowledge-stale";
+import { readStaleDocuments } from "@/lib/api/knowledge";
 import { WindowPick, winMs, type Win } from "./window-pick";
 import { Button, Mono, Status, Tag } from "./ui";
 import { CAT, Donut, RankBar } from "./charts";
@@ -26,6 +28,7 @@ import { ControlRef, resolveControl } from "./control-ref";
 import { LineageDrawer } from "./lineage";
 import { Skeleton } from "./loaders";
 import { usePageFacts } from "./assistant";
+import { SystemPromptPanel } from "./system-prompts";
 
 /**
  * One application's dashboard.
@@ -35,6 +38,13 @@ import { usePageFacts } from "./assistant";
  * conversations behind it; every conversation replays turn by turn with
  * the screening and refusals it met, and any turn opens its lineage. The
  * block switch is the kill switch: every door refuses until it is lifted.
+ *
+ * An application that retrieves (a RAG app, or a chatbot whose policy lists
+ * namespaces) also shows what the retrieval door journalled (hit rate,
+ * unanswerable questions, grounding rate) and how many admitted documents
+ * in the corpora it reads are stale against their source, with the list
+ * behind the count (lib/knowledge-stale.ts). A registered application
+ * shows its system prompt version by version (components/system-prompts.tsx).
  */
 
 const money = (c: number | null) => (c === null ? "unknown" : c === 0 ? "$0.00" : c < 0.005 ? "<$0.01" : c < 100 ? `$${c.toFixed(2)}` : `$${Math.round(c).toLocaleString("en-GB")}`);
@@ -43,7 +53,7 @@ const when = (iso: string) => (iso ? new Date(iso).toLocaleString("en-GB", { dat
 const tokens = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n));
 
 type Drill =
-  | { kind: "kpi"; which: "volume" | "cost" | "p50" | "p95" | "refusals" | "screened" | "hit" | "unanswerable" | "grounding" }
+  | { kind: "kpi"; which: "volume" | "cost" | "p50" | "p95" | "refusals" | "screened" | "hit" | "unanswerable" | "grounding" | "stale" }
   | { kind: "control"; control: string }
   | { kind: "reason"; reason: string }
   | { kind: "model"; model: string };
@@ -71,6 +81,8 @@ export function ApplicationDashboard({ id }: { id: string }) {
   const [opening, setOpening] = useState("");
   const [lineage, setLineage] = useState<{ run: string; entry: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  // The admitted documents stale against their source, in the corpora this application reads.
+  const [stale, setStale] = useState<{ key: string; report: StaleReport | null; error: string } | null>(null);
 
   const loadApp = useCallback(() => {
     getApplication(id)
@@ -104,6 +116,22 @@ export function ApplicationDashboard({ id }: { id: string }) {
     };
   }, [id]);
 
+  // The corpora this application retrieves from, as the retrieval door decides it; a stable key for the effect.
+  const corpora = useMemo(() => (app ? corporaOf(app) : []), [app]);
+  const corporaKey = corpora.join(",");
+  useEffect(() => {
+    if (!corporaKey) return;
+    let stop = false;
+    readStaleDocuments(corporaKey.split(","))
+      .then((report) => !stop && setStale({ key: corporaKey, report, error: report.ready ? "" : report.error ?? "the knowledge index is unreachable" }))
+      .catch((e: Error) => !stop && setStale({ key: corporaKey, report: null, error: e.message }));
+    return () => {
+      stop = true;
+    };
+  }, [corporaKey]);
+  const staleNow = stale?.key === corporaKey ? stale : null;
+  const staleCount = staleNow?.report?.ready ? staleNow.report.stale.length : null;
+
   // The conversations door lists everything; the page window cuts the list.
   const convs = useMemo(() => (allConvs ? allConvs.filter((c) => win === "all" || now - new Date(c.last || c.started).getTime() <= winMs(win)) : null), [allConvs, win, now]);
   const clamped = win === "90d" || win === "all";
@@ -132,6 +160,9 @@ export function ApplicationDashboard({ id }: { id: string }) {
   };
 
   const isRag = app?.class === "rag";
+  // A chatbot whose policy lists namespaces retrieves too (the retrieval door serves it).
+  const retrieves = isRag || corpora.length > 0;
+  const rag = metrics?.rag ?? null;
   const screened = useMemo(() => Object.entries(metrics?.screened ?? {}).sort((a, b) => b[1] - a[1]), [metrics]);
   const screenedTotal = screened.reduce((s, [, n]) => s + n, 0);
   const reasons = useMemo(() => Object.entries(metrics?.refusals_by_reason ?? {}).sort((a, b) => b[1] - a[1]), [metrics]);
@@ -144,6 +175,8 @@ export function ApplicationDashboard({ id }: { id: string }) {
       ? { completions: metrics.volume, conversations: metrics.conversations, principals: metrics.principals, cost: metrics.cost, latency: metrics.latency, refusals: metrics.refusals, screened: metrics.screened, models: metrics.models.map((m) => [m.model, m.completions]) }
       : "loading",
     conversations: convs ? convs.length : "loading",
+    retrieval: retrieves ? (metrics ? rag ?? "no retrieval in the window" : "loading") : "does not retrieve",
+    staleDocuments: retrieves ? (staleNow?.report?.ready ? { stale: staleNow.report.stale.length, of: staleNow.report.checked, corpora } : staleNow ? "unknown" : "loading") : "does not retrieve",
   });
 
   /* The records behind a figure: the conversations, cut and ordered for the question asked. */
@@ -164,11 +197,31 @@ export function ApplicationDashboard({ id }: { id: string }) {
         case "screened":
           return { title: "Screened", subtitle: `${metrics?.blocked ?? 0} blocked and ${metrics?.flagged ?? 0} flagged over ${win}. The row does not carry the screened count; open a conversation to see the turn the screener matched.`, rows: all };
         case "hit":
-          return { title: "Retrieval hit rate", subtitle: "The metrics door does not report retrieval figures yet. The conversations, most recent first.", rows: all };
+          return {
+            title: "Retrieval hit rate",
+            subtitle: rag
+              ? `${rag.hits} of ${rag.retrievals - rag.refused} entitled retrievals over ${win} handed back at least one passage (${rag.searches} searches, ${rag.answers} answers${rag.refused ? `, ${rag.refused} refused for want of an entitlement` : ""}). The conversations, most recent first.`
+              : `No retrieval was journalled for this application over ${win}. The conversations, most recent first.`,
+            rows: all,
+          };
         case "unanswerable":
-          return { title: "Unanswerable", subtitle: "The metrics door does not report retrieval figures yet. The conversations, most recent first.", rows: all };
+          return {
+            title: "Unanswerable",
+            subtitle: rag
+              ? `${rag.unanswerable} of ${rag.answers} answers over ${win} had nothing to answer from or were judged ungrounded. The conversations, most recent first.`
+              : `No answer was journalled for this application over ${win}. The conversations, most recent first.`,
+            rows: all,
+          };
         case "grounding":
-          return { title: "Grounding rate", subtitle: "The metrics door does not report retrieval figures yet. The conversations, most recent first.", rows: all };
+          return {
+            title: "Grounding rate",
+            subtitle: rag
+              ? `${rag.grounded} of ${rag.answered} answers that produced text over ${win} were judged grounded in their passages${rag.partial ? ` (${rag.partial} partly)` : ""}. The conversations, most recent first.`
+              : `No answer was journalled for this application over ${win}. The conversations, most recent first.`,
+            rows: all,
+          };
+        case "stale":
+          return { title: "Stale documents", subtitle: "", rows: [] };
       }
     }
     if (drill.kind === "control") {
@@ -176,7 +229,7 @@ export function ApplicationDashboard({ id }: { id: string }) {
     }
     if (drill.kind === "reason") return { title: `Refused: ${drill.reason}`, subtitle: `${metrics?.refusals_by_reason[drill.reason] ?? 0} refusals over ${win}. Conversations with at least one refusal.`, rows: all.filter((x) => x.refusals > 0) };
     return { title: drill.model, subtitle: `${metrics?.models.find((m) => m.model === drill.model)?.completions ?? 0} completions over ${win}.`, rows: all.filter((x) => x.models.includes(drill.model)) };
-  }, [drill, convs, metrics, win]);
+  }, [drill, convs, metrics, win, rag]);
 
   if (app === undefined) {
     return (
@@ -204,14 +257,22 @@ export function ApplicationDashboard({ id }: { id: string }) {
     { id: "p95", label: "Latency p95", value: metrics ? ms(metrics.latency.p95) : "…", sub: "the slow tail" },
     { id: "refusals", label: "Refusals", value: metrics ? metrics.refusals.toLocaleString("en-GB") : "…", sub: reasons.length ? reasons.map(([r, n]) => `${r} ${n}`).slice(0, 2).join(" · ") : "screened, limited or over budget", tone: metrics?.refusals ? "err" : undefined },
     { id: "screened", label: "Screened hits", value: metrics ? screenedTotal.toLocaleString("en-GB") : "…", sub: metrics ? `${metrics.blocked} blocked · ${metrics.flagged} flagged` : "", tone: screenedTotal ? "warn" : undefined },
-    ...(isRag
+    ...(retrieves
       ? ([
-          { id: "hit", label: "Retrieval hit rate", value: metrics ? (metrics.rag ? `${Math.round((metrics.rag.hit_rate ?? 0) * 100)}%` : "unknown") : "…", sub: metrics?.rag ? `${metrics.rag.searches} searches` : "not reported by the metrics door yet" },
-          { id: "unanswerable", label: "Unanswerable", value: metrics ? (metrics.rag ? String(metrics.rag.unanswerable) : "unknown") : "…", sub: metrics?.rag ? "no passage cleared the bar" : "not reported by the metrics door yet", tone: metrics?.rag?.unanswerable ? "warn" : undefined },
-          { id: "grounding", label: "Grounding rate", value: metrics ? (metrics.rag ? `${Math.round((metrics.rag.grounding_rate ?? 0) * 100)}%` : "unknown") : "…", sub: metrics?.rag ? "answers judged grounded" : "not reported by the metrics door yet" },
+          { id: "hit", label: "Retrieval hit rate", value: metrics ? (rag?.hit_rate != null ? `${Math.round(rag.hit_rate * 100)}%` : "none") : "…", sub: rag ? `${rag.retrievals} retrieval${rag.retrievals === 1 ? "" : "s"} · ${rag.searches} searches` : `no retrieval over ${win}` },
+          { id: "unanswerable", label: "Unanswerable", value: metrics ? (rag ? String(rag.unanswerable) : "0") : "…", sub: rag ? `of ${rag.answers} answer${rag.answers === 1 ? "" : "s"} · nothing to answer from` : `no answer over ${win}`, tone: rag?.unanswerable ? "warn" : undefined },
+          { id: "grounding", label: "Grounding rate", value: metrics ? (rag?.grounding_rate != null ? `${Math.round(rag.grounding_rate * 100)}%` : "none") : "…", sub: rag ? `${rag.grounded} of ${rag.answered} answers grounded` : `no answer over ${win}` },
+          {
+            id: "stale",
+            label: "Stale documents",
+            value: staleNow ? (staleCount !== null ? String(staleCount) : "unknown") : "…",
+            sub: staleNow?.report?.ready ? `of ${staleNow.report.checked} admitted · ${corpora.join(", ")}` : staleNow ? "knowledge index unreadable" : `in ${corpora.join(", ")}`,
+            tone: staleCount ? "warn" : undefined,
+          },
         ] as const)
       : []),
   ];
+  const bandCols = tiles.length >= 10 ? "xl:grid-cols-10" : tiles.length === 9 ? "xl:grid-cols-9" : "xl:grid-cols-6";
 
   return (
     <div className="min-h-full" data-hue="blue">
@@ -257,7 +318,7 @@ export function ApplicationDashboard({ id }: { id: string }) {
         {error && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>}
 
         {/* ── the band ── */}
-        <div className={`grid grid-cols-2 overflow-hidden rounded-md border border-line bg-surface sm:grid-cols-3 ${isRag ? "xl:grid-cols-9" : "xl:grid-cols-6"}`}>
+        <div className={`grid grid-cols-2 overflow-hidden rounded-md border border-line bg-surface sm:grid-cols-3 ${bandCols}`}>
           {tiles.map((t) => (
             <div
               key={t.id}
@@ -337,6 +398,9 @@ export function ApplicationDashboard({ id }: { id: string }) {
           </section>
         </div>
 
+        {/* ── the system prompt, version by version: registered applications only ── */}
+        {app.source === "application" && <SystemPromptPanel app={app} onApplication={setApp} />}
+
         {/* ── conversations ── */}
         <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
           <div className="flex w-full items-start gap-3 border-b border-line bg-raise/55 px-4 py-2.5">
@@ -349,7 +413,34 @@ export function ApplicationDashboard({ id }: { id: string }) {
         <p className="pb-2 text-[10.5px] text-ghost">{metrics?.basis ?? "figures come from journalled calls, never estimates"}</p>
       </div>
 
-      {drill && (
+      {drill?.kind === "kpi" && drill.which === "stale" && (
+        <DrillModal
+          title="Stale documents"
+          count={staleNow?.report?.stale.length}
+          subtitle={
+            staleNow?.report?.ready
+              ? `Admitted documents in ${corpora.join(", ")} that are behind their source: ${staleNow.report.stale.length} of ${staleNow.report.checked}. Stale when a later fetch differs, when the catalogue moved the source, or when the copy is older than the source's cadence allows.`
+              : staleNow?.error || "Reading the knowledge index…"
+          }
+          onClose={() => setDrill(null)}
+          actions={<Button size="sm" variant="solid" tone="ink" href="/knowledge">Open the knowledge base</Button>}
+        >
+          <DrillTable
+            columns={[
+              { label: "Document", cell: (d) => <span className="flex flex-col"><span className="text-[12px] font-medium text-fg">{d.title || d.id}</span><Mono className="text-[10px] text-faint">{d.id}</Mono></span> },
+              { label: "Corpus", cell: (d) => <Mono className="text-[10.5px]">{d.namespace}</Mono> },
+              { label: "Source", cell: (d) => <span className="flex flex-col text-dim"><span>{d.source}</span>{d.cadence && <span className="text-[10px] text-ghost">changes {d.cadence.toLowerCase()}</span>}</span> },
+              { label: "Fetched", cell: (d) => <span className="whitespace-nowrap text-dim">{when(d.fetched_at)}</span> },
+              { label: "Why it is stale", cell: (d) => <span className="flex flex-col gap-0.5">{d.reasons.map((r) => <span key={r.kind} className={r.kind === "changed" ? "text-warn" : "text-dim"}>{r.detail}</span>)}</span> },
+            ]}
+            rows={staleNow?.report?.stale ?? []}
+            keyOf={(d) => `${d.namespace}/${d.id}`}
+            empty={staleNow?.report?.ready ? `Every admitted document in ${corpora.join(", ")} is current on every signal the pipeline keeps.` : staleNow?.error || "Reading…"}
+          />
+        </DrillModal>
+      )}
+
+      {drill && !(drill.kind === "kpi" && drill.which === "stale") && (
         <DrillModal
           title={drillRows.title}
           subtitle={drillRows.subtitle}

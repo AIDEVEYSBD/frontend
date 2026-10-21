@@ -27,6 +27,7 @@ export async function GET(req: Request) {
       isEy: s.isEy,
       roles: s.roles,
       appRoles: s.appRoles,
+      groups: s.groups,
       permissions: s.permissions,
       demoDefaultApplied: s.demoDefaultApplied,
       disabled: s.disabled,

@@ -6,7 +6,7 @@ import { RunSourceTag } from "./run-source";
 import { Field, Input, Textarea } from "./forms";
 import { Pick } from "./select";
 import type { Evidence, Gate, GateField, Shape, VerdictItem } from "@/lib/api/l5";
-import { allowedVerdicts, bulkVerdict, chainOf, countdown, type FormState } from "@/lib/gates";
+import { allowedVerdicts, bulkVerdict, chainOf, countdown, historyOf, type FormState } from "@/lib/gates";
 
 /**
  * The parts of a gate's interface, shared by every place one is answered:
@@ -72,13 +72,15 @@ export function NextLines({ gate }: { gate: Pick<Gate, "shape" | "next"> }) {
 export function GateMeta({ gate, now }: { gate: Gate; now: number }) {
   const current = gate.approvers;
   const c = chainOf(gate);
+  const h = historyOf(gate);
   return (
     <div className="flex flex-col gap-2 px-4 py-3 text-[11.5px] text-faint">
       <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="text-dim">Approvers</span>
         {current.length ? current.map((r) => <Tag key={r} tone="warn">{r}</Tag>) : <span>anyone with the approve permission</span>}
         <span className="grow" />
-        <span className="text-dim">Deadline</span>
+        {/* The label once: a gate with no deadline says so in the countdown's place. */}
+        {gate.deadline && <span className="text-dim">Deadline</span>}
         <Deadline deadline={gate.deadline} now={now} />
       </span>
       {(c.ahead.length > 0 || c.passedFirst) && (
@@ -86,7 +88,7 @@ export function GateMeta({ gate, now }: { gate: Gate; now: number }) {
           <span className="text-dim">Chain</span>
           {c.passedFirst && (
             <span className="inline-flex items-center gap-1">
-              <span className="line-through decoration-line-strong">first approvers</span>
+              <span className="line-through decoration-line-strong">{h.first.length ? h.first.join(", ") : "first approvers"}</span>
               <span className="text-ghost">→</span>
             </span>
           )}
@@ -112,6 +114,7 @@ export function GateMeta({ gate, now }: { gate: Gate; now: number }) {
           {c.ahead.length ? `; next ${c.ahead[0]} if this deadline passes` : gate.on_timeout === "escalate" ? "; the chain is spent, so when this deadline passes the gate is aborted and the run fails" : ""}
         </span>
       )}
+      <EscalationHistoryList gate={gate} />
       <NextLines gate={gate} />
       <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
         {/* An attached agent's gate (SDK, A2A): the answer goes back on its own channel, as the next steps above say. */}
@@ -121,6 +124,47 @@ export function GateMeta({ gate, now }: { gate: Gate; now: number }) {
         {gate.job?.external_id && <span>· raised by {gate.job.source} as {gate.job.external_id}</span>}
       </span>
       {gate.warning && <span className="text-warn">{gate.warning}</span>}
+    </div>
+  );
+}
+
+/**
+ * Where an unanswered gate has been: who it first waited on, then each step
+ * along its chain with when it moved, to whom, why and by whom, oldest
+ * first. Nothing when it never moved. A record escalated before the time
+ * was kept says so in the time's place.
+ */
+export function EscalationHistoryList({ gate }: { gate: Pick<Gate, "approvers" | "escalations" | "original_approvers" | "escalation_history"> }) {
+  const h = historyOf(gate);
+  if (!h.steps.length && !h.missing) return null;
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+        <span className="text-dim">Escalation history</span>
+        <span>· waited first on</span>
+        {h.first.length ? h.first.map((r) => <Tag key={r}>{r}</Tag>) : <span className="text-ghost">approvers not recorded</span>}
+      </span>
+      <ol className="flex flex-col gap-1 border-l border-line pl-3">
+        {h.steps.map((s, i) => (
+          <li key={`${s.at ?? "unknown"}-${i}`} className="flex flex-col gap-0.5">
+            <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+              <span className="tnum font-mono text-[10.5px] text-dim" title={s.at ?? "This step predates the time being kept on the record."}>
+                {s.at ? new Date(s.at).toLocaleString() : "time not recorded"}
+              </span>
+              <span>{s.from.join(", ") || "the approvers"}</span>
+              <span className="text-ghost">→</span>
+              <span className="font-medium text-fg">{s.to || "the next role"}</span>
+              {s.by && <span className="text-ghost">· by {s.by}</span>}
+            </span>
+            {s.reason && <span className="text-[11px] leading-[1.5]">{s.reason}</span>}
+          </li>
+        ))}
+        {h.missing > 0 && (
+          <li className="text-[11px] text-ghost">
+            {h.missing} earlier step{h.missing === 1 ? "" : "s"} counted on the gate but not on its record.
+          </li>
+        )}
+      </ol>
     </div>
   );
 }

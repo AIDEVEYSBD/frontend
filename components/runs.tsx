@@ -20,7 +20,7 @@ import { explainControl } from "@/lib/guardrails";
 import { ControlRef, KILL_CONTROL } from "./control-ref";
 import { RunBoard, ViewSwitch, useRunView, type BoardEdge } from "./run-board";
 import { api, errorText, subscribeRunEvents, type RunEnd, type Schemas } from "@/lib/api/client";
-import { artefactsZipUrl, gateFromSuspension, listGates, operatorOf, type Gate } from "@/lib/api/l5";
+import { artefactsZipUrl, gateFromSuspension, listGates, lockdownRefusalOf, lockdownRefusalText, operatorOf, type Gate } from "@/lib/api/l5";
 import { runSourceOf, type RunRowL6 } from "@/lib/api/l6";
 import { exitText, sandboxLine, sandboxOfEntry, sandboxRunOf, SANDBOX_TOOL } from "@/lib/sandbox";
 import { RunSourceTag } from "./run-source";
@@ -29,6 +29,8 @@ import { KillDialog } from "./kill-dialog";
 import { LineageDrawer } from "./lineage";
 import { ApproveDialog } from "./approve";
 import { SteerPanel } from "./steer";
+import { followsLive, steerOffer } from "@/lib/steer";
+import { agentDocument, listAgents } from "@/lib/api/l2";
 import { Deadline, useNow } from "./gate-form";
 
 /**
@@ -169,9 +171,8 @@ function Launcher() {
   const router = useRouter();
 
   useEffect(() => {
-    fetch("/api/agents")
-      .then((r) => r.json())
-      .then((d) => setAgents(d.agents ?? []))
+    listAgents()
+      .then((rows) => setAgents(rows.map((a) => ({ id: a.id, name: a.name, description: a.description ?? "", nodes: a.nodes }))))
       .catch(() => setAgents([]));
     api
       .GET("/api/runs")
@@ -390,12 +391,8 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
       });
     }
     if (!agentId) return;
-    fetch(`/api/agents?id=${encodeURIComponent(agentId)}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.error) throw new Error(String(d.error));
-        setSystem(fromDocument(d.spec));
-      })
+    agentDocument(agentId)
+      .then((doc) => setSystem(fromDocument(doc)))
       .catch((e) => setLoadError((e as Error).message));
   }, [agentId, draft]);
 
@@ -500,7 +497,9 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
         signal: ctrl.signal,
       });
       if (!data) {
-        setError(errorText(error, response));
+        // A lockdown refuses every start (423): say why, who set it and how it ends, not the door's instructions.
+        const locked = lockdownRefusalOf(response.status, error);
+        setError(locked ? lockdownRefusalText(locked) : errorText(error, response));
         setPhase("done");
         setFinalState("failed");
         return;
@@ -826,7 +825,9 @@ function RunRecord({ id, onReread }: { id: string; onReread: () => void }) {
     startedAt: string;
     /** A kill asked of the run and not yet taken: an SDK agent takes it on its next control poll, which may be a while. */
     kill: Schemas["KillInfo"] | null;
-  }>({ system: "", runId: "", state: "", error: "", result: null, source: "", startedAt: "", kill: null });
+    /** When the run finished; "" while an SDK agent still holds it open. */
+    finishedAt: string;
+  }>({ system: "", runId: "", state: "", error: "", result: null, source: "", startedAt: "", kill: null, finishedAt: "" });
   const [specNodes, setSpecNodes] = useState<{ id: string; label: string; kind: string }[] | null>(null);
   const [specEdges, setSpecEdges] = useState<BoardEdge[]>([]);
   const [loadError, setLoadError] = useState("");
@@ -846,6 +847,7 @@ function RunRecord({ id, onReread }: { id: string; onReread: () => void }) {
           source: runSourceOf(data),
           startedAt: typeof data.started_at === "string" ? data.started_at : "",
           kill: data.kill ?? null,
+          finishedAt: typeof data.finished_at === "string" ? data.finished_at : "",
         });
       })
       .catch((e) => setLoadError((e as Error).message));
@@ -856,11 +858,10 @@ function RunRecord({ id, onReread }: { id: string; onReread: () => void }) {
   useEffect(() => {
     if (!meta.system) return;
     let stop = false;
-    fetch(`/api/agents?id=${encodeURIComponent(meta.system)}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (stop || !d.spec) return;
-        const s = fromDocument(d.spec);
+    agentDocument(meta.system)
+      .then((doc) => {
+        if (stop) return;
+        const s = fromDocument(doc);
         setSpecNodes(s.nodes.map((n) => ({ id: n.id, label: n.label || n.id, kind: n.harness })));
         setSpecEdges(s.edges.map((e) => ({ source: e.source, target: e.target, when: e.when, label: e.label })));
       })
@@ -880,11 +881,11 @@ function RunRecord({ id, onReread }: { id: string; onReread: () => void }) {
   const rolled = useRef(false);
   useEffect(() => {
     // A run in flight is followed, not replayed (FollowTheater below).
-    if (rolled.current || !entries?.length || openAt || view !== "cards" || meta.state === "running") return;
+    if (rolled.current || !entries?.length || openAt || view !== "cards" || followsLive({ state: meta.state, source: meta.source, finished_at: meta.finishedAt })) return;
     rolled.current = true;
     playback.seek(0);
     playback.setPlaying(true);
-  }, [entries, openAt, view, playback, meta.state]);
+  }, [entries, openAt, view, playback, meta.state, meta.source, meta.finishedAt]);
 
 
   const marks = useMemo(
@@ -961,8 +962,10 @@ function RunRecord({ id, onReread }: { id: string; onReread: () => void }) {
   if (!entries || !raw) return <p className="px-8 py-10 text-[12.5px] text-faint">Loading the journal…</p>;
 
   // Still in flight: follow it live, with the kill switch and the steering
-  // a run launched here would have, whoever started it.
-  if (meta.state === "running") {
+  // a run launched here would have, whoever started it. An SDK run its agent
+  // holds open at a gate is in flight too: it is answered, steered and
+  // killed from here.
+  if (followsLive({ state: meta.state, source: meta.source, finished_at: meta.finishedAt })) {
     return (
       <FollowTheater
         id={meta.runId || id}
@@ -1090,6 +1093,8 @@ function FollowTheater({
   const journalMs = entries.length ? entries[entries.length - 1].t : 0;
   const running = state === "running" && !suspension;
   const sdk = source === "sdk";
+  // An SDK run waiting at a gate still takes guidance and a model on its control poll; the hold is not offered there.
+  const offer = steerOffer({ state, atGate: Boolean(suspension), source });
 
   // Wall clock: the journal ticks only when entries land; a 40-second tool
   // call must not look like a hang.
@@ -1203,7 +1208,7 @@ function FollowTheater({
         result={result}
         suspension={suspension}
         onAnswered={answered}
-        steer={state === "running" && !suspension ? <SteerPanel runId={id} /> : null}
+        steer={offer.show ? <SteerPanel runId={id} holdBlocked={offer.hold.allowed ? undefined : offer.hold.reason} /> : null}
         setup={null}
         footer={
           running ? (

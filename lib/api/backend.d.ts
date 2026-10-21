@@ -215,6 +215,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/applications/{app_id}/system-prompts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every version of a registered application's system prompt: who set it, when, and which the leak check still guards */
+        get: operations["applicationSystemPrompts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/approvals": {
         parameters: {
             query?: never;
@@ -557,10 +574,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Whether the estate is locked down, by whom and why */
+        /** Whether the estate is locked down, by whom and why, and the audit event that set it */
         get: operations["getLockdown"];
         put?: never;
-        /** Lock the estate down (every call above read and every sink waits for a human) or lift it; one audit event */
+        /** Lock the estate down (no claims, no starts; resumed runs gate everything above read and hold every sink) or lift it; one audit event, its id answered */
         post: operations["setLockdown"];
         delete?: never;
         options?: never;
@@ -631,6 +648,23 @@ export interface paths {
         put?: never;
         /** Discover a server's tools again; a list whose digest moved from the pin marks it changed and detaches it until approved again */
         post: operations["rescanMcpServer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ports/{name}/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One port's own health check (identity, secrets, store, provider, screener, telemetry, billing), read now */
+        get: operations["portHealth"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -732,7 +766,7 @@ export interface paths {
         /** The run ledger, or one run by id */
         get: operations["listRuns"];
         put?: never;
-        /** Start a run of a deployed agent or a draft spec */
+        /** Start a run of a deployed agent or a draft spec; 423 while the estate is locked down */
         post: operations["startRun"];
         delete?: never;
         options?: never;
@@ -1075,7 +1109,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Claim one queued job (lease 20 min) with the deployed spec pinned to it; 204 when nothing is claimable */
+        /** Claim one queued job (lease 20 min) with the deployed spec pinned to it; 204 when nothing is claimable or the estate is locked down */
         post: operations["claimJob"];
         delete?: never;
         options?: never;
@@ -1375,6 +1409,7 @@ export interface components {
         /** ApplicationChanged */
         ApplicationChanged: {
             application: components["schemas"]["ApplicationView"];
+            system_prompt?: components["schemas"]["SystemPromptVersion"] | null;
         };
         /** ApplicationList */
         ApplicationList: {
@@ -2200,6 +2235,29 @@ export interface components {
             reauth?: boolean | null;
         };
         /**
+         * EscalationStep
+         * @description One step an unanswered gate took along its chain: when, from which
+         *     approvers to which role, why, and who moved it (the scheduler's tick).
+         */
+        EscalationStep: {
+            /** At */
+            at?: string | null;
+            /**
+             * By
+             * @default
+             */
+            by: string;
+            /** From */
+            from?: string[];
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /** To */
+            to: string;
+        };
+        /**
          * Evidence
          * @description What the run had in hand when it stopped: the last node's emitted
          *     decision (scalars), what the gate was shown, whether any of it came
@@ -2385,6 +2443,8 @@ export interface components {
             agents: string[];
             /** At */
             at: string;
+            /** Audit Id */
+            audit_id?: number | null;
             /** By */
             by: string;
             /** Killed */
@@ -2568,6 +2628,11 @@ export interface components {
             /** Lease Until */
             lease_until?: string | null;
             /**
+             * Lockdown
+             * @default false
+             */
+            lockdown: boolean;
+            /**
              * Status
              * @enum {string}
              */
@@ -2701,6 +2766,7 @@ export interface components {
             job: string;
             /** Lease Until */
             lease_until?: string | null;
+            lockdown?: components["schemas"]["LockdownHold"] | null;
             /** Max Attempts */
             max_attempts: number;
             /** Note */
@@ -2950,6 +3016,15 @@ export interface components {
             /** P95 */
             p95?: number | null;
         };
+        /** LeakCheck */
+        LeakCheck: {
+            /** Max Versions */
+            max_versions: number;
+            /** Says */
+            says: string;
+            /** Window Days */
+            window_days: number;
+        };
         /** LimitSetView */
         LimitSetView: {
             /** Cost Per Day Usd */
@@ -3000,6 +3075,21 @@ export interface components {
             /** Expires S */
             expires_s?: number | null;
         };
+        /**
+         * LockdownHold
+         * @description The estate's lockdown holds a queued job: it is on the queue, and no
+         *     worker claims it until the lockdown is lifted (L5).
+         */
+        LockdownHold: {
+            /** At */
+            at: string;
+            /** By */
+            by: string;
+            /** Reason */
+            reason: string;
+            /** Says */
+            says: string;
+        };
         /** LockdownRequest */
         LockdownRequest: {
             /** On */
@@ -3017,6 +3107,8 @@ export interface components {
              * @default
              */
             at: string;
+            /** Audit Id */
+            audit_id?: number | null;
             /**
              * By
              * @default
@@ -3540,6 +3632,8 @@ export interface components {
              * @default
              */
             deployed_digest: string;
+            /** Escalation History */
+            escalation_history?: components["schemas"]["EscalationStep"][];
             /**
              * Escalations
              * @default 0
@@ -3573,6 +3667,8 @@ export interface components {
              * @default
              */
             on_timeout: string;
+            /** Original Approvers */
+            original_approvers?: string[];
             /** Run */
             run: string;
             /**
@@ -3669,6 +3765,34 @@ export interface components {
             system_prompt: string;
         } & {
             [key: string]: unknown;
+        };
+        /**
+         * PortHealth
+         * @description One port's own health check, as it answered just now.
+         */
+        PortHealth: {
+            /** Checked At */
+            checked_at: string;
+            /**
+             * Configured
+             * @default true
+             */
+            configured: boolean;
+            /** Detail */
+            detail?: {
+                [key: string]: unknown;
+            };
+            /** Implementation */
+            implementation: string;
+            /** Ok */
+            ok?: boolean | null;
+            /** Port */
+            port: string;
+            /**
+             * Region
+             * @default
+             */
+            region: string;
         };
         /**
          * ProposeRequest
@@ -3847,6 +3971,7 @@ export interface components {
              * @default This is the only time the key is shown. The application sends it as Authorization: Bearer <key> to the gateway.
              */
             note: string;
+            system_prompt?: components["schemas"]["SystemPromptVersion"] | null;
         };
         /**
          * RegistryTool
@@ -4826,7 +4951,9 @@ export interface components {
          * @description What the run is waiting for, as the runtime's `Suspension` serialises
          *     (L5): the shape of the answer it collects, the typed fields, the items a
          *     verdicts gate is about, the escalation chain and how far along it is,
-         *     the absolute deadline, and whether a signed link may answer it.
+         *     the absolute deadline, and whether a signed link may answer it. This
+         *     service adds the approvers the gate first waited on and every step it
+         *     took along the chain.
          */
         Suspension: {
             /** Approvers */
@@ -4835,6 +4962,8 @@ export interface components {
             chain?: string[];
             /** Deadline */
             deadline?: string | null;
+            /** Escalation History */
+            escalation_history?: components["schemas"]["EscalationStep"][];
             /**
              * Escalations
              * @default 0
@@ -4862,6 +4991,8 @@ export interface components {
              * @default escalate
              */
             on_timeout: string;
+            /** Original Approvers */
+            original_approvers?: string[];
             /**
              * Prompt
              * @default
@@ -4889,6 +5020,55 @@ export interface components {
             verdicts?: string[];
         } & {
             [key: string]: unknown;
+        };
+        /** SystemPromptHistory */
+        SystemPromptHistory: {
+            /** Application */
+            application: string;
+            /** Count */
+            count: number;
+            /** Current */
+            current?: string | null;
+            leak_check: components["schemas"]["LeakCheck"];
+            /** Versions */
+            versions: components["schemas"]["SystemPromptVersion"][];
+        };
+        /**
+         * SystemPromptVersion
+         * @description One version of an application's registered system prompt.
+         */
+        SystemPromptVersion: {
+            /**
+             * Adopted
+             * @default false
+             */
+            adopted: boolean;
+            /** Chars */
+            chars: number;
+            /**
+             * Current
+             * @default false
+             */
+            current: boolean;
+            /** Digest */
+            digest: string;
+            /**
+             * Guarded
+             * @default false
+             */
+            guarded: boolean;
+            /** Id */
+            id: string;
+            /** Prompt */
+            prompt: string;
+            /** Retired At */
+            retired_at?: string | null;
+            /** Set At */
+            set_at: string;
+            /** Set By */
+            set_by: string;
+            /** Version */
+            version: number;
         };
         /** TokenCount */
         TokenCount: {
@@ -6414,6 +6594,55 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    applicationSystemPrompts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemPromptHistory"];
                 };
             };
             /** @description Unauthorized */
@@ -8176,6 +8405,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
         };
     };
     listMcpServers: {
@@ -8502,6 +8740,55 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    portHealth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortHealth"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8949,6 +9236,24 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Locked */
+            423: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10369,7 +10674,7 @@ export interface operations {
                     "application/json": components["schemas"]["ClaimResponse"];
                 };
             };
-            /** @description Nothing to claim */
+            /** @description Nothing to claim, or the estate is locked down (`x-lockdown: on`) */
             204: {
                 headers: {
                     [name: string]: unknown;

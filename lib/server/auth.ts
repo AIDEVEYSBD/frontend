@@ -6,6 +6,7 @@ import { LOGIN_COOKIE, SESSION_COOKIE, readCookie, readSessionCookie, sign, veri
 import { PUBLIC_ORIGIN } from "@/lib/site";
 import { CURRENT_USER } from "@/lib/user";
 import { permissionsFor, type Permission } from "@/lib/permissions";
+import { groupsClaimName, groupsOverage, refreshedGroups, sessionGroups } from "@/lib/sso-groups";
 
 /**
  * Sign-in, sessions and the person behind a request.
@@ -20,6 +21,10 @@ import { permissionsFor, type Permission } from "@/lib/permissions";
  * AUTOX_CLIENT_ID, AUTOX_CLIENT_SECRET and AUTH_SECRET switches sign-in on
  * with no other change. Nothing here caches an allow or deny verdict beyond
  * the token it came from: app roles are re-read on every refresh.
+ *
+ * The session also keeps the identity provider's group claims (`groups`,
+ * or the claim AUTH_GROUPS_CLAIM names; lib/sso-groups.ts), which the
+ * backend reads beside the roles when a gate's approvers are checked.
  */
 
 export const ISSUER = (process.env.AUTOX_ISSUER ?? "https://sso.autogrc.cloud").replace(/\/+$/, "");
@@ -58,20 +63,21 @@ export function provider(): Promise<oidc.Configuration> {
 }
 
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
-async function appRolesFrom(accessToken: string): Promise<{ appRoles: string[]; roles: string[]; jwt: boolean }> {
+async function appRolesFrom(accessToken: string): Promise<{ appRoles: string[]; roles: string[]; jwt: boolean; claims: Record<string, unknown> | null }> {
   // Opaque tokens are not JWTs; the guide says that is the symptom of the
   // resource indicator having reached only one leg. Recorded, not fatal.
   try {
     decodeJwt(accessToken);
   } catch {
-    return { appRoles: [], roles: [], jwt: false };
+    return { appRoles: [], roles: [], jwt: false, claims: null };
   }
   const cfg = await provider();
   const jwksUri = cfg.serverMetadata().jwks_uri;
   if (!jwks && jwksUri) jwks = createRemoteJWKSet(new URL(jwksUri));
   const { payload } = await jwtVerify(accessToken, jwks!, { issuer: ISSUER, audience: RESOURCE });
   const arr = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
-  return { appRoles: arr(payload["autox:app_roles"]), roles: arr(payload["autox:roles"]), jwt: true };
+  // The verified payload comes back too: a provider may carry the group claims on the access token rather than the ID token.
+  return { appRoles: arr(payload["autox:app_roles"]), roles: arr(payload["autox:roles"]), jwt: true, claims: payload as Record<string, unknown> };
 }
 
 /* ── events ── */
@@ -123,6 +129,8 @@ export interface Session {
   isEy: boolean;
   roles: string[];
   appRoles: string[];
+  /** The identity provider's group claims, kept on the session row; roles for a gate's approvers, as app roles are. */
+  groups: string[];
   permissions: Permission[];
   demoDefaultApplied: boolean;
   disabled: boolean;
@@ -150,6 +158,7 @@ function localSession(): Session {
     isEy: true,
     roles: [],
     appRoles: [role],
+    groups: [],
     permissions: permissionsFor([role]),
     demoDefaultApplied: false,
     disabled: false,
@@ -174,7 +183,7 @@ export function clearSessionCookie(): string {
 
 interface SessionRow extends Record<string, unknown> {
   id: string; sub: string; id_token: string; access_token: string; access_expires_at: string; refresh_token: string | null;
-  roles: string[]; app_roles: string[]; expires_at: string; name: string; email: string; org_type: string; is_ey_employee: boolean; disabled_at: string | null;
+  roles: string[]; app_roles: string[]; groups?: string[]; expires_at: string; name: string; email: string; org_type: string; is_ey_employee: boolean; disabled_at: string | null;
 }
 
 /**
@@ -201,6 +210,7 @@ function toSession(row: SessionRow, reauth = false): Session {
     isEy: row.is_ey_employee,
     roles: Array.isArray(row.roles) ? row.roles : [],
     appRoles,
+    groups: Array.isArray(row.groups) ? row.groups.map(String) : [],
     permissions: permissionsFor(appRoles, defaultRole()),
     demoDefaultApplied: appRoles.length === 0,
     disabled: Boolean(row.disabled_at),
@@ -212,7 +222,7 @@ function toSession(row: SessionRow, reauth = false): Session {
 
 async function loadRow(id: string): Promise<SessionRow | null> {
   const rows = await query<SessionRow>(
-    `SELECT s.id, s.sub, s.id_token, s.access_token, s.access_expires_at, s.refresh_token, s.roles, s.app_roles, s.expires_at,
+    `SELECT s.id, s.sub, s.id_token, s.access_token, s.access_expires_at, s.refresh_token, s.roles, s.app_roles, s.groups, s.expires_at,
             u.name, u.email, u.org_type, u.is_ey_employee, u.disabled_at
        FROM sessions s JOIN users u ON u.sub = s.sub WHERE s.id = $1 AND s.expires_at > now()`,
     [id],
@@ -243,12 +253,14 @@ async function refreshRow(row: SessionRow): Promise<SessionRow | null> {
     const cfg = await provider();
     const tokens = await oidc.refreshTokenGrant(cfg, fresh.refresh_token ?? row.refresh_token, { resource: RESOURCE });
     const claims = tokens.claims();
-    const { appRoles, roles } = await appRolesFrom(tokens.access_token);
+    const { appRoles, roles, claims: accessClaims } = await appRolesFrom(tokens.access_token);
     const idRoles = Array.isArray(claims?.["autox:roles"]) ? (claims!["autox:roles"] as unknown[]).map(String) : roles;
+    // Groups as the new tokens carry them; neither carrying the claim keeps what sign-in stored.
+    const groups = refreshedGroups(claims as Record<string, unknown> | undefined, accessClaims, groupsClaimName());
     const expires = new Date(Date.now() + (tokens.expiresIn() ?? 600) * 1000);
     await query(
-      `UPDATE sessions SET access_token=$2, access_expires_at=$3, refresh_token=COALESCE($4, refresh_token), id_token=COALESCE($5, id_token), roles=$6, app_roles=$7, last_seen=now() WHERE id=$1`,
-      [row.id, tokens.access_token, expires.toISOString(), tokens.refresh_token ?? null, tokens.id_token ?? null, JSON.stringify(idRoles), JSON.stringify(appRoles)],
+      `UPDATE sessions SET access_token=$2, access_expires_at=$3, refresh_token=COALESCE($4, refresh_token), id_token=COALESCE($5, id_token), roles=$6, app_roles=$7, groups=COALESCE($8::jsonb, groups), last_seen=now() WHERE id=$1`,
+      [row.id, tokens.access_token, expires.toISOString(), tokens.refresh_token ?? null, tokens.id_token ?? null, JSON.stringify(idRoles), JSON.stringify(appRoles), groups === null ? null : JSON.stringify(groups)],
     );
     await query("UPDATE users SET last_roles=$2, last_app_roles=$3, last_seen=now() WHERE sub=$1", [row.sub, JSON.stringify(idRoles), JSON.stringify(appRoles)]);
     await query("COMMIT");
@@ -396,15 +408,23 @@ export async function provision(c: IdClaims): Promise<void> {
   );
 }
 
-export async function createSession(c: IdClaims, tokens: { id_token: string; access_token: string; refresh_token?: string; expires_in?: number }): Promise<{ id: string; expiresAt: Date; appRoles: string[]; jwt: boolean }> {
+export async function createSession(
+  c: IdClaims,
+  tokens: { id_token: string; access_token: string; refresh_token?: string; expires_in?: number },
+): Promise<{ id: string; expiresAt: Date; appRoles: string[]; jwt: boolean; groups: string[]; groupsClaim: string; groupsOverage: boolean }> {
   const id = randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + SESSION_HOURS * 3600 * 1000);
-  const { appRoles, roles, jwt } = await appRolesFrom(tokens.access_token).catch(() => ({ appRoles: [] as string[], roles: [] as string[], jwt: false }));
+  const { appRoles, roles, jwt, claims: accessClaims } = await appRolesFrom(tokens.access_token).catch(() => ({ appRoles: [] as string[], roles: [] as string[], jwt: false, claims: null }));
   const idRoles = Array.isArray(c["autox:roles"]) ? c["autox:roles"].map(String) : roles;
+  // Role routing (plan L5): the provider's group claims, from either token, beside the roles; roles and app roles stay as they are.
+  const claim = groupsClaimName();
+  const idClaims = c as unknown as Record<string, unknown>;
+  const groups = sessionGroups(idClaims, accessClaims, claim);
+  const overage = groupsOverage(idClaims, claim) || groupsOverage(accessClaims, claim);
   await query(
-    `INSERT INTO sessions (id, sub, id_token, access_token, access_expires_at, refresh_token, roles, app_roles, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-    [id, c.sub, tokens.id_token, tokens.access_token, new Date(Date.now() + (tokens.expires_in ?? 600) * 1000).toISOString(), tokens.refresh_token ?? null, JSON.stringify(idRoles), JSON.stringify(appRoles), expiresAt.toISOString()],
+    `INSERT INTO sessions (id, sub, id_token, access_token, access_expires_at, refresh_token, roles, app_roles, groups, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+    [id, c.sub, tokens.id_token, tokens.access_token, new Date(Date.now() + (tokens.expires_in ?? 600) * 1000).toISOString(), tokens.refresh_token ?? null, JSON.stringify(idRoles), JSON.stringify(appRoles), JSON.stringify(groups), expiresAt.toISOString()],
   );
   await query("UPDATE users SET last_app_roles = $2 WHERE sub = $1", [c.sub, JSON.stringify(appRoles)]);
-  return { id, expiresAt, appRoles, jwt };
+  return { id, expiresAt, appRoles, jwt, groups, groupsClaim: claim, groupsOverage: overage };
 }

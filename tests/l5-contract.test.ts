@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { api } from "@/lib/api/client";
+import { EscalationHistoryList, GateMeta } from "@/components/gate-form";
+import { runTool } from "@/lib/server/console-tools";
 import * as l5 from "@/lib/api/l5";
-import { allowedVerdicts, chainOf, declaresNote, HOLDS_LABEL, orderAttention, refusalErrors, URGENT_SEVERITY, validateForm, validateVerdicts } from "@/lib/gates";
+import { allowedVerdicts, chainOf, declaresNote, escalationPath, historyOf, HOLDS_LABEL, lastMoved, orderAttention, refusalErrors, stepLine, URGENT_SEVERITY, validateForm, validateVerdicts } from "@/lib/gates";
 import { PUBLIC_ORIGIN } from "@/lib/site";
 
 /**
@@ -499,7 +504,25 @@ const FX: Record<string, Fixture> = {
       ],
       "count": 4
     }
-  }
+  },
+  // The close-out after L6 (backend 91a518c), captured from the backend's own app
+  // (MemoryRegistry, the scheduler's tick on a form gate twice past its deadline,
+  // a gate escalated before the history was kept, a port whose check throws, a
+  // pause and a lockdown, a start and a trigger during it), trimmed.
+  "approvals_escalated": {"status": 200, "body": {"pending": [{"run": "formed-2026-10-21T08-23-23-593e", "agent": "formed", "node": "review", "kind": "approval", "asks": "Risk review", "approvers": ["cro"], "original_approvers": ["risk-lead"], "escalation_history": [{"at": "2026-10-21T08:23:23.568Z", "from": ["risk-lead"], "to": "vp-risk", "reason": "risk-lead did not answer by the deadline (2026-10-21T08:23:22Z)", "by": "scheduler"}, {"at": "2026-10-21T08:23:23.570Z", "from": ["vp-risk"], "to": "cro", "reason": "vp-risk did not answer by the deadline (2026-10-21T08:23:22Z)", "by": "scheduler"}], "chain": ["vp-risk", "cro"], "escalations": 2, "deadline": "2026-10-21T09:23:23Z", "on_timeout": "escalate", "timeout_s": 3600.0, "waiting_since": "2026-10-21T08:23:23.570Z", "shape": "form", "fields": [{"name": "residual_risk", "kind": "choice", "required": true, "choices": ["low", "medium", "high"]}, {"name": "note", "kind": "string"}], "items": [], "verdicts": [], "transitions": {}, "external": true, "source": "console", "next": {"approve": "the decision is emitted by review and the run ends done with it as the result", "refuse": "the run ends failed: refused by the signer, with the note on the journal"}, "job": null, "warning": "", "evidence": {"decided": {"verdict": "benign"}, "presented": {}, "tainted_by": [], "trail": []}}, {"run": "aegis-old-1", "agent": "aegis", "node": "release", "kind": "approval", "asks": "Release?", "approvers": ["soc-manager"], "original_approvers": ["soc-lead"], "escalation_history": [{"at": null, "from": ["soc-lead"], "to": "soc-manager", "reason": "soc-lead did not answer release in time; it now waits on soc-manager (step 1 of 2), by scheduler", "by": "scheduler"}], "chain": ["soc-manager", "ciso"], "escalations": 1, "deadline": null, "on_timeout": "escalate", "timeout_s": 3600.0, "waiting_since": "2026-10-21T08:23:23.571Z", "shape": "decision", "fields": [], "items": [], "verdicts": [], "transitions": {}, "external": false, "source": "sdk", "next": {"approve": "the answer is written onto the record; the agent polling for it carries on", "refuse": "the answer is written onto the record and the run is closed failed; the agent polling for it stops"}, "job": null, "warning": "", "evidence": {"decided": {}, "presented": {}, "tainted_by": [], "trail": []}}], "count": 2}},
+  "run_escalated": {"status": 200, "body": {"id": "formed-2026-10-21T08-23-23-593e", "system": "formed", "state": "suspended", "suspension": {"kind": "approval", "node": "review", "approvers": ["cro"], "original_approvers": ["risk-lead"], "escalation_history": [{"at": "2026-10-21T08:23:23.568Z", "from": ["risk-lead"], "to": "vp-risk", "reason": "risk-lead did not answer by the deadline (2026-10-21T08:23:22Z)", "by": "scheduler"}, {"at": "2026-10-21T08:23:23.570Z", "from": ["vp-risk"], "to": "cro", "reason": "vp-risk did not answer by the deadline (2026-10-21T08:23:22Z)", "by": "scheduler"}], "prompt": "Risk review", "timeout_s": 3600.0, "on_timeout": "escalate", "chain": ["vp-risk", "cro"], "escalations": 2, "deadline": "2026-10-21T09:23:23Z", "shape": "form", "fields": [{"name": "residual_risk", "kind": "choice", "required": true, "choices": ["low", "medium", "high"]}, {"name": "note", "kind": "string"}], "external": true}}},
+  "port_store": {"status": 200, "body": {"port": "store", "implementation": "local", "configured": true, "ok": true, "region": "", "detail": {"root": "/srv/agentfactory/workspace"}, "checked_at": "2026-10-21T08:23:23.586Z"}},
+  "port_telemetry": {"status": 200, "body": {"port": "telemetry", "implementation": "local", "configured": false, "ok": null, "region": "", "detail": {"detail": "not configured: nothing to check"}, "checked_at": "2026-10-21T08:23:23.587Z"}},
+  "port_billing_broken": {"status": 200, "body": {"port": "billing", "implementation": "local", "configured": true, "ok": false, "region": "", "detail": {"detail": "RuntimeError: bucket gone"}, "checked_at": "2026-10-21T08:23:23.593Z"}},
+  "port_region": {"status": 404, "body": {"error": "no port \"region\"; the ports are identity, secrets, store, provider, screener, telemetry, billing"}},
+  "fleet_pause_audited": {"status": 200, "body": {"action": "pause", "agents": ["tiny"], "reason": "connector incident INC-42", "by": "Chandresh Singh", "at": "2026-10-21T08:23:23.617Z", "killed": [], "paused": {"tiny": {"mode": "pause", "reason": "connector incident INC-42", "by": "Chandresh Singh", "at": "2026-10-21T08:23:23.617Z"}}, "audit_id": 9}},
+  "lockdown_on": {"status": 200, "body": {"on": true, "reason": "credential leak under investigation", "by": "Chandresh Singh", "at": "2026-10-21T08:23:23.620Z", "controls": ["queue: no worker claims a job while it lasts; the queue drains as the runs in flight finish", "doors: the trigger, webhook and cron doors still enqueue, so no event is lost (the answer says the lockdown holds the job); POST /api/runs answers 423", "gates: every tool call above read in a run resumed while it lasts waits for a human (control lockdown), as in a job claimed as the switch landed", "sinks: every call to a sink in those runs is held the same way, whatever its risk"], "audit_id": 13}},
+  "fleet_state_locked": {"status": 200, "body": {"paused": {}, "lockdown": {"on": true, "reason": "credential leak under investigation", "by": "Chandresh Singh", "at": "2026-10-21T08:23:23.620Z", "controls": ["queue: no worker claims a job while it lasts; the queue drains as the runs in flight finish", "doors: the trigger, webhook and cron doors still enqueue, so no event is lost (the answer says the lockdown holds the job); POST /api/runs answers 423", "gates: every tool call above read in a run resumed while it lasts waits for a human (control lockdown), as in a job claimed as the switch landed", "sinks: every call to a sink in those runs is held the same way, whatever its risk"], "audit_id": 13}, "live": {}}},
+  "runs_start_locked": {"status": 423, "body": {"error": "the estate is locked down: credential leak under investigation (by Chandresh Singh, 2026-10-21T08:23:23.620Z). Nothing starts until it is lifted with POST /api/lockdown {\"on\": false}.", "lockdown": {"on": true, "reason": "credential leak under investigation", "by": "Chandresh Singh", "at": "2026-10-21T08:23:23.620Z", "controls": ["queue: no worker claims a job while it lasts; the queue drains as the runs in flight finish", "doors: the trigger, webhook and cron doors still enqueue, so no event is lost (the answer says the lockdown holds the job); POST /api/runs answers 423", "gates: every tool call above read in a run resumed while it lasts waits for a human (control lockdown), as in a job claimed as the switch landed", "sinks: every call to a sink in those runs is held the same way, whatever its risk"], "audit_id": 13}}},
+  "trigger_locked": {"status": 202, "body": {"job": "726cd37f-b6e8-4785-b0a9-477b8315a4f2", "agent": "tiny", "status": "queued", "external_id": "alert-1", "source": "local", "attempts": 0, "max_attempts": 3, "run_id": null, "trace_id": "", "result": null, "error": null, "dead": false, "claimed_by": null, "lease_until": null, "created_at": "2026-10-21T08:23:23.624Z", "started_at": null, "finished_at": null, "status_url": "/api/trigger/tiny/jobs/726cd37f-b6e8-4785-b0a9-477b8315a4f2", "run_url": null, "duplicate": false, "retried": false, "note": "the estate is locked down (credential leak under investigation; by Chandresh Singh): the job is queued and no worker claims it until the lockdown is lifted", "lockdown": {"reason": "credential leak under investigation", "by": "Chandresh Singh", "at": "2026-10-21T08:23:23.620Z", "says": "the estate is locked down (credential leak under investigation; by Chandresh Singh): the job is queued and no worker claims it until the lockdown is lifted"}}},
+  "trigger_open": {"status": 202, "body": {"job": "887a1daa-bbea-42f7-8353-cc929bcaee81", "agent": "tiny", "status": "queued", "external_id": null, "source": "local", "attempts": 0, "max_attempts": 3, "run_id": null, "trace_id": "", "result": null, "error": null, "dead": false, "claimed_by": null, "lease_until": null, "created_at": "2026-10-21T08:23:23.627Z", "started_at": null, "finished_at": null, "status_url": "/api/trigger/tiny/jobs/887a1daa-bbea-42f7-8353-cc929bcaee81", "run_url": null, "duplicate": false, "retried": false, "note": null, "lockdown": null}},
+  "lockdown_lifted": {"status": 200, "body": {"on": false, "reason": "contained", "by": "Chandresh Singh", "at": "2026-10-21T08:23:23.626Z", "controls": [], "audit_id": 18}},
+  "attention_with_health": {"status": 200, "body": {"items": [{"id": "health:billing", "kind": "health", "severity": 8, "age_s": 0.0, "rank": 8.0, "title": "the billing port is failing", "detail": "RuntimeError: bucket gone", "agent": "", "run": "", "job": "", "since": "", "deadline": null, "holds": "", "action": {"method": "GET", "path": "/api/ports/billing/health", "body": null, "says": "fix the billing port's configuration (PORT_BILLING and what it needs), then read its health again here"}}], "count": 1}},
 };
 
 function fx(name: string): Fixture {
@@ -821,6 +844,8 @@ describe("fleet and lockdown", () => {
       at: "2026-10-21T06:42:44.141Z",
       killed: [],
       paused: { tiny: { mode: "pause", reason: "connector incident INC-42", by: "Chandresh Singh", at: "2026-10-21T06:42:44.141Z" } },
+      // Captured before the backend named the audit event it wrote; the close-out fixtures below carry it.
+      audit_id: null,
     });
     const k = await l5.fleet("kill", ["twostep"], "runaway");
     expect(k.killed).toEqual(["twostep-2026-10-21T06-42-44-06v4"]);
@@ -839,18 +864,18 @@ describe("fleet and lockdown", () => {
     expect(s.lockdown).toMatchObject({ on: true, reason: "credential leak under investigation", by: "Chandresh Singh" });
     expect(s.lockdown.controls).toHaveLength(4);
     expect(s.live).toEqual({ twostep: 1 });
-    expect(await l5.getFleet()).toEqual({ paused: {}, lockdown: { on: false, reason: "", by: "", at: null, controls: [] }, live: {} });
+    expect(await l5.getFleet()).toEqual({ paused: {}, lockdown: { on: false, reason: "", by: "", at: null, controls: [], audit_id: null }, live: {} });
   });
 
   it("the lockdown: off, on with its controls, a reason required, lifted with why", async () => {
     const calls = serve("lockdown_get_off", "lockdown_post_on", "lockdown_400", "lockdown_post_off");
-    expect(await l5.getLockdown()).toEqual({ on: false, reason: "", by: "", at: null, controls: [] });
+    expect(await l5.getLockdown()).toEqual({ on: false, reason: "", by: "", at: null, controls: [], audit_id: null });
     const on = await l5.setLockdown(true, "credential leak under investigation");
     expect(calls[1].body).toEqual({ on: true, reason: "credential leak under investigation" });
     expect(on).toMatchObject({ on: true, reason: "credential leak under investigation", by: "Chandresh Singh", at: "2026-10-21T06:42:44.148Z" });
     expect(on.controls[3]).toBe("doors: the runs, trigger and webhook doors still accept work; it runs gated");
     expect((await refused(l5.setLockdown(true, ""))).message).toBe("a lockdown needs a reason");
-    expect(await l5.setLockdown(false, "contained")).toEqual({ on: false, reason: "contained", by: "Chandresh Singh", at: "2026-10-21T06:42:44.179Z", controls: [] });
+    expect(await l5.setLockdown(false, "contained")).toEqual({ on: false, reason: "contained", by: "Chandresh Singh", at: "2026-10-21T06:42:44.179Z", controls: [], audit_id: null });
   });
 
   it("the fleet buttons say what the backend does: a pause kills what is in flight, a kill does not pause", () => {
@@ -872,5 +897,136 @@ describe("GET /api/runs rows", () => {
     expect(by["tooling"]).toMatchObject({ step: "decide", stuck: true, waiting_on: "web.fetch", step_p95_ms: 5000 });
     expect(by["newcomer"]).toMatchObject({ step: "triage", stuck: false, waiting_on: "model", step_p95_ms: null });
     expect(by["past-0"]).toMatchObject({ state: "done", step: "", stuck: false, waiting_on: "", step_p95_ms: null });
+  });
+});
+
+/* ═══════════════════ the close-out after L6 (backend 91a518c) ═══════════════════ */
+
+/** Markup as text: what a reader sees, tags dropped. */
+const textOf = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
+describe("escalation history: where a gate has been", () => {
+  it("GET /api/approvals: who it first waited on, every step with when, why and by whom, oldest first", async () => {
+    serve("approvals_escalated");
+    const { pending } = await l5.listGates();
+    const g = pending.find((x) => x.agent === "formed")!;
+    expect(g).toMatchObject({ approvers: ["cro"], original_approvers: ["risk-lead"], escalations: 2, chain: ["vp-risk", "cro"] });
+    expect(g.escalation_history).toEqual([
+      { at: "2026-10-21T08:23:23.568Z", from: ["risk-lead"], to: "vp-risk", reason: "risk-lead did not answer by the deadline (2026-10-21T08:23:22Z)", by: "scheduler" },
+      { at: "2026-10-21T08:23:23.570Z", from: ["vp-risk"], to: "cro", reason: "vp-risk did not answer by the deadline (2026-10-21T08:23:22Z)", by: "scheduler" },
+    ]);
+    expect(historyOf(g)).toMatchObject({ first: ["risk-lead"], missing: 0, path: ["risk-lead", "vp-risk", "cro"] });
+    // The inbox row's line, and the step as the tooltip reads it.
+    expect(escalationPath(g)).toBe("risk-lead → vp-risk → cro");
+    expect(lastMoved(g)).toMatch(/^ · last moved .+: vp-risk did not answer by the deadline \(2026-10-21T08:23:22Z\)$/);
+    expect(stepLine(g.escalation_history[0])).toMatch(/risk-lead → vp-risk · risk-lead did not answer by the deadline .* · by scheduler$/);
+    // The dialog: the first approvers by name in the chain, and the history beneath it.
+    const html = textOf(renderToStaticMarkup(createElement(GateMeta, { gate: g, now: Date.parse("2026-10-21T08:30:00Z") })));
+    expect(html).toContain("Escalation history · waited first on risk-lead");
+    expect(html).toContain("vp-risk did not answer by the deadline (2026-10-21T08:23:22Z)");
+    expect(html).toContain("by scheduler");
+    expect(html.match(/risk-lead/g)!.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("a gate escalated before the time was kept: the step without a time, the first approvers from its journal", async () => {
+    serve("approvals_escalated");
+    const { pending } = await l5.listGates();
+    const g = pending.find((x) => x.run === "aegis-old-1")!;
+    expect(g).toMatchObject({ source: "sdk", original_approvers: ["soc-lead"], approvers: ["soc-manager"], escalations: 1 });
+    expect(g.escalation_history).toEqual([{ at: null, from: ["soc-lead"], to: "soc-manager", reason: "soc-lead did not answer release in time; it now waits on soc-manager (step 1 of 2), by scheduler", by: "scheduler" }]);
+    expect(stepLine(g.escalation_history[0])).toMatch(/^time not recorded · soc-lead → soc-manager/);
+    const html = textOf(renderToStaticMarkup(createElement(EscalationHistoryList, { gate: g })));
+    expect(html).toContain("time not recorded");
+    expect(html).toContain("waited first on soc-lead");
+    // An older record whose journal lost the step: the count stands, the names are not guessed.
+    const lost = { ...g, original_approvers: [], escalation_history: [] };
+    expect(historyOf(lost)).toMatchObject({ first: [], missing: 1 });
+    expect(textOf(renderToStaticMarkup(createElement(EscalationHistoryList, { gate: lost })))).toContain("1 earlier step counted on the gate but not on its record");
+    // A gate that never moved shows no history at all.
+    expect(renderToStaticMarkup(createElement(EscalationHistoryList, { gate: { ...g, escalations: 0, original_approvers: ["soc-lead"], escalation_history: [] } }))).toBe("");
+  });
+
+  it("GET /api/runs/{id}: the suspension carries the same history, for a gate the inbox has not listed yet", () => {
+    const run = fx("run_escalated").body as { id: string; system: string; suspension: Record<string, unknown> };
+    const g = l5.gateFromSuspension(run.id, run.system, run.suspension);
+    expect(g.original_approvers).toEqual(["risk-lead"]);
+    expect(g.escalation_history.map((s) => [s.from, s.to, s.by])).toEqual([[["risk-lead"], "vp-risk", "scheduler"], [["vp-risk"], "cro", "scheduler"]]);
+  });
+});
+
+describe("a port's own health door", () => {
+  it("healthy, nothing to check, failing; an unknown port names the ports there are", async () => {
+    const calls = serve("port_store", "port_telemetry", "port_billing_broken", "port_region");
+    const store = await l5.readPortHealth("store");
+    expect(store).toEqual({ port: "store", implementation: "local", configured: true, ok: true, region: "", detail: { root: "/srv/agentfactory/workspace" }, checked_at: "2026-10-21T08:23:23.586Z" });
+    expect(l5.portHealthLine(store)).toBe("The store port (local) reads healthy: root /srv/agentfactory/workspace.");
+    const telemetry = await l5.readPortHealth("telemetry");
+    expect([telemetry.configured, telemetry.ok]).toEqual([false, null]);
+    expect(l5.portHealthLine(telemetry)).toBe("The telemetry port (local) reads not configured: not configured: nothing to check.");
+    const billing = await l5.readPortHealth("billing");
+    expect(l5.portHealthLine(billing)).toBe("The billing port (local) reads failing: RuntimeError: bucket gone.");
+    const unknown = await refused(l5.readPortHealth("region"));
+    expect([unknown.status, unknown.message]).toEqual([404, 'no port "region"; the ports are identity, secrets, store, provider, screener, telemetry, billing']);
+    expect(calls.map((c) => c.url)).toEqual(["/api/ports/store/health", "/api/ports/telemetry/health", "/api/ports/billing/health", "/api/ports/region/health"]);
+  });
+
+  it("the attention row's health action reads that port's door and brings its answer back", async () => {
+    serve("attention_with_health");
+    const [row] = await l5.listAttention();
+    expect(row).toMatchObject({ id: "health:billing", kind: "health", title: "the billing port is failing", detail: "RuntimeError: bucket gone", severity: 8 });
+    expect(row.action).toMatchObject({ kind: "check", method: "GET", path: "/api/ports/billing/health" });
+    expect(l5.isPortHealthPath(row.action.path)).toBe(true);
+    const calls = serve("port_billing_broken");
+    const cleared = await l5.clearAttention(row);
+    expect(calls).toEqual([{ url: "/api/ports/billing/health", method: "GET", body: undefined }]);
+    expect(cleared.health).toMatchObject({ port: "billing", ok: false, detail: { detail: "RuntimeError: bucket gone" } });
+  });
+});
+
+describe("fleet and lockdown name their audit event", () => {
+  it("a pause, the lockdown set and lifted, and the fleet read: each with the id on the IAM trail", async () => {
+    serve("fleet_pause_audited", "lockdown_on", "fleet_state_locked", "lockdown_lifted");
+    const paused = await l5.fleet("pause", ["tiny"], "connector incident INC-42");
+    expect(paused.audit_id).toBe(9);
+    expect(l5.auditLine(paused.audit_id)).toBe(" · audit event #9");
+    const on = await l5.setLockdown(true, "credential leak under investigation");
+    expect(on).toMatchObject({ on: true, audit_id: 13 });
+    // The lockdown drains now: no claims, no starts; the doors still take work.
+    expect(on.controls[0]).toMatch(/^queue: no worker claims a job while it lasts/);
+    expect(on.controls[1]).toContain("POST /api/runs answers 423");
+    expect((await l5.getFleet()).lockdown.audit_id).toBe(13);
+    const lifted = await l5.setLockdown(false, "contained");
+    expect(lifted).toMatchObject({ on: false, reason: "contained", audit_id: 18 });
+    expect(l5.auditLine(null)).toBe("");
+  });
+
+  it("a start during a lockdown: 423 with the lockdown, said where the run was started", async () => {
+    const { data, error, response } = await api.POST("/api/runs", {
+      body: { agent: "tiny", input: { case: "C" }, model: "", provider: "scripted" },
+      baseUrl: "http://console.test",
+      fetch: async () => new Response(JSON.stringify(fx("runs_start_locked").body), { status: 423, headers: { "content-type": "application/json" } }),
+    });
+    expect(data).toBeUndefined();
+    const locked = l5.lockdownRefusalOf(response.status, error);
+    expect(locked).toMatchObject({ on: true, reason: "credential leak under investigation", by: "Chandresh Singh", at: "2026-10-21T08:23:23.620Z", audit_id: 13 });
+    const text = l5.lockdownRefusalText(locked!);
+    expect(text).toMatch(/^The estate is locked down: credential leak under investigation \(by Chandresh Singh, .+\)\. Nothing starts until the lockdown is lifted on the Control page; audit event #13\.$/);
+    // Not the door's own instructions, and nothing for any other refusal.
+    expect(text).not.toContain("POST /api/lockdown");
+    expect(l5.lockdownRefusalOf(409, error)).toBeNull();
+    expect(l5.lockdownRefusalOf(423, { error: "locked" })).toBeNull();
+  });
+
+  it("a trigger during a lockdown is queued and held; the console's trigger tool says so before anything else", async () => {
+    const held = fx("trigger_locked").body as { status: string; lockdown: { reason: string; by: string; at: string; says: string } };
+    expect(held.status).toBe("queued");
+    expect(held.lockdown).toMatchObject({ reason: "credential leak under investigation", by: "Chandresh Singh" });
+    expect(held.lockdown.says).toContain("no worker claims it until the lockdown is lifted");
+    serve("trigger_locked", "trigger_open");
+    const said = await runTool("http://console.test", "trigger_workflow", { workflow: "tiny", input: { case: "C-1" } });
+    expect(said.startsWith(`{"held_by_lockdown":${JSON.stringify(held.lockdown.says)}`)).toBe(true);
+    const open = await runTool("http://console.test", "trigger_workflow", { workflow: "tiny", input: { case: "C-3" } });
+    expect(open).not.toContain("held_by_lockdown");
+    expect(JSON.parse(open).lockdown).toBeNull();
   });
 });

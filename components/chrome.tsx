@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import { Assistant } from "./assistant";
 import { applyAccent } from "./appearance";
 import { isOpenPage } from "@/lib/route-policy";
+import { consolePath } from "@/lib/api/client";
 
 const NAV = [
   { href: "/control", label: "Control" },
@@ -49,7 +50,8 @@ export function Chrome({ children }: { children: React.ReactNode }) {
     const orig = window.fetch.bind(window);
     window.fetch = async (input, init) => {
       const res = await orig(input, init);
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      // A plain fetch names the path; the generated client (lib/api/client.ts) sends a Request, whose URL is absolute on this origin.
+      const url = consolePath(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
       if ((res.status === 403 || res.status === 401) && url.startsWith("/api/") && !url.startsWith("/api/auth/")) {
         try {
           const j = (await res.clone().json()) as { error?: string; reauth?: boolean };

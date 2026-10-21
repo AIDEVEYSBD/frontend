@@ -191,7 +191,12 @@ export async function runTool(origin: string, name: string, args: Record<string,
           headers: auth ? { authorization: auth } : {},
           body: JSON.stringify({ input: args.input ?? {}, external_id: args.external_id, source: "mcp" }),
         });
-        return clip(d);
+        // During a lockdown the door still enqueues, and its answer carries
+        // `lockdown: {reason, by, at, says}`: the job waits on the queue and
+        // no worker claims it until the lockdown is lifted. Said first, so
+        // the caller cannot read the 202 as the run having started.
+        const hold = d && typeof d === "object" ? (d as { lockdown?: { says?: unknown } | null }).lockdown : null;
+        return clip(hold && typeof hold === "object" ? { held_by_lockdown: String(hold.says ?? "the estate is locked down; the job waits on the queue"), ...(d as Record<string, unknown>) } : d);
       }
       default:
         return JSON.stringify({ error: `no such tool ${name}` });

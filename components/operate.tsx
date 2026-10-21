@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Status } from "./ui";
 import { Field, Switch, Textarea } from "./forms";
-import { fleet, FLEET_ACTIONS, getFleet, getLockdown, setLockdown, type FleetAction, type FleetResult, type FleetState, type LockdownState } from "@/lib/api/l5";
+import { auditLine, fleet, FLEET_ACTIONS, getFleet, getLockdown, setLockdown, type FleetAction, type FleetResult, type FleetState, type LockdownState } from "@/lib/api/l5";
 import { soon } from "@/lib/soon";
 
 /**
@@ -219,7 +219,7 @@ export function LockdownSwitch({ state, onChanged, onNotice }: { state: Lockdown
     try {
       const s = await setLockdown(ask, reason);
       onChanged(s);
-      onNotice(ask ? "Lockdown on: every call above read and every sink waits for a person" : "Lockdown lifted");
+      onNotice(`${ask ? "Lockdown on: nothing new starts or is claimed until it is lifted" : "Lockdown lifted"}${auditLine(s.audit_id)}`);
       setAsk(null);
     } catch (e) {
       onNotice(`Lockdown refused: ${(e as Error).message.slice(0, 140)}`);
@@ -235,8 +235,8 @@ export function LockdownSwitch({ state, onChanged, onNotice }: { state: Lockdown
           title={ask ? "Lock the estate down?" : "Lift the lockdown?"}
           what={
             ask
-              ? "In every new or resumed run, each tool call above read waits for a person and every call to a sink is held, until this is lifted. The runs, trigger and webhook doors keep accepting work, and workers claim it locked down: it runs gated. Runs already in flight carry on as they started. One audit event names the controls."
-              : `Gates and sinks return to their specs for new and resumed runs. The lockdown was set${state?.by ? ` by ${state.by}` : ""}${state?.reason ? ` because: ${state.reason}` : ""}.`
+              ? "Until this is lifted, no worker claims queued work and no run starts (a start is refused). The trigger, webhook and cron doors keep accepting work, which waits on the queue. A run resumed meanwhile waits for a person at every tool call above read and every sink. Runs already in flight finish as they started, so the queue drains. One audit event names the controls."
+              : `Workers claim the queue again, runs start, and gates and sinks return to their specs. The lockdown was set${state?.by ? ` by ${state.by}` : ""}${state?.reason ? ` because: ${state.reason}` : ""}.`
           }
           confirm={ask ? "Lock down" : "Lift lockdown"}
           tone={ask ? "err" : "ink"}
@@ -259,10 +259,11 @@ export function LockdownBanner({ state }: { state: LockdownState | null }) {
       <Status tone="err">Lockdown</Status>
       <span className="text-[13px] font-medium text-fg">The estate is locked down</span>
       <span className="min-w-0 text-[12.5px] leading-[1.5] text-dim">
-        Every call above read in a new or resumed run waits for a person and every sink is held; work is still accepted and runs gated.
+        Nothing new starts or is claimed; work is still accepted and waits on the queue, and a resumed run waits for a person above read and at every sink.
         {state.reason ? ` Reason: ${state.reason}.` : ""}
         {state.by ? ` Set by ${state.by}` : ""}
         {state.at ? ` at ${new Date(state.at).toLocaleString()}` : ""}
+        {state.audit_id !== null ? ` · audit event #${state.audit_id}` : ""}
       </span>
       {state.controls.length > 0 && (
         <ul className="flex w-full flex-col gap-0.5 text-[11.5px] leading-[1.5] text-faint">

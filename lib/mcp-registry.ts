@@ -277,6 +277,8 @@ export function formProblem(f: AddForm): string {
     if (f.network.trim().toLowerCase() === "host") return "An isolated server never joins the host's network; name a network set up for it, or leave it blank for none.";
   } else {
     if (!/^https?:\/\/\S+$/i.test(f.url.trim())) return "Give the URL the server answers on, starting https://.";
+    // The backend refuses userinfo in a URL (a URL ends up in logs); a credential belongs in a header, as a vault reference.
+    if (/^https?:\/\/[^/\s?#]*@/i.test(f.url.trim())) return "A URL carries no credentials: put them in a header, ideally as a vault reference such as Authorization: Bearer ${secret:my-token}.";
     const bad = lineNames(f.headers, ":=").find((l) => !l.split || !HEADER_NAME.test(l.name));
     if (bad) return bad.split ? `"${bad.name}" is not a header name.` : `"${bad.name}" needs a value: one Name: value per line.`;
   }

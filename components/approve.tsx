@@ -7,7 +7,7 @@ import { Pick } from "./select";
 import { CURRENT_USER } from "@/lib/user";
 import { useSession, signerName } from "@/lib/use-session";
 import { answerGate, answerGates, DoorError, listGates, mintLink, type Answer, type AnswerResult, type Gate, type MintedLink } from "@/lib/api/l5";
-import { batchable, declaresNote, emptyForm, gateAccess, refusalErrors, validateForm, validateVerdicts, type Access, type FormState } from "@/lib/gates";
+import { SAMPLE_SIZE, batchCount, batchable, declaresNote, emptyForm, gateAccess, nextSample, refusalErrors, sampleGates, validateForm, validateVerdicts, type Access, type FormState } from "@/lib/gates";
 import { Deadline, EvidencePanel, GateFields, GateMeta, ShapeTag, SignerLine, VerdictTable, useNow } from "./gate-form";
 
 /**
@@ -25,7 +25,11 @@ import { Deadline, EvidencePanel, GateFields, GateMeta, ShapeTag, SignerLine, Ve
  * /api/approvals/{run}` (lib/api/l5.ts), which validates it against the
  * shape and resumes the run, or writes it onto an attached agent's record.
  * Several gates of one agent and one shape can be answered together through
- * the batch door, with any of them answered differently on its own. A gate
+ * the batch door, with any of them answered differently on its own. Before
+ * a batch is answered, a sample of its gates is shown with their evidence
+ * (three picked at random, or all of them when there are three or fewer,
+ * and another sample on request), and the dialog says how many gates the
+ * one answer goes to and how many are answered on their own. A gate
  * whose spec allows it can be handed to someone outside the firm as a
  * signed link, which the console shows and never sends.
  */
@@ -93,11 +97,23 @@ export function ApproveDialog({
   const now = useNow();
   const { session: me, loaded } = useSession();
   const by = signerName(me, CURRENT_USER.name);
-  const who = useMemo(() => (loaded && me ? { roles: me.roles, appRoles: me.appRoles } : null), [loaded, me]);
+  const who = useMemo(() => (loaded && me ? { roles: me.roles, appRoles: me.appRoles, groups: me.groups ?? [] } : null), [loaded, me]);
 
   const [draft, setDraft] = useState<Draft>(() => draftFor(gate));
   // Batch: which gates answer on their own, and how.
   const [overrides, setOverrides] = useState<Record<string, Draft>>({});
+  // Batch: the gates shown with their evidence before the answer goes, and every one shown so far.
+  const runs = useMemo(() => gates.map((g) => g.run), [gates]);
+  const [sample, setSample] = useState<{ runs: string[]; seen: string[] }>(() => {
+    const first = sampleGates(gates.map((g) => g.run));
+    return { runs: first, seen: first };
+  });
+  const showAnother = () =>
+    setSample((cur) => {
+      const n = nextSample(runs, cur.runs, cur.seen);
+      return { runs: n.sample, seen: n.seen };
+    });
+  const count = batchCount(runs, Object.keys(overrides), sample.runs, sample.seen);
   const [busy, setBusy] = useState<"approve" | "refuse" | "submit" | null>(null);
   const [results, setResults] = useState<AnswerResult[] | null>(null);
   /** What each run was told, for the line beside its result: "Approved", "Refused", "Submitted", "Verdicts recorded". */
@@ -230,8 +246,46 @@ export function ApproveDialog({
           )}
 
           {batch && (
+            <div className="border-b border-line pb-1">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 pt-2.5 pb-2">
+                <span className="text-[11px] font-semibold text-dim">Sample</span>
+                <span className="text-[11px] text-faint">
+                  {count.sampled === count.total ? `all ${count.total} gates, each with its evidence` : `${count.sampled} of the ${count.total} gates, picked at random, each with its evidence`}
+                  {count.seen > count.sampled ? ` · ${count.seen} of ${count.total} read in samples so far` : ""}
+                </span>
+                <span className="grow" />
+                {count.total > SAMPLE_SIZE && (
+                  <Button size="sm" variant="solid" tone="neutral" onClick={showAnother} disabled={Boolean(busy) || done}>
+                    Show another
+                  </Button>
+                )}
+              </div>
+              {sample.runs.map((run) => {
+                const g = gates.find((x) => x.run === run);
+                if (!g) return null;
+                const bare = !Object.keys(g.evidence.decided).length && !Object.keys(g.evidence.presented).length && !g.evidence.tainted_by.length && !g.evidence.trail.length;
+                return (
+                  <div key={run} className="mx-4 mb-2.5 overflow-hidden rounded-md border border-line bg-canvas">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-3 py-2">
+                      <span className="flex min-w-0 grow flex-col">
+                        <span className="truncate text-[12px] font-medium text-fg">{g.asks || g.node}</span>
+                        <Mono className="truncate text-[10px] text-faint">{g.run} · {g.node}</Mono>
+                      </span>
+                      <Deadline deadline={g.deadline} now={now} />
+                      {overrides[run] && <Tag tone="queue">on its own</Tag>}
+                    </div>
+                    <EvidencePanel evidence={g.evidence} />
+                    {g.shape === "verdicts" && <p className="px-3 py-2 text-[11px] text-faint">{g.items.length} item{g.items.length === 1 ? "" : "s"} on the register to rule on.</p>}
+                    {bare && g.shape !== "verdicts" && <p className="px-3 py-2 text-[11px] text-faint">The backend laid out no evidence for this gate; open the run to read its journal.</p>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {batch && (
             <div className="border-b border-line">
-              <span className="block px-4 pt-2.5 pb-1 text-[11px] font-semibold text-dim">Answering together</span>
+              <span className="block px-4 pt-2.5 pb-1 text-[11px] font-semibold text-dim">Answering together · {count.total} gates</span>
               {gates.map((g) => {
                 const o = overrides[g.run];
                 return (
@@ -270,7 +324,12 @@ export function ApproveDialog({
 
           <div className="flex flex-col gap-3 px-4 py-3">
             <SignerLine initials={me?.initials ?? CURRENT_USER.initials} name={by} />
-            {batch && <span className="text-[11px] text-faint">The answer below goes to every gate not answered on its own.</span>}
+            {batch && (
+              <span className="text-[11px] text-faint">
+                The answer below goes to {count.shared} of the {count.total} gates
+                {count.own ? `; ${count.own} ${count.own === 1 ? "is" : "are"} answered on ${count.own === 1 ? "its" : "their"} own` : ""}. You have read {count.seen} of them in the sample.
+              </span>
+            )}
             <GateAnswer gate={gate} draft={draft} onChange={setDraft} disabled={Boolean(busy) || done} />
           </div>
 
@@ -340,14 +399,19 @@ export function ApproveDialog({
         </div>
 
         <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t border-line px-4 py-3">
-          {gate.shape === "decision" ? (
+          {gate.shape === "decision" && batch && count.shared === 0 ? (
+            <Button size="sm" variant="solid" tone="ink" permission="approve" loading={busy === "submit"} disabled={Boolean(busy) || done || !access.ok} onClick={() => submit()}>
+              Send the {count.own} answers given on their own
+            </Button>
+          ) : gate.shape === "decision" ? (
             <>
               <Button size="sm" variant="solid" tone="ink" permission="approve" loading={busy === "approve"} disabled={Boolean(busy) || done || !access.ok} onClick={() => submit(true)}>
-                Approve
+                {batch ? `Approve ${count.shared}` : "Approve"}
               </Button>
               <Button size="sm" variant="solid" tone="err" permission="approve" loading={busy === "refuse"} disabled={Boolean(busy) || done || !access.ok} onClick={() => submit(false)}>
-                Refuse
+                {batch ? `Refuse ${count.shared}` : "Refuse"}
               </Button>
+              {batch && count.own > 0 && <span className="text-[11px] text-faint">and {count.own} on their own</span>}
             </>
           ) : (
             <Button size="sm" variant="solid" tone="ink" permission="approve" loading={busy === "submit"} disabled={Boolean(busy) || done || !access.ok} onClick={() => submit()}>

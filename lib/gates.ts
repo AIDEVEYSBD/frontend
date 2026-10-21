@@ -1,4 +1,4 @@
-import type { AttentionItem, FormAnswer, Gate, GateField, VerdictItem, VerdictsAnswer } from "./api/l5";
+import type { AttentionItem, EscalationStep, FormAnswer, Gate, GateField, VerdictItem, VerdictsAnswer } from "./api/l5";
 
 /**
  * What the console decides about a gate before the backend does: whether a
@@ -199,6 +199,55 @@ export function chainOf(gate: Pick<Gate, "approvers" | "chain" | "escalations">)
   return { passedFirst: k > 0, passed: gate.chain.slice(0, Math.max(0, k - 1)), current: gate.approvers, ahead: gate.chain.slice(k) };
 }
 
+export interface EscalationHistory {
+  /**
+   * Who the gate first waited on: the backend's `original_approvers`, else
+   * the first step's `from`, else (never escalated) the approvers now.
+   * Empty when the record cannot say.
+   */
+  first: string[];
+  steps: EscalationStep[];
+  /** Steps the count says were taken that the record does not carry (an older record whose journal lost them). */
+  missing: number;
+  /** The roles the gate has waited on, in order: the first approvers, then each step's role. */
+  path: string[];
+}
+
+/**
+ * The gate's walk along its chain, as the backend recorded it
+ * (`original_approvers`, `escalation_history`): the approvers it opened
+ * with, every step since with when, why and by whom, and what the count
+ * says is missing from the record.
+ */
+export function historyOf(gate: Pick<Gate, "approvers" | "escalations" | "original_approvers" | "escalation_history">): EscalationHistory {
+  const steps = gate.escalation_history;
+  const first = gate.original_approvers.length ? gate.original_approvers : steps.length ? steps[0].from : gate.escalations === 0 ? gate.approvers : [];
+  const path = [first.join(", "), ...steps.map((s) => s.to)].filter(Boolean);
+  return { first, steps, missing: Math.max(0, gate.escalations - steps.length), path };
+}
+
+/** The walk in one line for an inbox row: `risk-lead → vp-risk → cro`, or "" when the gate never moved. */
+export function escalationPath(gate: Pick<Gate, "approvers" | "escalations" | "original_approvers" | "escalation_history">): string {
+  const h = historyOf(gate);
+  if (!h.steps.length && !h.missing) return "";
+  const path = h.missing && !h.steps.length ? [h.first.join(", ") || "first approvers", ...gate.approvers] : h.path;
+  return path.join(" → ");
+}
+
+/** The latest step for an inbox row: ` · last moved <when>: <why>`, or "" when no step is on the record. */
+export function lastMoved(gate: Pick<Gate, "escalation_history">): string {
+  const last = gate.escalation_history.at(-1);
+  if (!last) return "";
+  const when = last.at ? new Date(last.at).toLocaleString() : "(time not recorded)";
+  return ` · last moved ${when}${last.reason ? `: ${last.reason}` : ""}`;
+}
+
+/** One step as a person reads it: when, from whom to whom, why, and who moved it. */
+export function stepLine(step: EscalationStep): string {
+  const when = step.at ? new Date(step.at).toLocaleString() : "time not recorded";
+  return `${when} · ${step.from.join(", ") || "the approvers"} → ${step.to || "the next role"}${step.reason ? ` · ${step.reason}` : ""}${step.by ? ` · by ${step.by}` : ""}`;
+}
+
 /* ═══════════════════ who may answer ═══════════════════ */
 
 export interface Who {
@@ -206,6 +255,8 @@ export interface Who {
   roles: readonly string[];
   /** `autox:app_roles`; "administrator" passes every gate. */
   appRoles: readonly string[];
+  /** The identity provider's group claims, kept on the session (lib/sso-groups.ts); a gate may name a group as its approver role. */
+  groups?: readonly string[];
 }
 
 export interface Access {
@@ -216,16 +267,17 @@ export interface Access {
 
 /**
  * Whether this person may answer a gate whose `approvers` are roles. A gate
- * with no approvers is anyone's. Otherwise one of the person's roles (either
- * list) must be named, or the person is an administrator. The backend
- * refuses the same way (403 naming the role missing); this only stops the
- * click from happening first.
+ * with no approvers is anyone's. Otherwise one of the person's roles (the
+ * app roles, the role claims or the group claims, as the backend's
+ * `roles_of` reads them) must be named, or the person is an administrator.
+ * The backend refuses the same way (403 naming the role missing); this only
+ * stops the click from happening first.
  */
 export function gateAccess(who: Who | null, approvers: readonly string[]): Access {
   if (!approvers.length) return { ok: true, reason: "" };
   if (!who) return { ok: false, reason: `Only ${approvers.join(", ")} may answer this gate; your roles are not known yet.` };
   if (who.appRoles.includes("administrator")) return { ok: true, reason: "" };
-  const mine = new Set([...who.roles, ...who.appRoles]);
+  const mine = new Set([...who.roles, ...who.appRoles, ...(who.groups ?? [])]);
   if (approvers.some((r) => mine.has(r))) return { ok: true, reason: "" };
   const have = [...mine];
   return { ok: false, reason: `Only ${approvers.join(", ")} may answer this gate (or an administrator). Your roles: ${have.length ? have.join(", ") : "none"}.` };
@@ -243,6 +295,69 @@ export function batchable(gates: readonly Gate[], who: Who | null): Access {
     if (!a.ok) return { ok: false, reason: `${g.run}: ${a.reason}` };
   }
   return { ok: true, reason: "" };
+}
+
+/* ═══════════════════ a batch's sample ═══════════════════ */
+
+/** How many of a batch's gates are shown with their evidence before one answer goes to all of them. */
+export const SAMPLE_SIZE = 3;
+
+/** Fisher–Yates on a copy, with the given source of randomness in [0, 1). */
+function shuffled<T>(items: readonly T[], rng: () => number): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.min(i, Math.floor(rng() * (i + 1)));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+/**
+ * A sample of a batch's gates to read before answering them together:
+ * `size` picked at random, or every gate when the batch has `size` or fewer.
+ * Runs in `avoid` (already shown) are picked only when too few others are
+ * left. The sample keeps the batch's order, so it reads like the list.
+ */
+export function sampleGates(runs: readonly string[], size: number = SAMPLE_SIZE, rng: () => number = Math.random, avoid: readonly string[] = []): string[] {
+  const n = Math.max(0, Math.floor(size));
+  if (runs.length <= n) return [...runs];
+  const picked = new Set([...shuffled(runs.filter((r) => !avoid.includes(r)), rng), ...shuffled(runs.filter((r) => avoid.includes(r)), rng)].slice(0, n));
+  return runs.filter((r) => picked.has(r));
+}
+
+/**
+ * "Show another": a new sample that prefers gates not shown yet in this
+ * batch, and once every gate has been shown starts a new round that avoids
+ * the ones on screen. `seen` grows with each sample. A batch of `size` or
+ * fewer has nothing else to show: the sample is the whole batch.
+ */
+export function nextSample(runs: readonly string[], current: readonly string[], seen: readonly string[], size: number = SAMPLE_SIZE, rng: () => number = Math.random): { sample: string[]; seen: string[] } {
+  if (runs.length <= size) return { sample: [...runs], seen: [...runs] };
+  const inBatch = new Set(runs);
+  let shown = [...new Set([...seen, ...current])].filter((r) => inBatch.has(r));
+  if (runs.every((r) => shown.includes(r))) shown = current.filter((r) => inBatch.has(r));
+  const sample = sampleGates(runs, size, rng, shown);
+  return { sample, seen: [...new Set([...shown, ...sample])] };
+}
+
+export interface BatchCount {
+  /** Gates in the batch. */
+  total: number;
+  /** Gates the shared answer goes to: every one not answered on its own. */
+  shared: number;
+  /** Gates answered on their own (the per-item override). */
+  own: number;
+  /** Gates in the sample on screen. */
+  sampled: number;
+  /** Distinct gates shown in any sample of this batch so far. */
+  seen: number;
+}
+
+/** What the batch dialog says it is about to do: how many gates, how many take the shared answer, and how many a person has read. */
+export function batchCount(runs: readonly string[], ownRuns: readonly string[], sample: readonly string[], seen: readonly string[] = sample): BatchCount {
+  const inBatch = new Set(runs);
+  const own = new Set(ownRuns.filter((r) => inBatch.has(r))).size;
+  return { total: runs.length, shared: runs.length - own, own, sampled: sample.filter((r) => inBatch.has(r)).length, seen: new Set([...seen, ...sample].filter((r) => inBatch.has(r))).size };
 }
 
 /* ═══════════════════ time ═══════════════════ */

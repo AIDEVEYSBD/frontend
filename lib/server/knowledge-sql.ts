@@ -65,3 +65,30 @@ export function adjacentQuery(namespace: string, pairs: { document_id: string; o
     params: [namespace, ...pairs.flatMap((p) => [p.document_id, p.ordinal])],
   };
 }
+
+/**
+ * Every admitted document in one namespace, with what says whether it is
+ * still current (lib/knowledge-stale.ts): where it was fetched from and
+ * when, the source's cadence and address in the catalogue, and the newest
+ * later fetch of the same source in the same corpus whose text differs.
+ * The source and the later fetch are matched on namespace too: another
+ * engagement's copy of the source is its own.
+ */
+export function staleQuery(namespace: string): Query {
+  return {
+    sql: `SELECT d.id, d.namespace, d.source_id, d.title, d.url, d.fetched_at, d.decided_at,
+                 coalesce(s.name, d.source_id) AS source, coalesce(s.url, '') AS source_url, coalesce(s.cadence, '') AS cadence,
+                 n.id AS newer_id, n.status AS newer_status, n.fetched_at AS newer_fetched_at
+            FROM documents d
+            LEFT JOIN sources s ON s.namespace = d.namespace AND s.id = d.source_id
+            LEFT JOIN LATERAL (
+              SELECT x.id, x.status, x.fetched_at FROM documents x
+               WHERE x.namespace = d.namespace AND x.source_id = d.source_id AND x.id <> d.id
+                 AND x.fetched_at > d.fetched_at AND x.digest <> d.digest
+               ORDER BY x.fetched_at DESC LIMIT 1
+            ) n ON true
+           WHERE d.namespace = $1 AND d.status = 'admitted'
+           ORDER BY d.source_id, d.fetched_at DESC`,
+    params: [namespace],
+  };
+}

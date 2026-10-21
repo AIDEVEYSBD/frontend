@@ -28,7 +28,12 @@ const DELIVERED: Record<SteerResult["delivery"], string> = {
   sdk: "handed to the agent on its next control poll",
 };
 
-export function SteerPanel({ runId }: { runId: string }) {
+/**
+ * `holdBlocked`: why the hold is not offered now (an SDK run waiting at a
+ * gate, lib/steer.ts), shown in the hold's place; guidance and the model
+ * still go.
+ */
+export function SteerPanel({ runId, holdBlocked }: { runId: string; holdBlocked?: string }) {
   const { session } = useSession();
   const by = signerName(session, CURRENT_USER.name);
   const [guidance, setGuidance] = useState("");
@@ -70,7 +75,7 @@ export function SteerPanel({ runId }: { runId: string }) {
       <span className="absolute inset-y-0 left-0 w-[3px] bg-run" />
       <span className="flex items-center gap-2">
         <span className="text-[12px] font-semibold text-fg">Steer this run</span>
-        <span className="text-[10.5px] text-faint">applies to the next step</span>
+        <span className="text-[10.5px] text-faint">{holdBlocked ? "waiting at a gate · taken on the agent's next control poll" : "applies to the next step"}</span>
       </span>
 
       <Field label="Guidance for the next step" hint="Appended to the next model prompt, journalled with your name.">
@@ -83,13 +88,13 @@ export function SteerPanel({ runId }: { runId: string }) {
       <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
         <span className="flex flex-col">
           <span className="text-[12.5px] font-medium text-mist">Hold at next gate</span>
-          <span className="text-[11px] text-faint">
-            {hold ? "Asked. The next call at or above write waits for a person; a hold cannot be withdrawn." : "The next call at or above write waits for a person, even if no gate names it."}
+          <span className={`text-[11px] ${holdBlocked && !hold ? "text-warn" : "text-faint"}`}>
+            {hold ? "Asked. The next call at or above write waits for a person; a hold cannot be withdrawn." : holdBlocked || "The next call at or above write waits for a person, even if no gate names it."}
           </span>
         </span>
         <Switch
           checked={hold}
-          disabled={busy !== null || hold}
+          disabled={busy !== null || hold || Boolean(holdBlocked)}
           onChange={async (on) => {
             if (!on) return;
             if (await send("hold", { hold_at_next_gate: true }, "Hold at next gate")) setHold(true);

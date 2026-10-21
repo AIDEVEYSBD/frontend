@@ -6,6 +6,7 @@ import { grade, loadSet } from "@/lib/server/evals";
 import { derive, emptyMatrix, tally } from "@/lib/metrics";
 import { costOf, priceSheet, usageOf } from "@/lib/server/prices";
 import { backendConfigured, backendError, backendFetch, backendMissing } from "@/lib/server/backend";
+import { lockdownRefusalOf, lockdownRefusalText } from "@/lib/api/l5";
 
 /**
  * Run an eval set: every case is a REAL run of the agent — same runtime, same
@@ -116,6 +117,12 @@ async function startRun(req: Request, body: Record<string, unknown>): Promise<{ 
     res = await backendFetch(req, "/api/runs", { method: "POST", body: JSON.stringify(body) });
   } catch (e) {
     return { error: `the backend could not be reached: ${(e as Error).message}` };
+  }
+  if (res.status === 423) {
+    // A lockdown refuses every start; the case says why, as the run page does.
+    const body = await res.json().catch(() => ({}));
+    const locked = lockdownRefusalOf(423, body);
+    return { error: locked ? lockdownRefusalText(locked) : String((body as { error?: unknown }).error ?? "the estate is locked down") };
   }
   if (!res.ok) return { error: await backendError(res, "the backend refused to start the run") };
   const d = (await res.json().catch(() => ({}))) as { run?: string };

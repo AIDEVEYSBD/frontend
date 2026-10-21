@@ -365,12 +365,16 @@ export class RegistryError extends Error {
 }
 
 /**
- * A URL's password, masked as the registry masks it in a server's `url`
- * (`https://svc:***@host`). A discovery failure says the URL it could not
- * reach back as it was typed, password and all; the console never shows it.
+ * A URL's userinfo, masked as the registry masks it (backend/app/mcp_registry.py
+ * `mask_userinfo`): `scheme://user:pass@host` and `scheme://token@host` both
+ * read `scheme://***@host`, since a token is often sent as the user name. An
+ * `@` in the query is no userinfo and is left alone, and a URL the backend
+ * already masked passes through unchanged. A second lock: the registry masks
+ * every URL it returns and refuses one with credentials, but an older
+ * backend's error said the URL back as it was typed.
  */
 export function maskUrlPasswords(text: string): string {
-  return text.replace(/\b([a-z][a-z0-9+.-]*:\/\/[^\s/?#@:]*):[^\s/?#@]*@/gi, "$1:***@");
+  return text.includes("@") ? text.replace(/\b([a-z][a-z0-9+.-]*:\/\/)[^/\s?#]*@/gi, "$1***@") : text;
 }
 
 /**

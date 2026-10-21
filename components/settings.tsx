@@ -11,6 +11,7 @@ import { Skeleton } from "./loaders";
 import { Icon } from "./builder/icons";
 import { Pick } from "./select";
 import { Cross, Row, Text } from "./builder/controls";
+import { listVault, removeVaultKey, setVaultKey } from "@/lib/api/l2";
 
 /**
  * The factory's configuration: which models it offers, and the keys its
@@ -400,10 +401,9 @@ function Keys() {
   const [removing, setRemoving] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
-    fetch("/api/vault")
-      .then((r) => r.json())
-      .then((d) => (d.error ? setError(String(d.error)) : setKeys(d.keys ?? [])))
-      .catch((e) => setError(String(e)));
+    listVault()
+      .then((v) => setKeys(v.keys))
+      .catch((e: Error) => setError(e.message));
   }, []);
 
   useEffect(refresh, [refresh]);
@@ -413,19 +413,13 @@ function Keys() {
     setBusy(true);
     setError("");
     try {
-      const res = await fetch("/api/vault", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), value, label }),
-      });
-      const d = await res.json();
-      if (d.error) setError(String(d.error));
-      else {
-        setName("");
-        setValue("");
-        setLabel("");
-        refresh();
-      }
+      await setVaultKey(name.trim(), value, label);
+      setName("");
+      setValue("");
+      setLabel("");
+      refresh();
+    } catch (e) {
+      setError((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -500,7 +494,8 @@ function Keys() {
                   setConfirming(null);
                   setRemoving(k.name);
                   try {
-                    await fetch(`/api/vault?name=${encodeURIComponent(k.name)}`, { method: "DELETE" });
+                    // A refusal is said by the console's guard (401, 403); the list is read again either way.
+                    await removeVaultKey(k.name).catch(() => {});
                   } finally {
                     setRemoving(null);
                   }

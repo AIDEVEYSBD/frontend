@@ -8,6 +8,7 @@ import { Pick } from "./select";
 import { Text } from "./builder/controls";
 import { Checkbox } from "./forms";
 import { FOUNDRY_ID, KINDS, kindOf, type Provider, type ProviderKind } from "@/lib/providers";
+import { listVault } from "@/lib/api/l2";
 
 /**
  * The endpoint router: every place this deployment can send a model call.
@@ -49,9 +50,8 @@ export function Providers() {
       .then((r) => r.json())
       .then((d) => (d.error ? setError(String(d.error)) : setConfig(d)))
       .catch((e) => setError(String(e)));
-    fetch("/api/vault")
-      .then((r) => r.json())
-      .then((d) => setKeys(((d.keys ?? []) as { name: string }[]).map((k) => k.name)))
+    listVault()
+      .then((v) => setKeys(v.keys.map((k) => k.name)))
       .catch(() => setKeys([]));
   }, []);
   useEffect(refresh, [refresh]);

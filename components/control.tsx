@@ -20,14 +20,16 @@ import { WindowPick, nextWin, winMs, type Win } from "./window-pick";
 import { Pick } from "./select";
 import { Checkbox } from "./forms";
 import { api, errorText, type RunRow as LedgerRow } from "@/lib/api/client";
-import { inFlight, type RunRowL5 } from "@/lib/api/l5";
+import { deployAgent, readQueue, type QueueSummary } from "@/lib/api/l2";
+import { auditLine, inFlight, type RunRowL5 } from "@/lib/api/l5";
 import { KillDialog } from "./kill-dialog";
 import { RunSourceTag } from "./run-source";
 import { runSourceOf } from "@/lib/api/l6";
 import { AttentionPanel } from "./attention";
 import { FleetBar, LockdownBanner, LockdownSwitch, useFleet, useLockdown } from "./operate";
+import { VersionHistory } from "./versions";
 import { Deadline, ShapeTag, useNow } from "./gate-form";
-import { batchable } from "@/lib/gates";
+import { batchable, escalationPath, historyOf, lastMoved, stepLine } from "@/lib/gates";
 import { useSession } from "@/lib/use-session";
 
 const PERIOD_DAYS = { day: 1, week: 7, month: 30 } as const;
@@ -274,6 +276,8 @@ function withLive(d: ControlData, rows: LedgerRow[] | null): ControlData {
 type Drill =
   | { kind: "kpi"; which: "deployed" | "active" | "pending" | "runs" | "spend" | "time" | "denials" | "kills" }
   | { kind: "agent"; id: string }
+  /** The agent's saved versions and the difference between any two, in spec vocabulary. */
+  | { kind: "versions"; id: string }
   | { kind: "day"; day: string }
   | { kind: "model"; id: string }
   | { kind: "run"; id: string }
@@ -428,8 +432,7 @@ export function Control() {
     // The trigger queue is its own read: the intake can be healthy while the
     // estate read is slow, and the other way round.
     try {
-      const q = await (await fetch("/api/queue")).json();
-      setQueue(q.error ? null : q);
+      setQueue(await readQueue());
     } catch {
       setQueue(null);
     }
@@ -484,9 +487,7 @@ export function Control() {
     async (agentId: string) => {
       setDeployingId(agentId);
       try {
-        const res = await fetch(`/api/agents/${encodeURIComponent(agentId)}/deploy`, { method: "POST" });
-        const d = await res.json();
-        if (!res.ok || d.error) throw new Error(String(d.error ?? res.status));
+        const d = await deployAgent(agentId);
         notice(`${agentId} deployed — digest ${String(d.digest).slice(0, 8)}`);
         load();
       } catch (e) {
@@ -590,7 +591,7 @@ export function Control() {
     [gates],
   );
   const pickedGates = (gates ?? []).filter((g) => picked.has(g.run));
-  const batchCheck = batchable(pickedGates, session ? { roles: session.roles, appRoles: session.appRoles } : null);
+  const batchCheck = batchable(pickedGates, session ? { roles: session.roles, appRoles: session.appRoles, groups: session.groups ?? [] } : null);
 
   return (
     <div className="relative mx-auto w-full max-w-[1520px] px-5 py-7">
@@ -771,7 +772,7 @@ export function Control() {
                   onClear={() => setSelected(new Set())}
                   onDone={(r) => {
                     const verb = { pause: "Paused", resume: "Resumed", drain: "Draining", kill: "Killed runs on" }[r.action];
-                    notice(`${verb} ${r.agents.length} agent${r.agents.length === 1 ? "" : "s"}${r.killed.length ? ` · ${r.killed.length} run${r.killed.length === 1 ? "" : "s"} killed` : ""}`);
+                    notice(`${verb} ${r.agents.length} agent${r.agents.length === 1 ? "" : "s"}${r.killed.length ? ` · ${r.killed.length} run${r.killed.length === 1 ? "" : "s"} killed` : ""}${auditLine(r.audit_id)}`);
                     setSelected(new Set());
                     load();
                     reloadFleet();
@@ -1038,6 +1039,13 @@ export function Control() {
                       <Deadline deadline={g.deadline} now={clock} />
                       {g.escalations > 0 && <span>escalated ×{g.escalations}</span>}
                     </span>
+                    {/* Where it has been: first approvers, each role it walked to, and the latest step's when and why. */}
+                    {g.escalations > 0 && (
+                      <span className="truncate text-[10px] text-faint" title={[`first: ${historyOf(g).first.join(", ") || "not recorded"}`, ...g.escalation_history.map(stepLine)].join("\n")}>
+                        {escalationPath(g)}
+                        {lastMoved(g)}
+                      </span>
+                    )}
                   </button>
                   {/* Answering happens here. It used to link to the run page,
                       which is where a run is *started* — the one place a person
@@ -2018,6 +2026,11 @@ function renderDrill(
     };
   }
 
+  if (drill.kind === "versions") {
+    const a = data.agents.find((x) => x.id === drill.id);
+    return { title: `Versions · ${a?.name ?? drill.id}`, body: <VersionHistory agent={drill.id} /> };
+  }
+
   if (drill.kind === "agent") {
     const a = data.agents.find((x) => x.id === drill.id);
     if (!a) return { title: "Agent", body: null };
@@ -2042,6 +2055,14 @@ function renderDrill(
             k="Status"
             v={
               a.active > 0 ? <Status tone="run">{a.active} live</Status> : a.deployed_at ? <Status tone="ok">Deployed {ago(a.deployed_at)}</Status> : <Status tone="queue">Saved, not deployed</Status>
+            }
+          />
+          <Fact
+            k="Versions"
+            v={
+              <Button size="sm" variant="quiet" onClick={() => onOpen({ kind: "versions", id: a.id })}>
+                History and diff
+              </Button>
             }
           />
           <Fact k="Runs" v={`${a.runs7d} in ${data.window} · ${a.runsTotal} total`} />
@@ -2557,11 +2578,8 @@ function TradeoffTriangle({
 
 /* ═══════════════════ the trigger queue ═══════════════════ */
 
-interface QueueData {
-  agents: Record<string, { queued?: number; running?: number; done?: number; failed?: number; suspended?: number; oldest_queued?: string | null }>;
-  workers: { name: string; running: number; lease_until: string }[];
-  last_hour: { finished: number; failed: number; avg_ms: number | null };
-}
+/** The intake as `GET /api/queue` answers it, read through the generated client (lib/api/l2.ts). */
+type QueueData = QueueSummary;
 
 /**
  * The intake, as numbers. Depth is the honest measure of "always on": a

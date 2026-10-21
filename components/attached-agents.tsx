@@ -20,6 +20,7 @@ import {
   type Language,
 } from "@/lib/attached";
 import { agentActivityFor } from "@/lib/demo-activity";
+import { attachAgent, attachableTools, detachAgent, listAttached, setAttachedPolicy, type AttachedList, type PolicyPatch } from "@/lib/api/l2";
 
 /** A seeded agent's row with its demonstration activity (lib/demo-activity.ts), never applied to one whose runs are on record. */
 function withDemoActivity(a: AttachedAgent): AttachedAgent {
@@ -107,32 +108,31 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
   const [draft, setDraft] = useState<{ grants: string[]; gate_at: AttachedAgent["gate_at"]; injection: AttachedAgent["injection"] }>({ grants: [], gate_at: "", injection: "block" });
   const [saving, setSaving] = useState(false);
 
+  const shown = (d: Pick<AttachedList, "agents" | "store">) => {
+    // The backend measures activity from the run record; the seeded
+    // agents' figures are demonstration data and the console's own.
+    const list = (d.agents as AttachedAgent[]).map((a) => (a.demo ? withDemoActivity(a) : a));
+    setAgents(list);
+    setStore(d.store);
+    onLoaded?.(list, d.store);
+  };
   const load = () =>
-    fetch("/api/attached")
-      .then((r) => r.json())
-      .then((d: { agents?: AttachedAgent[]; store?: string }) => {
-        // The backend measures activity from the run record; the seeded
-        // agents' figures are demonstration data and the console's own.
-        const list = (d.agents ?? []).map((a) => (a.demo ? withDemoActivity(a) : a));
-        setAgents(list);
-        setStore(d.store ?? "");
-        onLoaded?.(list, d.store ?? "");
-      })
-      .catch(() => setAgents([]));
+    listAttached()
+      .then(shown)
+      // A refusal reads as an empty register, as it always has.
+      .catch(() => shown({ agents: [], store: "" }));
   useEffect(() => {
     load();
-    fetch("/api/attached/registry")
-      .then((r) => r.json())
-      .then((d: { tools?: typeof registry }) => setRegistry(d.tools ?? []))
+    attachableTools()
+      .then(setRegistry)
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const patch = async (id: string, body: Record<string, unknown>) => {
+  const patch = async (id: string, body: Omit<PolicyPatch, "id">) => {
     setSaving(true);
     try {
-      const r = await fetch("/api/attached", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, ...body }) });
-      if (!r.ok) throw new Error((await r.json()).error ?? `HTTP ${r.status}`);
+      await setAttachedPolicy({ id, ...body });
       await load();
     } catch (e) {
       setError((e as Error).message);
@@ -178,14 +178,8 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
     setBusy(true);
     setError("");
     try {
-      const r = await fetch("/api/attached", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name, mode, framework, language, owner, card_url: cardUrl }),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`);
-      setMinted({ agent: d.agent, key: d.key });
+      const d = await attachAgent({ name, mode, framework, language, owner, card_url: cardUrl });
+      setMinted({ agent: d.agent as AttachedAgent, key: d.key });
       setName("");
       setOwner("");
       setCardUrl("");
@@ -199,7 +193,7 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
 
   const detach = async (id: string) => {
     setConfirming("");
-    await fetch(`/api/attached?id=${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});
+    await detachAgent(id).catch(() => {});
     if (minted?.agent.id === id) setMinted(null);
     await load();
   };

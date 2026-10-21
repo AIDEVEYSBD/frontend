@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allowedVerdicts, batchable, bulkVerdict, checkField, countdown, emptyForm, gateAccess, validateForm, validateVerdicts } from "@/lib/gates";
+import { SAMPLE_SIZE, allowedVerdicts, batchCount, batchable, bulkVerdict, checkField, countdown, emptyForm, gateAccess, nextSample, sampleGates, validateForm, validateVerdicts } from "@/lib/gates";
 import { deadlineOf, gateFromSuspension, gateOf, itemOf, type Gate, type GateField, type VerdictItem } from "@/lib/api/l5";
 
 /**
@@ -220,5 +220,80 @@ describe("the countdown", () => {
     expect(countdown("2026-10-21T10:08:00Z", now)).toEqual({ text: "8m", overdue: false, soon: true });
     expect(countdown("2026-10-21T08:00:00Z", now)).toEqual({ text: "overdue 2h 0m", overdue: true, soon: true });
     expect(countdown(null, now)).toEqual({ text: "no deadline", overdue: false, soon: false });
+  });
+});
+
+describe("a batch's sample", () => {
+  /** A seeded source of randomness (mulberry32), so a sample is repeatable here. */
+  const seeded = (seed: number) => () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const runs = Array.from({ length: 12 }, (_, i) => `run-${String(i + 1).padStart(2, "0")}`);
+
+  it("shows three, picked at random, distinct, in the batch's order", () => {
+    expect(SAMPLE_SIZE).toBe(3);
+    const s = sampleGates(runs, SAMPLE_SIZE, seeded(7));
+    expect(s).toHaveLength(3);
+    expect(new Set(s).size).toBe(3);
+    expect(s.every((r) => runs.includes(r))).toBe(true);
+    expect([...s].sort()).toEqual(s);
+    // The same seed, the same sample; another seed, another.
+    expect(sampleGates(runs, SAMPLE_SIZE, seeded(7))).toEqual(s);
+    expect(sampleGates(runs, SAMPLE_SIZE, seeded(8))).not.toEqual(s);
+  });
+
+  it("shows every gate when the batch has three or fewer", () => {
+    expect(sampleGates(["a", "b"], SAMPLE_SIZE, seeded(1))).toEqual(["a", "b"]);
+    expect(sampleGates(["a", "b", "c"], SAMPLE_SIZE, seeded(1))).toEqual(["a", "b", "c"]);
+    expect(nextSample(["a", "b", "c"], ["a", "b", "c"], ["a", "b", "c"], SAMPLE_SIZE, seeded(1))).toEqual({ sample: ["a", "b", "c"], seen: ["a", "b", "c"] });
+  });
+
+  it("is not biased to the front of the batch: over many draws every gate is shown about as often", () => {
+    const rng = seeded(42);
+    const hits = new Map<string, number>(runs.map((r) => [r, 0]));
+    for (let i = 0; i < 4000; i++) for (const r of sampleGates(runs, SAMPLE_SIZE, rng)) hits.set(r, hits.get(r)! + 1);
+    // 4000 draws × 3 of 12 = 1000 each on average.
+    for (const [r, n] of hits) {
+      expect(n, r).toBeGreaterThan(850);
+      expect(n, r).toBeLessThan(1150);
+    }
+  });
+
+  it("'show another' shows gates not read yet, until every one has been, then starts a round away from the one on screen", () => {
+    const rng = seeded(3);
+    let cur = sampleGates(runs, SAMPLE_SIZE, rng);
+    let seen = [...cur];
+    const rounds: string[][] = [cur];
+    for (let i = 0; i < 3; i++) {
+      const n = nextSample(runs, cur, seen, SAMPLE_SIZE, rng);
+      expect(n.sample.some((r) => seen.includes(r)), `round ${i + 2} repeated a gate before every gate was shown`).toBe(false);
+      cur = n.sample;
+      seen = n.seen;
+      rounds.push(cur);
+    }
+    // Four samples of three cover all twelve, once each.
+    expect(new Set(rounds.flat()).size).toBe(12);
+    expect(seen.sort()).toEqual([...runs].sort());
+    // Every gate read: the next sample avoids the three on screen.
+    const again = nextSample(runs, cur, seen, SAMPLE_SIZE, rng);
+    expect(again.sample).toHaveLength(3);
+    expect(again.sample.some((r) => cur.includes(r))).toBe(false);
+  });
+
+  it("with too few unread gates left, fills the sample from those already read", () => {
+    const five = ["a", "b", "c", "d", "e"];
+    const n = nextSample(five, ["a", "b", "c"], ["a", "b", "c"], SAMPLE_SIZE, seeded(9));
+    expect(n.sample).toHaveLength(3);
+    expect(n.sample).toEqual(expect.arrayContaining(["d", "e"]));
+    expect(n.seen.sort()).toEqual(five);
+  });
+
+  it("counts what the dialog says: the gates, the shared answer's share, those on their own, the sample and what was read", () => {
+    expect(batchCount(runs, [], ["run-01", "run-05", "run-09"])).toEqual({ total: 12, shared: 12, own: 0, sampled: 3, seen: 3 });
+    expect(batchCount(runs, ["run-02", "run-03", "ghost"], ["run-01", "run-05", "run-09"], ["run-01", "run-05", "run-09", "run-10", "run-11", "run-12"])).toEqual({ total: 12, shared: 10, own: 2, sampled: 3, seen: 6 });
+    expect(batchCount(["a", "b"], ["a", "b"], ["a", "b"])).toEqual({ total: 2, shared: 0, own: 2, sampled: 2, seen: 2 });
   });
 });

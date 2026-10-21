@@ -474,6 +474,13 @@ function MintedDialog({ minted, onClose }: { minted: Minted; onClose: () => void
           <CopyButton text={minted.key} />
           <span className="text-[10.5px] text-faint">Scoped to {a.id}. Block the application to close every door; remove it to revoke the key.</span>
         </div>
+        {minted.system_prompt && (
+          <p className="text-[11px] leading-[1.55] text-faint">
+            System prompt recorded as version {minted.system_prompt.version}
+            {minted.system_prompt.set_by ? `, signed ${minted.system_prompt.set_by}` : ""} ({minted.system_prompt.chars.toLocaleString("en-GB")} characters). Every later change is a new version on the
+            application&rsquo;s page, and a response that echoes this one is caught for as long as the leak check keeps it.
+          </p>
+        )}
 
         <section className="flex flex-col overflow-hidden rounded-md border border-line">
           <div className="flex items-center gap-2 border-b border-line bg-raise/55 px-3 py-2">

@@ -5,7 +5,10 @@ import { useRouter } from "next/navigation";
 import { Icon } from "./builder/icons";
 import { IconButton, Label, RUN_STATE, Status } from "./ui";
 import { Banner } from "./overlays";
+import { DrillModal } from "./drill";
+import { VersionHistory } from "./versions";
 import { useSession } from "@/lib/use-session";
+import { agentDocument, listAgents, listRuns, retireAgent } from "@/lib/api/l2";
 
 /**
  * The registry, as a page.
@@ -53,24 +56,24 @@ export function Workflows() {
   const [error, setError] = useState("");
   const [menu, setMenu] = useState<MenuAt | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
+  /* The agent whose versions are open: its history and a diff between any two. */
+  const [versionsOf, setVersionsOf] = useState<SavedAgent | null>(null);
   const router = useRouter();
   // Deleting a workflow is a deploy-level change; the menu says so to a viewer.
   const { can, loaded } = useSession();
   const canDelete = !loaded || can("deploy");
 
   const refresh = useCallback(() => {
-    fetch("/api/agents")
-      .then((r) => r.json())
-      .then((d) => (d.error ? setError(String(d.error)) : setAgents(d.agents ?? [])))
-      .catch((e) => setError(String(e)));
+    listAgents()
+      .then((rows) => setAgents(rows))
+      .catch((e: Error) => setError(e.message));
   }, []);
 
   useEffect(refresh, [refresh]);
 
   useEffect(() => {
-    fetch("/api/runs")
-      .then((r) => r.json())
-      .then((d) => setRuns(d.runs ?? []))
+    listRuns()
+      .then((rows) => setRuns(rows.map((r) => ({ id: r.id, system: r.system, state: r.state, at: r.at }))))
       .catch(() => setRuns([]));
   }, []);
 
@@ -80,7 +83,7 @@ export function Workflows() {
     setMenu({
       agent,
       x: Math.max(pad, Math.min(x, window.innerWidth - 240 - pad)),
-      y: Math.max(pad, Math.min(y, window.innerHeight - 240 - pad)),
+      y: Math.max(pad, Math.min(y, window.innerHeight - 290 - pad)),
     });
   }, []);
 
@@ -94,16 +97,17 @@ export function Workflows() {
   );
 
   const remove = async (id: string) => {
-    await fetch(`/api/agents/${encodeURIComponent(id)}`, { method: "DELETE" });
+    // A refusal is said by the console's guard (401, 403); the list is read again either way.
+    await retireAgent(id).catch(() => {});
     setMenu(null);
     setConfirming(null);
     refresh();
   };
 
   const exportJson = async (id: string) => {
-    const d = await fetch(`/api/agents?id=${encodeURIComponent(id)}`).then((r) => r.json());
-    if (d.error) return;
-    const blob = new Blob([JSON.stringify(d.spec, null, 2)], { type: "application/json" });
+    const spec = await agentDocument(id).catch(() => null);
+    if (!spec) return;
+    const blob = new Blob([JSON.stringify(spec, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -231,9 +235,23 @@ export function Workflows() {
           onRun={() => router.push(`/runs?agent=${encodeURIComponent(menu.agent.id)}`)}
           onBenchmark={() => router.push(`/evals?agent=${encodeURIComponent(menu.agent.id)}`)}
           onExport={() => exportJson(menu.agent.id)}
+          onVersions={() => {
+            setVersionsOf(menu.agent);
+            setMenu(null);
+          }}
           canDelete={canDelete}
           onDelete={() => (confirming === menu.agent.id ? remove(menu.agent.id) : setConfirming(menu.agent.id))}
         />
+      )}
+
+      {versionsOf && (
+        <DrillModal
+          title={`Versions · ${versionsOf.name}`}
+          subtitle="Every save and every deploy is a version: who saved it, when, its digest, and whether it is deployed. Pick two to see what changed, in the spec's own terms."
+          onClose={() => setVersionsOf(null)}
+        >
+          <VersionHistory agent={versionsOf.id} />
+        </DrillModal>
       )}
     </div>
   );
@@ -284,6 +302,7 @@ function ContextMenu({
   onRun,
   onBenchmark,
   onExport,
+  onVersions,
   canDelete,
   onDelete,
 }: {
@@ -294,6 +313,7 @@ function ContextMenu({
   onRun: () => void;
   onBenchmark: () => void;
   onExport: () => void;
+  onVersions: () => void;
   canDelete: boolean;
   onDelete: () => void;
 }) {
@@ -328,6 +348,7 @@ function ContextMenu({
       <MenuItem icon="pulse" label="Run" hint="Straight into the theater" onClick={onRun} />
       <MenuItem icon="chip" label="Benchmark" hint="Upload and run an eval set against it" onClick={onBenchmark} />
       <MenuItem icon="json" label="Export JSON" hint="The spec document itself" onClick={onExport} />
+      <MenuItem icon="clock" label="Versions" hint="Every save and deploy, and what changed" onClick={onVersions} />
       <div className="my-0.5 h-px bg-line" />
       <MenuItem
         icon="cross"

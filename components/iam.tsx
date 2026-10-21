@@ -12,6 +12,7 @@ import { useSession, signerName } from "@/lib/use-session";
 import { soon } from "@/lib/soon";
 import { hueFor } from "@/lib/hue";
 import { agentActivityFor } from "@/lib/demo-activity";
+import { disconnectIdentity, mintKey, readIdentities, readUsers, removeVaultKey, revokeKey as revokeKeyDoor, setAttachedPolicy, setIdentityOwner, setUserAccess, signOutUser } from "@/lib/api/l2";
 
 /**
  * IAM: who may use this platform, and every identity that is not a person.
@@ -161,13 +162,12 @@ export function Iam() {
   >(null);
 
   const load = () =>
-    Promise.all([fetch("/api/iam/identities").then((r) => r.json()), fetch("/api/iam/users").then((r) => r.json())])
+    Promise.all([readIdentities(), readUsers()])
       .then(([r, p]) => {
-        if (r.error || p.error) throw new Error(String(r.error ?? p.error));
         // The backend measures liveness from the run record; a seeded attached
         // agent's figures are demonstration data and the console's own.
-        setReg({ ...r, identities: ((r.identities ?? []) as Identity[]).map(withDemoActivity) });
-        setPeople(p);
+        setReg({ ...(r as unknown as Register), identities: (r.identities as unknown as Identity[]).map(withDemoActivity) });
+        setPeople(p as unknown as People);
       })
       .catch(() => setFailed(true));
   useEffect(() => soon(load), []);
@@ -296,15 +296,14 @@ export function Iam() {
       : null,
   );
 
-  /* ── actions: every one maps onto an endpoint that already exists ── */
+  /* ── actions: every one maps onto a backend door, through the generated client (lib/api/l2.ts) ── */
 
-  const act = async (label: string, fn: () => Promise<Response>, done: (d: Record<string, unknown>) => { tone: Tone; text: string; secret?: string }) => {
+  const act = async (label: string, fn: () => Promise<unknown>, done: (d: Record<string, unknown>) => { tone: Tone; text: string; secret?: string }) => {
     setBusy(label);
     setConfirming("");
     try {
-      const r = await fn();
-      const d = (await r.json().catch(() => ({}))) as Record<string, unknown>;
-      if (!r.ok) throw new Error(String(d.error ?? `HTTP ${r.status}`));
+      // A refusal rejects with the backend's own message.
+      const d = ((await fn()) ?? {}) as Record<string, unknown>;
       setNotice(done(d));
       await load();
     } catch (e) {
@@ -313,29 +312,27 @@ export function Iam() {
       setBusy("");
     }
   };
-  const json = (method: string, url: string, body?: unknown) => fetch(url, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
-  const revokeKey = (i: { id: string; name: string }) => act(`revoke:${i.id}`, () => fetch(`/api/keys/${encodeURIComponent(i.id)}`, { method: "DELETE" }), () => ({ tone: "ok", text: `Revoked ${i.name}. Anything still presenting it is refused from now.` }));
+  const revokeKey = (i: { id: string; name: string }) => act(`revoke:${i.id}`, () => revokeKeyDoor(i.id), () => ({ tone: "ok", text: `Revoked ${i.name}. Anything still presenting it is refused from now.` }));
   const rotateKey = (i: Identity) =>
     act(
       `rotate:${i.id}`,
       async () => {
-        const minted = await json("POST", "/api/keys", { name: i.name, agent: (i.facts.agent as string | null) ?? null });
-        if (!minted.ok) return minted;
-        const d = await minted.clone().json();
-        await fetch(`/api/keys/${encodeURIComponent(i.id)}`, { method: "DELETE" });
-        return new Response(JSON.stringify(d), { status: 200, headers: { "content-type": "application/json" } });
+        // The new key first: a refused mint leaves the old one standing.
+        const minted = await mintKey(i.name, (i.facts.agent as string | null) ?? null);
+        await revokeKeyDoor(i.id).catch(() => {});
+        return minted;
       },
       (d) => ({ tone: "ok", text: `Rotated ${i.name}: the old key is revoked and this is the only time the new one is shown.`, secret: String(d.key ?? "") }),
     );
-  const blockAgent = (i: Identity, blocked: boolean) => act(`block:${i.id}`, () => json("PATCH", "/api/attached", { id: i.id, blocked }), () => ({ tone: blocked ? "warn" : "ok", text: blocked ? `${i.name} is blocked; every door refuses it until the block is lifted.` : `${i.name} is unblocked.` }));
-  const gateAgent = (i: Identity) => act(`gate:${i.id}`, () => json("PATCH", "/api/attached", { id: i.id, gate_at: "write" }), () => ({ tone: "ok", text: `${i.name} now stops for a person at write and above.` }));
-  const disconnectServer = (i: { id: string; name: string }) => act(`disconnect:${i.id}`, () => fetch(`/api/iam/identities?kind=mcp_server&id=${encodeURIComponent(i.id)}`, { method: "DELETE" }), () => ({ tone: "ok", text: `Disconnected ${i.name} from the registry.` }));
-  const removeSecret = (i: { id: string; name: string }) => act(`secret:${i.id}`, () => fetch(`/api/vault?name=${encodeURIComponent(i.id)}`, { method: "DELETE" }), () => ({ tone: "ok", text: `Removed \${secret:${i.id}} from the vault.` }));
+  const blockAgent = (i: Identity, blocked: boolean) => act(`block:${i.id}`, () => setAttachedPolicy({ id: i.id, blocked }), () => ({ tone: blocked ? "warn" : "ok", text: blocked ? `${i.name} is blocked; every door refuses it until the block is lifted.` : `${i.name} is unblocked.` }));
+  const gateAgent = (i: Identity) => act(`gate:${i.id}`, () => setAttachedPolicy({ id: i.id, gate_at: "write" }), () => ({ tone: "ok", text: `${i.name} now stops for a person at write and above.` }));
+  const disconnectServer = (i: { id: string; name: string }) => act(`disconnect:${i.id}`, () => disconnectIdentity("mcp_server", i.id), () => ({ tone: "ok", text: `Disconnected ${i.name} from the registry.` }));
+  const removeSecret = (i: { id: string; name: string }) => act(`secret:${i.id}`, () => removeVaultKey(i.id), () => ({ tone: "ok", text: `Removed \${secret:${i.id}} from the vault.` }));
   const saveOwner = () =>
     editing &&
     act(
       `owner:${editing.id}`,
-      () => json("PATCH", "/api/iam/identities", { kind: editing.kind, id: editing.id, owner: draft.owner, purpose: draft.purpose, review_due_at: draft.review || null, by: byName }),
+      () => setIdentityOwner({ kind: editing.kind, id: editing.id, owner: draft.owner, purpose: draft.purpose, review_due_at: draft.review || null, by: byName }),
       () => {
         setEditing(null);
         return { tone: "ok", text: draft.owner ? `${draft.owner} now answers for ${editing.id}.` : `Owner cleared on ${editing.id}.` };
@@ -834,8 +831,8 @@ export function Iam() {
                 <span className="text-[11px] text-ghost" title="Nobody changes their own access; another administrator does it.">this is you</span>
               ) : (
                 <>
-                  {drill.person.sessions > 0 && <Button size="sm" variant="solid" tone="neutral" permission="iam" loading={busy === `signout:${drill.person.sub}`} onClick={() => { const p = drill.person; setDrill(null); act(`signout:${p.sub}`, () => fetch(`/api/iam/users?sub=${encodeURIComponent(p.sub)}`, { method: "DELETE" }), () => ({ tone: "ok", text: `${p.name || p.email} signed out everywhere.` })); }}>Sign out everywhere</Button>}
-                  <Button size="sm" variant="solid" tone={drill.person.disabled_at ? "ok" : "err"} permission="iam" loading={busy === `user:${drill.person.sub}`} onClick={() => { const p = drill.person; setDrill(null); act(`user:${p.sub}`, () => json("PATCH", "/api/iam/users", { sub: p.sub, disabled: !p.disabled_at, by: byName }), () => ({ tone: p.disabled_at ? "ok" : "warn", text: p.disabled_at ? `${p.name || p.email} re-enabled.` : `${p.name || p.email} disabled and signed out everywhere.` })); }}>
+                  {drill.person.sessions > 0 && <Button size="sm" variant="solid" tone="neutral" permission="iam" loading={busy === `signout:${drill.person.sub}`} onClick={() => { const p = drill.person; setDrill(null); act(`signout:${p.sub}`, () => signOutUser(p.sub), () => ({ tone: "ok", text: `${p.name || p.email} signed out everywhere.` })); }}>Sign out everywhere</Button>}
+                  <Button size="sm" variant="solid" tone={drill.person.disabled_at ? "ok" : "err"} permission="iam" loading={busy === `user:${drill.person.sub}`} onClick={() => { const p = drill.person; setDrill(null); act(`user:${p.sub}`, () => setUserAccess(p.sub, !p.disabled_at, byName), () => ({ tone: p.disabled_at ? "ok" : "warn", text: p.disabled_at ? `${p.name || p.email} re-enabled.` : `${p.name || p.email} disabled and signed out everywhere.` })); }}>
                     {drill.person.disabled_at ? "Enable" : "Disable"}
                   </Button>
                 </>

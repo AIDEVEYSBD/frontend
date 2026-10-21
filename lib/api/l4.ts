@@ -24,6 +24,8 @@ export type ConversationView = Schemas["ConversationView"];
 export type CompletionView = Schemas["CompletionView"];
 export type RegisterRequest = Schemas["RegisterRequest"];
 export type ApplicationPatch = Schemas["ApplicationPatch"];
+export type SystemPromptVersionView = Schemas["SystemPromptVersion"];
+export type SystemPromptHistoryView = Schemas["SystemPromptHistory"];
 
 export type ApplicationClass = ApplicationView["class"];
 export type Autonomy = ApplicationView["autonomy"];
@@ -130,9 +132,32 @@ export interface ApplicationMetrics {
   flagged: number;
   streamed: number;
   models: ModelMix[];
-  /** RAG figures (hit rate, unanswerable, grounding) are not in the metrics door's answer yet; null says so. */
-  rag: { hit_rate: number | null; unanswerable: number; grounding_rate: number | null; searches: number } | null;
+  /** What the retrieval door journalled in the window (the backend's `RagMetrics`); null when the application retrieved nothing in it. */
+  rag: RagFigures | null;
   basis: string;
+}
+
+/**
+ * The retrieval door's figures for one application over the window: hit
+ * rate over the retrievals it was entitled to, answers whose grounding
+ * verdict was empty or ungrounded, and grounded answers over answers that
+ * produced text. Rates are null when there is nothing to divide by.
+ */
+export interface RagFigures {
+  retrievals: number;
+  searches: number;
+  answers: number;
+  /** Retrievals refused because the principal had no entitlement to the namespace. */
+  refused: number;
+  hits: number;
+  hit_rate: number | null;
+  answered: number;
+  unanswerable: number;
+  grounded: number;
+  partial: number;
+  grounding_rate: number | null;
+  /** Retrievals per namespace. */
+  namespaces: Record<string, number>;
 }
 
 export interface ConversationRow {
@@ -187,6 +212,49 @@ export interface Minted {
   /** Shown once. */
   key: string;
   note: string;
+  /** The system prompt version the registration recorded; null when it registered none. */
+  system_prompt: PromptVersion | null;
+}
+
+/**
+ * One version of a registered application's system prompt (the backend's
+ * `SystemPromptVersion`): every change is a new version, signed, and an
+ * earlier one is still checked for leaks for a while after it is retired.
+ */
+export interface PromptVersion {
+  id: string;
+  version: number;
+  prompt: string;
+  /** `sha256:<hex>` of the text. */
+  digest: string;
+  chars: number;
+  /** Who set it; "" for a prompt registered before versions were kept (adopted). */
+  set_by: string;
+  set_at: string;
+  /** When the next version replaced it; null while it is current. */
+  retired_at: string | null;
+  current: boolean;
+  /** Whether the leak check still compares responses against it. */
+  guarded: boolean;
+  /** Recorded on first sight from a prompt registered before versions were kept. */
+  adopted: boolean;
+}
+
+/** The leak check's reach over earlier versions, in days and versions, with the backend's own sentence. */
+export interface LeakCheck {
+  window_days: number;
+  max_versions: number;
+  says: string;
+}
+
+/** `GET /api/applications/{id}/system-prompts`: every version, newest first. */
+export interface PromptHistory {
+  application: string;
+  /** The current version's id; null when none was ever registered. */
+  current: string | null;
+  versions: PromptVersion[];
+  count: number;
+  leak_check: LeakCheck;
 }
 
 /* ═══════════════════ mapping ═══════════════════ */
@@ -248,6 +316,23 @@ export function applicationOf(v: ApplicationView): Application {
   };
 }
 
+export function ragOf(r: NonNullable<MetricsView["rag"]>): RagFigures {
+  return {
+    retrievals: num(r.retrievals),
+    searches: num(r.searches),
+    answers: num(r.answers),
+    refused: num(r.refused),
+    hits: num(r.hits),
+    hit_rate: numOrNull(r.hit_rate),
+    answered: num(r.answered),
+    unanswerable: num(r.unanswerable),
+    grounded: num(r.grounded),
+    partial: num(r.partial),
+    grounding_rate: numOrNull(r.grounding_rate),
+    namespaces: Object.fromEntries(Object.entries(r.namespaces ?? {}).map(([k, v]) => [k, num(v)])),
+  };
+}
+
 export function metricsOf(m: MetricsView): ApplicationMetrics {
   return {
     window: m.window,
@@ -269,8 +354,8 @@ export function metricsOf(m: MetricsView): ApplicationMetrics {
     flagged: num(m.flagged),
     streamed: num(m.streamed),
     models: (m.models ?? []).map((x) => ({ model: x.model, completions: num(x.completions), cost: num(x.cost), tokens: { in: num(x.tokens?.in), out: num(x.tokens?.out) } })),
-    rag: null,
-    basis: `journalled completions between ${m.since} and ${m.until}; cost from the gateway's price sheet (${m.unpriced} unpriced)`,
+    rag: m.rag ? ragOf(m.rag) : null,
+    basis: `journalled completions between ${m.since} and ${m.until}; cost from the gateway's price sheet (${m.unpriced} unpriced)${m.rag ? "; retrieval figures from the retrieval door's journalled searches and answers" : ""}`,
   };
 }
 
@@ -327,6 +412,40 @@ export function turnsOf(c: ConversationView): Turn[] {
   return out;
 }
 
+export function promptVersionOf(v: SystemPromptVersionView): PromptVersion {
+  return {
+    id: v.id,
+    version: num(v.version),
+    prompt: v.prompt ?? "",
+    digest: v.digest ?? "",
+    chars: num(v.chars),
+    set_by: v.set_by ?? "",
+    set_at: v.set_at ?? "",
+    retired_at: v.retired_at ?? null,
+    current: Boolean(v.current),
+    guarded: Boolean(v.guarded),
+    adopted: Boolean(v.adopted),
+  };
+}
+
+/** The history, newest version first whatever order it arrived in. */
+export function promptHistoryOf(h: SystemPromptHistoryView): PromptHistory {
+  const versions = (h.versions ?? []).map(promptVersionOf).sort((a, b) => b.version - a.version);
+  return {
+    application: h.application,
+    current: h.current ?? null,
+    versions,
+    count: typeof h.count === "number" ? h.count : versions.length,
+    leak_check: { window_days: num(h.leak_check?.window_days), max_versions: num(h.leak_check?.max_versions), says: h.leak_check?.says ?? "" },
+  };
+}
+
+/** The leak check's window as the page states it beside the versions. */
+export function leakWindowLine(c: LeakCheck): string {
+  if (!c.window_days && !c.max_versions) return c.says;
+  return `Responses are checked against the current prompt and every version retired in the last ${c.window_days} day${c.window_days === 1 ? "" : "s"}, at most the ${c.max_versions} most recent.`;
+}
+
 /* ═══════════════════ calls ═══════════════════ */
 
 function fail(error: unknown, response: Response): Error {
@@ -355,7 +474,7 @@ export async function createApplication(body: NewApplication): Promise<Minted> {
     body: { name: body.name, class: body.class, owner: body.owner, autonomy: body.autonomy ?? null, policy: policyToWire(body.policy) },
   });
   if (!data) throw fail(error, response);
-  return { application: applicationOf(data.application), key: data.key, note: data.note };
+  return { application: applicationOf(data.application), key: data.key, note: data.note, system_prompt: data.system_prompt ? promptVersionOf(data.system_prompt) : null };
 }
 
 export async function patchApplication(id: string, patch: { blocked?: boolean; owner?: string; name?: string; policy?: Partial<Policy>; autonomy?: Autonomy }): Promise<Application> {
@@ -368,6 +487,29 @@ export async function patchApplication(id: string, patch: { blocked?: boolean; o
   const { data, error, response } = await api.PATCH("/api/applications", { body });
   if (!data) throw fail(error, response);
   return applicationOf(data.application);
+}
+
+/**
+ * Register a new system prompt for an application: `PATCH /api/applications`
+ * with the prompt alone (the door merges a policy patch field by field, so
+ * nothing else on the policy moves). A changed prompt is a new version,
+ * signed by the session; the answer names the version recorded, null when
+ * the text was the same.
+ */
+export async function setSystemPrompt(id: string, prompt: string): Promise<{ application: Application; recorded: PromptVersion | null }> {
+  const { data, error, response } = await api.PATCH("/api/applications", { body: { id, policy: { system_prompt: prompt } } });
+  if (!data) throw fail(error, response);
+  return { application: applicationOf(data.application), recorded: data.system_prompt ? promptVersionOf(data.system_prompt) : null };
+}
+
+/** `GET /api/applications/{id}/system-prompts`; null for a row that is not a registered application (a workflow, an attached agent: 404). */
+export async function systemPrompts(id: string): Promise<PromptHistory | null> {
+  const { data, error, response } = await api.GET("/api/applications/{app_id}/system-prompts", { params: { path: { app_id: id } } });
+  if (!data) {
+    if (response.status === 404) return null;
+    throw fail(error, response);
+  }
+  return promptHistoryOf(data);
 }
 
 export async function deleteApplication(id: string): Promise<void> {

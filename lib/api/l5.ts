@@ -110,6 +110,10 @@ export interface Gate {
   chain: string[];
   /** How many steps along `chain` the gate has walked. */
   escalations: number;
+  /** The approvers the gate first waited on, before any escalation; empty when the record cannot say (a gate escalated before the history was kept, whose journal lost the step). */
+  original_approvers: string[];
+  /** Every step the gate took along its chain, oldest first: when, from whom, to whom, why, and who moved it. */
+  escalation_history: EscalationStep[];
   /** Absolute; null when the gate has no deadline. Reset on every escalation. */
   deadline: string | null;
   external: { allowed: boolean };
@@ -122,6 +126,20 @@ export interface Gate {
   decided: Record<string, unknown>;
   job: { id: string; external_id: string | null; source: string } | null;
   warning: string;
+}
+
+/**
+ * One step an unanswered gate took along its escalation chain (the backend's
+ * `EscalationStep`): when it moved (null on a record escalated before the
+ * time was kept), the approvers it moved away from, the role it moved to,
+ * the reason in the backend's words, and who moved it (the scheduler).
+ */
+export interface EscalationStep {
+  at: string | null;
+  from: string[];
+  to: string;
+  reason: string;
+  by: string;
 }
 
 /** What `GET /api/approvals` answers. */
@@ -299,6 +317,8 @@ export interface FleetResult {
   killed: string[];
   /** Every agent paused or draining after the action, not only these. */
   paused: Record<string, PauseInfo>;
+  /** The one audit event the action wrote: its id on the IAM page's sign-in and action trail; null when the trail could not be written. */
+  audit_id: number | null;
 }
 
 /** What `GET /api/fleet` answers. */
@@ -317,6 +337,30 @@ export interface LockdownState {
   at: string | null;
   /** The controls a lockdown exercises while it is on, in the backend's words; empty when off. */
   controls: string[];
+  /** The audit event that set (or lifted) it, on the IAM page's trail; null before the first switch. */
+  audit_id: number | null;
+}
+
+/**
+ * One port's own health check (`GET /api/ports/{name}/health`): the
+ * implementation behind it, whether it is configured, whether its check
+ * passed (null when there is nothing to check, a port with nowhere to send
+ * or one that reports its configuration only), the region it runs in, what
+ * the check said, and when it was read.
+ */
+export interface PortHealth {
+  port: string;
+  implementation: string;
+  configured: boolean;
+  ok: boolean | null;
+  region: string;
+  detail: Record<string, unknown>;
+  checked_at: string;
+}
+
+/** What clearing an attention row came back with: a re-read port's health, else nothing to show. */
+export interface Cleared {
+  health: PortHealth | null;
 }
 
 /**
@@ -416,6 +460,23 @@ export function deadlineOf(deadline: unknown, waitingSince: string, timeoutS: nu
   return null;
 }
 
+/**
+ * One escalation step. `at` is null on a record escalated before the time
+ * was kept (the backend reads such a step back from the run's journal);
+ * `to` was a list in the contract's first draft and is read as one role.
+ */
+export function escalationStepOf(v: unknown): EscalationStep {
+  const o = obj(v);
+  const at = str(o.at);
+  return {
+    at: at && !Number.isNaN(Date.parse(at)) ? at : null,
+    from: strs(o.from),
+    to: Array.isArray(o.to) ? strs(o.to).join(", ") : str(o.to),
+    reason: str(o.reason),
+    by: str(o.by),
+  };
+}
+
 export function gateOf(v: unknown): Gate {
   const g = obj(v);
   const answer = obj(g.answer);
@@ -443,6 +504,9 @@ export function gateOf(v: unknown): Gate {
     chain: strs(g.chain ?? g.escalate_to),
     // A count of steps walked; an older reader's list of steps counts the same.
     escalations: typeof g.escalations === "number" ? Math.max(0, Math.floor(g.escalations)) : Array.isArray(g.escalations) ? g.escalations.length : 0,
+    original_approvers: strs(g.original_approvers),
+    // The steps themselves; a reader older than `escalation_history` carried them as the list `escalations`.
+    escalation_history: (Array.isArray(g.escalation_history) ? g.escalation_history : Array.isArray(g.escalations) ? g.escalations : []).map(escalationStepOf),
     deadline: deadlineOf(g.deadline, waiting_since, timeout_s),
     external: { allowed: g.external === true || ext.allowed === true },
     evidence: { decided: Object.keys(obj(ev.decided)).length ? obj(ev.decided) : decided, presented: obj(ev.presented), tainted_by: strs(ev.tainted_by), trail: trailOf(ev.trail) },
@@ -517,9 +581,56 @@ export function attentionOf(v: unknown): AttentionItem {
   };
 }
 
+const auditIdOf = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+
+/** The audit event an operator's action wrote, for its receipt: ` · audit event #12`, or "" when the answer named none. */
+export function auditLine(id: number | null): string {
+  return id === null ? "" : ` · audit event #${id}`;
+}
+
 export function lockdownOf(v: unknown): LockdownState {
   const o = obj(v);
-  return { on: o.on === true, reason: str(o.reason), by: str(o.by), at: str(o.at) || null, controls: strs(o.controls) };
+  return { on: o.on === true, reason: str(o.reason), by: str(o.by), at: str(o.at) || null, controls: strs(o.controls), audit_id: auditIdOf(o.audit_id) };
+}
+
+/**
+ * A refused start during a lockdown: `POST /api/runs` answers 423 with
+ * `{error, lockdown}`. The lockdown as it stands, or null when the answer
+ * is not that refusal.
+ */
+export function lockdownRefusalOf(status: number, body: unknown): LockdownState | null {
+  if (status !== 423) return null;
+  const o = obj(body);
+  if (!o.lockdown || typeof o.lockdown !== "object") return null;
+  const s = lockdownOf(o.lockdown);
+  return s.on ? s : null;
+}
+
+/** The refusal in a line a person reads where the run was started: why, who, when, and how it ends. */
+export function lockdownRefusalText(s: LockdownState): string {
+  const who = [s.by ? `by ${s.by}` : "", s.at && !Number.isNaN(Date.parse(s.at)) ? new Date(s.at).toLocaleString() : ""].filter(Boolean).join(", ");
+  return `The estate is locked down${s.reason ? `: ${s.reason}` : ""}${who ? ` (${who})` : ""}. Nothing starts until the lockdown is lifted on the Control page${s.audit_id !== null ? `; audit event #${s.audit_id}` : ""}.`;
+}
+
+/** A port's health as the door answers it; `ok` stays null when the port had nothing to check. */
+export function portHealthOf(v: unknown): PortHealth {
+  const o = obj(v);
+  return {
+    port: str(o.port),
+    implementation: str(o.implementation),
+    configured: o.configured !== false,
+    ok: typeof o.ok === "boolean" ? o.ok : null,
+    region: str(o.region),
+    detail: obj(o.detail),
+    checked_at: str(o.checked_at),
+  };
+}
+
+/** What a port's health says, in a line: the verdict, then what the check reported. */
+export function portHealthLine(h: PortHealth): string {
+  const verdict = h.ok === true ? "healthy" : h.ok === false ? "failing" : h.configured ? "nothing to check" : "not configured";
+  const said = typeof h.detail.detail === "string" ? h.detail.detail : Object.entries(h.detail).filter(([, v]) => v === null || ["string", "number", "boolean"].includes(typeof v)).map(([k, v]) => `${k} ${String(v)}`).join(", ");
+  return `The ${h.port || "port"} port (${h.implementation || "unknown"}${h.region ? `, ${h.region}` : ""}) reads ${verdict}${said ? `: ${said}` : ""}.`;
 }
 
 function pausesOf(v: unknown): Record<string, PauseInfo> {
@@ -706,11 +817,25 @@ export async function listAttention(): Promise<AttentionItem[]> {
   });
 }
 
-/** Call the door an attention row names (replay a dead letter, re-read a health door), with the body the backend laid out. */
-export async function clearAttention(item: AttentionItem): Promise<void> {
+/** Whether a path is a port's health door (`/api/ports/{name}/health`). */
+export const isPortHealthPath = (path: string): boolean => /^\/api\/ports\/[^/]+\/health$/.test(path);
+
+/**
+ * Call the door an attention row names (replay a dead letter, re-read a
+ * health door), with the body the backend laid out. A health row's door is
+ * the failing port's own check (`GET /api/ports/{name}/health`); what it
+ * answered comes back so the row can say it.
+ */
+export async function clearAttention(item: AttentionItem): Promise<Cleared> {
   const { method, path, body } = item.action;
   if (!path.startsWith("/api/") || (method !== "POST" && method !== "GET")) throw new Error("this row names no door to call");
-  await call(method === "GET" ? "GET" : "POST", path, method === "POST" && body ? body : undefined);
+  const answer = await call(method === "GET" ? "GET" : "POST", path, method === "POST" && body ? body : undefined);
+  return { health: method === "GET" && isPortHealthPath(path) ? portHealthOf(answer) : null };
+}
+
+/** `GET /api/ports/{name}/health`: one port's own check, read now. */
+export async function readPortHealth(name: string): Promise<PortHealth> {
+  return call("GET", `/api/ports/${encodeURIComponent(name)}/health`, undefined, portHealthOf);
 }
 
 /** `POST /api/runs/{id}/steer`: guidance, a hold at the next gate, the next call's model; journalled with who and when. 409 unless the run is in flight. */
@@ -738,6 +863,7 @@ export async function fleet(action: FleetAction, agents: string[], reason: strin
       at: str(o.at),
       killed: strs(o.killed),
       paused: pausesOf(o.paused),
+      audit_id: auditIdOf(o.audit_id),
     };
   });
 }

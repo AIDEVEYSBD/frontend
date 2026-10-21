@@ -55,6 +55,8 @@ export const STRICT_READS: Record<string, string> = { "app/api/iam/": "iam" };
  * which CONSOLE_UNDER_BACKEND keeps here; and the SDK door (`/api/sdk`: the
  * description, the live run doors under `/api/sdk/runs` and the 1.4
  * upload and poll), which an attached agent opens with its scoped key.
+ * The close-out after L6 added the ports' own health doors
+ * (`/api/ports/{name}/health`), which an attention row's health action reads.
  */
 export const BACKEND_PREFIXES = [
   "/api/runs",
@@ -83,6 +85,7 @@ export const BACKEND_PREFIXES = [
   "/api/answer",
   "/api/mcp",
   "/api/sdk",
+  "/api/ports",
 ];
 
 /**

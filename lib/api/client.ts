@@ -21,7 +21,31 @@ export type Suspension = Schemas["Suspension"];
 export type ErrorBody = Schemas["ErrorBody"];
 export type BudgetRefusal = Schemas["BudgetRefusal"];
 
-export const api = createClient<paths>({ baseUrl: "", credentials: "include" });
+/**
+ * `fetch` is resolved on every call, never captured when this module loads:
+ * the console's guard (components/chrome.tsx) wraps `window.fetch` once the
+ * page is up, so a 401 from any door sends the person to sign in and a 403
+ * says what was refused, the same for a call through this client as for a
+ * plain fetch. A test stubs the global the same way.
+ */
+export const api = createClient<paths>({ baseUrl: "", credentials: "include", fetch: (request: Request) => globalThis.fetch(request) });
+
+/**
+ * A request's URL as the console's path when it is on the console's own
+ * origin (`/api/keys?x=1`), else as given. A plain `fetch("/api/...")` names
+ * the path already; the generated client sends a `Request`, whose URL the
+ * browser has made absolute. The fetch guard in components/chrome.tsx reads
+ * both through this.
+ */
+export function consolePath(url: string, origin: string = typeof window === "undefined" ? "" : window.location.origin): string {
+  if (url.startsWith("/")) return url;
+  try {
+    const u = new URL(url);
+    return origin && u.origin === origin ? `${u.pathname}${u.search}` : url;
+  } catch {
+    return url;
+  }
+}
 
 /**
  * The message in an error the backend answered with, or a plain reading of

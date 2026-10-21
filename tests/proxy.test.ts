@@ -39,9 +39,23 @@ describe("backend-owned paths", () => {
       "/api/answer",
       "/api/mcp",
       "/api/sdk",
+      "/api/ports",
     ]) {
       expect(BACKEND_PREFIXES, `${p} is the backend's`).toContain(p);
     }
+  });
+
+  // The close-out after L6: a port's own health check, which the attention
+  // queue's health row names as its action. A console door, behind the cookie.
+  it("hands the port health doors to the backend, behind the cookie", () => {
+    for (const p of ["/api/ports", "/api/ports/billing/health", "/api/ports/telemetry/health", "/api/ports/identity/health"]) {
+      expect(isBackendPath(p), `${p} is the backend's`).toBe(true);
+      expect(isMachineDoor(p), `${p} needs a session`).toBe(false);
+      expect(upstreamFor(p, "", BOTH)).toEqual({ to: "backend", url: `http://localhost:8000${p}` });
+      expect(upstreamFor(p, "", { backendOrigin: "http://localhost:8000" })).toEqual({ to: "backend", url: `http://localhost:8000${p}` });
+    }
+    expect(isBackendPath("/api/portsx")).toBe(false);
+    expect(isBackendPath("/api/port/billing/health")).toBe(false);
   });
 
   // Phase L6: the SDK door is the backend's, whole: the description, the

@@ -24,6 +24,8 @@ export interface SessionInfo {
   isEy: boolean;
   roles: string[];
   appRoles: string[];
+  /** The identity provider's group claims (absent from an older console's answer): roles for a gate's approvers, as the backend reads them. */
+  groups?: string[];
   permissions: Permission[];
   demoDefaultApplied: boolean;
   disabled: boolean;

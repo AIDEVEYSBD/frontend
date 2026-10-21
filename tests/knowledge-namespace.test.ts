@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_NAMESPACE, NAMESPACE_RE, parseNamespace } from "@/lib/knowledge";
-import { adjacentQuery, denseQuery, lexicalQuery } from "@/lib/server/knowledge-sql";
+import { adjacentQuery, denseQuery, lexicalQuery, staleQuery } from "@/lib/server/knowledge-sql";
 import { FRONTEND } from "./routes";
 
 /**
@@ -97,9 +97,20 @@ describe("the search statements", () => {
   });
 
   it("puts the namespace in the first slot of every statement", () => {
-    for (const q of [denseQuery(NS, vector, 5, null), lexicalQuery(NS, "x", 5, null), adjacentQuery(NS, [{ document_id: "d", ordinal: 0 }])]) {
+    for (const q of [denseQuery(NS, vector, 5, null), lexicalQuery(NS, "x", 5, null), adjacentQuery(NS, [{ document_id: "d", ordinal: 0 }]), staleQuery(NS)]) {
       expect(q.params[0]).toBe(NS);
     }
+  });
+
+  it("staleness: reads one namespace's admitted documents, its catalogue and its own later fetches", () => {
+    const q = staleQuery(NS);
+    expect(namespaceSlot(q.sql, q.params)).toBe(NS);
+    expect(q.sql).toMatch(/WHERE d\.namespace = \$1 AND d\.status = 'admitted'/);
+    // The source and the later fetch are this corpus's, never another engagement's copy.
+    expect(q.sql).toMatch(/JOIN sources s ON s\.namespace = d\.namespace AND s\.id = d\.source_id/);
+    expect(q.sql).toMatch(/x\.namespace = d\.namespace AND x\.source_id = d\.source_id/);
+    expect(q.sql).toContain("x.fetched_at > d.fetched_at");
+    placeholdersMatch(q.sql, q.params);
   });
 });
 
@@ -119,17 +130,18 @@ describe("every knowledge route's statements", () => {
       "app/api/knowledge/reembed/route.ts",
       "app/api/knowledge/route.ts",
       "app/api/knowledge/search/route.ts",
+      "app/api/knowledge/stale/route.ts",
     ]);
   });
 
-  // The search route builds its statements in lib/server/knowledge-sql.ts
-  // (held above); every other route writes its SQL inline, and each of those
-  // statements names the namespace column.
+  // The search and staleness routes build their statements in
+  // lib/server/knowledge-sql.ts (held above); every other route writes its
+  // SQL inline, and each of those statements names the namespace column.
   for (const file of files) {
     it(`${file}: every statement passed to kq() names the namespace`, () => {
       const text = readFileSync(path.join(FRONTEND, file), "utf-8");
       const calls = [...text.matchAll(/\bkq(?:<[\s\S]*?>)?\(\s*(`[\s\S]*?`|"(?:[^"\\]|\\.)*")/g)];
-      const builders = (text.match(/\b(?:denseQuery|lexicalQuery|adjacentQuery)\(/g) ?? []).length;
+      const builders = (text.match(/\b(?:denseQuery|lexicalQuery|adjacentQuery|staleQuery)\(/g) ?? []).length;
       expect(calls.length + builders, `${file} runs no SQL?`).toBeGreaterThan(0);
       for (const [, sql] of calls) {
         expect(sql, `${file}:\n${sql}`).toMatch(/\bnamespace\b/);

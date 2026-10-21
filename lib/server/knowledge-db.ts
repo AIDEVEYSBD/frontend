@@ -21,7 +21,9 @@ import { indexDigest, type DigestParts } from "./knowledge-digest";
  * for one client and off for another), so its key is (namespace, id); a
  * document's id is unique on its own, and its sections, chunks and admissions
  * carry the namespace as well, so the search predicate reads the chunk row
- * and never depends on a join to know which corpus it is in.
+ * and never depends on a join to know which corpus it is in. Every table
+ * also carries `estate_id`, the tenancy column every table in the platform
+ * has (lib/server/db.ts ESTATE_COLUMN), above the namespace.
  */
 
 const pool = new Pool({
@@ -45,7 +47,7 @@ const pool = new Pool({
   connectionTimeoutMillis: 20_000,
 });
 
-const SCHEMA = `
+export const SCHEMA = `
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- A curated source, per namespace. Seeded from the catalogue, editable by a curator.
@@ -61,6 +63,7 @@ CREATE TABLE IF NOT EXISTS sources (
   cadence     text NOT NULL DEFAULT '',
   enabled     boolean NOT NULL DEFAULT true,
   added_at    timestamptz NOT NULL DEFAULT now(),
+  estate_id   text NOT NULL DEFAULT 'default',
   PRIMARY KEY (namespace, id)
 );
 
@@ -82,6 +85,7 @@ CREATE TABLE IF NOT EXISTS documents (
   decided_by  text NOT NULL DEFAULT '',
   note        text NOT NULL DEFAULT '',
   excerpt     text NOT NULL DEFAULT '',
+  estate_id   text NOT NULL DEFAULT 'default',
   CONSTRAINT documents_namespace_source_fkey
     FOREIGN KEY (namespace, source_id) REFERENCES sources (namespace, id) ON DELETE CASCADE
 );
@@ -94,7 +98,8 @@ CREATE TABLE IF NOT EXISTS sections (
   document_id text NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
   ordinal     integer NOT NULL,
   heading     text NOT NULL DEFAULT '',
-  bytes       integer NOT NULL DEFAULT 0
+  bytes       integer NOT NULL DEFAULT 0,
+  estate_id   text NOT NULL DEFAULT 'default'
 );
 
 -- A retrievable piece of an admitted document.
@@ -115,7 +120,8 @@ CREATE TABLE IF NOT EXISTS chunks (
   -- The lexical half of hybrid retrieval. Postgres' own text search, so BM25-
   -- style ranking needs no second service and cannot drift from the vectors.
   lexeme      tsvector,
-  indexed_at  timestamptz NOT NULL DEFAULT now()
+  indexed_at  timestamptz NOT NULL DEFAULT now(),
+  estate_id   text NOT NULL DEFAULT 'default'
 );
 
 CREATE INDEX IF NOT EXISTS chunks_lexeme ON chunks USING gin (lexeme);
@@ -130,7 +136,8 @@ CREATE TABLE IF NOT EXISTS admissions (
   by_whom     text NOT NULL,
   note        text NOT NULL DEFAULT '',
   chunks      integer NOT NULL DEFAULT 0,
-  at          timestamptz NOT NULL DEFAULT now()
+  at          timestamptz NOT NULL DEFAULT now(),
+  estate_id   text NOT NULL DEFAULT 'default'
 );
 `;
 
@@ -143,7 +150,7 @@ CREATE TABLE IF NOT EXISTS admissions (
  * VALID so a legacy orphan (a document whose catalogue entry was renamed)
  * cannot stop the whole index from coming up.
  */
-const MIGRATIONS = `
+export const MIGRATIONS = `
 ALTER TABLE chunks ADD COLUMN IF NOT EXISTS section_id bigint;
 ALTER TABLE chunks ADD COLUMN IF NOT EXISTS heading text NOT NULL DEFAULT '';
 ALTER TABLE chunks ADD COLUMN IF NOT EXISTS meta jsonb NOT NULL DEFAULT '{}'::jsonb;
@@ -193,6 +200,14 @@ END $$;
 ALTER TABLE admissions ADD COLUMN IF NOT EXISTS model text NOT NULL DEFAULT '';
 ALTER TABLE admissions ADD COLUMN IF NOT EXISTS dimensions integer NOT NULL DEFAULT 0;
 ALTER TABLE admissions ADD COLUMN IF NOT EXISTS index_digest text NOT NULL DEFAULT '';
+
+-- The tenancy column every table carries (plan L2), as the backend declares
+-- it: an index built before it gets the column, and its rows the default.
+ALTER TABLE sources    ADD COLUMN IF NOT EXISTS estate_id text NOT NULL DEFAULT 'default';
+ALTER TABLE documents  ADD COLUMN IF NOT EXISTS estate_id text NOT NULL DEFAULT 'default';
+ALTER TABLE sections   ADD COLUMN IF NOT EXISTS estate_id text NOT NULL DEFAULT 'default';
+ALTER TABLE chunks     ADD COLUMN IF NOT EXISTS estate_id text NOT NULL DEFAULT 'default';
+ALTER TABLE admissions ADD COLUMN IF NOT EXISTS estate_id text NOT NULL DEFAULT 'default';
 
 -- Every read filters on namespace first; these are the shapes the routes ask for.
 CREATE INDEX IF NOT EXISTS documents_namespace_status ON documents (namespace, status);

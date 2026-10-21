@@ -63,7 +63,8 @@ export async function GET(req: Request) {
     // default) and the gap is on the record for the IAM page to show.
     await authEvent("denied", claims.sub, claims.email ?? null, { note: "no app roles in the access token; default role applied", role: defaultRole(), jwt: made.jwt });
   }
-  await authEvent("sign_in", claims.sub, claims.email ?? null, { app_roles: made.appRoles, jwt: made.jwt, refresh: Boolean(tokens.refresh_token) });
+  // The group claims kept for role routing: how many, from which claim, and whether the provider withheld the list (Entra ID's overage).
+  await authEvent("sign_in", claims.sub, claims.email ?? null, { app_roles: made.appRoles, jwt: made.jwt, refresh: Boolean(tokens.refresh_token), groups: made.groups.length, groups_claim: made.groupsClaim, ...(made.groupsOverage ? { groups_overage: true } : {}) });
 
   const headers = new Headers({ location: `${PUBLIC_ORIGIN}${pending.next}`, "cache-control": "no-store" });
   headers.append("set-cookie", await sessionCookie(made.id, made.expiresAt));

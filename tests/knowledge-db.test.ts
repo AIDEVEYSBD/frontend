@@ -57,6 +57,7 @@ describe.skipIf(!DSN)("one corpus per namespace, on a live index", () => {
   let admitRoute: typeof import("@/app/api/knowledge/admit/route");
   let documentRoute: typeof import("@/app/api/knowledge/document/route");
   let statusRoute: typeof import("@/app/api/knowledge/route");
+  let staleRoute: typeof import("@/app/api/knowledge/stale/route");
   let search: typeof import("@/app/api/knowledge/search/route").search;
   let documentId = "";
 
@@ -67,6 +68,7 @@ describe.skipIf(!DSN)("one corpus per namespace, on a live index", () => {
     admitRoute = await import("@/app/api/knowledge/admit/route");
     documentRoute = await import("@/app/api/knowledge/document/route");
     statusRoute = await import("@/app/api/knowledge/route");
+    staleRoute = await import("@/app/api/knowledge/stale/route");
     search = (await import("@/app/api/knowledge/search/route")).search;
     // Both namespaces have a register, so the only difference between them
     // is what was admitted where.
@@ -150,4 +152,35 @@ describe.skipIf(!DSN)("one corpus per namespace, on a live index", () => {
     expect(list.namespaces).toContain(NS_A);
     expect(list.namespaces).toContain(NS_B);
   }, 30_000);
+
+  it("carries the estate id on every table, defaulted as the backend's are", async () => {
+    const cols = await db.kq<{ table_name: string; is_nullable: string; column_default: string }>(
+      `SELECT table_name, is_nullable, column_default FROM information_schema.columns
+        WHERE table_schema = current_schema() AND column_name = 'estate_id'
+          AND table_name IN ('sources', 'documents', 'sections', 'chunks', 'admissions') ORDER BY table_name`,
+    );
+    expect(cols.map((c) => c.table_name)).toEqual(["admissions", "chunks", "documents", "sections", "sources"]);
+    for (const c of cols) expect([c.is_nullable, c.column_default], c.table_name).toEqual(["NO", "'default'::text"]);
+    const [doc] = await db.kq<{ estate_id: string }>("SELECT estate_id FROM documents WHERE namespace = $1 AND id = $2", [NS_A, documentId]);
+    expect(doc.estate_id).toBe("default");
+  });
+
+  it("names the admitted copy stale once a later fetch of its source differs, in its own namespace only", async () => {
+    const current = await (await staleRoute.GET(new Request(`http://test/api/knowledge/stale?namespace=${NS_A}`))).json();
+    expect(current).toMatchObject({ ready: true, namespaces: [NS_A], checked: 1 });
+    expect(current.stale.filter((d: { reasons: { kind: string }[] }) => d.reasons.some((r) => r.kind === "changed"))).toEqual([]);
+
+    const source = SOURCES.find((s) => s.licence === "open" && s.family !== "internal")!;
+    const staged = await fetchRoute.POST(post("/api/knowledge/fetch", { source: source.id, namespace: NS_A, title: "Zebrafish, revised", text: `${TEXT}\n\nRevised: the quarantine of the ${WORD} now lasts twenty-one days, and the log is reviewed weekly by a second person.` }));
+    expect(staged.status).toBe(200);
+    const newer = (await staged.json()).document as string;
+
+    const a = await (await staleRoute.GET(new Request(`http://test/api/knowledge/stale?namespace=${NS_A}&namespace=${NS_B}`))).json();
+    const changed = a.stale.find((d: { id: string }) => d.id === documentId);
+    expect(changed, JSON.stringify(a)).toBeDefined();
+    expect(changed.namespace).toBe(NS_A);
+    expect(changed.reasons[0]).toMatchObject({ kind: "changed", newer: { id: newer, status: "staged" } });
+    // The other corpus has nothing admitted, so nothing to be stale.
+    expect(a.stale.every((d: { namespace: string }) => d.namespace === NS_A)).toBe(true);
+  }, 60_000);
 });
