@@ -94,7 +94,7 @@ export function Workflows() {
   );
 
   const remove = async (id: string) => {
-    await fetch(`/api/agents?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    await fetch(`/api/agents/${encodeURIComponent(id)}`, { method: "DELETE" });
     setMenu(null);
     setConfirming(null);
     refresh();

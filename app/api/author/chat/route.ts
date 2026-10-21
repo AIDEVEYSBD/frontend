@@ -1,8 +1,6 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import path from "node:path";
-import { readFile } from "node:fs/promises";
 import { permit } from "@/lib/server/auth";
+import { backendConfigured, backendError, backendFetch, backendMissing } from "@/lib/server/backend";
+import { defaultModel, foundry } from "@/lib/server/foundry";
 
 /**
  * The agent that builds agents — and the one agent that does not run in the
@@ -15,74 +13,58 @@ import { permit } from "@/lib/server/auth";
  * draft plus appears on the canvas for a person to review. Authoring and
  * authorising stay different powers — nothing here can reach the registry.
  *
- * The loop lives in this route (the control plane), not the Python runtime:
- * describing an agent is an interactive editing surface, not a workflow run,
- * so it has no journal, no policy engine, and no registry entry pretending
- * otherwise.
+ * The loop lives in this route (the console), not the runtime: describing an
+ * agent is an interactive editing surface, not a workflow run, so it has no
+ * journal, no policy engine, and no registry entry pretending otherwise.
+ * The conversation goes to Foundry; every runtime step is a request to the
+ * backend's authoring door (`POST /api/author/reference`, `POST
+ * /api/author/propose`, backend/CONTRACT.md), under the caller's own
+ * identity. Nothing is spawned.
+ *
+ * This is the one console route under a backend-owned prefix, named in
+ * CONSOLE_UNDER_BACKEND (lib/route-policy.ts) so the path router keeps it.
  */
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const exec = promisify(execFile);
-const RUNTIME = path.resolve(process.cwd(), "..", "runtime");
-
-/* ── credentials: the same vault the runtime reads, same overlay order ── */
-
-async function foundryKey(): Promise<string> {
-  try {
-    const vault = JSON.parse(await readFile(path.join(path.resolve(process.cwd(), "..", "runtime"), "workspace", "vault.json"), "utf-8"));
-    const v = vault?.keys?.foundry?.value;
-    if (typeof v === "string" && v) return v;
-  } catch {
-    /* no vault yet */
-  }
-  return process.env.FOUNDRY_API_KEY ?? process.env.AZURE_AI_KEY ?? "";
-}
-
-/* ── the reference, introspected from the runtime so it cannot drift ── */
+/* ── the reference, introspected by the runtime so it cannot drift ── */
 
 let refCache: { at: number; text: string } | null = null;
 
-async function reference(): Promise<string> {
+async function reference(req: Request): Promise<string> {
   if (refCache && Date.now() - refCache.at < 600_000) return refCache.text;
-  const { stdout } = await exec(
-    "python3",
-    ["-c", "import json; from agentfactory.authoring import reference; print(json.dumps(reference(example=True)))"],
-    { cwd: RUNTIME, timeout: 30_000, maxBuffer: 4 * 1024 * 1024 },
-  );
-  refCache = { at: Date.now(), text: stdout.trim() };
-  return refCache.text;
+  const res = await backendFetch(req, "/api/author/reference", { method: "POST", body: JSON.stringify({ example: true }) });
+  if (!res.ok) throw new Error(await backendError(res, "the backend could not answer the capability reference"));
+  const text = JSON.stringify(await res.json());
+  refCache = { at: Date.now(), text };
+  return text;
 }
 
 /* ── proposal: the deployment parser answers, a valid one becomes a draft ── */
 
-async function propose(document: unknown): Promise<Record<string, unknown>> {
-  const script =
-    "import json, sys, pathlib\n" +
-    "from agentfactory.authoring import propose\n" +
-    "doc = json.load(sys.stdin)\n" +
-    "print(json.dumps(propose(pathlib.Path('workspace/drafts'), doc)))\n";
-  return await new Promise((resolve) => {
-    const child = execFile(
-      "python3",
-      ["-c", script],
-      { cwd: RUNTIME, timeout: 30_000, maxBuffer: 4 * 1024 * 1024 },
-      (err, stdout) => {
-        if (err && !stdout) {
-          resolve({ valid: false, error: `the validator could not run — ${err.message}`, path: "$" });
-          return;
-        }
-        try {
-          resolve(JSON.parse(stdout.trim().split("\n").pop() ?? ""));
-        } catch {
-          resolve({ valid: false, error: "the validator returned something unreadable", path: "$" });
-        }
-      },
-    );
-    child.stdin?.write(JSON.stringify(document ?? {}));
-    child.stdin?.end();
-  });
+interface Verdict extends Record<string, unknown> {
+  valid: boolean;
+  draft_id?: string | null;
+  digest?: string | null;
+  nodes?: string[];
+  error?: string | null;
+  path?: string | null;
+}
+
+async function propose(req: Request, document: unknown): Promise<Verdict> {
+  let res: Response;
+  try {
+    res = await backendFetch(req, "/api/author/propose", { method: "POST", body: JSON.stringify({ document: document ?? {} }) });
+  } catch (e) {
+    return { valid: false, error: `the validator could not be reached — ${(e as Error).message}`, path: "$" };
+  }
+  if (!res.ok) return { valid: false, error: await backendError(res, "the validator refused to run"), path: "$" };
+  try {
+    return (await res.json()) as Verdict;
+  } catch {
+    return { valid: false, error: "the validator returned something unreadable", path: "$" };
+  }
 }
 
 /* ── the conversation loop ── */
@@ -110,13 +92,6 @@ const PROPOSE_TOOL = {
 };
 
 function systemPrompt(ref: string): string {
-  return systemPromptBody(ref, [
-    "- Call the propose tool with the COMPLETE document. If it refuses, fix exactly the named",
-    "  field and propose again — do not redesign what already passed.",
-  ]);
-}
-
-function systemPromptBody(ref: string, proposeHow: string[]): string {
   return [
     "You are the Agent Factory builder — the conversational side of a visual canvas where cyber",
     "and GRC teams assemble agents (controls testing, DLP triage, third-party review, resilience",
@@ -130,7 +105,8 @@ function systemPromptBody(ref: string, proposeHow: string[]): string {
     "- Choose the smallest harness that fits: sequence when the plan is fixed, delegate when the",
     "  model must decide what to look at next, await when a person or external system decides.",
     "- Use only the capabilities and connector kinds in the reference below. Never invent tools.",
-    ...proposeHow,
+    "- Call the propose tool with the COMPLETE document. If it refuses, fix exactly the named",
+    "  field and propose again — do not redesign what already passed.",
     "- After a valid proposal, reply with two or three sentences: what the agent does, the one",
     "  or two judgment calls you made, and any open question worth a human decision. The person",
     "  sees the design on the canvas — do not paste JSON into the chat.",
@@ -149,9 +125,16 @@ interface Msg {
   tool_call_id?: string;
 }
 
+interface Draft {
+  id: string;
+  document: unknown;
+  nodes: string[];
+  digest: string;
+}
+
 export async function POST(req: Request) {
   { const gate = await permit(req, "configure"); if (gate) return gate; }
-  const key = await foundryKey();
+  if (!backendConfigured()) return backendMissing();
 
   let body: { messages?: { role: string; content: string }[]; model?: string };
   try {
@@ -166,15 +149,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "the last message must be from the user" }, { status: 400 });
   }
 
-  let model = body.model;
-  if (!model) {
-    try {
-      const cfg = JSON.parse(await readFile(path.join(RUNTIME, "workspace", "config.json"), "utf-8"));
-      model = cfg.default_model;
-    } catch {
-      /* defaults below */
-    }
-  }
+  const model = body.model || (await defaultModel());
   if (!model) {
     return Response.json(
       { error: "No default model is configured. Choose one on the Configuration page or send { model }." },
@@ -184,16 +159,17 @@ export async function POST(req: Request) {
 
   let ref: string;
   try {
-    ref = await reference();
+    ref = await reference(req);
   } catch (e) {
-    return Response.json(
-      { error: `could not read the capability reference — ${(e as Error).message}` },
-      { status: 500 },
-    );
+    return Response.json({ error: `could not read the capability reference — ${(e as Error).message}` }, { status: 502 });
   }
 
-  if (!key) {
-    return Response.json({ error: "No Foundry key — set FOUNDRY_API_KEY." }, { status: 503 });
+  // The chat itself goes to the model gateway with the deployment's own
+  // credentials, resolved the way every other console route resolves them.
+  const gateway = await foundry();
+  const endpoint = process.env.FOUNDRY_ENDPOINT ?? "";
+  if (!gateway || !endpoint) {
+    return Response.json({ error: "No model gateway — set FOUNDRY_ENDPOINT and FOUNDRY_API_KEY." }, { status: 503 });
   }
 
   const messages: Msg[] = [
@@ -204,50 +180,38 @@ export async function POST(req: Request) {
   /* Each proposal attempt is reported to the UI — the person watches the
      design converge the same way they watch a run's journal. */
   const events: { tool: string; ok: boolean; note: string }[] = [];
-  let draft: { id: string; document: unknown; nodes: string[]; digest: string } | null = null;
-
-  const endpoint = process.env.FOUNDRY_ENDPOINT ?? "";
-  if (!endpoint) {
-    return Response.json({ error: "No Foundry endpoint — set FOUNDRY_ENDPOINT." }, { status: 503 });
-  }
+  let draft: Draft | null = null;
+  const accept = (verdict: Verdict, document: unknown): boolean => {
+    if (verdict.valid) {
+      draft = { id: String(verdict.draft_id ?? ""), document, nodes: verdict.nodes ?? [], digest: String(verdict.digest ?? "") };
+      events.push({ tool: "spec.propose", ok: true, note: `valid — draft "${draft.id}" saved` });
+      return true;
+    }
+    events.push({ tool: "spec.propose", ok: false, note: `refused at ${verdict.path ?? "$"} — ${verdict.error}` });
+    return false;
+  };
 
   for (let round = 0; round < 6; round++) {
     let res: globalThis.Response;
     try {
       res = await fetch(endpoint, {
         method: "POST",
-        headers: {
-          authorization: `Bearer ${key}`,
-          "api-key": key,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          messages,
-          tools: [PROPOSE_TOOL],
-          max_tokens: 8192,
-        }),
+        headers: { authorization: `Bearer ${gateway.key}`, "api-key": gateway.key, "content-type": "application/json" },
+        body: JSON.stringify({ model, messages, tools: [PROPOSE_TOOL], max_tokens: 8192 }),
         signal: AbortSignal.timeout(120_000),
       });
     } catch (e) {
-      return Response.json(
-        { error: `Foundry unreachable — ${(e as Error).message}` },
-        { status: 502 },
-      );
+      return Response.json({ error: `Foundry unreachable — ${(e as Error).message}` }, { status: 502 });
     }
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
-      return Response.json(
-        { error: `Foundry returned ${res.status}${detail ? ` — ${detail.slice(0, 300)}` : ""}` },
-        { status: 502 },
-      );
+      return Response.json({ error: `Foundry returned ${res.status}${detail ? ` — ${detail.slice(0, 300)}` : ""}` }, { status: 502 });
     }
     const data = await res.json();
     const choice = data.choices?.[0]?.message;
     if (!choice) return Response.json({ error: "the model returned nothing" }, { status: 502 });
 
-    const calls: { id: string; function: { name: string; arguments: string } }[] =
-      choice.tool_calls ?? [];
+    const calls: { id: string; function: { name: string; arguments: string } }[] = choice.tool_calls ?? [];
 
     if (!calls.length) {
       const text = String(choice.content ?? "").trim();
@@ -278,28 +242,16 @@ export async function POST(req: Request) {
           /* not JSON — treated as prose below */
         }
         if (docObj && typeof docObj === "object" && "spec" in (docObj as object)) {
-          const verdict = await propose(docObj);
-          if (verdict.valid) {
-            draft = {
-              id: String(verdict.draft_id),
-              document: docObj,
-              nodes: (verdict.nodes as string[]) ?? [],
-              digest: String(verdict.digest ?? ""),
-            };
-            events.push({ tool: "spec.propose", ok: true, note: `valid — draft "${draft.id}" saved` });
+          const verdict = await propose(req, docObj);
+          if (accept(verdict, docObj)) {
             const prose = text.replace(fence[0], "").trim();
             return Response.json({
-              reply: prose || `The design passed the deployment parser — draft "${draft.id}" is ready to open on the canvas.`,
+              reply: prose || `The design passed the deployment parser — draft "${draft!.id}" is ready to open on the canvas.`,
               events,
               draft,
               model,
             });
           }
-          events.push({
-            tool: "spec.propose",
-            ok: false,
-            note: `refused at ${verdict.path ?? "$"} — ${verdict.error}`,
-          });
           messages.push(
             { role: "assistant", content: text },
             {
@@ -318,7 +270,7 @@ export async function POST(req: Request) {
 
     messages.push({ role: "assistant", content: choice.content ?? "", tool_calls: choice.tool_calls });
     for (const call of calls) {
-      let verdict: Record<string, unknown> | null = null;
+      let verdict: Verdict | null = null;
       let args: { document?: unknown } = {};
       if (call.function.name !== "propose") {
         verdict = { valid: false, error: `no tool named ${call.function.name}`, path: "$" };
@@ -328,23 +280,9 @@ export async function POST(req: Request) {
         } catch {
           verdict = { valid: false, error: "tool arguments were not valid JSON", path: "$" };
         }
-        if (!verdict) verdict = await propose(args.document);
+        if (!verdict) verdict = await propose(req, args.document);
       }
-      if (verdict.valid) {
-        draft = {
-          id: String(verdict.draft_id),
-          document: args.document,
-          nodes: (verdict.nodes as string[]) ?? [],
-          digest: String(verdict.digest ?? ""),
-        };
-        events.push({ tool: "spec.propose", ok: true, note: `valid — draft "${draft.id}" saved` });
-      } else {
-        events.push({
-          tool: "spec.propose",
-          ok: false,
-          note: `refused at ${verdict.path ?? "$"} — ${verdict.error}`,
-        });
-      }
+      accept(verdict, args.document);
       messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(verdict) });
     }
   }

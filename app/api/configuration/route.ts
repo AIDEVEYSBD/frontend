@@ -2,6 +2,7 @@ import path from "node:path";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { dbReady, query } from "@/lib/server/db";
 import { permit } from "@/lib/server/auth";
+import { backendConfigured, backendFetch } from "@/lib/server/backend";
 
 /**
  * Everything this factory is configured with, in one read.
@@ -15,6 +16,11 @@ import { permit } from "@/lib/server/auth";
  * Usage figures come from run journals, so a connector that is configured but
  * has never been called says so. A source nobody reads is the most common kind
  * of wrong configuration and it should be visible, not inferred from silence.
+ *
+ * The vault's names, the ingress keys and the queue are the backend's
+ * (backend/CONTRACT.md): they are read from its doors as the caller, and a
+ * deployment without a backend, or a caller the door refuses, sees them
+ * empty rather than guessed.
  */
 
 export const runtime = "nodejs";
@@ -22,6 +28,22 @@ export const dynamic = "force-dynamic";
 
 const ROOT = path.resolve(process.cwd(), "..", "runtime");
 const RUNS = path.join(ROOT, "workspace", "runs");
+
+/** One backend door, read on the caller's behalf; null when it cannot answer. */
+async function backendRead<T>(req: Request, door: string): Promise<T | null> {
+  if (!backendConfigured()) return null;
+  try {
+    const res = await backendFetch(req, door, { signal: AbortSignal.timeout(8_000) });
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+interface VaultList { keys?: { name: string }[] }
+interface KeyList { keys?: { name: string; agent: string | null; prefix: string; last_used: string | null; revoked_at: string | null }[] }
+interface QueueView { agents?: Record<string, Record<string, number | string | null | undefined>> }
 
 /** The config keys that hold a list of configured backends, per tool server. */
 const SLOTS = ["sources", "backends", "transports", "engines", "roots", "peers"] as const;
@@ -234,32 +256,19 @@ export async function GET(req: Request) {
     /* nothing configured yet */
   }
 
-  /* ── credentials, by name only ── */
-  let vaultKeys: string[] = [];
-  try {
-    const raw = JSON.parse(await readFile(path.join(ROOT, "workspace", "vault.json"), "utf-8"));
-    const store = raw.keys ?? raw.secrets ?? raw;
-    vaultKeys = Object.keys(store).filter((k) => !k.startsWith("_"));
-  } catch {
-    /* no vault on this deployment */
-  }
-
-  /* ── ingress keys and queue ── */
-  let apiKeys: { name: string; agent: string | null; prefix: string; last_used: string | null; revoked_at: string | null }[] = [];
-  let queue: Record<string, unknown> = {};
-  if (await dbReady()) {
-    try {
-      apiKeys = await query("SELECT name, agent, prefix, last_used, revoked_at FROM api_keys ORDER BY created_at DESC");
-    } catch {
-      /* the table may not exist on an older deployment */
-    }
-    try {
-      const rows = await query<{ status: string; n: string }>(
-        "SELECT status, count(*) AS n FROM trigger_jobs GROUP BY status",
-      );
-      queue = Object.fromEntries(rows.map((r) => [r.status, Number(r.n)]));
-    } catch {
-      /* no queue table */
+  /* ── credentials by name, ingress keys and the queue: the backend's doors ── */
+  const [vault, keyList, queueView] = await Promise.all([
+    backendRead<VaultList>(req, "/api/vault"),
+    backendRead<KeyList>(req, "/api/keys"),
+    backendRead<QueueView>(req, "/api/queue"),
+  ]);
+  const vaultKeys = (vault?.keys ?? []).map((k) => k.name);
+  const apiKeys = (keyList?.keys ?? []).map(({ name, agent, prefix, last_used, revoked_at }) => ({ name, agent, prefix, last_used, revoked_at }));
+  // The queue by status across every agent, the figure this page has always shown.
+  const queue: Record<string, number> = {};
+  for (const counts of Object.values(queueView?.agents ?? {})) {
+    for (const [status, n] of Object.entries(counts)) {
+      if (typeof n === "number") queue[status] = (queue[status] ?? 0) + n;
     }
   }
 

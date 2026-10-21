@@ -20,8 +20,10 @@ import { api, errorText } from "@/lib/api/client";
  * which signs it with the session behind the cookie — the identity shown
  * here is what the record will say, and it is never typed. A gate an
  * attached agent holds open over the SDK has no run to resume there; the
- * backend refuses with 409 and the answer goes through the console's
- * approvals door instead, which writes it onto the record for the agent.
+ * resume door refuses with 409 and the answer goes through the backend's
+ * approvals door instead (`POST /api/approvals`, backend/CONTRACT.md), which
+ * writes it onto the record for the agent, or closes a stale gate with the
+ * decision on it. The inbox is that door's `GET`.
  */
 
 export interface Gate {

@@ -6,10 +6,12 @@ import { Button, IconButton, Mono } from "../ui";
 
 /**
  * The deploy theater: the moment a document becomes part of the estate,
- * staged honestly. Every act maps to a real step the /api/deploy call
- * performs — parser seal, registry write — and the final state shows the
- * real digest that now identifies this agent. The choreography never lies:
- * if the parser refuses, the theater shows the refusal, not a success scene.
+ * staged honestly. Every act maps to a real step the backend performs —
+ * the save, where its parser seals the document and a version is recorded
+ * (POST /api/agents), then the deploy, which stamps the registry (POST
+ * /api/agents/{id}/deploy) — and the final state shows the real digest that
+ * now identifies this agent. The choreography never lies: if the parser
+ * refuses, the theater shows the refusal, not a success scene.
  *
  * All art is procedural JSX/SVG; all sound is synthesized in WebAudio at
  * click time (the click is the gesture that unlocks audio). Reduced-motion
@@ -116,14 +118,29 @@ export function DeployTheater({
     const minDwell = (ms: number) => new Promise((r) => setTimeout(r, reduce ? 0 : ms));
 
     (async () => {
-      const request = fetch("/api/deploy", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ spec: doc }),
-        signal: ctrl.signal,
-      })
-        .then(async (r) => ({ ok: r.ok, body: await r.json() }))
-        .catch((e) => ({ ok: false, body: { error: (e as Error).message } }));
+      /* Two real requests on the backend: the save, where the parser seals
+         the document (a refusal lands here), then the deploy, which reports
+         its own steps and the moment it happened. The save's round trip is
+         measured here and reported as the first step. */
+      const post = (url: string, body?: unknown) =>
+        fetch(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: body === undefined ? undefined : JSON.stringify(body),
+          signal: ctrl.signal,
+        })
+          .then(async (r) => ({ ok: r.ok, body: await r.json() }))
+          .catch((e) => ({ ok: false, body: { error: (e as Error).message } }));
+      const request = (async () => {
+        const t0 = Date.now();
+        const saved = await post("/api/agents", { spec: doc });
+        if (!saved.ok || saved.body.error) return saved;
+        const saveMs = Date.now() - t0;
+        const id = String(saved.body.id ?? meta.id ?? "");
+        const deployed = await post(`/api/agents/${encodeURIComponent(id)}/deploy`);
+        if (!deployed.ok || deployed.body.error) return deployed;
+        return { ok: true, body: { ...deployed.body, steps: [{ step: "save", ms: saveMs }, ...(deployed.body.steps ?? [])] } };
+      })();
 
       sound().tick();
       await minDwell(1050);

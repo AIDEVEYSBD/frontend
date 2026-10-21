@@ -18,6 +18,13 @@ import {
   type AttachedAgent,
   type Language,
 } from "@/lib/attached";
+import { agentActivityFor } from "@/lib/demo-activity";
+
+/** A seeded agent's row with its demonstration activity (lib/demo-activity.ts), never applied to one whose runs are on record. */
+function withDemoActivity(a: AttachedAgent): AttachedAgent {
+  const x = agentActivityFor(a.id, a.mode);
+  return { ...a, last_seen: x.lastSeen, runs30d: x.runs30d, cost30d: x.cost30d, denials30d: x.denials30d, gates30d: x.gates30d, p50ms: x.p50ms };
+}
 
 /**
  * Third-party agents: how one attaches, and which ones have.
@@ -168,7 +175,9 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
     fetch("/api/attached")
       .then((r) => r.json())
       .then((d: { agents?: AttachedAgent[]; store?: string }) => {
-        const list = d.agents ?? [];
+        // The backend measures activity from the run record; the seeded
+        // agents' figures are demonstration data and the console's own.
+        const list = (d.agents ?? []).map((a) => (a.demo ? withDemoActivity(a) : a));
         setAgents(list);
         setStore(d.store ?? "");
         onLoaded?.(list, d.store ?? "");
@@ -176,7 +185,7 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
       .catch(() => setAgents([]));
   useEffect(() => {
     load();
-    fetch("/api/attached?registry=1")
+    fetch("/api/attached/registry")
       .then((r) => r.json())
       .then((d: { tools?: typeof registry }) => setRegistry(d.tools ?? []))
       .catch(() => {});

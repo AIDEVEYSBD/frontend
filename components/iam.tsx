@@ -11,6 +11,7 @@ import { CURRENT_USER } from "@/lib/user";
 import { useSession, signerName } from "@/lib/use-session";
 import { soon } from "@/lib/soon";
 import { hueFor } from "@/lib/hue";
+import { agentActivityFor } from "@/lib/demo-activity";
 
 /**
  * IAM: who may use this platform, and every identity that is not a person.
@@ -25,6 +26,13 @@ import { hueFor } from "@/lib/hue";
  */
 
 type Kind = "workflow" | "attached_agent" | "mcp_server" | "api_key" | "vault_credential";
+
+/** A seeded attached agent's identity row with its demonstration liveness (lib/demo-activity.ts); every other row is as the backend measured it. */
+function withDemoActivity(i: Identity): Identity {
+  if (i.kind !== "attached_agent" || !i.facts.demo) return i;
+  const a = agentActivityFor(i.id, i.facts.mode === "a2a" ? "a2a" : "sdk");
+  return { ...i, last_used: a.lastSeen, runs30d: a.runs30d };
+}
 interface Owner { owner: string; owner_sub: string | null; purpose: string; review_due_at: string | null; updated_at: string; updated_by: string }
 interface Identity {
   kind: Kind; id: string; name: string; description: string; credential: string; privileges: string; risk: string; status: string;
@@ -156,7 +164,9 @@ export function Iam() {
     Promise.all([fetch("/api/iam/identities").then((r) => r.json()), fetch("/api/iam/users").then((r) => r.json())])
       .then(([r, p]) => {
         if (r.error || p.error) throw new Error(String(r.error ?? p.error));
-        setReg(r);
+        // The backend measures liveness from the run record; a seeded attached
+        // agent's figures are demonstration data and the console's own.
+        setReg({ ...r, identities: ((r.identities ?? []) as Identity[]).map(withDemoActivity) });
         setPeople(p);
       })
       .catch(() => setFailed(true));
@@ -304,7 +314,7 @@ export function Iam() {
     }
   };
   const json = (method: string, url: string, body?: unknown) => fetch(url, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
-  const revokeKey = (i: { id: string; name: string }) => act(`revoke:${i.id}`, () => fetch(`/api/keys?id=${encodeURIComponent(i.id)}`, { method: "DELETE" }), () => ({ tone: "ok", text: `Revoked ${i.name}. Anything still presenting it is refused from now.` }));
+  const revokeKey = (i: { id: string; name: string }) => act(`revoke:${i.id}`, () => fetch(`/api/keys/${encodeURIComponent(i.id)}`, { method: "DELETE" }), () => ({ tone: "ok", text: `Revoked ${i.name}. Anything still presenting it is refused from now.` }));
   const rotateKey = (i: Identity) =>
     act(
       `rotate:${i.id}`,
@@ -312,7 +322,7 @@ export function Iam() {
         const minted = await json("POST", "/api/keys", { name: i.name, agent: (i.facts.agent as string | null) ?? null });
         if (!minted.ok) return minted;
         const d = await minted.clone().json();
-        await fetch(`/api/keys?id=${encodeURIComponent(i.id)}`, { method: "DELETE" });
+        await fetch(`/api/keys/${encodeURIComponent(i.id)}`, { method: "DELETE" });
         return new Response(JSON.stringify(d), { status: 200, headers: { "content-type": "application/json" } });
       },
       (d) => ({ tone: "ok", text: `Rotated ${i.name}: the old key is revoked and this is the only time the new one is shown.`, secret: String(d.key ?? "") }),

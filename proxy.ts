@@ -8,11 +8,15 @@ import { upstreamFor } from "@/lib/route-policy";
  * Three variables shape it, and every deployment sets some of them:
  *
  *   BACKEND_ORIGIN set: the API paths the backend owns (BACKEND_PREFIXES in
- *   lib/route-policy.ts: /api/runs and /api/healthz for now, more as each
- *   domain moves) are forwarded there at request time, with the shared
- *   secret attached and the session cookie forwarded. This happens before,
- *   and independently of, the RUNTIME_ORIGIN rewrite below. The local
- *   backend is `http://localhost:8000` (backend/CONTRACT.md).
+ *   lib/route-policy.ts: runs, approvals, agents, authoring, drafts, roster,
+ *   keys, attached agents, IAM, the vault, the trigger, webhook, queue and
+ *   worker doors, and the health check) are forwarded there at request
+ *   time, with the shared secret attached and the session cookie forwarded.
+ *   This happens before, and independently of, the RUNTIME_ORIGIN rewrite
+ *   below. The local backend is `http://localhost:8000`
+ *   (backend/CONTRACT.md). Without BACKEND_ORIGIN those paths have no
+ *   answer here: the console serves pages and the domains that have not
+ *   moved yet (frontend/README.md lists them).
  *
  *   RUNTIME_ORIGIN set (Vercel): every other /api request is proxied to the
  *   control plane behind the tunnel, at request time, with the shared secret
@@ -40,7 +44,11 @@ const AUTH_SECRET = process.env.AUTH_SECRET ?? "";
 const INTERNAL_HEADER = "x-internal-auth";
 const PUBLIC_ORIGIN = (process.env.NEXT_PUBLIC_ORIGIN ?? process.env.PUBLIC_ORIGIN ?? "https://agentfactory.autogrc.cloud").replace(/\/+$/, "");
 
-const MACHINE_DOORS = ["/api/trigger/", "/api/sdk/", "/api/sdk", "/api/a2a", "/api/mcp/server", "/api/auth/"];
+// The doors a machine opens with an API key (or, for a webhook, the spec's
+// own secret), so the cookie gate never stands in front of them: the
+// backend's trigger, webhook and worker doors, and the console's SDK, A2A
+// and platform-MCP doors. Sign-in itself is open too, or nobody could start.
+const MACHINE_DOORS = ["/api/trigger/", "/api/webhooks/", "/api/worker/", "/api/sdk/", "/api/sdk", "/api/a2a", "/api/mcp/server", "/api/auth/"];
 const OPEN_PAGES = ["/", "/login", "/no-access"];
 const OPEN_PREFIXES = ["/_next/", "/logos/", "/media/", "/.well-known/", "/favicon.ico", "/icon.svg"];
 

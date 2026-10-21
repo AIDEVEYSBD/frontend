@@ -83,7 +83,7 @@ export function AuthorPanel({ onApply }: { onApply: (document: unknown) => void 
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     try {
-      const res = await fetch("/api/author", {
+      const res = await fetch("/api/author/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({

@@ -1,17 +1,23 @@
-import { spawn } from "node:child_process";
 import { permit } from "@/lib/server/auth";
 import path from "node:path";
-import { mkdir, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { dbReady, query } from "@/lib/server/db";
 import { grade, loadSet } from "@/lib/server/evals";
 import { derive, emptyMatrix, tally } from "@/lib/metrics";
 import { costOf, priceSheet, usageOf } from "@/lib/server/prices";
+import { backendConfigured, backendError, backendFetch, backendMissing } from "@/lib/server/backend";
 
 /**
  * Run an eval set: every case is a REAL run of the agent — same runtime, same
  * journal, same policy engine — graded deterministically against the case's
  * checks. No mocked passes: a case's run appears in the run history like any
  * other, and the recorded result carries the spec digest it measured.
+ *
+ * Each case is started on the backend (`POST /api/runs`, backend/CONTRACT.md)
+ * under the caller's own identity, so it sits under the budget gate and the
+ * kill switch like any other run, and its record is read back from
+ * `GET /api/runs/{id}` once the state settles. Grading stays here: the
+ * checks, the confusion matrix and the comparison are the console's.
  *
  * Cases run sequentially. An eval is a measurement; measurements that race a
  * shared workspace measure the race.
@@ -20,7 +26,7 @@ import { costOf, priceSheet, usageOf } from "@/lib/server/prices";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ROOT = path.resolve(process.cwd(), "..", "runtime");
+const CONFIG = path.resolve(process.cwd(), "..", "runtime", "workspace", "config.json");
 
 type ModelClass = "small" | "medium" | "large";
 const TIERS: ModelClass[] = ["small", "medium", "large"];
@@ -33,7 +39,7 @@ interface DeployConfig {
 
 async function deployConfig(): Promise<DeployConfig> {
   try {
-    const raw = JSON.parse(await readFile(path.join(ROOT, "workspace", "config.json"), "utf-8"));
+    const raw = JSON.parse(await readFile(CONFIG, "utf-8"));
     if (Array.isArray(raw.models)) return raw;
   } catch {
     /* no config yet */
@@ -60,6 +66,80 @@ function candidates(cfg: DeployConfig, incumbent: string, scope: "class" | "belo
   return [...new Set([incumbent, ...list].filter(Boolean))];
 }
 
+/* ── the runs, on the backend ── */
+
+/** The run state as `GET /api/runs/{id}` answers it: what the grader reads. */
+interface RunDoc {
+  id?: string;
+  state?: string;
+  error?: string;
+  result?: Record<string, unknown> | null;
+  spec_digest?: string;
+  journal?: { entries?: { kind: string; title?: string; data?: Record<string, unknown> }[]; duration_ms?: number };
+}
+
+/** A run that will not change again: the backend's terminal states, and a gate nobody will answer inside a benchmark. */
+const SETTLED = new Set(["done", "failed", "killed", "closed", "suspended"]);
+
+/** How long one case may take before it is recorded as unsettled. */
+const CASE_DEADLINE_MS = 20 * 60_000;
+
+type Node = Record<string, unknown>;
+
+/**
+ * Every node that calls a model pinned to one candidate, with tier routing
+ * cleared, so the whole run measures that model and nothing routed around
+ * it. This is what `--force-model` did for the CLI, expressed in the spec
+ * the backend runs; `model` on `POST /api/runs` is only the run's default.
+ */
+function pinned(doc: Record<string, unknown>, model: string): Record<string, unknown> {
+  const spec = (doc.spec ?? {}) as Record<string, unknown>;
+  const nodes = Array.isArray(spec.nodes) ? (spec.nodes as Node[]) : [];
+  return {
+    ...doc,
+    spec: {
+      ...spec,
+      nodes: nodes.map((n) => {
+        const callsModel = n.harness === "delegate" || (Array.isArray(n.steps) && (n.steps as { action?: string }[]).some((s) => s.action === "model"));
+        if (!callsModel) return n;
+        const next: Node = { ...n, model };
+        delete next.model_class;
+        return next;
+      }),
+    },
+  };
+}
+
+async function startRun(req: Request, body: Record<string, unknown>): Promise<{ id: string } | { error: string }> {
+  let res: Response;
+  try {
+    res = await backendFetch(req, "/api/runs", { method: "POST", body: JSON.stringify(body) });
+  } catch (e) {
+    return { error: `the backend could not be reached: ${(e as Error).message}` };
+  }
+  if (!res.ok) return { error: await backendError(res, "the backend refused to start the run") };
+  const d = (await res.json().catch(() => ({}))) as { run?: string };
+  if (!d.run) return { error: "the backend started no run" };
+  return { id: d.run };
+}
+
+/** Read the run back until its state settles; a missed poll is not a failed run. */
+async function settle(req: Request, id: string): Promise<RunDoc | null> {
+  const deadline = Date.now() + CASE_DEADLINE_MS;
+  let last: RunDoc | null = null;
+  for (;;) {
+    try {
+      const res = await backendFetch(req, `/api/runs/${encodeURIComponent(id)}`);
+      if (res.ok) last = (await res.json()) as RunDoc;
+    } catch {
+      /* the next poll reads it */
+    }
+    if (last && SETTLED.has(String(last.state))) return last;
+    if (Date.now() > deadline) return last;
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+}
+
 export async function POST(req: Request) {
   { const gate = await permit(req, "run"); if (gate) return gate; }
   let body: { set_id?: string; model?: string; compare?: { scope?: "class" | "below" | "all"; models?: string[] } };
@@ -69,15 +149,21 @@ export async function POST(req: Request) {
     return Response.json({ error: "send { set_id }" }, { status: 400 });
   }
   if (!body.set_id) return Response.json({ error: "send { set_id }" }, { status: 400 });
+  if (!backendConfigured()) return backendMissing();
 
   const set = await loadSet(body.set_id);
   if (!set) return Response.json({ error: `no eval set "${body.set_id}"` }, { status: 404 });
 
-  const specPath = path.join(ROOT, "workspace", "agents", `${set.agent}.json`);
+  // The agent must be in the registry; the backend's answer also carries
+  // the document a comparison pins its candidates into.
+  let agentDoc: Record<string, unknown>;
   try {
-    await readFile(specPath);
-  } catch {
-    return Response.json({ error: `agent "${set.agent}" is not in the registry` }, { status: 422 });
+    const res = await backendFetch(req, `/api/agents/${encodeURIComponent(set.agent)}`);
+    if (res.status === 404) return Response.json({ error: `agent "${set.agent}" is not in the registry` }, { status: 422 });
+    if (!res.ok) return Response.json({ error: await backendError(res, "the backend could not read the agent") }, { status: 502 });
+    agentDoc = ((await res.json()) as { spec?: Record<string, unknown> }).spec ?? {};
+  } catch (e) {
+    return Response.json({ error: `the backend could not be reached: ${(e as Error).message}` }, { status: 502 });
   }
 
   // Explicit request beats the set's own default beats the deployment default.
@@ -91,8 +177,6 @@ export async function POST(req: Request) {
     ? candidates(cfg, incumbent, body.compare.scope ?? "class", body.compare.models).map((id) => ({ id, forced: true }))
     : [{ id: model, forced: false }];
   const sheet = body.compare ? await priceSheet() : null;
-  const runsDir = path.join(ROOT, "workspace", "runs");
-  await mkdir(runsDir, { recursive: true });
   const batchId = `ev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
   const encoder = new TextEncoder();
 
@@ -148,51 +232,42 @@ export async function POST(req: Request) {
         const started = Date.now();
         send({ type: "case.start", index: i, id: c.id, note: c.note ?? "", model: model || "default" });
 
-        const statePath = path.join(runsDir, `${evalRunId}-${c.id}.json`);
-        const args = [
-          "-m", "agentfactory", "run",
-          "--spec", specPath,
-          "--state", statePath,
-          "--provider", "foundry",
-          ...(model ? ["--model", model] : []),
-          ...(candidate.forced && model ? ["--force-model", model] : []),
-          "--input", JSON.stringify(c.input),
-        ];
+        // A forced candidate travels as the pinned document; a plain run
+        // names the deployed agent so the record carries its digest.
+        const request: Record<string, unknown> =
+          candidate.forced && model
+            ? { spec: pinned(agentDoc, model), input: c.input, provider: "foundry", model }
+            : { agent: set.agent, input: c.input, provider: "foundry", ...(model ? { model } : {}) };
 
-        const outcome = await new Promise<{ state: string; result: unknown; error: string }>((resolve) => {
-          // Still a subprocess until evals move to the backend; until then an
-          // eval's runs are outside the backend's kill switch.
-          const child = spawn("python3", args, { cwd: ROOT, env: { ...process.env, PYTHONUNBUFFERED: "1" } });
-          let stderr = "";
-          child.stderr.on("data", (b: Buffer) => (stderr += b.toString()));
-          child.stdout.on("data", () => {}); // journal streams to the state file; we grade the record
-          child.on("close", async () => {
-            try {
-              const run = JSON.parse(await readFile(statePath, "utf-8"));
-              digest = run?.spec_digest ?? digest;
-              const u = usageOf(run);
-              tokensIn += u.tokens.in;
-              tokensOut += u.tokens.out;
-              modelCalls += u.calls;
-              if (cost !== null) {
-                let acc: number | null = cost;
-                for (const [m, tk] of Object.entries(u.byModel)) {
-                  const c = costOf(m, tk, sheet);
-                  if (c === null || acc === null) {
-                    acc = null; // one unknown price makes the total unknown, never zero
-                    break;
-                  }
-                  acc += c;
-                }
-                cost = acc;
+        let runId = "";
+        const outcome = await (async (): Promise<{ state: string; result: unknown; error: string }> => {
+          const started = await startRun(req, request);
+          if ("error" in started) return { state: "failed", result: null, error: started.error };
+          runId = started.id;
+          const run = await settle(req, runId);
+          if (!run) return { state: "failed", result: null, error: `run ${runId} could not be read back from the backend` };
+          if (!SETTLED.has(String(run.state))) {
+            return { state: String(run.state ?? "unknown"), result: null, error: `run ${runId} did not settle within ${CASE_DEADLINE_MS / 60_000} minutes; it is still on the backend` };
+          }
+          digest = run.spec_digest ?? digest;
+          const u = usageOf(run);
+          tokensIn += u.tokens.in;
+          tokensOut += u.tokens.out;
+          modelCalls += u.calls;
+          if (cost !== null) {
+            let acc: number | null = cost;
+            for (const [m, tk] of Object.entries(u.byModel)) {
+              const price = costOf(m, tk, sheet);
+              if (price === null || acc === null) {
+                acc = null; // one unknown price makes the total unknown, never zero
+                break;
               }
-              resolve({ state: run?.state ?? "unknown", result: run?.result ?? null, error: run?.error ?? "" });
-            } catch {
-              resolve({ state: "failed", result: null, error: stderr.trim().split("\n").slice(-3).join(" ") || "no state file" });
+              acc += price;
             }
-          });
-          child.on("error", (e) => resolve({ state: "failed", result: null, error: e.message }));
-        });
+            cost = acc;
+          }
+          return { state: run.state ?? "unknown", result: run.result ?? null, error: run.error ?? "" };
+        })();
 
         const labeled = set.labels && c.expected !== undefined ? { labels: set.labels, expected: c.expected } : undefined;
         const verdict = grade(c.checks, outcome.state, outcome.result, labeled);
@@ -207,7 +282,8 @@ export async function POST(req: Request) {
           checks: verdict.detail,
           ...(labeled ? { expected: labeled.expected, predicted: verdict.predicted } : {}),
           duration_ms: Date.now() - started,
-          run_file: path.basename(statePath, ".json"),
+          // The run's id on the backend: what the page links to under /runs.
+          run_file: runId,
         };
         msTotal += record.duration_ms;
         results.push(record);

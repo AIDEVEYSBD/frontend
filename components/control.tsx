@@ -441,19 +441,14 @@ export function Control() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  /* Deploy straight from the lifecycle strip — the real /api/deploy, same as
-     the builder's theater, minus the theatrics. */
+  /* Deploy straight from the lifecycle strip — the backend's deploy door
+     (POST /api/agents/{id}/deploy), the step the builder's theater ends on,
+     minus the theatrics. The saved document is re-validated there first. */
   const deployNow = useCallback(
     async (agentId: string) => {
       setDeployingId(agentId);
       try {
-        const spec = await (await fetch(`/api/agents?id=${encodeURIComponent(agentId)}`)).json();
-        if (spec.error) throw new Error(String(spec.error));
-        const res = await fetch("/api/deploy", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ spec: spec.spec }),
-        });
+        const res = await fetch(`/api/agents/${encodeURIComponent(agentId)}/deploy`, { method: "POST" });
         const d = await res.json();
         if (!res.ok || d.error) throw new Error(String(d.error ?? res.status));
         notice(`${agentId} deployed — digest ${String(d.digest).slice(0, 8)}`);
