@@ -225,17 +225,23 @@ export class DoorError extends Error {
 
 /* ═══════════════════ operating the estate ═══════════════════ */
 
-export type AttentionKind = "gate" | "refusal" | "budget" | "dead_letter" | "health";
-const ATTENTION_KINDS: AttentionKind[] = ["gate", "refusal", "budget", "dead_letter", "health"];
+export type AttentionKind = "gate" | "refusal" | "budget" | "dead_letter" | "health" | "drift" | "guardian" | "side_channel";
+const ATTENTION_KINDS: AttentionKind[] = ["gate", "refusal", "budget", "dead_letter", "health", "drift", "guardian", "side_channel"];
+/** The kinds L7 added: the fleet read as a system (drift per agent, the guardian's verdicts, two agents coordinating through a shared store). */
+export const L7_ATTENTION_KINDS: AttentionKind[] = ["drift", "guardian", "side_channel"];
 
 /**
  * What a row's one button does, derived from the backend's action: answer
  * the gate in the inbox dialog, replay the dead letter through the door it
  * names, re-read a health door, or open a page (or the run, for a refusal:
  * the backend's door there starts the run again, which is a person's call
- * after reading the journal, never a click from the queue).
+ * after reading the journal, never a click from the queue). L7: a verdict
+ * the guardian could not act on names the door a person would use, the
+ * kill (`kill`: the kill dialog, its reason filled in from the guardian's)
+ * or the steer's hold (`hold`); a drift opens the agent's drift page; an
+ * act of the guardian and a side channel open the run.
  */
-export type AttentionActionKind = "answer" | "replay" | "check" | "open";
+export type AttentionActionKind = "answer" | "replay" | "check" | "open" | "kill" | "hold";
 
 export interface AttentionAction {
   kind: AttentionActionKind;
@@ -270,6 +276,12 @@ export interface AttentionItem {
   /** For a gate, what it stands in front of: sink, destructive, risky, write, or "". */
   holds: string;
   action: AttentionAction;
+  /** L7: every agent the item links (a side channel: the writer, then the reader); empty for the L5 kinds. */
+  agents: string[];
+  /** L7: every run the item links (a side channel: the first writer and reader runs, then the rest). A reader inside an in-process sub-run is named by the sub-run's id, which is no record. */
+  runs: string[];
+  /** L7: what is behind it: a drift's measures and both windows, the guardian's verdict, a side channel's reads; null for the L5 kinds. */
+  data: Record<string, unknown> | null;
 }
 
 export type SteerRequest = { guidance?: string; hold_at_next_gate?: boolean; model?: string };
@@ -544,6 +556,38 @@ export function rankOf(severity: number, ageS: number): number {
   return Math.round(severity * (1 + Math.min(hours, 48) / 24) * 100) / 100;
 }
 
+/**
+ * Whether a run id names a record a run page can open. The engine names an
+ * in-process sub-run `<agent>-sub-<10 hex>` and a worker's runtime by a
+ * path, and neither is a record: an attention item that points into a
+ * sub-run (a side channel read there) names it all the same.
+ */
+export function looksLikeRecordId(id: string): boolean {
+  return /^[a-z0-9][A-Za-z0-9._-]{0,120}$/.test(id) && !/-sub-[0-9a-f]{10}$/.test(id);
+}
+
+/** The run an item's Open goes to: its own run when that is a record, else the first linked run that is. */
+export function openableRun(item: Pick<AttentionItem, "run" | "runs">): string | null {
+  return [item.run ?? "", ...item.runs].find((r) => r && looksLikeRecordId(r)) ?? null;
+}
+
+/** L7 kinds: the console's page or lever for the backend's door. */
+function l7Action(kind: AttentionKind, method: string, path: string, agent: string): { kind: AttentionActionKind; href?: string } {
+  if (method === "POST" && /\/api\/runs\/[^/]+\/kill$/.test(path)) return { kind: "kill" };
+  if (method === "POST" && /\/api\/runs\/[^/]+\/steer$/.test(path)) return { kind: "hold" };
+  if (kind === "drift") {
+    const named = /[?&]agent=([^&]+)/.exec(path)?.[1];
+    let who = agent;
+    try {
+      who = named ? decodeURIComponent(named) : agent;
+    } catch {
+      /* a malformed query names nobody: the item's own agent */
+    }
+    return { kind: "open", href: who ? `/drift?agent=${encodeURIComponent(who)}` : "/drift" };
+  }
+  return { kind: "open" };
+}
+
 export function attentionOf(v: unknown): AttentionItem {
   const o = obj(v);
   const a = obj(o.action);
@@ -551,8 +595,12 @@ export function attentionOf(v: unknown): AttentionItem {
   const method = str(a.method).toUpperCase();
   const path = str(a.path);
   const page = path.startsWith("/") && !path.startsWith("/api/");
-  const actionKind: AttentionActionKind =
-    kind === "gate" ? "answer" : !method || page ? "open" : kind === "dead_letter" && method === "POST" ? "replay" : method === "GET" ? "check" : "open";
+  // The L7 kinds name API doors with GET (the run, the drift report, the
+  // inbox): those open a page here, never re-read the door.
+  const l7 = L7_ATTENTION_KINDS.includes(kind) ? l7Action(kind, method, path, str(o.agent)) : null;
+  const actionKind: AttentionActionKind = l7
+    ? l7.kind
+    : kind === "gate" ? "answer" : !method || page ? "open" : kind === "dead_letter" && method === "POST" ? "replay" : method === "GET" ? "check" : "open";
   const since = str(o.since);
   const age_s = typeof o.age_s === "number" ? o.age_s : since && !Number.isNaN(Date.parse(since)) ? Math.max(0, (Date.now() - Date.parse(since)) / 1000) : 0;
   const severity = num(o.severity, 1);
@@ -576,8 +624,11 @@ export function attentionOf(v: unknown): AttentionItem {
       path,
       body: a.body && typeof a.body === "object" && !Array.isArray(a.body) ? obj(a.body) : null,
       says: str(a.says),
-      href: actionKind === "open" && page ? path : undefined,
+      href: l7?.href ?? (actionKind === "open" && page ? path : undefined),
     },
+    agents: strs(o.agents),
+    runs: strs(o.runs),
+    data: o.data && typeof o.data === "object" && !Array.isArray(o.data) ? obj(o.data) : null,
   };
 }
 
@@ -672,6 +723,10 @@ export function inFlight<T extends { live?: boolean; state?: string }>(rows: rea
 export function operatorOf(e: { kind: string; title?: string; detail?: string; data?: Record<string, unknown> }): OperatorAction | null {
   const d = e.data ?? {};
   const control = str(d.control);
+  // L7: the guardian's own note when it acted (`data.control = "guardian"`:
+  // the verdict, the action, the model, the confidence, the reason, signed
+  // `guardian`), an operator's action like any other, by the guardian.
+  if (e.kind === "note" && control === "guardian") return guardianNoteOf(e.title ?? "", e.detail ?? "", d);
   // A gate the hold opened carries the same control, but it is a gate, not the operator's note.
   if (e.kind !== "note" || !control.startsWith("operator.")) return null;
   const by = str(d.by) || "an operator";
@@ -689,6 +744,25 @@ export function operatorOf(e: { kind: string; title?: string; detail?: string; d
     default:
       return { action: str(e.title) || control, by, at, detail };
   }
+}
+
+/**
+ * The guardian's note on a run it acted on: "Guardian: held at the next
+ * gate" or "Guardian: blocked the run", with the reason, the confidence, the
+ * model and where the act was delivered. The note carries no clock of its
+ * own (`at` is ""); the journal's does.
+ */
+function guardianNoteOf(title: string, detail: string, d: Record<string, unknown>): OperatorAction {
+  const act = str(d.action) || str(d.verdict);
+  const conf = typeof d.confidence === "number" && Number.isFinite(d.confidence) ? `confidence ${d.confidence.toFixed(2)}` : "";
+  const facts = [conf, str(d.model), str(d.delivery) ? `delivered ${str(d.delivery)}` : ""].filter(Boolean).join(" · ");
+  const reason = str(d.reason) || detail;
+  return {
+    action: act === "block" ? "Guardian blocked the run" : act === "hold" ? "Guardian held the run at its next gate" : title || "Guardian",
+    by: str(d.by) || "guardian",
+    at: str(d.at),
+    detail: [reason, facts].filter(Boolean).join(" — "),
+  };
 }
 
 /* ═══════════════════ calls ═══════════════════ */

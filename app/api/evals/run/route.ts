@@ -7,6 +7,8 @@ import { derive, emptyMatrix, tally } from "@/lib/metrics";
 import { costOf, priceSheet, usageOf } from "@/lib/server/prices";
 import { backendConfigured, backendError, backendFetch, backendMissing } from "@/lib/server/backend";
 import { lockdownRefusalOf, lockdownRefusalText } from "@/lib/api/l5";
+import { rateLimitOf, type RateLimit } from "@/lib/api/l7";
+import { rateLimitText } from "@/lib/rate-limit";
 
 /**
  * Run an eval set: every case is a REAL run of the agent — same runtime, same
@@ -22,6 +24,13 @@ import { lockdownRefusalOf, lockdownRefusalText } from "@/lib/api/l5";
  *
  * Cases run sequentially. An eval is a measurement; measurements that race a
  * shared workspace measure the race.
+ *
+ * A start refused for a rate limit (429, phase L7: the agent's run starts
+ * per minute, or the tree's) is not a failed case: the stream says so
+ * (`rate_limited`, with the scope, the limit, the figures and the wait), the
+ * runner waits the `Retry-After` the backend gave and starts the case
+ * again, up to RATE_RETRIES times or RATE_WAIT_MS of waiting in all; only
+ * then is the case recorded as refused, naming the limit.
  */
 
 export const runtime = "nodejs";
@@ -85,6 +94,10 @@ const SETTLED = new Set(["done", "failed", "killed", "closed", "suspended"]);
 /** How long one case may take before it is recorded as unsettled. */
 const CASE_DEADLINE_MS = 20 * 60_000;
 
+/** How many times a case's start is retried after a rate limit, and how long the runner waits for them in all. */
+const RATE_RETRIES = 5;
+const RATE_WAIT_MS = 6 * 60_000;
+
 type Node = Record<string, unknown>;
 
 /**
@@ -111,12 +124,18 @@ function pinned(doc: Record<string, unknown>, model: string): Record<string, unk
   };
 }
 
-async function startRun(req: Request, body: Record<string, unknown>): Promise<{ id: string } | { error: string }> {
+async function startRun(req: Request, body: Record<string, unknown>): Promise<{ id: string } | { error: string } | { limited: RateLimit }> {
   let res: Response;
   try {
     res = await backendFetch(req, "/api/runs", { method: "POST", body: JSON.stringify(body) });
   } catch (e) {
     return { error: `the backend could not be reached: ${(e as Error).message}` };
+  }
+  if (res.status === 429) {
+    // A rate limit started nothing: the caller waits and starts the case again.
+    const body = await res.json().catch(() => ({}));
+    const limited = rateLimitOf(429, body, res.headers.get("retry-after"));
+    if (limited) return { limited };
   }
   if (res.status === 423) {
     // A lockdown refuses every start; the case says why, as the run page does.
@@ -248,7 +267,17 @@ export async function POST(req: Request) {
 
         let runId = "";
         const outcome = await (async (): Promise<{ state: string; result: unknown; error: string }> => {
-          const started = await startRun(req, request);
+          let started = await startRun(req, request);
+          let waited = 0;
+          for (let attempt = 1; "limited" in started && attempt <= RATE_RETRIES && waited < RATE_WAIT_MS; attempt++) {
+            const rl = started.limited;
+            const wait = Math.min(rl.retry_after_s * 1000, RATE_WAIT_MS - waited);
+            send({ type: "rate_limited", index: i, id: c.id, model: model || "default", attempt, of: RATE_RETRIES, wait_s: Math.ceil(wait / 1000), text: rateLimitText(rl), limit: rl });
+            await new Promise((r) => setTimeout(r, wait));
+            waited += wait;
+            started = await startRun(req, request);
+          }
+          if ("limited" in started) return { state: "failed", result: null, error: `refused at the start, past ${RATE_RETRIES} retries: ${rateLimitText(started.limited)}` };
           if ("error" in started) return { state: "failed", result: null, error: started.error };
           runId = started.id;
           const run = await settle(req, runId);

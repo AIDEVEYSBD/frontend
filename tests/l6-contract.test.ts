@@ -1483,7 +1483,8 @@ describe("the console's shapes and the generated client agree", () => {
     expectTypeOf<l6.HitField>().toEqualTypeOf<Schemas["McpHit"]["field"]>();
     // Where a kill or a steer goes, SDK included, as the backend types it.
     expectTypeOf<Delivery>().toEqualTypeOf<Schemas["RunSteered"]["delivery"]>();
-    expectTypeOf<Delivery>().toEqualTypeOf<Schemas["RunKilled"]["delivery"]>();
+    // A kill adds one since L7: `tree`, when the run itself had ended and the kill reached what it set off.
+    expectTypeOf<Delivery | "tree">().toEqualTypeOf<Schemas["RunKilled"]["delivery"]>();
     expectTypeOf<Schemas["RunRow"]["source"]>().toEqualTypeOf<string>();
     // And the check bites: a server never carries its environment's values.
     expectTypeOf<Agrees<{ env: Record<string, string> }, Schemas["McpServer"]>>().toEqualTypeOf<false>();

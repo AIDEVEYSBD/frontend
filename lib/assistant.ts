@@ -50,6 +50,24 @@ export const PAGES: Record<string, PageInfo> = {
       "The workspace for launching workflows and reviewing execution. The journal records model and tool calls, control decisions, untrusted-content marks, human approvals, interventions and outputs as they occur.",
     suggested: ["What happens when an action is denied?", "How do I respond to an approval request?", "What does an untrusted-content mark mean?"],
   },
+  "/dependencies": {
+    title: "Dependencies",
+    shows:
+      "The dependency map: every agent and the tools it calls, the servers and connectors that serve them, the sub-agents it invokes, the peers it hands work to, the models it uses and the applications built on them. Each edge is declared by the specs, seen in the journals of the window, or both, with its count, cost, failures and refusals. Picking a node shows its blast radius: the agents that fail if it does (directly or through another agent, with the path), the runs in flight and the applications.",
+    suggested: ["What fails if this tool server goes down?", "Which edges are declared but never used?", "Which calls happen that no spec declares?"],
+  },
+  "/drift": {
+    title: "Drift",
+    shows:
+      "Per agent, the last day of finished runs against the thirty days before it, on disposition mix and tool mix (Jensen–Shannon distance, past 0.2), confidence and cost per run (Welch's z, past ±2) and refusal rate (two-proportion z). An agent with too few runs in either window is not compared. A shift past a threshold is raised in the attention queue.",
+    suggested: ["Which agents drifted, and on what?", "What does a Jensen–Shannon distance of 1 mean?", "Why does an agent say not enough runs?"],
+  },
+  "/guardian": {
+    title: "Guardian",
+    shows:
+      "The guardian: a supervisory model that reads each covered run's trajectory against the run's goal and a rubric. Its limits are a person's: which agents it watches, whether it may hold a run at its next gate or block it, an hourly cap, a confidence floor, its model and cadence. Outside its limits it only raises attention. The page lists every verdict it acted on or raised, with the reason and the model.",
+    suggested: ["What may the guardian do on its own?", "Why was a verdict only raised for a person?", "How is the hourly cap counted?"],
+  },
   "/evals": {
     title: "Evals",
     shows: "Evaluation suites that execute labelled cases through the production runtime, score outcomes deterministically and compare candidate models using quality, cost and execution time.",

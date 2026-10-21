@@ -164,6 +164,12 @@ export function Roster() {
                 <Mono className="whitespace-nowrap">{g.trigger}</Mono>
                 <Mono className="whitespace-nowrap">last run {ago(g.lastRun)}</Mono>
                 <Mono className="whitespace-nowrap">{g.runs7d} in 7d</Mono>
+                <Link href={`/drift?agent=${encodeURIComponent(g.id)}`} className="focusable rounded-sm font-mono text-[12px] whitespace-nowrap text-dim hover:underline">
+                  drift
+                </Link>
+                <Link href={`/dependencies?node=${encodeURIComponent(`agent:${g.id}`)}`} className="focusable rounded-sm font-mono text-[12px] whitespace-nowrap text-dim hover:underline">
+                  dependencies
+                </Link>
                 {g.pending > 0 && (
                   <Status tone="warn" chip>
                     {g.pending} awaiting approval

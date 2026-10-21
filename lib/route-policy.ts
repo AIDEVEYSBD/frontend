@@ -57,6 +57,12 @@ export const STRICT_READS: Record<string, string> = { "app/api/iam/": "iam" };
  * upload and poll), which an attached agent opens with its scoped key.
  * The close-out after L6 added the ports' own health doors
  * (`/api/ports/{name}/health`), which an attention row's health action reads.
+ * Phase L7 (first round) the dependency map with its blast radius
+ * (`/api/dependencies`, `/api/dependencies/{node}/blast-radius`), drift per
+ * agent (`/api/drift`) and the guardian (`/api/guardian`, with its actions
+ * beneath it); the run tree (`/api/runs/{id}/tree`) and the kill that
+ * reaches it travel with `/api/runs`. Every one is a console door behind
+ * the cookie.
  */
 export const BACKEND_PREFIXES = [
   "/api/runs",
@@ -86,6 +92,9 @@ export const BACKEND_PREFIXES = [
   "/api/mcp",
   "/api/sdk",
   "/api/ports",
+  "/api/dependencies",
+  "/api/drift",
+  "/api/guardian",
 ];
 
 /**

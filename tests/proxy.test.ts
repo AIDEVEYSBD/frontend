@@ -40,9 +40,42 @@ describe("backend-owned paths", () => {
       "/api/mcp",
       "/api/sdk",
       "/api/ports",
+      "/api/dependencies",
+      "/api/drift",
+      "/api/guardian",
     ]) {
       expect(BACKEND_PREFIXES, `${p} is the backend's`).toContain(p);
     }
+  });
+
+  // Phase L7 (first round): the dependency map and its blast radius, drift
+  // per agent and the guardian are new prefixes; the run tree and the kill
+  // that reaches it sit under /api/runs, already forwarded. Console doors,
+  // behind the cookie.
+  it("hands the L7 doors to the backend, behind the cookie", () => {
+    for (const p of [
+      "/api/dependencies",
+      "/api/dependencies/server:casedesk/blast-radius",
+      "/api/dependencies/model%3Agpt-4o/blast-radius",
+      "/api/drift",
+      "/api/guardian",
+      "/api/guardian/actions",
+      "/api/runs/triage-2026-10-21T09-42-38-plh8/tree",
+      "/api/runs/triage-2026-10-21T09-42-38-plh8/kill",
+    ]) {
+      expect(isBackendPath(p), `${p} is the backend's`).toBe(true);
+      expect(isMachineDoor(p), `${p} needs a session`).toBe(false);
+      expect(upstreamFor(p, "", BOTH)).toEqual({ to: "backend", url: `http://localhost:8000${p}` });
+    }
+    // The window and the filters travel.
+    expect(upstreamFor("/api/dependencies", "?window=7d", { backendOrigin: "http://localhost:8000" })).toEqual({ to: "backend", url: "http://localhost:8000/api/dependencies?window=7d" });
+    expect(upstreamFor("/api/drift", "?agent=triage", BOTH)).toEqual({ to: "backend", url: "http://localhost:8000/api/drift?agent=triage" });
+    expect(upstreamFor("/api/guardian/actions", "?run=r-1&limit=50", BOTH)).toEqual({ to: "backend", url: "http://localhost:8000/api/guardian/actions?run=r-1&limit=50" });
+    // Siblings are not.
+    for (const p of ["/api/dependenciesx", "/api/driftwood", "/api/guardians", "/api/dependency"]) expect(isBackendPath(p), p).toBe(false);
+    // Without a backend named, they have no answer here; behind the tunnel they go where every console route goes.
+    expect(upstreamFor("/api/guardian", "", {})).toEqual({ to: "next" });
+    expect(upstreamFor("/api/drift", "", { runtimeOrigin: "https://agentruntime.autogrc.cloud" })).toEqual({ to: "runtime", url: "https://agentruntime.autogrc.cloud/api/drift" });
   });
 
   // The close-out after L6: a port's own health check, which the attention

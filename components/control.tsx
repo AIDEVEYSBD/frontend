@@ -23,6 +23,8 @@ import { api, errorText, type RunRow as LedgerRow } from "@/lib/api/client";
 import { deployAgent, readQueue, type QueueSummary } from "@/lib/api/l2";
 import { auditLine, inFlight, type RunRowL5 } from "@/lib/api/l5";
 import { KillDialog } from "./kill-dialog";
+import { killRun } from "@/lib/api/l7";
+import { killSummary } from "@/lib/run-tree";
 import { RunSourceTag } from "./run-source";
 import { runSourceOf } from "@/lib/api/l6";
 import { AttentionPanel } from "./attention";
@@ -539,8 +541,12 @@ export function Control() {
       setKillAsk(null);
       try {
         if (id) {
-          const { data, error, response } = await api.POST("/api/runs/{run_id}/kill", { params: { path: { run_id: id } }, body: { reason } });
-          if (!data) notice(`Kill refused: ${errorText(error, response).slice(0, 120)}`);
+          // The kill reaches the run's whole tree (L7); the receipt says whom, and how.
+          try {
+            notice(killSummary(await killRun(id, reason)));
+          } catch (e) {
+            notice(`Kill refused: ${(e as Error).message.slice(0, 120)}`);
+          }
         } else {
           const { data, error, response } = await api.POST("/api/runs/kill-all", { body: { reason } });
           if (!data) notice(`Kill refused: ${errorText(error, response).slice(0, 120)}`);
@@ -1325,7 +1331,7 @@ export function Control() {
           title={killAsk.id ? "Kill this run?" : "Stop every run in flight?"}
           what={
             killAsk.id
-              ? `${(data?.live ?? []).find((l) => l.id === killAsk.id)?.system ?? "run"} · ${killAsk.id}. The backend cancels it before its next model or tool call; the journal records the reason and your name.`
+              ? `${(data?.live ?? []).find((l) => l.id === killAsk.id)?.system ?? "run"} · ${killAsk.id}. The backend cancels it before its next model or tool call, and the kill reaches everything it set off: in-process sub-runs, child runs wherever they run, queued children. The journal records the reason and your name.`
               : `${t?.active ?? 0} run${t?.active === 1 ? "" : "s"} in flight, in-process and on workers. Each is cancelled before its next model or tool call; every journal records the reason and your name.`
           }
           confirm={killAsk.id ? "Kill run" : "Kill all runs"}
@@ -2109,6 +2115,12 @@ function renderDrill(
             </Button>
             <Button size="sm" variant="outline" href={`/evals?agent=${encodeURIComponent(a.id)}`}>
               Benchmark
+            </Button>
+            <Button size="sm" variant="outline" href={`/drift?agent=${encodeURIComponent(a.id)}`}>
+              Drift
+            </Button>
+            <Button size="sm" variant="outline" href={`/dependencies?node=${encodeURIComponent(`agent:${a.id}`)}`}>
+              Dependencies
             </Button>
           </div>
 

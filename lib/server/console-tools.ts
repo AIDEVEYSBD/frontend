@@ -1,5 +1,7 @@
 import { internalHeaders } from "@/lib/server/auth";
 import { NAMESPACE_RULE, parseNamespace } from "@/lib/knowledge";
+import { rateLimitOf } from "@/lib/api/l7";
+import { rateLimitText } from "@/lib/rate-limit";
 /**
  * The console's tools, as one catalogue.
  *
@@ -186,11 +188,23 @@ export async function runTool(origin: string, name: string, args: Record<string,
       case "trigger_workflow": {
         const id = String(args.workflow ?? "").trim();
         if (!/^[a-zA-Z0-9._-]+$/.test(id)) return JSON.stringify({ error: "bad workflow id" });
-        const d = await readApi(origin, `/api/trigger/${encodeURIComponent(id)}`, {
+        const res = await fetch(`${origin}/api/trigger/${encodeURIComponent(id)}`, {
           method: "POST",
-          headers: auth ? { authorization: auth } : {},
+          signal: AbortSignal.timeout(25_000),
+          headers: { "content-type": "application/json", ...internalHeaders(), ...(auth ? { authorization: auth } : {}) },
           body: JSON.stringify({ input: args.input ?? {}, external_id: args.external_id, source: "mcp" }),
         });
+        const text = await res.text();
+        let d: unknown;
+        try {
+          d = JSON.parse(text);
+        } catch {
+          d = { error: `HTTP ${res.status}`, body: text.slice(0, 300) };
+        }
+        // A rate limit (429, L7) queued nothing: said first, with when to try
+        // again (the body's retry_after_s, the Retry-After header otherwise).
+        const limited = rateLimitOf(res.status, d, res.headers.get("retry-after"));
+        if (limited) return clip({ rate_limited: rateLimitText(limited), retry_after_s: limited.retry_after_s, ...(d as Record<string, unknown>) });
         // During a lockdown the door still enqueues, and its answer carries
         // `lockdown: {reason, by, at, says}`: the job waits on the queue and
         // no worker claims it until the lockdown is lifted. Said first, so

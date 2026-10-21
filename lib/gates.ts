@@ -390,6 +390,9 @@ export const ATTENTION_LABEL: Record<AttentionItem["kind"], string> = {
   budget: "budget",
   dead_letter: "dead letter",
   health: "health",
+  drift: "drift",
+  guardian: "guardian",
+  side_channel: "side channel",
 };
 
 export const ACTION_LABEL: Record<AttentionItem["action"]["kind"], string> = {
@@ -397,6 +400,8 @@ export const ACTION_LABEL: Record<AttentionItem["action"]["kind"], string> = {
   replay: "Replay",
   check: "Re-check",
   open: "Open",
+  kill: "Kill…",
+  hold: "Hold",
 };
 
 /**

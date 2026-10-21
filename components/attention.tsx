@@ -1,12 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Mono, Status, Tag } from "./ui";
+import { KillDialog } from "./kill-dialog";
 import { hueFor } from "@/lib/hue";
 import { soon } from "@/lib/soon";
-import { clearAttention, listAttention, portHealthLine, type AttentionItem, type PortHealth } from "@/lib/api/l5";
+import { clearAttention, listAttention, looksLikeRecordId, openableRun, portHealthLine, steerRun, type AttentionItem, type PortHealth } from "@/lib/api/l5";
+import { killRun, rateLimitOfError } from "@/lib/api/l7";
 import { ATTENTION_LABEL, HOLDS_LABEL, URGENT_SEVERITY, attentionVerb, countdown, orderAttention } from "@/lib/gates";
+import { killSummary } from "@/lib/run-tree";
+import { rateLimitText } from "@/lib/rate-limit";
 import { useNow } from "./gate-form";
 
 /**
@@ -22,6 +27,14 @@ import { useNow } from "./gate-form";
  * age weight; lib/gates.ts orderAttention holds the order between reads.
  * A failing port's row re-reads that port's own check (`GET
  * /api/ports/{name}/health`) and keeps what it answered under the row.
+ *
+ * L7 adds three kinds. Drift opens the agent's drift page. The guardian's
+ * acts open the run; a verdict it could not act on offers the lever a
+ * person would pull, the kill (its dialog filled in with the guardian's
+ * reason, still the person's to change) or the hold at the next gate. A
+ * side channel links both agents and both runs; a reader inside an
+ * in-process sub-run is named by the sub-run's id, which is no record, so
+ * that one is shown and not linked.
  */
 
 const KIND_TONE: Record<AttentionItem["kind"], "warn" | "err" | "queue" | "run"> = {
@@ -30,7 +43,33 @@ const KIND_TONE: Record<AttentionItem["kind"], "warn" | "err" | "queue" | "run">
   budget: "err",
   dead_letter: "queue",
   health: "err",
+  drift: "warn",
+  guardian: "err",
+  side_channel: "warn",
 };
+
+/** The agents and runs an L7 item links, under its title: each run a link when it is a record. */
+export function AttentionLinks({ item }: { item: AttentionItem }) {
+  const agents = item.agents.length > 1 ? item.agents : [];
+  const runs = item.runs.length > 1 || (item.runs.length === 1 && item.runs[0] !== item.run) ? item.runs : [];
+  if (!agents.length && !runs.length) return null;
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px]">
+      {agents.length > 0 && <span className="text-faint">{item.kind === "side_channel" ? `${agents[0]} wrote · ${agents.slice(1).join(", ")} read` : agents.join(", ")}</span>}
+      {runs.map((r) =>
+        looksLikeRecordId(r) ? (
+          <Link key={r} href={`/runs?id=${encodeURIComponent(r)}`} className="focusable rounded-sm font-mono text-dim hover:underline">
+            {r}
+          </Link>
+        ) : (
+          <span key={r} className="font-mono text-ghost" title="An in-process sub-run: it has no record of its own; its entries are in its parent's journal.">
+            {r} (sub-run)
+          </span>
+        ),
+      )}
+    </span>
+  );
+}
 
 const HOLDS_TONE: Record<string, "err" | "warn"> = { sink: "err", destructive: "err", risky: "warn", write: "warn" };
 
@@ -78,9 +117,17 @@ export function AttentionPanel({
   const [busy, setBusy] = useState<string | null>(null);
   /* What a re-read port answered, by row: kept under the row until the row clears. */
   const [checked, setChecked] = useState<Record<string, PortHealth>>({});
+  /* A kill the guardian would have made, taken up by a person: the dialog, the guardian's reason to start from. */
+  const [killAsk, setKillAsk] = useState<AttentionItem | null>(null);
+
+  const refusedText = (item: AttentionItem, e: unknown) => {
+    const rl = rateLimitOfError(e);
+    return `${attentionVerb(item)} refused: ${rl ? rateLimitText(rl) : (e as Error).message.slice(0, 140)}`;
+  };
 
   const act = async (item: AttentionItem) => {
     const a = item.action;
+    const run = openableRun(item);
     if (a.kind === "answer") {
       if (item.run && onAnswer(item.run)) return;
       if (item.run) onOpenRun(item.run);
@@ -88,9 +135,27 @@ export function AttentionPanel({
     }
     if (a.kind === "open") {
       if (a.href) router.push(a.href);
-      else if (item.run) onOpenRun(item.run);
+      else if (run) onOpenRun(run);
       else if (item.agent) router.push(`/runs?agent=${encodeURIComponent(item.agent)}`);
       else onNotice(a.says || item.title);
+      return;
+    }
+    if (a.kind === "kill") {
+      setKillAsk(item);
+      return;
+    }
+    if (a.kind === "hold") {
+      if (!item.run) return onNotice(a.says || item.title);
+      setBusy(item.id);
+      try {
+        const r = await steerRun(item.run, { hold_at_next_gate: true });
+        onNotice(`Held ${r.run} at its next gate (${r.delivery}); a person answers it there.`);
+        reload();
+      } catch (e) {
+        onNotice(refusedText(item, e));
+      } finally {
+        setBusy(null);
+      }
       return;
     }
     setBusy(item.id);
@@ -107,7 +172,7 @@ export function AttentionPanel({
       );
       reload();
     } catch (e) {
-      onNotice(`${attentionVerb(item)} refused: ${(e as Error).message.slice(0, 140)}`);
+      onNotice(refusedText(item, e));
     } finally {
       setBusy(null);
     }
@@ -116,6 +181,29 @@ export function AttentionPanel({
   const worst = items?.[0];
   return (
     <section className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">
+      {killAsk && killAsk.run && (
+        <KillDialog
+          title="Kill the run the guardian flagged?"
+          what={`${killAsk.agent} · ${killAsk.run}. The guardian would have blocked it but did not act (${String(killAsk.data?.why ?? "outside its limits")}). The kill reaches the run and everything it set off.`}
+          initialReason={String(killAsk.action.body?.reason ?? "")}
+          busy={busy === killAsk.id}
+          onClose={() => setKillAsk(null)}
+          onConfirm={async (reason) => {
+            const item = killAsk;
+            setBusy(item.id);
+            try {
+              const r = await killRun(item.run!, reason);
+              onNotice(killSummary(r));
+              reload();
+            } catch (e) {
+              onNotice(refusedText(item, e));
+            } finally {
+              setBusy(null);
+              setKillAsk(null);
+            }
+          }}
+        />
+      )}
       <div data-hue={hueFor("attention queue")} className="flex h-9 shrink-0 items-center gap-2 border-b border-line bg-raise/55 px-3">
         <span className="text-[12px] font-semibold">Attention</span>
         {worst && (
@@ -138,21 +226,31 @@ export function AttentionPanel({
             <div key={it.id} className="flex items-center gap-3 border-b border-line px-3 py-2 last:border-b-0">
               <span className="tnum w-5 shrink-0 text-right font-mono text-[10px] text-ghost">{i + 1}</span>
               <Status tone={KIND_TONE[it.kind]}>{ATTENTION_LABEL[it.kind]}</Status>
-              <button
-                type="button"
-                onClick={() => (it.run ? onOpenRun(it.run) : it.action.href ? router.push(it.action.href) : it.agent ? router.push(`/runs?agent=${encodeURIComponent(it.agent)}`) : onNotice(it.action.says || it.title))}
-                className="focusable flex min-w-0 grow cursor-pointer flex-col text-left"
-              >
-                <span className="truncate text-[12px] font-medium text-fg">{it.title || `${it.kind} on ${it.agent}`}</span>
-                <span className="truncate font-mono text-[9.5px] text-faint">
-                  {[it.agent, it.run ?? (it.job ? `job ${it.job}` : ""), it.detail].filter(Boolean).join(" · ")}
-                </span>
-                {checked[it.id] && (
-                  <span className={`truncate text-[10.5px] ${checked[it.id].ok === true ? "text-ok" : checked[it.id].ok === false ? "text-err" : "text-faint"}`} title={JSON.stringify(checked[it.id].detail)}>
-                    Read {checked[it.id].checked_at ? new Date(checked[it.id].checked_at).toLocaleTimeString() : "just now"}: {portHealthLine(checked[it.id])}
+              <span className="flex min-w-0 grow flex-col">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const run = openableRun(it);
+                    if (run) onOpenRun(run);
+                    else if (it.action.href) router.push(it.action.href);
+                    else if (it.agent) router.push(`/runs?agent=${encodeURIComponent(it.agent)}`);
+                    else onNotice(it.action.says || it.title);
+                  }}
+                  className="focusable flex min-w-0 cursor-pointer flex-col text-left"
+                >
+                  <span className="truncate text-[12px] font-medium text-fg">{it.title || `${it.kind} on ${it.agent}`}</span>
+                  <span className="truncate font-mono text-[9.5px] text-faint">
+                    {[it.agent, it.run ?? (it.job ? `job ${it.job}` : ""), it.detail].filter(Boolean).join(" · ")}
                   </span>
-                )}
-              </button>
+                  {checked[it.id] && (
+                    <span className={`truncate text-[10.5px] ${checked[it.id].ok === true ? "text-ok" : checked[it.id].ok === false ? "text-err" : "text-faint"}`} title={JSON.stringify(checked[it.id].detail)}>
+                      Read {checked[it.id].checked_at ? new Date(checked[it.id].checked_at).toLocaleTimeString() : "just now"}: {portHealthLine(checked[it.id])}
+                    </span>
+                  )}
+                </button>
+                {/* The agents and runs an L7 item links; links are not nested in the row's button. */}
+                <AttentionLinks item={it} />
+              </span>
               <span className="hidden shrink-0 items-center gap-2 sm:flex">
                 {it.holds && <Tag tone={HOLDS_TONE[it.holds] ?? "warn"}>{HOLDS_LABEL[it.holds] ?? it.holds}</Tag>}
                 {it.deadline && <span className={`tnum font-mono text-[10px] ${dl.overdue ? "text-err" : dl.soon ? "text-warn" : "text-faint"}`}>{dl.overdue ? dl.text : `${dl.text} left`}</span>}
@@ -166,8 +264,8 @@ export function AttentionPanel({
                 <Button
                   size="sm"
                   variant={it.action.kind === "open" ? "outline" : "solid"}
-                  tone={it.action.kind === "answer" ? "warn" : it.action.kind === "replay" ? "ink" : "neutral"}
-                  permission={it.action.kind === "answer" ? "approve" : it.action.kind === "replay" ? "run" : undefined}
+                  tone={it.action.kind === "answer" || it.action.kind === "hold" ? "warn" : it.action.kind === "kill" ? "err" : it.action.kind === "replay" ? "ink" : "neutral"}
+                  permission={it.action.kind === "answer" ? "approve" : it.action.kind === "replay" || it.action.kind === "kill" || it.action.kind === "hold" ? "run" : undefined}
                   loading={busy === it.id}
                   onClick={() => act(it)}
                 >
@@ -178,7 +276,7 @@ export function AttentionPanel({
           );
         })}
         {items && items.length === 0 && !error && (
-          <p className="px-3 py-3 text-[12px] text-faint">Nothing waiting. Gates, stopped runs, budget breaches, dead letters and failing health land here with the action that clears them.</p>
+          <p className="px-3 py-3 text-[12px] text-faint">Nothing waiting. Gates, stopped runs, budget breaches, dead letters, failing health, drift, the guardian&rsquo;s verdicts and agents coordinating through a shared store land here with the action that clears them.</p>
         )}
       </div>
     </section>

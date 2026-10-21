@@ -13,6 +13,8 @@ import { fromDocument, inputKeysOf, type Kind } from "@/lib/spec";
 import { derive, labeledTemplate, INVALID, type Labels, type Matrix, type Reducer } from "@/lib/metrics";
 import { TriangleGlyph, bestOf, logScore } from "./tradeoff";
 import { CAT } from "./charts";
+import { RateLimitNote } from "./rate-limit";
+import type { RateLimit } from "@/lib/api/l7";
 
 /**
  * Evals: build a benchmark beside an agent, run it, keep the score.
@@ -1097,6 +1099,8 @@ function SetCard({
   const [cmp, setCmp] = useState<CompareResult | null>(null);
   const [liveModel, setLiveModel] = useState<string | null>(null);
   const [viewModel, setViewModel] = useState<string | null>(null);
+  /** A case's start the backend refused for a rate limit (429): the runner waits the time it gave and tries again. */
+  const [throttled, setThrottled] = useState<{ limit: RateLimit; at: number; caseId: string; attempt: number; of: number } | null>(null);
   const { models, defaultModel } = useModels();
 
   /* The incumbent is what the benchmark runs on today; it is always in the
@@ -1172,7 +1176,11 @@ function SetCard({
             // starts over for each so it never mixes two models' cases.
             setLiveModel(String(e.model));
             setLive((s) => s && { ...s, done: 0, cases: [] });
+          } else if (e.type === "rate_limited" && e.limit && typeof e.limit === "object") {
+            // The wait is the runner's (wait_s), which never runs past its own cap.
+            setThrottled({ limit: { ...(e.limit as RateLimit), retry_after_s: Number(e.wait_s) || (e.limit as RateLimit).retry_after_s }, at: Date.now(), caseId: String(e.id ?? ""), attempt: Number(e.attempt) || 1, of: Number(e.of) || 1 });
           } else if (e.type === "case.done") {
+            setThrottled(null);
             setLive((s) => s && { ...s, done: s.done + 1, cases: [...s.cases, e as CaseResult] });
           } else if (e.type === "compare") {
             setCmp(e as CompareResult);
@@ -1184,6 +1192,7 @@ function SetCard({
     } finally {
       setLive(null);
       setLiveModel(null);
+      setThrottled(null);
       onChanged();
     }
   };
@@ -1350,6 +1359,14 @@ function SetCard({
               Measuring <span className="font-mono text-fg">{modelLabel(liveModel === "default" ? "" : liveModel)}</span>
               {compare ? ", every model call pinned to it" : ""}
             </p>
+          )}
+          {live && throttled && (
+            <div className="flex flex-col gap-1">
+              <RateLimitNote limit={throttled.limit} readAt={throttled.at} />
+              <span className="text-[11px] text-faint">
+                Case <span className="font-mono text-dim">{throttled.caseId}</span> waits and is started again (attempt {throttled.attempt} of {throttled.of}); a case refused past that is recorded as refused, naming the limit.
+              </span>
+            </div>
           )}
           {live && live.cases.length > 0 && <CaseTable cases={live.cases} />}
           {!live && activeCmp && (

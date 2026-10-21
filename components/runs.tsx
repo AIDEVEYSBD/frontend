@@ -26,6 +26,9 @@ import { exitText, sandboxLine, sandboxOfEntry, sandboxRunOf, SANDBOX_TOOL } fro
 import { RunSourceTag } from "./run-source";
 import { SandboxOutput, SandboxSummary } from "./sandbox-result";
 import { KillDialog } from "./kill-dialog";
+import { KillReceiptView, RunTreePanel } from "./run-tree";
+import { RateLimitNote, useRetryReady } from "./rate-limit";
+import { killRun, rateLimitOf, type KillReceipt, type RateLimit } from "@/lib/api/l7";
 import { LineageDrawer } from "./lineage";
 import { ApproveDialog } from "./approve";
 import { SteerPanel } from "./steer";
@@ -361,6 +364,11 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
   const maxT = useRef(0);
   /** The run the kill dialog is asking about, by id; null when it is closed. */
   const [killAsk, setKillAsk] = useState<string | null>(null);
+  /** What the kill reached: the run and its whole tree (L7). */
+  const [receipt, setReceipt] = useState<KillReceipt | null>(null);
+  /** A start refused for a rate limit (429): nothing started; the form stays, with the limit and a countdown. */
+  const [limited, setLimited] = useState<{ limit: RateLimit; at: number } | null>(null);
+  const retry = useRetryReady(limited?.limit ?? null, limited?.at ?? 0);
   // Wall clock: the journal ticks only when entries land; a 40-second tool
   // call must not look like a hang.
   const startedAt = useRef(0);
@@ -497,6 +505,14 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
         signal: ctrl.signal,
       });
       if (!data) {
+        // A rate limit (429) started nothing: back to the form, saying whose
+        // limit, which, the figures and when to retry.
+        const rl = rateLimitOf(response.status, error, response.headers.get("retry-after"));
+        if (rl) {
+          setLimited({ limit: rl, at: Date.now() });
+          setPhase("setup");
+          return;
+        }
         // A lockdown refuses every start (423): say why, who set it and how it ends, not the door's instructions.
         const locked = lockdownRefusalOf(response.status, error);
         setError(locked ? lockdownRefusalText(locked) : errorText(error, response));
@@ -554,6 +570,8 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
     setResult(null);
     setSuspension(null);
     setKilling(false);
+    setReceipt(null);
+    setLimited(null);
     runId.current = "";
     setLiveRunId("");
     maxT.current = 0;
@@ -591,20 +609,15 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
     <>
       {killAsk && (
         <KillDialog
-          title="Kill this run?"
-          what={`${system.name} · ${killAsk}. The backend cancels it before its next model or tool call; the journal records the reason and your name.`}
+          title="Kill this run and its tree?"
+          what={`${system.name} · ${killAsk}. The backend cancels it before its next model or tool call, and the kill reaches everything it set off: in-process sub-runs stop with it, child runs are killed where they run, queued children are dead-lettered. The journal records the reason and your name.`}
           onClose={() => setKillAsk(null)}
           onConfirm={(reason) => {
             const id = killAsk;
             setKillAsk(null);
             setKilling(true);
-            api
-              .POST("/api/runs/{run_id}/kill", { params: { path: { run_id: id } }, body: { reason } })
-              .then(({ data, error, response }) => {
-                if (data) return;
-                setKilling(false);
-                setError(errorText(error, response));
-              })
+            killRun(id, reason)
+              .then((r) => setReceipt(r))
               .catch((e: Error) => {
                 setKilling(false);
                 setError(e.message);
@@ -627,6 +640,8 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
       result={result}
       suspension={suspension}
       onAnswered={answered}
+      runLive={phase === "live" && !suspension}
+      notice={receipt ? <KillReceiptView receipt={receipt} onDismiss={() => setReceipt(null)} /> : null}
       steer={liveRunId && phase === "live" && !suspension ? <SteerPanel runId={liveRunId} /> : null}
       setup={
         phase === "setup" ? (
@@ -712,6 +727,11 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
                     {error}
                   </p>
                 )}
+                {limited && (
+                  <div className="pt-2">
+                    <RateLimitNote limit={limited.limit} readAt={limited.at} />
+                  </div>
+                )}
               </div>
               <div className="w-[190px]">
                 <span className="mb-1.5 block text-[12px] font-medium text-mist">Model</span>
@@ -721,8 +741,8 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
                   options={models.map((m) => ({ value: m.id, label: m.label }))}
                 />
               </div>
-              <Button tone="ink" variant="solid" permission="run" onClick={start} className="shrink-0 px-5">
-                Run
+              <Button tone="ink" variant="solid" permission="run" onClick={start} disabled={!retry.ready} className="shrink-0 px-5">
+                {retry.ready ? "Run" : `Retry in ${retry.left}s`}
               </Button>
             </div>
           </div>
@@ -781,6 +801,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
                 setFinalState("");
                 setError("");
                 setKilling(false);
+                setReceipt(null);
                 runId.current = "";
                 setLiveRunId("");
                 maxT.current = 0;
@@ -1010,6 +1031,7 @@ function RunRecord({ id, onReread }: { id: string; onReread: () => void }) {
       tNow={playback.t}
       traceOf={id}
       source={meta.source}
+      runLive={false}
       footer={
         <Scrubber
           t={playback.t}
@@ -1079,6 +1101,8 @@ function FollowTheater({
   const [killing, setKilling] = useState(false);
   // The kill as the backend took it: for an SDK run it waits on the row until the agent polls.
   const [killed, setKilled] = useState<Schemas["KillInfo"] | null>(pendingKill);
+  /** What the kill reached: the run and its whole tree (L7). */
+  const [receipt, setReceipt] = useState<KillReceipt | null>(null);
   const stop = useRef<(() => void) | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const entries = useMemo(() => normalise(raw), [raw]);
@@ -1167,23 +1191,18 @@ function FollowTheater({
     <>
       {killAsk && (
         <KillDialog
-          title="Kill this run?"
+          title="Kill this run and its tree?"
           what={`${system || "run"} · ${id}. ${
             sdk ? "The agent's SDK receives the kill on its control channel and stops before its next model or tool call" : "The backend cancels it before its next model or tool call"
-          }; the journal records the reason and your name.`}
+          }, and the kill reaches everything it set off: in-process sub-runs stop with it, child runs are killed where they run, queued children are dead-lettered. The journal records the reason and your name.`}
           onClose={() => setKillAsk(false)}
           onConfirm={(reason) => {
             setKillAsk(false);
             setKilling(true);
-            api
-              .POST("/api/runs/{run_id}/kill", { params: { path: { run_id: id } }, body: { reason } })
-              .then(({ data, error, response }) => {
-                if (data) {
-                  setKilled(data.kill);
-                  return;
-                }
-                setKilling(false);
-                setError(errorText(error, response));
+            killRun(id, reason)
+              .then((r) => {
+                setKilled(r.kill);
+                setReceipt(r);
               })
               .catch((e: Error) => {
                 setKilling(false);
@@ -1208,6 +1227,8 @@ function FollowTheater({
         result={result}
         suspension={suspension}
         onAnswered={answered}
+        runLive={running}
+        notice={receipt ? <KillReceiptView receipt={receipt} onDismiss={() => setReceipt(null)} /> : null}
         steer={offer.show ? <SteerPanel runId={id} holdBlocked={offer.hold.allowed ? undefined : offer.hold.reason} /> : null}
         setup={null}
         footer={
@@ -1524,6 +1545,8 @@ function Theater({
   runId,
   agentId,
   source = "",
+  runLive,
+  notice,
 }: {
   title: string;
   subtitle: string;
@@ -1558,6 +1581,10 @@ function Theater({
   agentId?: string;
   /** Where the run came from when not the platform itself (`sdk`, `a2a`), for the header's badge. */
   source?: string;
+  /** Whether the run itself is in flight (a replay's `live` is the film playing, not the run): the run tree is read again while it is. */
+  runLive?: boolean;
+  /** Above the footer: what a kill reached. */
+  notice?: React.ReactNode;
 }) {
   const draftId =
     result && typeof result.draft_id === "string" && /^[a-z][a-z0-9-]{0,62}$/.test(result.draft_id)
@@ -1794,7 +1821,9 @@ function Theater({
         </aside>
       </div>
 
+      <RunTreePanel key={runId ?? traceOf ?? ""} runId={runId ?? traceOf} live={runLive ?? live} />
       {traceOf && <TracePanel runId={traceOf} />}
+      {notice}
       {footer}
     </div>
   );

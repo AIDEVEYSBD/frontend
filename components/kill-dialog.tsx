@@ -18,6 +18,7 @@ export function KillDialog({
   what,
   confirm = "Kill run",
   busy = false,
+  initialReason = "",
   onConfirm,
   onClose,
 }: {
@@ -26,10 +27,12 @@ export function KillDialog({
   what: string;
   confirm?: string;
   busy?: boolean;
+  /** A reason to start from (the guardian's, when a person takes up a kill it could not make); still the person's to change. */
+  initialReason?: string;
   onConfirm: (reason: string) => void;
   onClose: () => void;
 }) {
-  const [reason, setReason] = useState("");
+  const [reason, setReason] = useState(initialReason);
   const [missing, setMissing] = useState(false);
   const panel = useRef<HTMLDivElement>(null);
   // The parent re-renders on its own clock (the Control page every 4 s); the

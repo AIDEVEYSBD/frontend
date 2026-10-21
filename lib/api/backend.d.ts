@@ -406,6 +406,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dependencies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The dependency map: agents, tools and their servers, peers, sub-agents, models and applications, declared by the specs and seen in the journals */
+        get: operations["getDependencies"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dependencies/{node}/blast-radius": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Everything that fails if this node does: agents directly and transitively, runs in flight, applications, with counts */
+        get: operations["getBlastRadius"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/drafts": {
         parameters: {
             query?: never;
@@ -441,6 +475,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/drift": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Drift per agent: the last day against the thirty before it, on disposition mix, confidence, cost per run, tool mix and refusal rate */
+        get: operations["getDrift"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/fleet": {
         parameters: {
             query?: never;
@@ -471,6 +522,41 @@ export interface paths {
         put?: never;
         /** OpenAI-compatible: chat/completions, completions, embeddings, responses, screened and journalled */
         post: operations["gatewayCompletion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/guardian": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The guardian's limits, as a person set them, and what it has done since this instance started */
+        get: operations["getGuardian"];
+        /** Set the guardian's limits: which agents it watches, what it may do (hold, block), its hourly cap, its confidence floor, its model and rubric */
+        put: operations["setGuardian"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/guardian/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What the guardian did (holds and blocks) and what it raised for a person instead, newest first */
+        get: operations["listGuardianActions"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -766,7 +852,7 @@ export interface paths {
         /** The run ledger, or one run by id */
         get: operations["listRuns"];
         put?: never;
-        /** Start a run of a deployed agent or a draft spec; 423 while the estate is locked down */
+        /** Start a run of a deployed agent or a draft spec (as another run's child with parent_run); 423 while the estate is locked down, 429 past a rate limit */
         post: operations["startRun"];
         delete?: never;
         options?: never;
@@ -851,7 +937,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Throw the kill switch on one run */
+        /** Throw the kill switch on one run and everything it set off; answers every run the kill reached */
         post: operations["killRun"];
         delete?: never;
         options?: never;
@@ -887,6 +973,23 @@ export interface paths {
         put?: never;
         /** Steer a run in flight: guidance for its next prompt, a hold at its next risky call, a model for its next call */
         post: operations["steerRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}/tree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The whole run tree under one trace: the orchestrator, its sub-runs, its children and its peer calls, with costs and refusals rolled up */
+        get: operations["getRunTree"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -936,7 +1039,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Open a live SDK run (run without journal or state), or take a whole run record (the 1.4 protocol) */
+        /** Open a live SDK run (run without journal or state), or take a whole run record (the 1.4 protocol); 429 past a rate limit */
         post: operations["sdkPostRun"];
         delete?: never;
         options?: never;
@@ -1277,6 +1380,57 @@ export interface components {
             updated_at?: string | null;
             /** Version */
             version?: number | null;
+        };
+        /** AgentDrift */
+        AgentDrift: {
+            /** Agent */
+            agent: string;
+            baseline: components["schemas"]["DriftWindow"];
+            /**
+             * Drifted
+             * @default false
+             */
+            drifted: boolean;
+            /** Enough */
+            enough: boolean;
+            /** Measures */
+            measures?: components["schemas"]["DriftMeasure"][];
+            /** Outcome Field */
+            outcome_field?: string | null;
+            recent: components["schemas"]["DriftWindow"];
+            /**
+             * Says
+             * @default
+             */
+            says: string;
+        };
+        /** AgentFigures */
+        AgentFigures: {
+            /**
+             * Cost
+             * @default 0
+             */
+            cost: number;
+            /**
+             * Nodes
+             * @default 0
+             */
+            nodes: number;
+            /**
+             * Refusals
+             * @default 0
+             */
+            refusals: number;
+            /**
+             * Tokens
+             * @default 0
+             */
+            tokens: number;
+            /**
+             * Tool Calls
+             * @default 0
+             */
+            tool_calls: number;
         };
         /** AgentList */
         AgentList: {
@@ -1673,6 +1827,12 @@ export interface components {
              * @default
              */
             agent: string;
+            /** Agents */
+            agents?: string[];
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            } | null;
             /** Deadline */
             deadline?: string | null;
             /**
@@ -1701,6 +1861,8 @@ export interface components {
              * @default
              */
             run: string;
+            /** Runs */
+            runs?: string[];
             /** Severity */
             severity: number;
             /**
@@ -1763,6 +1925,85 @@ export interface components {
             remaining: number;
             /** Results */
             results: components["schemas"]["app__approvals__AnswerResult"][];
+        };
+        /** BlastAgent */
+        BlastAgent: {
+            /** Agent */
+            agent: string;
+            /**
+             * How
+             * @enum {string}
+             */
+            how: "direct" | "transitive";
+            /** Id */
+            id: string;
+            /** Via */
+            via: string[];
+        };
+        /** BlastApplication */
+        BlastApplication: {
+            /** Class */
+            class: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Source */
+            source: string;
+            /** Via */
+            via: string;
+        };
+        /** BlastCounts */
+        BlastCounts: {
+            /** Agents */
+            agents: number;
+            /** Applications */
+            applications: number;
+            /** Direct */
+            direct: number;
+            /** Runs In Flight */
+            runs_in_flight: number;
+            /** Transitive */
+            transitive: number;
+        };
+        /** BlastRadius */
+        BlastRadius: {
+            /** Agents */
+            agents: components["schemas"]["BlastAgent"][];
+            /** Applications */
+            applications: components["schemas"]["BlastApplication"][];
+            counts: components["schemas"]["BlastCounts"];
+            /**
+             * How
+             * @default a tool fails with the server serving it; an agent fails with any tool, model, peer or sub-agent it depends on; an application fails with its models and with the agent it is. direct: reached without passing through another agent
+             */
+            how: string;
+            node: components["schemas"]["DepNode"];
+            /** Runs In Flight */
+            runs_in_flight: components["schemas"]["BlastRun"][];
+            /** Window */
+            window: string;
+        };
+        /** BlastRun */
+        BlastRun: {
+            /** Agent */
+            agent: string;
+            /**
+             * Called
+             * @default false
+             */
+            called: boolean;
+            /** Run */
+            run: string;
+            /** Source */
+            source: string;
+            /** State */
+            state: string;
+            /**
+             * Uses
+             * @enum {string}
+             */
+            uses: "direct" | "transitive" | "called";
         };
         /** BudgetRefusal */
         BudgetRefusal: {
@@ -1985,6 +2226,8 @@ export interface components {
              * @default
              */
             model: string;
+            /** Parent Run */
+            parent_run?: string | null;
             /**
              * Priority
              * @default 5
@@ -2120,6 +2363,125 @@ export interface components {
             /** Started */
             started: string;
         };
+        /** DepCounts */
+        DepCounts: {
+            /** Declared Only */
+            declared_only: number;
+            /** Edges */
+            edges: number;
+            /** Nodes */
+            nodes: number;
+            /** Seen */
+            seen: number;
+        };
+        /** DepEdge */
+        DepEdge: {
+            /**
+             * Cost
+             * @default 0
+             */
+            cost: number;
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /**
+             * Declared
+             * @default false
+             */
+            declared: boolean;
+            /**
+             * Evidence
+             * @default declared
+             * @enum {string}
+             */
+            evidence: "declared" | "seen" | "both";
+            /**
+             * Failures
+             * @default 0
+             */
+            failures: number;
+            /** From */
+            from: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "calls" | "sub_run" | "peer" | "uses_model" | "serves";
+            /** Last At */
+            last_at?: string | null;
+            /**
+             * Observed
+             * @default false
+             */
+            observed: boolean;
+            /**
+             * Refusals
+             * @default 0
+             */
+            refusals: number;
+            /** To */
+            to: string;
+        };
+        /** DepNode */
+        DepNode: {
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /**
+             * Declared
+             * @default false
+             */
+            declared: boolean;
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+            /**
+             * Failures
+             * @default 0
+             */
+            failures: number;
+            /** Health */
+            health: string;
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "agent" | "tool" | "server" | "peer" | "connector" | "model" | "application";
+            /** Label */
+            label: string;
+            /**
+             * Observed
+             * @default false
+             */
+            observed: boolean;
+        };
+        /** DependencyMap */
+        DependencyMap: {
+            counts: components["schemas"]["DepCounts"];
+            /** Edges */
+            edges: components["schemas"]["DepEdge"][];
+            /**
+             * How
+             * @default edges point from what depends to what it depends on (serves: from a server to the tool it serves); declared comes from the specs, seen from the journals in the window
+             */
+            how: string;
+            /** Nodes */
+            nodes: components["schemas"]["DepNode"][];
+            /** Since */
+            since: string;
+            /** Until */
+            until: string;
+            /** Window */
+            window: string;
+        };
         /** DeployStep */
         DeployStep: {
             /** Ms */
@@ -2186,6 +2548,85 @@ export interface components {
             nodes: number;
             /** Saved At */
             saved_at?: string | null;
+        };
+        /** DriftMeasure */
+        DriftMeasure: {
+            /** Baseline */
+            baseline?: {
+                [key: string]: unknown;
+            };
+            /** Distance */
+            distance?: number | null;
+            /**
+             * Drifted
+             * @default false
+             */
+            drifted: boolean;
+            /**
+             * Enough
+             * @default true
+             */
+            enough: boolean;
+            /** Field */
+            field?: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "mix" | "mean" | "rate";
+            /**
+             * Name
+             * @enum {string}
+             */
+            name: "disposition_mix" | "confidence" | "cost_per_run" | "tool_mix" | "refusal_rate";
+            /** Recent */
+            recent?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Says
+             * @default
+             */
+            says: string;
+            /**
+             * Statistic
+             * @enum {string}
+             */
+            statistic: "jensen_shannon" | "welch_z" | "proportion_z";
+            /** Threshold */
+            threshold: number;
+            /** Z */
+            z?: number | null;
+        };
+        /** DriftReport */
+        DriftReport: {
+            /** Agents */
+            agents: components["schemas"]["AgentDrift"][];
+            /** Count */
+            count: number;
+            /** Min Runs */
+            min_runs?: {
+                [key: string]: number;
+            };
+            /** Now */
+            now: string;
+            /** Thresholds */
+            thresholds?: {
+                [key: string]: number;
+            };
+            /** Windows */
+            windows?: {
+                [key: string]: number;
+            };
+        };
+        /** DriftWindow */
+        DriftWindow: {
+            /** Runs */
+            runs: number;
+            /** Since */
+            since: string;
+            /** Until */
+            until: string;
         };
         /** EdgeRef */
         EdgeRef: {
@@ -2360,6 +2801,29 @@ export interface components {
             };
             /** Verdicts */
             verdicts?: string[];
+        };
+        /** Figures */
+        Figures: {
+            /**
+             * Cost
+             * @default 0
+             */
+            cost: number;
+            /**
+             * Refusals
+             * @default 0
+             */
+            refusals: number;
+            /**
+             * Tokens
+             * @default 0
+             */
+            tokens: number;
+            /**
+             * Tool Calls
+             * @default 0
+             */
+            tool_calls: number;
         };
         /** Finding */
         Finding: {
@@ -2603,6 +3067,188 @@ export interface components {
              */
             where: "edge" | "step";
         };
+        /** GuardianAction */
+        GuardianAction: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "hold" | "block";
+            /** Agent */
+            agent: string;
+            /** At */
+            at: string;
+            /** Confidence */
+            confidence: number;
+            /**
+             * Entries
+             * @default 0
+             */
+            entries: number;
+            /** Id */
+            id: string;
+            /** Model */
+            model: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "acted" | "attention";
+            /** Reason */
+            reason: string;
+            /** Run */
+            run: string;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /** Verdict */
+            verdict: string;
+            /**
+             * Why
+             * @default
+             */
+            why: string;
+        };
+        /** GuardianActionList */
+        GuardianActionList: {
+            /** Actions */
+            actions: components["schemas"]["GuardianAction"][];
+            /** Count */
+            count: number;
+        };
+        /**
+         * GuardianStats
+         * @description What the guardian has done since this instance started.
+         */
+        GuardianStats: {
+            /**
+             * Acted
+             * @default 0
+             */
+            acted: number;
+            /**
+             * Attention
+             * @default 0
+             */
+            attention: number;
+            /**
+             * Errors
+             * @default 0
+             */
+            errors: number;
+            /**
+             * Evaluations
+             * @default 0
+             */
+            evaluations: number;
+            /**
+             * Ok
+             * @default 0
+             */
+            ok: number;
+            /**
+             * Repeated
+             * @default 0
+             */
+            repeated: number;
+            /**
+             * Unparseable
+             * @default 0
+             */
+            unparseable: number;
+            /**
+             * Watching
+             * @default 0
+             */
+            watching: number;
+        };
+        /**
+         * GuardianUpdate
+         * @description `PUT /api/guardian`: the fields given replace the ones set; a field
+         *     left out keeps its value.
+         */
+        GuardianUpdate: {
+            /** Agents */
+            agents?: string[] | "*" | null;
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Every Entries */
+            every_entries?: number | null;
+            /** Every S */
+            every_s?: number | null;
+            /** Max Actions Per Hour */
+            max_actions_per_hour?: number | null;
+            /** May */
+            may?: ("hold" | "block")[] | null;
+            /** Min Confidence */
+            min_confidence?: number | null;
+            /** Model */
+            model?: string | null;
+            /** Rubric */
+            rubric?: string | null;
+        };
+        /** GuardianView */
+        GuardianView: {
+            /**
+             * Actions Last Hour
+             * @default 0
+             */
+            actions_last_hour: number;
+            /** Agents */
+            agents?: string[] | "*";
+            /** Audit Id */
+            audit_id?: number | null;
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /**
+             * Every Entries
+             * @default 5
+             */
+            every_entries: number;
+            /**
+             * Every S
+             * @default 15
+             */
+            every_s: number;
+            /**
+             * Max Actions Per Hour
+             * @default 10
+             */
+            max_actions_per_hour: number;
+            /** May */
+            may?: ("hold" | "block")[];
+            /**
+             * Min Confidence
+             * @default 0.8
+             */
+            min_confidence: number;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /**
+             * Rubric
+             * @default
+             */
+            rubric: string;
+            /**
+             * Set At
+             * @default
+             */
+            set_at: string;
+            /**
+             * Set By
+             * @default
+             */
+            set_by: string;
+            stats?: components["schemas"]["GuardianStats"];
+        };
         /** Healthz */
         Healthz: {
             /** Db */
@@ -2771,6 +3417,8 @@ export interface components {
             max_attempts: number;
             /** Note */
             note?: string | null;
+            /** Parent Run */
+            parent_run?: string | null;
             /** Result */
             result?: unknown;
             /**
@@ -2840,6 +3488,8 @@ export interface components {
              * @enum {string}
              */
             outcome: "done" | "suspended" | "requeued" | "dead";
+            /** Parent Run */
+            parent_run?: string | null;
             /** Result */
             result?: unknown;
             /** Run Id */
@@ -2893,6 +3543,8 @@ export interface components {
             lease_until?: string | null;
             /** Max Attempts */
             max_attempts: number;
+            /** Parent Run */
+            parent_run?: string | null;
             /** Result */
             result?: unknown;
             /** Run Id */
@@ -3603,6 +4255,46 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /**
+         * PeerInfo
+         * @description What the journal knows of one task handed to a peer.
+         */
+        PeerInfo: {
+            /**
+             * Calls
+             * @default 0
+             */
+            calls: number;
+            /**
+             * Failed
+             * @default 0
+             */
+            failed: number;
+            /** Name */
+            name: string;
+            /**
+             * Refused
+             * @default 0
+             */
+            refused: number;
+            /**
+             * Replied
+             * @default false
+             */
+            replied: boolean;
+            /**
+             * State
+             * @default unknown
+             */
+            state: string;
+            /**
+             * Task Id
+             * @default
+             */
+            task_id: string;
+            /** Tools */
+            tools?: string[];
+        };
         /** PendingGate */
         PendingGate: {
             /** Agent */
@@ -3896,6 +4588,41 @@ export interface components {
             supported: number;
             /** Unsupported */
             unsupported: number;
+        };
+        /**
+         * ReachedRun
+         * @description A run (or a queued job) a kill reached (L7).
+         */
+        ReachedRun: {
+            /** Agent */
+            agent: string;
+            /** Delivery */
+            delivery: string;
+            /**
+             * Depth
+             * @default 0
+             */
+            depth: number;
+            /**
+             * Kind
+             * @default run
+             * @enum {string}
+             */
+            kind: "run" | "sub_run" | "job";
+            /** Parent */
+            parent?: string | null;
+            /** Run */
+            run: string;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /**
+             * State
+             * @default
+             */
+            state: string;
         };
         /**
          * Reference
@@ -4255,8 +4982,10 @@ export interface components {
              * Delivery
              * @enum {string}
              */
-            delivery: "in-process" | "worker" | "sdk";
+            delivery: "in-process" | "worker" | "sdk" | "tree";
             kill: components["schemas"]["KillInfo"];
+            /** Reached */
+            reached?: components["schemas"]["ReachedRun"][];
             /** Run */
             run: string;
             /** State */
@@ -4375,6 +5104,9 @@ export interface components {
         /**
          * RunStartRequest
          * @description Exactly one of `agent` (a deployed workflow id) or `spec` (a draft).
+         *     `parent_run` (L7) starts it as that run's child: it joins the parent's
+         *     trace, its record names the parent, and a kill of the parent's tree
+         *     reaches it.
          */
         RunStartRequest: {
             /** Agent */
@@ -4388,6 +5120,8 @@ export interface components {
              * @default
              */
             model: string;
+            /** Parent Run */
+            parent_run?: string | null;
             /**
              * Provider
              * @default foundry
@@ -4484,6 +5218,28 @@ export interface components {
             /** State */
             state: string;
             steer: components["schemas"]["SteerInfo"];
+        };
+        /** RunTree */
+        RunTree: {
+            /** Asked */
+            asked: string;
+            /** Count */
+            count: number;
+            /** Nodes */
+            nodes: components["schemas"]["TreeNode"][];
+            rollup: components["schemas"]["TreeRollup"];
+            /** Root */
+            root: string;
+            /**
+             * Trace Id
+             * @default
+             */
+            trace_id: string;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
         };
         /** ScheduleView */
         ScheduleView: {
@@ -4720,8 +5476,10 @@ export interface components {
         /**
          * SdkRunBody
          * @description `run` without `journal` or `state` opens a live run (`{id, started_at,
-         *     input?, trace_id?}`); with either, it is the older protocol's whole record
-         *     (`{id?, state, values?, result?, error?, suspension?, journal: {entries}}`).
+         *     input?, trace_id?, parent_run?}`; `parent_run` (L7) opens it as that
+         *     run's child, in its trace); with either, it is the older protocol's
+         *     whole record (`{id?, state, values?, result?, error?, suspension?,
+         *     journal: {entries}}`).
          */
         SdkRunBody: {
             /**
@@ -5169,6 +5927,99 @@ export interface components {
              */
             tool: string;
         };
+        /** TreeNode */
+        TreeNode: {
+            /** Agent */
+            agent: string;
+            /**
+             * Cost
+             * @default 0
+             */
+            cost: number;
+            /**
+             * Depth
+             * @default 0
+             */
+            depth: number;
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /**
+             * Estimated
+             * @default false
+             */
+            estimated: boolean;
+            /** Finished At */
+            finished_at?: string | null;
+            /**
+             * Kind
+             * @default run
+             * @enum {string}
+             */
+            kind: "run" | "sub_run" | "peer";
+            /**
+             * Link
+             * @default root
+             * @enum {string}
+             */
+            link: "root" | "parent" | "trace" | "journal";
+            /** Parent */
+            parent?: string | null;
+            peer?: components["schemas"]["PeerInfo"] | null;
+            /**
+             * Refusals
+             * @default 0
+             */
+            refusals: number;
+            /** Run */
+            run: string;
+            /** Source */
+            source: string;
+            /** Started At */
+            started_at?: string | null;
+            /** State */
+            state: string;
+            /**
+             * Tokens
+             * @default 0
+             */
+            tokens: number;
+            /**
+             * Tool Calls
+             * @default 0
+             */
+            tool_calls: number;
+            total?: components["schemas"]["Figures"];
+        };
+        /** TreeRollup */
+        TreeRollup: {
+            /** By Agent */
+            by_agent?: {
+                [key: string]: components["schemas"]["AgentFigures"];
+            };
+            /**
+             * Cost
+             * @default 0
+             */
+            cost: number;
+            /**
+             * Refusals
+             * @default 0
+             */
+            refusals: number;
+            /**
+             * Tokens
+             * @default 0
+             */
+            tokens: number;
+            /**
+             * Tool Calls
+             * @default 0
+             */
+            tool_calls: number;
+        };
         /** TriggerDescription */
         TriggerDescription: {
             /** Accepts */
@@ -5201,6 +6052,8 @@ export interface components {
              * @default
              */
             model: string;
+            /** Parent Run */
+            parent_run?: string | null;
             /** Priority */
             priority?: number | null;
             /** Source */
@@ -7460,6 +8313,125 @@ export interface operations {
             };
         };
     };
+    getDependencies: {
+        parameters: {
+            query?: {
+                /** @description How far back the journals are read: 30m, 24h, 7d (at most 90d) */
+                window?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DependencyMap"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getBlastRadius: {
+        parameters: {
+            query?: {
+                window?: string;
+            };
+            header?: never;
+            path: {
+                node: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlastRadius"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     listDrafts: {
         parameters: {
             query?: {
@@ -7595,6 +8567,62 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DraftRemoved"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getDrift: {
+        parameters: {
+            query?: {
+                /** @description One agent; every agent with runs otherwise */
+                agent?: string | null;
+                /** @description The recent window, in hours */
+                recent_h?: number;
+                /** @description The baseline before it, in days */
+                baseline_d?: number;
+                min_recent?: number;
+                min_baseline?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DriftReport"];
                 };
             };
             /** @description Bad Request */
@@ -7808,6 +8836,155 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    getGuardian: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuardianView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    setGuardian: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GuardianUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuardianView"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    listGuardianActions: {
+        parameters: {
+            query?: {
+                /** @description Only this run's */
+                run?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuardianActionList"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
             };
         };
     };
@@ -9261,6 +10438,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Service Unavailable */
             503: {
                 headers: {
@@ -9692,6 +10878,55 @@ export interface operations {
             };
         };
     };
+    getRunTree: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunTree"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     screenerHealth: {
         parameters: {
             query?: never;
@@ -9817,8 +11052,26 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10305,6 +11558,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Service Unavailable */
             503: {
                 headers: {
@@ -10634,6 +11896,15 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
