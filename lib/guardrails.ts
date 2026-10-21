@@ -385,7 +385,7 @@ export const CONTROLS: Control[] = [
     implementation:
       "A step budget per reasoning node, a tool-call ceiling per run, and a token ceiling per completion. Exhaustion ends the run with a stated reason.",
     evidence: "An exit entry stating the budget that was exhausted.",
-    journal: "—",
+    journal: "budget",
     order: 10,
     references: [
       LLM("LLM06", "Unbounded consumption"),
@@ -414,7 +414,9 @@ export const CONTROLS: Control[] = [
     implementation:
       "A kill switch over the live-run registry signals the runtime; the runtime traps it, journals the termination and persists the partial record.",
     evidence: "A run recorded as killed, naming the operator action.",
-    journal: "—",
+    // The runtime stamps the kill entry with this catalogue id, so the
+    // Guardrails page counts terminations like any other firing.
+    journal: "kill",
     order: null,
     references: [
       ASI("ASI10", "Rogue agents"),
@@ -542,10 +544,11 @@ export const RESIDUAL_RISK = {
 /**
  * What fired, for the surfaces that show a refusal rather than describe a
  * control: the theater's journal and the control pane's denials. The journal
- * writes the engine's own control string; this maps it back to the catalogue.
+ * writes the engine's own control string — a journal key for a refusal, the
+ * catalogue id for a kill or a marking — and this maps either back.
  */
 export function explainControl(control: string): { name: string; decides: string; id?: string } {
-  const c = CONTROLS.find((x) => x.journal === control);
+  const c = CONTROLS.find((x) => x.id === control) ?? CONTROLS.find((x) => x.journal === control);
   if (c) return { name: c.title, decides: c.statement, id: c.id };
   if (control === "contract.breach") {
     const t = CONTROLS.find((x) => x.id === "AF-IN-01")!;

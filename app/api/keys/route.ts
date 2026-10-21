@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { permit, session as whoIs, signer, ssoEnabled } from "@/lib/server/auth";
+import { permit } from "@/lib/server/auth";
 import { dbReady, query } from "@/lib/server/db";
 import { hashKey, mintKey, type KeyRow } from "@/lib/server/keys";
 
@@ -8,12 +8,14 @@ import { hashKey, mintKey, type KeyRow } from "@/lib/server/keys";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   if (!(await dbReady())) return Response.json({ keys: [], store: "db unreachable" });
   const keys = await query<KeyRow>(
     "SELECT id, name, agent, prefix, created_at, last_used, revoked_at FROM api_keys ORDER BY created_at DESC",
   );
-  return Response.json({ keys, mode: keys.some((k) => !k.revoked_at) ? "key" : "open" });
+  // "closed": no active key, so every machine door refuses until one is minted.
+  return Response.json({ keys, mode: keys.some((k) => !k.revoked_at) ? "key" : "closed" });
 }
 
 export async function POST(req: Request) {

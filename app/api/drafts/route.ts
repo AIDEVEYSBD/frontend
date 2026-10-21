@@ -1,5 +1,6 @@
 import path from "node:path";
 import { mkdir, readdir, readFile, unlink } from "node:fs/promises";
+import { permit } from "@/lib/server/auth";
 
 /**
  * Drafts: specs the agent-builder authored, awaiting a person.
@@ -17,6 +18,7 @@ export const dynamic = "force-dynamic";
 const DIR = path.resolve(process.cwd(), "..", "runtime", "workspace", "drafts");
 
 export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   await mkdir(DIR, { recursive: true });
   const id = new URL(req.url).searchParams.get("id");
 
@@ -47,6 +49,7 @@ export async function GET(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  { const gate = await permit(req, "configure"); if (gate) return gate; }
   const id = new URL(req.url).searchParams.get("id");
   if (!id || !/^[a-z][a-z0-9-]{0,62}$/.test(id)) {
     return Response.json({ error: "which draft?" }, { status: 400 });

@@ -1,6 +1,7 @@
 import path from "node:path";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { dbReady, query } from "@/lib/server/db";
+import { permit } from "@/lib/server/auth";
 
 /**
  * Everything this factory is configured with, in one read.
@@ -72,7 +73,8 @@ interface Source {
   usesVault: boolean;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   /* ── the deployed workflows ── */
   let specs: { id: string; doc: SpecDoc; deployed: string | null }[] = [];
   if (await dbReady()) {

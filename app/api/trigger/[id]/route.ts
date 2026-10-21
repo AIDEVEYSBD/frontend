@@ -89,9 +89,11 @@ export function jobView(agent: string, j: JobRow) {
 const JOB_COLS = "id, agent, external_id, source, status, attempts, run_id, result, error, created_at, started_at, finished_at";
 
 /** Describe what this trigger accepts: the entry node's declared inputs. */
-export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   if (!ID.test(id)) return Response.json({ error: "bad id" }, { status: 400 });
+  const auth = await authenticate(req, id);
+  if (!auth.ok) return Response.json({ error: auth.error }, { status: auth.status });
   const doc = await loadSpec(id);
   if (!doc) return Response.json({ error: `no saved agent "${id}"` }, { status: 404 });
   const entry = doc.spec?.nodes?.find((n) => n.id === doc.spec?.entry);
@@ -140,7 +142,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const externalId = body.external_id ? String(body.external_id).slice(0, 200) : null;
   const jobId = randomUUID();
   const priority = Number.isFinite(body.priority) ? Math.max(0, Math.min(9, Number(body.priority))) : 5;
-  const source = String(body.source ?? (auth.mode === "key" ? auth.key?.name ?? "api" : "api")).slice(0, 80);
+  const source = String(body.source ?? auth.key.name ?? "api").slice(0, 80);
 
   const inserted = await query<JobRow>(
     `INSERT INTO trigger_jobs (id, agent, external_id, source, input, model, priority)

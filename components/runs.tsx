@@ -18,6 +18,7 @@ import { useModels } from "@/lib/use-models";
 import { SpanDetail, Waterfall, useTrace, type Span } from "./waterfall";
 import { explainControl } from "@/lib/guardrails";
 import { ControlRef, KILL_CONTROL } from "./control-ref";
+import { RunBoard, ViewSwitch, useRunView, type BoardEdge } from "./run-board";
 
 /**
  * The runs console: where a workflow actually runs.
@@ -327,7 +328,9 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
   const [finalState, setFinalState] = useState("");
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState("");
-  const stateFile = useRef("");
+  // The run's id, as the route names it on open: what a resume, a kill and
+  // the cost lookup all refer to. The server never says where it lives.
+  const runId = useRef("");
   const abort = useRef<AbortController | null>(null);
   const maxT = useRef(0);
   // Wall clock: the journal ticks only when entries land; a 40-second tool
@@ -422,7 +425,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
               setEntries((prev) => [...prev, shifted]);
               void t;
             } else if (msg.type === "opened") {
-              stateFile.current = String(msg.stateFile ?? "");
+              runId.current = String(msg.run ?? "");
             } else if (msg.type === "output") {
               setOutputs((prev) => [...prev, msg as unknown as OutputRecord]);
             } else if (msg.type === "end") {
@@ -432,12 +435,12 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
               if (end.state === "suspended" && end.suspension) setSuspension(end.suspension);
               else setPhase("done");
               if (end.error) setError(String(end.error));
-              const runId = stateFile.current.split("/").pop()?.replace(/\.json$/, "");
-              if (runId) {
+              const id = runId.current;
+              if (id) {
                 fetch("/api/control")
                   .then((r) => r.json())
                   .then((d) => {
-                    const row = (d.runs ?? []).find((x: { id: string }) => x.id === runId);
+                    const row = (d.runs ?? []).find((x: { id: string }) => x.id === id);
                     if (!row) return;
                     setRunCost(
                       row.cost === null ? "cost —" : row.cost === 0 ? "$0.00" : row.cost < 0.005 ? "<$0.01" : `$${row.cost.toFixed(2)}`,
@@ -502,7 +505,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
     setResult(null);
     setSuspension(null);
     setKilling(false);
-    stateFile.current = "";
+    runId.current = "";
     maxT.current = 0;
     consume({ spec: toDocument(system), input: parsed, model: model || defaultModel });
   };
@@ -511,7 +514,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
     if (!system) return;
     consume({
       spec: toDocument(system),
-      stateFile: stateFile.current,
+      resume: runId.current,
       answer: { approved, by: by || "console", note },
       model: model || defaultModel,
     });
@@ -533,6 +536,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
       title={system.name}
       subtitle={system.id}
       nodes={system.nodes.map((n) => ({ id: n.id, label: n.label || n.id, kind: n.harness }))}
+      edges={system.edges.map((e) => ({ source: e.source, target: e.target, when: e.when, label: e.label }))}
       entries={entries}
       live={phase === "live" && !suspension}
       finalState={suspension ? "suspended" : phase === "done" ? finalState : phase === "live" ? "running" : ""}
@@ -654,12 +658,13 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
               tone="err"
               variant="solid"
               size="sm"
+              permission="run"
               onClick={() => {
                 // The real kill switch — SIGTERM to the runtime, which journals
                 // "killed by operator" and persists the run. The stream stays
                 // open so the kill lands in the transcript in front of you.
                 setKilling(true);
-                const id = stateFile.current.split("/").pop()?.replace(/\.json$/, "");
+                const id = runId.current;
                 if (id) {
                   fetch("/api/kill", {
                     method: "POST",
@@ -699,7 +704,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
                 setFinalState("");
                 setError("");
                 setKilling(false);
-                stateFile.current = "";
+                runId.current = "";
                 maxT.current = 0;
               }}
             >
@@ -725,6 +730,7 @@ function ReplayTheater({ id }: { id: string }) {
     result: Record<string, unknown> | null;
   }>({ system: "", runId: "", state: "", error: "", result: null });
   const [specNodes, setSpecNodes] = useState<{ id: string; label: string; kind: string }[] | null>(null);
+  const [specEdges, setSpecEdges] = useState<BoardEdge[]>([]);
   const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
@@ -755,6 +761,7 @@ function ReplayTheater({ id }: { id: string }) {
         if (stop || !d.spec) return;
         const s = fromDocument(d.spec);
         setSpecNodes(s.nodes.map((n) => ({ id: n.id, label: n.label || n.id, kind: n.harness })));
+        setSpecEdges(s.edges.map((e) => ({ source: e.source, target: e.target, when: e.when, label: e.label })));
       })
       .catch(() => {});
     return () => {
@@ -767,6 +774,16 @@ function ReplayTheater({ id }: { id: string }) {
   // not from a screensaver. ?t= deep-links a moment.
   const openAt = params.get("t");
   const playback = usePlayback(duration, Boolean(entries?.length), openAt ? Number(openAt) : duration);
+  // Opened in the agents view, a replay is a film: it plays from the start.
+  const [view] = useRunView();
+  const rolled = useRef(false);
+  useEffect(() => {
+    if (rolled.current || !entries?.length || openAt || view !== "cards") return;
+    rolled.current = true;
+    playback.seek(0);
+    playback.setPlaying(true);
+  }, [entries, openAt, view, playback]);
+
 
   const marks = useMemo(
     () => (entries ?? []).filter((e) => e.kind === "node.enter").map((e) => e.t),
@@ -849,7 +866,13 @@ function ReplayTheater({ id }: { id: string }) {
       title={meta.system}
       subtitle={meta.runId}
       nodes={nodes}
+      edges={specEdges}
       entries={visible}
+      allEntries={entries}
+      onRestart={() => {
+        playback.seek(0);
+        playback.setPlaying(true);
+      }}
       live={playback.playing}
       // The state is a fact about the record, not about the scrub position.
       finalState={meta.state}
@@ -1137,7 +1160,10 @@ function Theater({
   title,
   subtitle,
   nodes,
+  edges = [],
   entries,
+  allEntries,
+  onRestart,
   live,
   finalState,
   error,
@@ -1154,7 +1180,13 @@ function Theater({
   title: string;
   subtitle: string;
   nodes: { id: string; label: string; kind: string }[];
+  /** The spec's edges, so the agents view can draw the plan and the path through it. */
+  edges?: BoardEdge[];
   entries: Entry[];
+  /** On a replay, the whole journal: the agents view lays the run out once and reveals it as the scrubber moves. */
+  allEntries?: Entry[];
+  /** Play the replay again from the start (the agents view offers it when paused). */
+  onRestart?: () => void;
   live: boolean;
   finalState: string;
   error: string;
@@ -1177,6 +1209,9 @@ function Theater({
   const modelCalls = entries.filter((e) => e.kind === "model.call").length;
   const denied = entries.filter((e) => e.kind === "denied" || e.kind === "contract.breach").length;
   const artifacts = useMemo(() => artifactsOf(entries), [entries]);
+  // Theatre or agents: the same journal, read as one transcript or as a card
+  // per agent. The choice is the reader's and it sticks across runs.
+  const [view, setView, fold, setFold] = useRunView();
 
   /* Node states from the journal: entered without exit = active. */
   const nodeState = useMemo(() => {
@@ -1213,6 +1248,7 @@ function Theater({
           <StateBadge state={finalState} />
         )}
         <div className="grow" />
+        <ViewSwitch view={view} setView={setView} fold={fold} setFold={setFold} />
         <div className="flex items-center gap-3 font-mono text-[11.5px] text-dim">
           <span className="tnum">{modelCalls} model calls</span>
           <span className="text-ghost">·</span>
@@ -1227,7 +1263,28 @@ function Theater({
       {/* ── The gate: when a person is the next step, the room says so. ── */}
       {suspension && <GateBanner suspension={suspension} onAnswer={onAnswer} />}
 
-      <div className="grid min-h-0 grow grid-cols-1 md:grid-cols-[minmax(150px,190px)_minmax(0,1fr)] xl:grid-cols-[minmax(160px,200px)_minmax(0,1fr)_minmax(280px,340px)]">
+      {view === "cards" && (
+        <div className="flex min-h-0 grow flex-col">
+          <RunBoard nodes={nodes} edges={edges} entries={entries} allEntries={allEntries} live={live} fold={fold} plan={live && !allEntries} clockT={tNow} onRestart={onRestart} suspendedNode={suspension?.node ?? null} />
+          {(artifacts.length > 0 || (error && finalState === "failed") || finalState === "killed") && (
+            <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-line bg-raise/40 px-4 py-2.5">
+              <span className="text-[11px] font-medium text-faint">Artifacts</span>
+              {artifacts.map((a) => (
+                <a key={a.name} href={`/api/artifact?name=${encodeURIComponent(a.name)}`} download={a.name} className="focusable flex items-center gap-1.5 rounded-md border border-line bg-surface px-2 py-1 text-[11.5px] text-fg hover:border-line-strong">
+                  <Icon name={a.kind === "json" ? "json" : "file"} size={12} className="text-dim" />
+                  {a.name}
+                </a>
+              ))}
+              {artifacts.length === 0 && <span className="text-[11px] text-ghost">none written</span>}
+              <span className="grow" />
+              {error && finalState === "failed" && <Status tone="err">{error.slice(0, 120)}</Status>}
+              {finalState === "killed" && <span className="flex items-center gap-2"><Status tone="err">Killed by operator</Status><ControlRef control={KILL_CONTROL} /></span>}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className={`min-h-0 grow grid-cols-1 md:grid-cols-[minmax(150px,190px)_minmax(0,1fr)] xl:grid-cols-[minmax(160px,200px)_minmax(0,1fr)_minmax(280px,340px)] ${view === "cards" ? "hidden" : "grid"}`}>
         {/* ── graph rail: the spine, filling as the run advances. Below md it
             lies down as a horizontal strip so the transcript keeps the room. ── */}
         <aside className="flex min-h-0 min-w-0 flex-row gap-3 overflow-x-auto border-b border-line bg-raise/60 p-3 md:flex-col md:gap-1 md:overflow-x-visible md:overflow-y-auto md:border-r md:border-b-0">

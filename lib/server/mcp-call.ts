@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { loadServers, type McpServer, type McpTool } from "@/lib/server/mcp";
+import { spawnEnv } from "@/lib/server/spawn-env";
 
 /**
  * Calling one tool on one registered MCP server, from the control plane.
@@ -49,7 +50,7 @@ export interface CallResult {
 export function callTool(server: McpServer, tool: string, args: Record<string, unknown>, timeoutMs = 60_000): Promise<CallResult> {
   return new Promise((resolve, reject) => {
     const started = Date.now();
-    const child = spawn(server.command, server.args, { cwd: ROOT, env: { ...process.env, ...server.env }, stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(server.command, server.args, { cwd: ROOT, env: spawnEnv(server.env), stdio: ["pipe", "pipe", "pipe"] });
     let settled = false;
     let stderr = "";
     let buf = "";

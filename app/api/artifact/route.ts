@@ -1,5 +1,6 @@
 import path from "node:path";
 import { readFile, realpath } from "node:fs/promises";
+import { permit } from "@/lib/server/auth";
 
 /**
  * Download one artifact a run produced.
@@ -27,6 +28,7 @@ const MIME: Record<string, string> = {
 };
 
 export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   const name = new URL(req.url).searchParams.get("name") ?? "";
   if (!name || name !== path.basename(name) || name.startsWith(".")) {
     return Response.json({ error: "artifacts are addressed by filename" }, { status: 400 });

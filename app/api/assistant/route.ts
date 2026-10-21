@@ -1,7 +1,7 @@
 import { systemPrompt } from "@/lib/server/assistant-prompt";
 import { pageFor } from "@/lib/assistant";
 import { READ_TOOLS, clip, runTool } from "@/lib/server/console-tools";
-import { internalHeaders } from "@/lib/server/auth";
+import { permit, internalHeaders } from "@/lib/server/auth";
 
 const TOOLS = READ_TOOLS.map((t) => ({ type: "function" as const, function: { name: t.name, description: t.description, parameters: t.inputSchema } }));
 
@@ -119,6 +119,7 @@ async function snapshot(origin: string): Promise<string> {
 }
 
 export async function POST(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   const endpoint = process.env.FOUNDRY_ENDPOINT ?? "";
   const key = process.env.FOUNDRY_API_KEY || process.env.AZURE_AI_KEY || "";
   const model = process.env.ASSISTANT_MODEL ?? "gpt-4o";

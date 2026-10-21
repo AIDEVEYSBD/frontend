@@ -1,6 +1,6 @@
 import path from "node:path";
 import { readdir, readFile, stat } from "node:fs/promises";
-import type { Sheet } from "./prices";
+import { costOf as priceCost, isPriced, type Sheet } from "./prices";
 
 /**
  * The run ledger, read from the journals the runtime wrote.
@@ -22,7 +22,9 @@ export interface CallRow {
   in: number;
   out: number;
   ms: number;
-  cost: number | null;
+  cost: number;
+  /** The price came from the estimate rate, not a configured or published price. */
+  estimated: boolean;
   /** Whether the reply carried tool intents — a step that drives tools. */
   tools: number;
 }
@@ -34,7 +36,9 @@ export interface RunRow {
   at: string;
   ms: number;
   entries: number;
-  cost: number | null;
+  cost: number;
+  /** Model calls in this run priced at the estimate rate rather than a known price. */
+  estimated: number;
   tokens: { in: number; out: number };
   models: string[];
   suspendedAt: string;
@@ -44,15 +48,13 @@ export interface RunRow {
   artifacts: number;
   artifactNames: string[];
   /** Model → token/cost share inside this run, for the drill-down. */
-  byModel: { model: string; in: number; out: number; cost: number | null }[];
+  byModel: { model: string; in: number; out: number; cost: number; estimated: boolean }[];
   /** Every model call, attributed to its node. */
   calls: CallRow[];
 }
 
-export function costOf(model: string, tk: { in: number; out: number }, sheet: Sheet | null): number | null {
-  if (model === "scripted") return 0; // genuinely free
-  const p = sheet?.get(model);
-  return p ? tk.in * p.in + tk.out * p.out : null; // unknown, not zero
+export function costOf(model: string, tk: { in: number; out: number }, sheet: Sheet | null): number {
+  return priceCost(model, tk, sheet);
 }
 
 let cache: { at: number; key: string; rows: RunRow[] } | null = null;
@@ -106,6 +108,7 @@ export async function readRuns(sheet: Sheet | null): Promise<RunRow[]> {
           ...one,
           ms: Number(e.data?.ms ?? 0),
           cost: costOf(model, one, sheet),
+          estimated: !isPriced(model, sheet),
           tools: Array.isArray(e.data?.intents) ? (e.data!.intents as unknown[]).length : 0,
         });
       }
@@ -115,10 +118,9 @@ export async function readRuns(sheet: Sheet | null): Promise<RunRow[]> {
         in: tk.in,
         out: tk.out,
         cost: costOf(model, tk, sheet),
+        estimated: !isPriced(model, sheet),
       }));
-      const cost = byModel.some((b) => b.cost === null)
-        ? null
-        : byModel.reduce((s, b) => s + (b.cost as number), 0);
+      const cost = byModel.reduce((s, b) => s + b.cost, 0);
 
       rows.push({
         id: f.replace(/\.json$/, ""),
@@ -128,6 +130,7 @@ export async function readRuns(sheet: Sheet | null): Promise<RunRow[]> {
         ms: Number(run?.journal?.duration_ms ?? 0),
         entries: entries.length,
         cost,
+        estimated: calls.filter((c) => c.estimated).length,
         tokens: {
           in: byModel.reduce((s, b) => s + b.in, 0),
           out: byModel.reduce((s, b) => s + b.out, 0),

@@ -87,7 +87,12 @@ export function Guardrails() {
   }, []);
 
   const shown = useMemo(() => (std ? CONTROLS.filter((c) => c.references.some((r) => r.std === std)) : CONTROLS), [std]);
-  const fired = (c: Control) => (c.journal === "—" ? null : (data?.counts[c.journal] ?? 0));
+  // A control is counted under its journal key (what the policy engine writes
+  // on a refusal) and under its catalogue id (what the runtime stamps on a
+  // kill or a marking); a reviewer sees one number.
+  const keysOf = (c: Control) => (c.journal === c.id ? [c.id] : [c.journal, c.id]).filter((k) => k !== "—");
+  const sumOf = (m: Record<string, number> | undefined, c: Control) => keysOf(c).reduce((n, k) => n + (m?.[k] ?? 0), 0);
+  const fired = (c: Control) => (c.journal === "—" ? null : sumOf(data?.counts, c));
   const totalFired = data ? Object.values(data.counts).reduce((a, b) => a + b, 0) : 0;
   // The register can be read in the platform's own families or in another
   // framework's domains; the controls are the same, only the shelves move.
@@ -102,7 +107,7 @@ export function Guardrails() {
   const openControl = open ? CONTROLS.find((c) => c.id === open) ?? null : null;
   const openGuardrail = open && !openControl ? GUARDRAILS.find((g) => g.id === open) ?? null : null;
   const openFired = openControl ? fired(openControl) : null;
-  const openFirings = openControl && data ? data.recent.filter((e) => e.control === openControl.journal).slice(0, 8) : [];
+  const openFirings = openControl && data ? data.recent.filter((e) => keysOf(openControl).includes(e.control)).slice(0, 8) : [];
   usePageFacts({
     view,
     controls: CONTROLS.length,
@@ -424,7 +429,7 @@ export function Guardrails() {
             <Cell k="Framework domains" v={GROUPINGS.map((g) => `${g.short}: ${g.domains.find((d) => d.id === g.of[openControl.id])?.name ?? "—"}`).join(" · ")} />
             <Cell k="Derives from" v={openControl.references.map((r) => `${r.std} ${r.ref}: ${r.name}`).join(" · ")} />
             {data && openFired !== null && openFired > 0 && (
-              <Cell k="Fired in" v={Object.entries(data.byAgent).filter(([, m]) => m[openControl.journal]).map(([a, m]) => `${a} (${m[openControl.journal]})`).join(", ")} />
+              <Cell k="Fired in" v={Object.entries(data.byAgent).map(([a, m]) => [a, sumOf(m, openControl)] as const).filter(([, n]) => n > 0).map(([a, n]) => `${a} (${n})`).join(", ")} />
             )}
             {GUARDRAILS.some((g) => g.implementedBy.includes(openControl.id)) && (
               <Cell k="Implements guardrails" v={GUARDRAILS.filter((g) => g.implementedBy.includes(openControl.id)).map((g) => `${g.id} ${g.area}`).join(" · ")} />

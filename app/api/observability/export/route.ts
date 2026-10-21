@@ -3,6 +3,7 @@ import { readFile, stat } from "node:fs/promises";
 import { priceSheet } from "@/lib/server/prices";
 import { toTrace } from "@/lib/server/trace";
 import { destination, send, toOtlp } from "@/lib/server/langfuse";
+import { permit } from "@/lib/server/auth";
 
 /**
  * A run, as OpenTelemetry.
@@ -44,6 +45,7 @@ function runIdOf(req: Request): string | null {
 }
 
 export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   const runId = runIdOf(req);
   if (!runId) return Response.json({ error: "send ?run=<run id>" }, { status: 400 });
   try {
@@ -60,6 +62,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  { const gate = await permit(req, "configure"); if (gate) return gate; }
   let body: { run?: string; runs?: string[]; limit?: number };
   try {
     body = await req.json();

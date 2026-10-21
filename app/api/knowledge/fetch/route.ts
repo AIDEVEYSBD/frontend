@@ -3,6 +3,7 @@ import { LICENCE_NOTE, type Licence } from "@/lib/knowledge";
 import { knowledgeReady, kq } from "@/lib/server/knowledge-db";
 import { chunk, metadata, sections } from "@/lib/server/embed";
 import { fetchSource, type Cleaning } from "@/lib/server/ingest";
+import { permit } from "@/lib/server/auth";
 
 /**
  * Fetch a curated source and stage it.
@@ -21,6 +22,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
+  { const gate = await permit(req, "configure"); if (gate) return gate; }
   let body: { source?: string; url?: string; title?: string; text?: string };
   try {
     body = await req.json();

@@ -1,4 +1,5 @@
 import { CONSOLE_TOOLS, runTool } from "@/lib/server/console-tools";
+import { permit } from "@/lib/server/auth";
 import { authenticate } from "@/lib/server/keys";
 import { MCP_ENDPOINT } from "@/lib/site";
 
@@ -9,12 +10,14 @@ import { MCP_ENDPOINT } from "@/lib/site";
  * requests here and reads JSON responses. It exposes the platform to other
  * agents and to desktop clients the same way the platform exposes a client's
  * estate to its own agents: a tool list, each call authenticated, each call
- * journalled by the API it lands on. Reading is open to any active key;
- * starting a workflow needs a key scoped to that workflow, exactly as the
- * trigger endpoint requires, because the same key is forwarded to it.
+ * journalled by the API it lands on. Reading needs an active key; starting a
+ * workflow needs a key scoped to that workflow, exactly as the trigger
+ * endpoint requires, because the same key is forwarded to it. With no key
+ * minted yet, every call is refused.
  *
- * GET describes the server for the console and for people configuring a
- * client. (The registry of servers this deployment connects to is /api/mcp.)
+ * GET describes the server for the console (under the person's session) and
+ * for an MCP client (under its key). (The registry of servers this
+ * deployment connects to is /api/mcp.)
  */
 
 export const runtime = "nodejs";
@@ -36,14 +39,23 @@ function origin(req: Request): string {
   return process.env.ASSISTANT_SELF_ORIGIN || new URL(req.url).origin;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  // A key, when one is presented, is checked as a key; otherwise this is the
+  // console reading its own description under the signed-in person.
+  if (req.headers.get("authorization") || req.headers.get("x-api-key")) {
+    const auth = await authenticate(req, "");
+    if (!auth.ok) return Response.json({ error: auth.error }, { status: auth.status });
+  } else {
+    const gate = await permit(req, "view");
+    if (gate) return gate;
+  }
   const endpoint = MCP_ENDPOINT;
   return Response.json({
     server: SERVER,
     protocolVersion: PROTOCOL,
     transport: "streamable-http",
     endpoint,
-    auth: "Authorization: Bearer <api key> (the same keys as /api/trigger; reading needs any active key, trigger_workflow needs a key scoped to that workflow; open until the first key is minted)",
+    auth: "Authorization: Bearer <api key> (the same keys as /api/trigger; reading needs any active key, trigger_workflow needs a key scoped to that workflow; every call is refused until the first key is minted)",
     tools: CONSOLE_TOOLS.map((t) => ({ name: t.name, description: t.description, action: Boolean(t.action), inputSchema: t.inputSchema })),
     client: {
       claude: { mcpServers: { "agent-factory": { type: "http", url: endpoint, headers: { Authorization: "Bearer <api key>" } } } },

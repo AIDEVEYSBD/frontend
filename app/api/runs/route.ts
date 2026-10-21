@@ -1,6 +1,7 @@
 import path from "node:path";
 import { mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { dbReady, query } from "@/lib/server/db";
+import { permit } from "@/lib/server/auth";
 
 /**
  * Recorded runs.
@@ -41,6 +42,7 @@ function artifactsOf(entries: JournalEntry[]): { where: string; name: string; ki
 }
 
 export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   await mkdir(DIR, { recursive: true });
   const id = new URL(req.url).searchParams.get("id");
   const db = await dbReady();

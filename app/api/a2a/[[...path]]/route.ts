@@ -79,7 +79,9 @@ function task(j: JobRow, sessionId?: string) {
   };
 }
 
-export async function GET(_req: Request, ctx: { params: Promise<{ path?: string[] }> }) {
+export async function GET(req: Request, ctx: { params: Promise<{ path?: string[] }> }) {
+  const auth = await authenticate(req, "");
+  if (!auth.ok) return Response.json({ error: auth.error }, { status: auth.status });
   const { path: p } = await ctx.params;
   const [door, ...rest] = p ?? [];
   if (door === "gateway") return Response.json({ door: "model gateway", url: ENDPOINTS.gateway, describe: `${ENDPOINTS.gateway}/chat/completions` });
@@ -90,7 +92,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ path?: string[
     url: ENDPOINTS.tasks,
     protocol: "A2A JSON-RPC 2.0: tasks/send, tasks/get, tasks/cancel",
     card: ENDPOINTS.card,
-    auth: "Authorization: Bearer <api key> — any key while reading; a key scoped to the workflow to send it work (open until the first key is minted)",
+    auth: "Authorization: Bearer <api key> — any active key while reading; a key scoped to the workflow to send it work (every call is refused until the first key is minted)",
     send: { method: "tasks/send", params: { id: "<your task id, optional>", message: { role: "user", parts: [{ type: "data", data: { "…": "the workflow's input" } }] }, metadata: { workflow: "<skill id>" } } },
     skills: wfs.map((w) => ({ id: w.id, name: w.name, trigger: w.trigger, accepts_tasks: w.trigger === "api" || w.trigger === "webhook" })),
     frameworks: FRAMEWORKS.filter((f) => f.a2aOnly).map((f) => f.label),
@@ -137,7 +139,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ path?: string[
       if (!Object.keys(input).length) return fail(id, -32602, "the message needs a data part with the workflow's input, or a text part");
 
       const externalId = params.id ? `a2a:${String(params.id).slice(0, 190)}` : null;
-      const source = auth.mode === "key" ? `a2a · ${auth.key?.name ?? "key"}` : "a2a";
+      const source = `a2a · ${auth.key.name}`;
       const jobId = randomUUID();
       const inserted = await query<JobRow>(
         `INSERT INTO trigger_jobs (id, agent, external_id, source, input, model, priority)

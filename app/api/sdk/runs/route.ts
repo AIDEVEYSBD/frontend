@@ -115,7 +115,7 @@ export async function POST(req: Request) {
     error: String(run.error ?? ""),
     result: run.result && typeof run.result === "object" ? run.result : {},
     journal: { run_id: runId, system: agent, spec_digest: "sdk", duration_ms: clock, entries },
-    reported_by: { mode: "sdk", key: auth.mode === "key" ? auth.key?.prefix : "open" },
+    reported_by: { mode: "sdk", key: auth.key.prefix },
     ...(suspended ? { suspension: run.suspension } : {}),
     // A gate answered in the console stays on the record across the agent's own reports.
     ...(previous?.answer && !suspended ? { answer: previous.answer } : {}),

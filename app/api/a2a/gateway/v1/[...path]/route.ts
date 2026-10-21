@@ -49,6 +49,8 @@ function tokensOf(usage: Record<string, unknown> | undefined): { in: number; out
 }
 
 export async function GET(req: Request, ctx: { params: Promise<{ path: string[] }> }) {
+  const door = await admit(req);
+  if (!door.ok) return oaiError(door.status, door.error, door.status === 423 ? "agent_blocked" : "not_admitted");
   const { path } = await ctx.params;
   const sub = path.join("/");
   if (sub === "models") {
@@ -99,7 +101,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ path: string[]
   const base = record ? record.journal.duration_ms : 0;
   const at = () => base + (Date.now() - started);
   if (!record) {
-    record = newRecord(agent.id, "gateway", undefined, auth.mode === "key" ? auth.key?.prefix : "open");
+    record = newRecord(agent.id, "gateway", undefined, auth.key.prefix);
     record.journal.entries.push(entry(0, "run.start", "", agent.id, "through the model gateway", { system: agent.id, door: "gateway" }));
   }
   const rec = record;

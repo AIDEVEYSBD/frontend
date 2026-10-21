@@ -21,8 +21,14 @@ const pool = new Pool({
   database: process.env.KNOWLEDGE_DB_NAME ?? "knowledge",
   user: process.env.KNOWLEDGE_DB_USER ?? "knowledge",
   password: process.env.KNOWLEDGE_DB_PASSWORD ?? "knowledge-dev",
-  max: 4,
-  connectionTimeoutMillis: 2500,
+  // Retrieval runs several searches at once and the reranker keeps the CPU
+  // busy between them; a connection that has to be opened in that window
+  // takes seconds, not milliseconds. Pool enough clients for a round of
+  // searches, keep them warm between questions, and never give up on a
+  // handshake in the time a rerank batch takes.
+  max: 8,
+  idleTimeoutMillis: 300_000,
+  connectionTimeoutMillis: 20_000,
 });
 
 const SCHEMA = `

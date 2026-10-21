@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { knowledgeReady, kq } from "@/lib/server/knowledge-db";
 import { foundry } from "@/lib/server/foundry";
 import { search, type Hit } from "@/app/api/knowledge/search/route";
+import { permit } from "@/lib/server/auth";
 
 /**
  * Agentic retrieval with a grounded answer.
@@ -217,6 +218,7 @@ async function outlineOf(documentId: string): Promise<string> {
 }
 
 export async function POST(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   let body: { question?: string; limit?: number; sources?: string[] };
   try {
     body = await req.json();

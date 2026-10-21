@@ -91,7 +91,8 @@ export async function readConfig(): Promise<DeployConfig> {
   return withBuiltin(await readFileConfig());
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   const cfg = await readConfig();
   return Response.json({ ...cfg, store: (await dbReady()) ? "db" : "file" });
 }

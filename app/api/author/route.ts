@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
+import { permit } from "@/lib/server/auth";
 
 /**
  * The agent that builds agents — and the one agent that does not run in the
@@ -149,6 +150,7 @@ interface Msg {
 }
 
 export async function POST(req: Request) {
+  { const gate = await permit(req, "configure"); if (gate) return gate; }
   const key = await foundryKey();
 
   let body: { messages?: { role: string; content: string }[]; model?: string };

@@ -440,7 +440,7 @@ export function Configuration() {
                 {JSON.stringify((mcp?.client as { claude?: unknown } | undefined)?.claude ?? { mcpServers: { "agent-factory": { type: "http", url: MCP_ENDPOINT, headers: { Authorization: "Bearer <api key>" } } } }, null, 2)}
               </pre>
               <span className="border-t border-line px-4 py-2.5 text-[11px] leading-[1.55] text-faint">
-                Reading tools accept any active key. Starting a workflow needs a key scoped to that workflow, exactly as the trigger endpoint does, because the same key is forwarded to it. Until the first key is minted the server is open, like ingress.
+                Reading tools accept any active key. Starting a workflow needs a key scoped to that workflow, exactly as the trigger endpoint does, because the same key is forwarded to it. Until the first key is minted the server refuses every call, like ingress.
               </span>
             </div>
           </div>
@@ -831,7 +831,7 @@ export function Configuration() {
               ))}
               {data && data.apiKeys.length === 0 && (
                 <span className="px-4 py-2 text-[11.5px] text-faint">
-                  No keys. The trigger endpoint is open until the first one is minted.
+                  No keys. Every machine door (trigger, SDK, A2A, MCP server) refuses until the first one is minted.
                 </span>
               )}
             </div>

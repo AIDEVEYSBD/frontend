@@ -123,6 +123,7 @@ async function pending(agent?: string): Promise<Record<string, unknown>[]> {
 }
 
 export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   const url = new URL(req.url);
   const agent = url.searchParams.get("agent") ?? undefined;
   const items = await pending(agent);
@@ -374,12 +375,9 @@ export async function POST(req: Request) {
   // A key is honoured when one is presented, and scoped to the agent whose
   // gate is being answered, so an integration cannot sign off another
   // workflow's decisions. It is not *required*, because the console has no
-  // key to present and every other console write on this deployment is open
-  // — demanding one here would only mean gates could never be answered from
-  // the screen built to answer them. What carries the accountability is the
-  // signature: `by` is mandatory and lands in the run record. When the
-  // deployment moves behind RUNTIME_KEY and a sign-in, this becomes an
-  // identity check rather than a claim.
+  // key to present: a person answering from the screen is admitted by the
+  // "approve" permission checked above, and what carries the accountability
+  // is the signature — `by` is mandatory and lands in the run record.
   const presented = Boolean(
     req.headers.get("authorization") || req.headers.get("x-api-key"),
   );

@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import path from "node:path";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { dbReady, query } from "@/lib/server/db";
+import { permit } from "@/lib/server/auth";
 
 /**
  * The agent roster: every saved workflow as a programme stage, every node in
@@ -185,7 +186,8 @@ async function liveness(): Promise<Map<string, Liveness>> {
 
 /* ── the roster ── */
 
-export async function GET() {
+export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   let docs: { id: string; doc: Doc }[] = [];
   let store = "file";
   if (await dbReady()) {

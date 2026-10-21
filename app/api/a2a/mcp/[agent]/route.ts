@@ -53,8 +53,11 @@ async function recordFor(agent: AgentPolicy, session: string, keyPrefix: string 
   return { rec, owned: true };
 }
 
-export async function GET(_req: Request, ctx: { params: Promise<{ agent: string }> }) {
+export async function GET(req: Request, ctx: { params: Promise<{ agent: string }> }) {
   const { agent } = await ctx.params;
+  // An agent's grants are its own to read: the key minted when it was attached.
+  const door = await admit(req, agent);
+  if (!door.ok) return Response.json({ error: door.error }, { status: door.status });
   const policy = await policyOf(agent);
   const grants = policy ? await grantedTools(policy) : [];
   return Response.json({
@@ -103,7 +106,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ agent: string 
   const door = await admit(req, agentId);
   if (!door.ok) return fail(id, door.status === 423 ? -32001 : -32000, door.error, door.status);
   const { agent, auth } = door;
-  const keyPrefix = auth.mode === "key" ? auth.key?.prefix : "open";
+  const keyPrefix = auth.key.prefix;
   const session = req.headers.get("mcp-session-id") ?? "";
 
   switch (method) {

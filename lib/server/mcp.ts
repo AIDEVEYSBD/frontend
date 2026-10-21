@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dbReady, query } from "@/lib/server/db";
+import { spawnEnv } from "@/lib/server/spawn-env";
 
 /**
  * Custom tools over MCP.
@@ -96,7 +97,7 @@ export function discover(
   return new Promise((resolve, reject) => {
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn(command, args, { cwd: ROOT, env: { ...process.env, ...env }, stdio: ["pipe", "pipe", "pipe"] });
+      child = spawn(command, args, { cwd: ROOT, env: spawnEnv(env), stdio: ["pipe", "pipe", "pipe"] });
     } catch (e) {
       reject(new Error(`could not start ${command}: ${(e as Error).message}`));
       return;

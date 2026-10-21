@@ -70,7 +70,7 @@ export function Chrome({ children }: { children: React.ReactNode }) {
   // The landing page carries its own header and footer; sign-in pages stand alone.
   if (pathname === "/" || pathname === "/login" || pathname === "/no-access") return <>{children}</>;
   const who = session ?? { name: CURRENT_USER.name, initials: CURRENT_USER.initials, appRoles: [] as string[], sso: false, demoDefaultApplied: false, email: "" };
-  const roleLabel = who.sso ? (who.appRoles.length ? who.appRoles.join(", ") : who.demoDefaultApplied ? "demo default role" : "no role") : CURRENT_USER.role;
+  const roleLabel = who.sso ? (who.appRoles.length ? who.appRoles.join(", ") : who.demoDefaultApplied ? "default role (no assignment)" : "no role") : CURRENT_USER.role;
   const nav = NAV.filter((item) => item.href !== "/iam" || !loaded || can("iam"));
 
   return (

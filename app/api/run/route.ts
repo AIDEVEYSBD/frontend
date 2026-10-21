@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { permit, session as whoIs, signer, ssoEnabled } from "@/lib/server/auth";
+import { permit } from "@/lib/server/auth";
 import path from "node:path";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { dbReady, query } from "@/lib/server/db";
 import { registerRun } from "@/lib/server/active-runs";
 import { budgetGate } from "@/lib/server/budget";
@@ -25,6 +25,21 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const ROOT = path.resolve(process.cwd(), "..", "runtime");
+const RUNS_DIR = path.join(ROOT, "workspace", "runs");
+
+/** A run id as this route and the SDK door mint them: no separators a path could use. */
+const RUN_ID = /^[a-z0-9][A-Za-z0-9._-]{0,120}$/;
+
+/**
+ * The state file for a run named by id, or null when the id is not one.
+ * The client never names a path: an id is resolved here, and the result
+ * must still sit inside the runs directory after resolution.
+ */
+function stateFileFor(id: string): string | null {
+  if (!RUN_ID.test(id)) return null;
+  const full = path.resolve(RUNS_DIR, `${id}.json`);
+  return full.startsWith(RUNS_DIR + path.sep) ? full : null;
+}
 
 export async function POST(req: Request) {
   { const gate = await permit(req, "run"); if (gate) return gate; }
@@ -34,7 +49,8 @@ export async function POST(req: Request) {
     model?: string;
     provider?: "foundry" | "scripted";
     answer?: Record<string, unknown>;
-    stateFile?: string;
+    /** The suspended run to resume, by id. */
+    resume?: string;
   };
 
   try {
@@ -61,15 +77,26 @@ export async function POST(req: Request) {
   // Runs persist into the workspace so the Runs page can show them afterwards
   // — a run that vanishes when the panel closes never happened, as far as
   // anyone reviewing later is concerned.
-  const runsDir = path.join(ROOT, "workspace", "runs");
-  await mkdir(runsDir, { recursive: true });
+  await mkdir(RUNS_DIR, { recursive: true });
   const specId = (body.spec as { metadata?: { id?: string } })?.metadata?.id ?? "run";
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const statePath =
-    body.stateFile || path.join(runsDir, `${specId}-${stamp}-${Math.random().toString(36).slice(2, 6)}.json`);
+  const resuming = Boolean(body.answer && body.resume);
+  let statePath: string;
+  if (resuming) {
+    const existing = stateFileFor(String(body.resume));
+    if (!existing) return Response.json({ error: "resume names a run by its id" }, { status: 400 });
+    try {
+      await stat(existing);
+    } catch {
+      return Response.json({ error: `no run "${body.resume}" on record to resume` }, { status: 404 });
+    }
+    statePath = existing;
+  } else {
+    statePath = path.join(RUNS_DIR, `${specId}-${stamp}-${Math.random().toString(36).slice(2, 6)}.json`);
+  }
+  const runId = path.basename(statePath, ".json");
   await writeFile(specPath, JSON.stringify(body.spec, null, 2));
 
-  const resuming = Boolean(body.answer && body.stateFile);
   const args = [
     "-m",
     "agentfactory",
@@ -94,7 +121,7 @@ export async function POST(req: Request) {
   // On the books the moment it exists — the kill switch can only reach what
   // is registered.
   registerRun({
-    id: path.basename(statePath, ".json"),
+    id: runId,
     system: String(specId),
     startedAt: new Date().toISOString(),
     child,
@@ -125,7 +152,9 @@ export async function POST(req: Request) {
         }
       }, 15_000);
 
-      send({ type: "opened", stateFile: statePath });
+      // The run's id is what the client needs: to resume it, to kill it, to
+      // find it on the control pane. The path it lives at stays here.
+      send({ type: "opened", run: runId });
 
       // stdout is JSONL. Buffer across chunk boundaries — a journal entry
       // carrying a long tool result will not arrive in one piece.
@@ -180,7 +209,7 @@ export async function POST(req: Request) {
                  state = EXCLUDED.state, summary = EXCLUDED.summary,
                  run = EXCLUDED.run, at = now()`,
               [
-                path.basename(statePath, ".json"),
+                runId,
                 run?.system ?? "",
                 run?.state ?? "unknown",
                 {

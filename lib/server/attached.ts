@@ -45,19 +45,20 @@ export type Door =
   | { ok: false; status: number; error: string };
 
 /**
- * Who is at the door. The key names the agent; while the deployment is open
- * (no keys minted yet) the caller names itself in `x-agentfactory-agent`.
- * Either way the agent must be attached, and must not be blocked.
+ * Who is at the door. The key names the agent, and nothing else does: the
+ * identity is the one the key was scoped to when the agent was attached. A
+ * path that names an agent must name the key's agent. An unscoped key is a
+ * caller, not an agent, and is refused here — a header the caller writes
+ * is not an identity.
  */
 export async function admit(req: Request, agentFromPath = ""): Promise<Door> {
-  const named = agentFromPath || req.headers.get("x-agentfactory-agent") || "";
-  const auth = await authenticate(req, named);
+  const auth = await authenticate(req, agentFromPath);
   if (!auth.ok) return { ok: false, status: auth.status, error: auth.error };
-  const id = auth.mode === "key" && auth.key?.agent ? auth.key.agent : named;
-  if (!id) return { ok: false, status: 401, error: "name the agent: use the key minted when it was attached (scoped to it), or send x-agentfactory-agent with an unscoped key" };
-  if (auth.mode === "key" && auth.key?.agent && agentFromPath && auth.key.agent !== agentFromPath) {
-    return { ok: false, status: 403, error: `this key is scoped to "${auth.key.agent}"` };
+  const id = auth.key.agent ?? "";
+  if (!id) {
+    return { ok: false, status: 401, error: "this door admits an attached agent by the key minted when it was attached (scoped to it); the key presented is not scoped to any agent" };
   }
+  if (agentFromPath && id !== agentFromPath) return { ok: false, status: 403, error: `this key is scoped to "${id}"` };
   const agent = await policyOf(id);
   if (!agent) return { ok: false, status: 404, error: `"${id}" is not an attached agent — attach it on the Configuration page first` };
   if (agent.blocked) return { ok: false, status: 423, error: `"${id}" is blocked by an operator; every door refuses until the block is lifted` };

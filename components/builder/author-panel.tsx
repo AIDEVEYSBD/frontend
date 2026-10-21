@@ -157,6 +157,7 @@ export function AuthorPanel({ onApply }: { onApply: (document: unknown) => void 
                     size="sm"
                     variant="outline"
                     className="w-fit max-w-full"
+                    permission="configure"
                     loading={busy}
                     onClick={() => send(s)}
                   >
@@ -211,7 +212,7 @@ export function AuthorPanel({ onApply }: { onApply: (document: unknown) => void 
                       every grant and gate, then Save if it holds up.
                     </p>
                     <div>
-                      <Button size="sm" variant="solid" tone="ink" onClick={() => onApply(m.draft!.document)}>
+                      <Button size="sm" variant="solid" tone="ink" permission="configure" onClick={() => onApply(m.draft!.document)}>
                         Open on canvas
                       </Button>
                     </div>
@@ -279,7 +280,7 @@ export function AuthorPanel({ onApply }: { onApply: (document: unknown) => void 
                 aria-label="Describe the agent"
               />
             </div>
-            <Button size="sm" variant="solid" tone="ink" type="submit" disabled={!input.trim()} loading={busy}>
+            <Button size="sm" variant="solid" tone="ink" type="submit" permission="configure" disabled={!input.trim()} loading={busy}>
               Send
             </Button>
           </form>

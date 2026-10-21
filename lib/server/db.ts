@@ -21,8 +21,9 @@ const pool = new Pool({
   database: process.env.AGENTFACTORY_DB_NAME ?? "agentfactory",
   user: process.env.AGENTFACTORY_DB_USER ?? "agentfactory",
   password: process.env.AGENTFACTORY_DB_PASSWORD ?? "agentfactory-dev",
-  max: 4,
-  connectionTimeoutMillis: 2500,
+  max: 6,
+  idleTimeoutMillis: 300_000,
+  connectionTimeoutMillis: 15_000,
 });
 
 let ready: Promise<boolean> | null = null;

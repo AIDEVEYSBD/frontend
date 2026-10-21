@@ -65,12 +65,24 @@ export async function crossEncoderReady(): Promise<boolean> {
   return (await crossEncoder()) !== null;
 }
 
+/* Inference runs one query at a time. The model is CPU-bound on a box with a
+   few cores, so two reranks at once finish no sooner than one after the
+   other, and the second only pins memory and starves everything else the
+   server is doing — the database handshakes of the searches running
+   beside it included. */
+let turn: Promise<unknown> = Promise.resolve();
+function serialised<T>(job: () => Promise<T>): Promise<T> {
+  const mine = turn.then(job, job);
+  turn = mine.catch(() => undefined);
+  return mine;
+}
+
 export async function rerank(query: string, passages: string[]): Promise<Rerank | null> {
   if (!passages.length) return null;
   const started = Date.now();
   const ce = await crossEncoder();
   if (ce) {
-    const scores = await ce(query, passages);
+    const scores = await serialised(() => ce(query, passages));
     return { model: CROSS_ENCODER, kind: "cross-encoder", scores, ms: Date.now() - started };
   }
   const llm = await llmScores(query, passages);

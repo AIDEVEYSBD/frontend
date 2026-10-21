@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Icon } from "./builder/icons";
 import { IconButton, Label, RUN_STATE, Status } from "./ui";
 import { Banner } from "./overlays";
+import { useSession } from "@/lib/use-session";
 
 /**
  * The registry, as a page.
@@ -53,6 +54,9 @@ export function Workflows() {
   const [menu, setMenu] = useState<MenuAt | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const router = useRouter();
+  // Deleting a workflow is a deploy-level change; the menu says so to a viewer.
+  const { can, loaded } = useSession();
+  const canDelete = !loaded || can("deploy");
 
   const refresh = useCallback(() => {
     fetch("/api/agents")
@@ -227,6 +231,7 @@ export function Workflows() {
           onRun={() => router.push(`/runs?agent=${encodeURIComponent(menu.agent.id)}`)}
           onBenchmark={() => router.push(`/evals?agent=${encodeURIComponent(menu.agent.id)}`)}
           onExport={() => exportJson(menu.agent.id)}
+          canDelete={canDelete}
           onDelete={() => (confirming === menu.agent.id ? remove(menu.agent.id) : setConfirming(menu.agent.id))}
         />
       )}
@@ -242,20 +247,23 @@ function MenuItem({
   label,
   hint,
   tone,
+  disabled = false,
   onClick,
 }: {
   icon: string;
   label: string;
   hint?: string;
   tone?: "err";
+  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
       role="menuitem"
+      disabled={disabled}
       onClick={onClick}
-      className={`focusable flex w-full cursor-pointer items-center gap-2.5 rounded-sm px-2 py-1.5 text-left transition-colors ${
+      className={`focusable flex w-full cursor-pointer items-center gap-2.5 rounded-sm px-2 py-1.5 text-left transition-colors disabled:pointer-events-none disabled:opacity-40 ${
         tone === "err" ? "text-err hover:bg-raise" : "text-mist hover:bg-raise hover:text-fg"
       }`}
     >
@@ -276,6 +284,7 @@ function ContextMenu({
   onRun,
   onBenchmark,
   onExport,
+  canDelete,
   onDelete,
 }: {
   at: MenuAt;
@@ -285,6 +294,7 @@ function ContextMenu({
   onRun: () => void;
   onBenchmark: () => void;
   onExport: () => void;
+  canDelete: boolean;
   onDelete: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -322,8 +332,9 @@ function ContextMenu({
       <MenuItem
         icon="cross"
         label={confirming ? "Click again to delete" : "Delete"}
-        hint={confirming ? "Workflows that chain this will break" : undefined}
+        hint={!canDelete ? 'Needs the "deploy" permission' : confirming ? "Workflows that chain this will break" : undefined}
         tone="err"
+        disabled={!canDelete}
         onClick={onDelete}
       />
     </div>

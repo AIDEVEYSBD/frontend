@@ -1,6 +1,7 @@
 import path from "node:path";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { dbReady, query } from "@/lib/server/db";
+import { permit } from "@/lib/server/auth";
 
 /**
  * What the guardrails actually did, counted from the record.
@@ -60,18 +61,34 @@ interface SpecDoc {
   };
 }
 
-/** The journal kind, or the finer `control` the policy engine recorded. */
-function controlOf(e: Entry): string {
-  const named = (e.data as { control?: string } | undefined)?.control;
-  if (named) return named;
-  if (e.kind === "denied") return "capability";
-  if (e.kind === "gate.open" || e.kind === "gate.answer") return "gate";
-  if (e.kind === "taint") return "taint";
-  if (e.kind === "contract.breach") return "contract.breach";
-  return e.kind;
+/** The kinds counted on their own, with or without a control stamped on them. */
+const COUNTED_KINDS = new Set(["denied", "gate.open", "taint", "contract.breach"]);
+
+/**
+ * The controls an entry fired, as the runtime named them: `data.control` is
+ * the policy engine's journal key on a refusal (capability, scope, taint…)
+ * and the catalogue id on an operator kill or an untrusted-content marking,
+ * where one entry can belong to more than one control. Without a stamp, the
+ * kind decides.
+ */
+function controlsOf(e: Entry): string[] {
+  const named = (e.data as { control?: unknown } | undefined)?.control;
+  const stamped = (Array.isArray(named) ? named : named ? [named] : []).map(String).filter(Boolean);
+  if (stamped.length) return stamped;
+  if (e.kind === "denied") return ["capability"];
+  if (e.kind === "gate.open" || e.kind === "gate.answer") return ["gate"];
+  if (e.kind === "taint") return ["taint"];
+  if (e.kind === "contract.breach") return ["contract.breach"];
+  return [e.kind];
 }
 
-export async function GET() {
+function hasControl(e: Entry): boolean {
+  const named = (e.data as { control?: unknown } | undefined)?.control;
+  return Array.isArray(named) ? named.length > 0 : Boolean(named);
+}
+
+export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   const counts = new Map<string, number>();
   const byAgent = new Map<string, Map<string, number>>();
   const recent: Event[] = [];
@@ -101,22 +118,26 @@ export async function GET() {
     let refusedHere = false;
 
     for (const e of doc.journal?.entries ?? []) {
-      if (!["denied", "gate.open", "taint", "contract.breach"].includes(e.kind)) continue;
-      const control = controlOf(e);
-      counts.set(control, (counts.get(control) ?? 0) + 1);
-      const perAgent = byAgent.get(agent) ?? new Map<string, number>();
-      perAgent.set(control, (perAgent.get(control) ?? 0) + 1);
-      byAgent.set(agent, perAgent);
+      // Counted: the engine's own kinds, and any entry the runtime stamped
+      // with a control — the operator kill is journalled as an error, and
+      // counts against AF-RS-03 because the runtime says so on the entry.
+      if (!COUNTED_KINDS.has(e.kind) && !hasControl(e)) continue;
       if (e.kind === "denied") refusedHere = true;
-      recent.push({
-        control,
-        run: f.replace(/\.json$/, ""),
-        agent,
-        node: String(e.node ?? ""),
-        title: String(e.title ?? ""),
-        detail: String(e.detail ?? "").slice(0, 400),
-        at,
-      });
+      for (const control of controlsOf(e)) {
+        counts.set(control, (counts.get(control) ?? 0) + 1);
+        const perAgent = byAgent.get(agent) ?? new Map<string, number>();
+        perAgent.set(control, (perAgent.get(control) ?? 0) + 1);
+        byAgent.set(agent, perAgent);
+        recent.push({
+          control,
+          run: f.replace(/\.json$/, ""),
+          agent,
+          node: String(e.node ?? ""),
+          title: String(e.title ?? ""),
+          detail: String(e.detail ?? "").slice(0, 400),
+          at,
+        });
+      }
     }
     if (refusedHere) runsWithARefusal += 1;
   }

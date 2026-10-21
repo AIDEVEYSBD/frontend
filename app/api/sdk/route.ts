@@ -1,15 +1,19 @@
 import { ENDPOINTS, LANGUAGES, RECORDED } from "@/lib/attached";
+import { authenticate } from "@/lib/server/keys";
 
 /**
  * The SDK, described. What an agent's SDK talks to, in what shape, and what
  * the factory records from it — so a person configuring an agent, or a curl
- * during a walkthrough, gets the contract rather than a 404.
+ * during a walkthrough, gets the contract rather than a 404. Under a key,
+ * like every machine door.
  */
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: Request) {
+  const auth = await authenticate(req, "");
+  if (!auth.ok) return Response.json({ error: auth.error }, { status: auth.status });
   return Response.json({
     sdk: { name: "agentfactory", version: "1.4.0" },
     packages: LANGUAGES.map((l) => ({ language: l.id, install: l.install })),

@@ -3,6 +3,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { priceSheet } from "@/lib/server/prices";
 import { toTrace, type Trace } from "@/lib/server/trace";
 import { destination } from "@/lib/server/langfuse";
+import { permit } from "@/lib/server/auth";
 
 /**
  * Observability, computed from the journals this platform already writes.
@@ -30,6 +31,7 @@ function percentile(sorted: number[], p: number): number {
 }
 
 export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   const url = new URL(req.url);
   const want = url.searchParams.get("run");
   const agentFilter = url.searchParams.get("agent") ?? "";

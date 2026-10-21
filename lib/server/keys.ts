@@ -2,13 +2,13 @@ import { createHash, randomBytes } from "node:crypto";
 import { dbReady, query } from "@/lib/server/db";
 
 /**
- * API keys for the trigger endpoint.
+ * API keys for the machine doors: the trigger, the SDK, the A2A doors and
+ * the platform's own MCP server.
  *
  * A key is shown once at creation and stored only as a SHA-256 hash. A key
- * may be scoped to one agent or left open to all. While no keys exist at all
- * the trigger is open, which is the right default for a fresh local
- * prototype and the wrong one for anything reachable from outside; creating
- * the first key closes it, and the response says which mode applied.
+ * may be scoped to one agent or left open to all. With no active key at all
+ * every machine door refuses: a deployment that has minted nothing has
+ * admitted nobody, and the refusal says where the first key is minted.
  */
 
 export interface KeyRow extends Record<string, unknown> {
@@ -29,8 +29,10 @@ export function mintKey(): { key: string; prefix: string } {
 }
 
 export type AuthOutcome =
-  | { ok: true; mode: "open" | "key"; key?: KeyRow }
+  | { ok: true; mode: "key"; key: KeyRow }
   | { ok: false; status: 401 | 403 | 503; error: string };
+
+export const NO_KEYS_YET = "no API key has been minted on this deployment, so every machine door is closed; mint one on the Configuration page (API keys) and send it as Authorization: Bearer <key>";
 
 /**
  * Authenticate a request for one agent. An empty `agent` means the door has
@@ -40,7 +42,7 @@ export type AuthOutcome =
 export async function authenticate(req: Request, agent: string): Promise<AuthOutcome> {
   if (!(await dbReady())) return { ok: false, status: 503, error: "the registry database is unreachable; the queue needs it" };
   const active = await query<{ n: string }>("SELECT count(*) AS n FROM api_keys WHERE revoked_at IS NULL");
-  if (Number(active[0]?.n ?? 0) === 0) return { ok: true, mode: "open" };
+  if (Number(active[0]?.n ?? 0) === 0) return { ok: false, status: 401, error: NO_KEYS_YET };
 
   const header = req.headers.get("authorization") ?? "";
   const bearer = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";

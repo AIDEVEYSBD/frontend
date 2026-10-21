@@ -1,5 +1,5 @@
 import * as oidc from "openid-client";
-import { CALLBACK_URL, RESOURCE, authEvent, clearLoginCookie, createSession, provision, provider, readLoginCookie, sessionCookie, ssoEnabled, type IdClaims } from "@/lib/server/auth";
+import { CALLBACK_URL, RESOURCE, authEvent, clearLoginCookie, createSession, defaultRole, provision, provider, readLoginCookie, sessionCookie, ssoEnabled, type IdClaims } from "@/lib/server/auth";
 import { dbReady } from "@/lib/server/db";
 import { PUBLIC_ORIGIN } from "@/lib/site";
 
@@ -58,14 +58,10 @@ export async function GET(req: Request) {
   }
 
   const made = await createSession(claims, { id_token: tokens.id_token ?? "", access_token: tokens.access_token, refresh_token: tokens.refresh_token, expires_in: tokens.expiresIn() });
-  const demo = process.env.AUTH_DEMO_DEFAULT_ROLE ?? "";
   if (!made.appRoles.length) {
-    if (demo) {
-      await authEvent("denied", claims.sub, claims.email ?? null, { note: "no app roles in the access token; demo default role applied", role: demo, jwt: made.jwt });
-    } else {
-      await authEvent("denied", claims.sub, claims.email ?? null, { note: "no app roles in the access token", jwt: made.jwt });
-      return to("/no-access?reason=unassigned", { "set-cookie": clearLoginCookie() });
-    }
+    // No app role in the token: the person lands as a viewer (or the demo
+    // default) and the gap is on the record for the IAM page to show.
+    await authEvent("denied", claims.sub, claims.email ?? null, { note: "no app roles in the access token; default role applied", role: defaultRole(), jwt: made.jwt });
   }
   await authEvent("sign_in", claims.sub, claims.email ?? null, { app_roles: made.appRoles, jwt: made.jwt, refresh: Boolean(tokens.refresh_token) });
 
