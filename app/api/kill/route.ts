@@ -13,7 +13,8 @@ import { permit, session as whoIs, signer, ssoEnabled } from "@/lib/server/auth"
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   return Response.json({ active: activeRuns() });
 }
 

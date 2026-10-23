@@ -1057,6 +1057,7 @@ function SetBuilder({
                 size="sm"
                 variant="solid"
                 tone="ink"
+                permission="configure"
                 disabled={!agent || !cases.length || busy}
                 loading={busy}
                 onClick={save}
@@ -1323,6 +1324,7 @@ function SetCard({
               size="sm"
               variant="solid"
               tone="err"
+              permission="configure"
               onClick={async () => {
                 if (!confirmDelete) {
                   setConfirmDelete(true);
@@ -1864,7 +1866,7 @@ function Recommendation({
             Use for this benchmark
           </Button>
         )}
-        <Button size="sm" variant="outline" disabled={busy || applied} loading={busy} onClick={makeWorkflowDefault}>
+        <Button size="sm" variant="outline" permission="deploy" disabled={busy || applied} loading={busy} onClick={makeWorkflowDefault}>
           {applied ? "Workflow updated" : "Make it the workflow's model"}
         </Button>
       </div>

@@ -1,3 +1,4 @@
+import { permit } from "@/lib/server/auth";
 import path from "node:path";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { dbReady, query } from "@/lib/server/db";
@@ -71,7 +72,8 @@ function controlOf(e: Entry): string {
   return e.kind;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   const counts = new Map<string, number>();
   const byAgent = new Map<string, Map<string, number>>();
   const recent: Event[] = [];

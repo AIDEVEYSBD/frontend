@@ -1,3 +1,4 @@
+import { permit } from "@/lib/server/auth";
 import path from "node:path";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { SOURCES } from "@/lib/knowledge";
@@ -78,7 +79,8 @@ async function retrievalActivity(): Promise<{ calls: number; byAgent: Record<str
   return { calls, byAgent, lastAt };
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   if (!(await knowledgeReady())) {
     // The same shape, with nothing in it. A degraded response that omits half
     // its fields turns a missing container into a client-side crash, and the
@@ -170,6 +172,7 @@ export async function GET() {
 
 /** Enable or disable a source for retrieval. Curation, not deletion. */
 export async function POST(req: Request) {
+  { const gate = await permit(req, "configure"); if (gate) return gate; }
   let body: { id?: string; enabled?: boolean };
   try {
     body = await req.json();

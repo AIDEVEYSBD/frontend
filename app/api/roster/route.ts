@@ -1,3 +1,4 @@
+import { permit } from "@/lib/server/auth";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
@@ -185,7 +186,8 @@ async function liveness(): Promise<Map<string, Liveness>> {
 
 /* ── the roster ── */
 
-export async function GET() {
+export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   let docs: { id: string; doc: Doc }[] = [];
   let store = "file";
   if (await dbReady()) {

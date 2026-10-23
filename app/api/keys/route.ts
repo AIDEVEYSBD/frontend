@@ -8,7 +8,8 @@ import { hashKey, mintKey, type KeyRow } from "@/lib/server/keys";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   if (!(await dbReady())) return Response.json({ keys: [], store: "db unreachable" });
   const keys = await query<KeyRow>(
     "SELECT id, name, agent, prefix, created_at, last_used, revoked_at FROM api_keys ORDER BY created_at DESC",

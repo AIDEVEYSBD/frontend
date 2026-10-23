@@ -1,3 +1,4 @@
+import { permit } from "@/lib/server/auth";
 import { knowledgeReady, kq } from "@/lib/server/knowledge-db";
 
 /**
@@ -10,6 +11,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   const id = new URL(req.url).searchParams.get("id") ?? "";
   if (!/^[a-zA-Z0-9._-]+$/.test(id)) return Response.json({ error: "which document?" }, { status: 400 });
   if (!(await knowledgeReady())) return Response.json({ error: "the knowledge index is unreachable" }, { status: 503 });

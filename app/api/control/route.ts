@@ -64,7 +64,8 @@ async function pingPeers(
   return rows;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   const sheet = await prices();
   const runs = await readRuns(sheet);
 

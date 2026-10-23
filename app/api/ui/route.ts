@@ -20,7 +20,8 @@ async function read(): Promise<UiSettings> {
   return { ...DEFAULT, ...(rows[0]?.value ?? {}) };
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   return Response.json(await read(), { headers: { "cache-control": "no-store" } });
 }
 

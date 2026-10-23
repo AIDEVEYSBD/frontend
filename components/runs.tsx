@@ -656,6 +656,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
               tone="err"
               variant="solid"
               size="sm"
+              permission="run"
               onClick={() => {
                 // The real kill switch — SIGTERM to the runtime, which journals
                 // "killed by operator" and persists the run. The stream stays

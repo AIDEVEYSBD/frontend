@@ -37,6 +37,7 @@ const summarise = (id: string, doc: SpecDoc) => ({
 });
 
 export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   const id = new URL(req.url).searchParams.get("id");
   const db = await dbReady();
 

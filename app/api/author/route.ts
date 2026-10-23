@@ -1,3 +1,4 @@
+import { permit } from "@/lib/server/auth";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
@@ -149,6 +150,7 @@ interface Msg {
 }
 
 export async function POST(req: Request) {
+  { const gate = await permit(req, "configure"); if (gate) return gate; }
   const key = await foundryKey();
 
   let body: { messages?: { role: string; content: string }[]; model?: string };

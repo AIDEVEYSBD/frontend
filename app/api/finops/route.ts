@@ -34,7 +34,8 @@ interface SpecRow {
   };
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   const sheet = await priceSheet();
   const [runs, cfg, azure] = await Promise.all([readRuns(sheet), readConfig(), azureSpend()]);
   const db = await dbReady();

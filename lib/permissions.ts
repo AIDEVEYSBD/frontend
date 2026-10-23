@@ -26,17 +26,19 @@ export const ROLE_PERMISSIONS: Record<string, readonly Permission[]> = {
   administrator: ["view", "run", "approve", "deploy", "configure", "iam"],
   operator: ["view", "run", "approve"],
   viewer: ["view"],
+  // The name the AutoX admin gave the read-only role for this client.
+  npr_viewer: ["view"],
 };
 
 /**
- * The permissions a set of app roles grants. `demoDefault` is the role applied
- * when a signed-in user carries no app roles at all — a deliberate,
- * demo-only deviation from the guide (an unassigned user should see the
- * "not assigned" page); it is read from AUTH_DEMO_DEFAULT_ROLE and must be
- * unset on any client deployment.
+ * The permissions a set of app roles grants. `defaultRole` is the role applied
+ * when a signed-in user carries no app roles at all: the server passes viewer
+ * (lib/server/auth.ts defaultRole), so a person the identity provider has not
+ * assigned can read and change nothing. Left empty, no roles means no
+ * permissions.
  */
-export function permissionsFor(appRoles: readonly string[], demoDefault = ""): Permission[] {
-  const roles = appRoles.length ? appRoles : demoDefault ? [demoDefault] : [];
+export function permissionsFor(appRoles: readonly string[], defaultRole = ""): Permission[] {
+  const roles = appRoles.length ? appRoles : defaultRole ? [defaultRole] : [];
   const out = new Set<Permission>();
   for (const r of roles) for (const p of ROLE_PERMISSIONS[r] ?? []) out.add(p);
   return PERMISSIONS.filter((p) => out.has(p));

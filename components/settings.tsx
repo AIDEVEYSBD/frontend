@@ -323,6 +323,7 @@ function Models() {
                         size="sm"
                         variant="quiet"
                         className="shrink-0"
+                        permission="configure"
                         onClick={() =>
                           config &&
                           save({
@@ -489,6 +490,7 @@ function Keys() {
                 variant="solid"
                 tone="err"
                 className="shrink-0"
+                permission="configure"
                 loading={removing === k.name}
                 onClick={async () => {
                   if (confirming !== k.name) {

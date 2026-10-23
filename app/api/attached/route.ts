@@ -116,6 +116,7 @@ async function view(rows: Row[]): Promise<AttachedAgent[]> {
 }
 
 export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   // The tools an agent can be granted: the registry, as server.tool with risk.
   if (new URL(req.url).searchParams.has("registry")) {
     const tools = await registryTools();

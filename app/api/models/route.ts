@@ -1,3 +1,4 @@
+import { permit } from "@/lib/server/auth";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 
@@ -26,7 +27,8 @@ async function foundry(): Promise<{ endpoint: string; key: string }> {
   return { endpoint: process.env.FOUNDRY_ENDPOINT ?? "", key };
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   if (cache && Date.now() - cache.at < 120_000) {
     return Response.json({ models: cache.rows, cached: true, source: "foundry deployments" });
   }

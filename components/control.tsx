@@ -546,6 +546,7 @@ export function Control() {
             tone="err"
             variant="solid"
             size="sm"
+            permission="run"
             loading={killing === "*"}
             onClick={() => {
               if (confirmAll) {
@@ -1258,6 +1259,7 @@ function FinOpsPanel({
               size="sm"
               variant="solid"
               tone="ink"
+              permission="configure"
               loading={saving}
               onClick={async () => {
                 const n = Number(value);

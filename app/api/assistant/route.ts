@@ -1,3 +1,4 @@
+import { permit } from "@/lib/server/auth";
 import { systemPrompt } from "@/lib/server/assistant-prompt";
 import { pageFor } from "@/lib/assistant";
 import { READ_TOOLS, clip, runTool } from "@/lib/server/console-tools";
@@ -119,6 +120,7 @@ async function snapshot(origin: string): Promise<string> {
 }
 
 export async function POST(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   const endpoint = process.env.FOUNDRY_ENDPOINT ?? "";
   const key = process.env.FOUNDRY_API_KEY || process.env.AZURE_AI_KEY || "";
   const model = process.env.ASSISTANT_MODEL ?? "gpt-4o";

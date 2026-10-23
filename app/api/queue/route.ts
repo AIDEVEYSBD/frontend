@@ -1,3 +1,4 @@
+import { permit } from "@/lib/server/auth";
 import { dbReady, query } from "@/lib/server/db";
 
 /**
@@ -9,7 +10,8 @@ import { dbReady, query } from "@/lib/server/db";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   if (!(await dbReady())) return Response.json({ error: "the registry database is unreachable" }, { status: 503 });
   const byAgent = await query<{ agent: string; status: string; n: string; oldest: string | null }>(
     `SELECT agent, status, count(*) AS n, min(created_at) AS oldest

@@ -684,6 +684,7 @@ function McpServerRail({
             size="sm"
             variant="solid"
             tone="err"
+            permission="configure"
             disabled={!!busy}
             loading={busy === "remove"}
             onClick={remove}

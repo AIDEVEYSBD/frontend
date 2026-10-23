@@ -45,7 +45,8 @@ async function vault(args: string[]): Promise<{ ok: boolean; lines: unknown[]; e
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   const out = await vault(["list"]);
   if (!out.ok) return Response.json({ error: out.error }, { status: 500 });
   return Response.json({ keys: out.lines });

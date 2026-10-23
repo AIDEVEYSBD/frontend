@@ -1,3 +1,4 @@
+import { permit } from "@/lib/server/auth";
 import path from "node:path";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { priceSheet } from "@/lib/server/prices";
@@ -30,6 +31,7 @@ function percentile(sorted: number[], p: number): number {
 }
 
 export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   const url = new URL(req.url);
   const want = url.searchParams.get("run");
   const agentFilter = url.searchParams.get("agent") ?? "";

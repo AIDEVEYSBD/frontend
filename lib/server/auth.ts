@@ -177,8 +177,18 @@ interface SessionRow extends Record<string, unknown> {
   roles: string[]; app_roles: string[]; expires_at: string; name: string; email: string; org_type: string; is_ey_employee: boolean; disabled_at: string | null;
 }
 
+/**
+ * The role a signed-in person holds when their token names none: viewer,
+ * which reads and changes nothing, until an administrator assigns one in the
+ * identity provider. AUTH_DEMO_DEFAULT_ROLE raises it for a demo and must be
+ * unset on any client deployment. Local mode has its own default
+ * (AUTH_LOCAL_ROLE, administrator) and is not affected.
+ */
+export function defaultRole(): string {
+  return process.env.AUTH_DEMO_DEFAULT_ROLE || "viewer";
+}
+
 function toSession(row: SessionRow, reauth = false): Session {
-  const demo = process.env.AUTH_DEMO_DEFAULT_ROLE ?? "";
   const appRoles = Array.isArray(row.app_roles) ? row.app_roles : [];
   return {
     mode: "sso",
@@ -191,8 +201,8 @@ function toSession(row: SessionRow, reauth = false): Session {
     isEy: row.is_ey_employee,
     roles: Array.isArray(row.roles) ? row.roles : [],
     appRoles,
-    permissions: permissionsFor(appRoles, demo),
-    demoDefaultApplied: appRoles.length === 0 && Boolean(demo),
+    permissions: permissionsFor(appRoles, defaultRole()),
+    demoDefaultApplied: appRoles.length === 0,
     disabled: Boolean(row.disabled_at),
     accessExpiresAt: row.access_expires_at,
     expiresAt: row.expires_at,

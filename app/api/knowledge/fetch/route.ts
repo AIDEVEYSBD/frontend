@@ -1,3 +1,4 @@
+import { permit } from "@/lib/server/auth";
 import { createHash, randomUUID } from "node:crypto";
 import { LICENCE_NOTE, type Licence } from "@/lib/knowledge";
 import { knowledgeReady, kq } from "@/lib/server/knowledge-db";
@@ -21,6 +22,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
+  { const gate = await permit(req, "configure"); if (gate) return gate; }
   let body: { source?: string; url?: string; title?: string; text?: string };
   try {
     body = await req.json();

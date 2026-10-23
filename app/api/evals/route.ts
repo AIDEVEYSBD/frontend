@@ -1,3 +1,4 @@
+import { permit } from "@/lib/server/auth";
 import path from "node:path";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { dbReady, query } from "@/lib/server/db";
@@ -17,6 +18,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   const url = new URL(req.url);
   const id = url.searchParams.get("id");
   if (!(await dbReady())) return Response.json({ sets: [], store: "db unreachable" });
@@ -50,6 +52,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  { const gate = await permit(req, "configure"); if (gate) return gate; }
   let raw: unknown;
   try {
     raw = (await req.json()).set;
@@ -79,6 +82,7 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  { const gate = await permit(req, "configure"); if (gate) return gate; }
   const id = new URL(req.url).searchParams.get("id");
   if (!id || !/^[a-z][a-z0-9-]{0,62}$/.test(id)) return Response.json({ error: "which set?" }, { status: 400 });
   if (await dbReady()) {

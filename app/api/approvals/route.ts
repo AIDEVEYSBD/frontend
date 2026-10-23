@@ -123,6 +123,7 @@ async function pending(agent?: string): Promise<Record<string, unknown>[]> {
 }
 
 export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   const url = new URL(req.url);
   const agent = url.searchParams.get("agent") ?? undefined;
   const items = await pending(agent);

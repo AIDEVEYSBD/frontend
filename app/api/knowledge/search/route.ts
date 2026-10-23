@@ -1,3 +1,4 @@
+import { permit } from "@/lib/server/auth";
 import { knowledgeReady, kq } from "@/lib/server/knowledge-db";
 import { embed, embeddingModel } from "@/lib/server/embed";
 import { rerank } from "@/lib/server/rerank";
@@ -114,6 +115,7 @@ export interface SearchResult {
 }
 
 export async function POST(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   let body: SearchOptions;
   try {
     body = await req.json();

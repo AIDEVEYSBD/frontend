@@ -1,3 +1,4 @@
+import { permit } from "@/lib/server/auth";
 import path from "node:path";
 import { readdir, readFile, stat } from "node:fs/promises";
 
@@ -14,7 +15,8 @@ export const dynamic = "force-dynamic";
 
 const RUNS = path.resolve(process.cwd(), "..", "runtime", "workspace", "runs");
 
-export async function GET() {
+export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
   let files: string[] = [];
   try {
     files = (await readdir(RUNS)).filter((f) => f.endsWith(".json"));
