@@ -136,12 +136,11 @@ export async function GET() {
   const liveBySystem = new Map<string, number>();
   for (const l of live) liveBySystem.set(l.system, (liveBySystem.get(l.system) ?? 0) + 1);
 
-  // A total over what can be priced. A run journalled under a model with no
-  // recorded price is counted beside the figure, never folded in as zero and
-  // never allowed to blank the whole estate's number.
-  const sum = (xs: (number | null)[]): number | null =>
-    xs.every((x) => x === null) ? null : xs.reduce((a: number, b) => a + (b ?? 0), 0);
-  const unpriced = (xs: (number | null)[]): number => xs.filter((x) => x === null).length;
+  // Every run is priced. A run with a model that has no configured price is
+  // costed at the estimate rate and counted beside the figure as estimated,
+  // so the number is always there and the reader knows how firm it is.
+  const sum = (xs: number[]): number => xs.reduce((a, b) => a + b, 0);
+  const unpriced = (rs: RunRow[]): number => rs.filter((r) => r.estimated > 0).length;
 
   const agents = agentsMeta.map((a) => {
     const mine = runs.filter((r) => r.system === a.id);
@@ -156,7 +155,7 @@ export async function GET() {
       lastState: mine[0]?.state ?? null,
       avgMs7d: recent.length ? Math.round(recent.reduce((s, r) => s + r.ms, 0) / recent.length) : null,
       cost7d: sum(recent.map((r) => r.cost)),
-      unpriced7d: unpriced(recent.map((r) => r.cost)),
+      unpriced7d: unpriced(recent),
       tokens7d: recent.reduce((s, r) => s + r.tokens.in + r.tokens.out, 0),
       models: [...new Set(recent.flatMap((r) => r.models))],
       /** Last 14 runs, newest last — the health tick strip. */
@@ -190,14 +189,13 @@ export async function GET() {
   }
 
   // Model mix: where the tokens actually went, local vs cloud.
-  const modelAgg = new Map<string, { in: number; out: number; cost: number | null; runs: Set<string> }>();
+  const modelAgg = new Map<string, { in: number; out: number; cost: number; runs: Set<string> }>();
   for (const r of runs.filter(inWeek)) {
     for (const b of r.byModel) {
       const agg = modelAgg.get(b.model) ?? { in: 0, out: 0, cost: 0, runs: new Set<string>() };
       agg.in += b.in;
       agg.out += b.out;
-      agg.cost = agg.cost === null || b.cost === null ? (b.cost === null ? null : agg.cost) : agg.cost + b.cost;
-      if (b.cost === null) agg.cost = null;
+      agg.cost += b.cost;
       agg.runs.add(r.id);
       modelAgg.set(b.model, agg);
     }
@@ -270,7 +268,7 @@ export async function GET() {
       /** Spend against the budget in the current rolling period; the enforcement figure. */
       budgetState: budgetNow,
       spend7d: sum(recent.map((r) => r.cost)),
-      unpriced7d: unpriced(recent.map((r) => r.cost)),
+      unpriced7d: unpriced(recent),
     },
     ledger: {
       entries: runs.reduce((s, r) => s + r.entries, 0),
@@ -284,7 +282,7 @@ export async function GET() {
       pending: runs.filter((r) => r.state === "suspended").length,
       runs7d: recent.length,
       cost7d: sum(recent.map((r) => r.cost)),
-      unpriced7d: unpriced(recent.map((r) => r.cost)),
+      unpriced7d: unpriced(recent),
       tokens7d: recent.reduce((s, r) => s + r.tokens.in + r.tokens.out, 0),
       denials7d: recent.reduce((s, r) => s + r.denials, 0),
       kills7d: recent.filter((r) => r.state === "killed").length,
@@ -297,9 +295,7 @@ export async function GET() {
     /** Every recent run, newest first — the substance behind every click. */
     runs: runs.slice(0, 2000).map(({ calls, ...r }) => r),
     store: db ? "db" : "file (db unreachable)",
-    costBasis: sheet
-      ? `configured price per model × journalled tokens; the scripted provider is zero${assumedPrices().length ? `; list price assumed for ${assumedPrices().join(", ")} until one is set on the Configuration page` : ""}`
-      : "price sheet unreachable — cloud costs unknown",
+    costBasis: `configured price per model × journalled tokens; the scripted provider is zero${assumedPrices().length ? `; list price assumed for ${assumedPrices().join(", ")}` : ""}; any other unpriced model is estimated at the sheet's median rate and counted as estimated`,
   });
 }
 

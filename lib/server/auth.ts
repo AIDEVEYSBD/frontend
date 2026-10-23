@@ -245,9 +245,14 @@ async function refreshRow(row: SessionRow): Promise<SessionRow | null> {
     return loadRow(row.id);
   } catch (e) {
     await query("ROLLBACK").catch(() => {});
-    const msg = String((e as Error).message ?? e);
+    // openid-client reports a token-endpoint refusal with a generic message
+    // and the OAuth error code in `error`; the code is what decides whether
+    // the grant is gone, and what makes the event readable afterwards.
+    const err = e as { message?: string; error?: string; error_description?: string };
+    const code = String(err.error ?? "");
+    const msg = [code, err.error_description, err.message ?? String(e)].filter(Boolean).join(": ");
     await authEvent("refresh_failed", row.sub, row.email, { error: msg.slice(0, 300) });
-    if (/invalid_grant/i.test(msg)) {
+    if (code === "invalid_grant" || /invalid_grant/i.test(msg)) {
       await query("DELETE FROM sessions WHERE id = $1", [row.id]).catch(() => {});
       return null;
     }

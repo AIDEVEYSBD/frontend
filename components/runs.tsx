@@ -18,6 +18,7 @@ import { useModels } from "@/lib/use-models";
 import { SpanDetail, Waterfall, useTrace, type Span } from "./waterfall";
 import { explainControl } from "@/lib/guardrails";
 import { ControlRef, KILL_CONTROL } from "./control-ref";
+import { RunBoard, ViewSwitch, useRunView, type BoardEdge } from "./run-board";
 
 /**
  * The runs console: where a workflow actually runs.
@@ -533,6 +534,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
       title={system.name}
       subtitle={system.id}
       nodes={system.nodes.map((n) => ({ id: n.id, label: n.label || n.id, kind: n.harness }))}
+      edges={system.edges.map((e) => ({ source: e.source, target: e.target, when: e.when, label: e.label }))}
       entries={entries}
       live={phase === "live" && !suspension}
       finalState={suspension ? "suspended" : phase === "done" ? finalState : phase === "live" ? "running" : ""}
@@ -725,6 +727,7 @@ function ReplayTheater({ id }: { id: string }) {
     result: Record<string, unknown> | null;
   }>({ system: "", runId: "", state: "", error: "", result: null });
   const [specNodes, setSpecNodes] = useState<{ id: string; label: string; kind: string }[] | null>(null);
+  const [specEdges, setSpecEdges] = useState<BoardEdge[]>([]);
   const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
@@ -755,6 +758,7 @@ function ReplayTheater({ id }: { id: string }) {
         if (stop || !d.spec) return;
         const s = fromDocument(d.spec);
         setSpecNodes(s.nodes.map((n) => ({ id: n.id, label: n.label || n.id, kind: n.harness })));
+        setSpecEdges(s.edges.map((e) => ({ source: e.source, target: e.target, when: e.when, label: e.label })));
       })
       .catch(() => {});
     return () => {
@@ -849,6 +853,7 @@ function ReplayTheater({ id }: { id: string }) {
       title={meta.system}
       subtitle={meta.runId}
       nodes={nodes}
+      edges={specEdges}
       entries={visible}
       live={playback.playing}
       // The state is a fact about the record, not about the scrub position.
@@ -1137,6 +1142,7 @@ function Theater({
   title,
   subtitle,
   nodes,
+  edges = [],
   entries,
   live,
   finalState,
@@ -1154,6 +1160,8 @@ function Theater({
   title: string;
   subtitle: string;
   nodes: { id: string; label: string; kind: string }[];
+  /** The spec's edges, so the agents view can draw the plan and the path through it. */
+  edges?: BoardEdge[];
   entries: Entry[];
   live: boolean;
   finalState: string;
@@ -1177,6 +1185,9 @@ function Theater({
   const modelCalls = entries.filter((e) => e.kind === "model.call").length;
   const denied = entries.filter((e) => e.kind === "denied" || e.kind === "contract.breach").length;
   const artifacts = useMemo(() => artifactsOf(entries), [entries]);
+  // Theatre or agents: the same journal, read as one transcript or as a card
+  // per agent. The choice is the reader's and it sticks across runs.
+  const [view, setView, fold, setFold] = useRunView();
 
   /* Node states from the journal: entered without exit = active. */
   const nodeState = useMemo(() => {
@@ -1213,6 +1224,7 @@ function Theater({
           <StateBadge state={finalState} />
         )}
         <div className="grow" />
+        <ViewSwitch view={view} setView={setView} fold={fold} setFold={setFold} />
         <div className="flex items-center gap-3 font-mono text-[11.5px] text-dim">
           <span className="tnum">{modelCalls} model calls</span>
           <span className="text-ghost">·</span>
@@ -1227,7 +1239,28 @@ function Theater({
       {/* ── The gate: when a person is the next step, the room says so. ── */}
       {suspension && <GateBanner suspension={suspension} onAnswer={onAnswer} />}
 
-      <div className="grid min-h-0 grow grid-cols-1 md:grid-cols-[minmax(150px,190px)_minmax(0,1fr)] xl:grid-cols-[minmax(160px,200px)_minmax(0,1fr)_minmax(280px,340px)]">
+      {view === "cards" && (
+        <div className="flex min-h-0 grow flex-col">
+          <RunBoard nodes={nodes} edges={edges} entries={entries} live={live} fold={fold} suspendedNode={suspension?.node ?? null} />
+          {(artifacts.length > 0 || (error && finalState === "failed") || finalState === "killed") && (
+            <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-line bg-raise/40 px-4 py-2.5">
+              <span className="text-[11px] font-medium text-faint">Artifacts</span>
+              {artifacts.map((a) => (
+                <a key={a.name} href={`/api/artifact?name=${encodeURIComponent(a.name)}`} download={a.name} className="focusable flex items-center gap-1.5 rounded-md border border-line bg-surface px-2 py-1 text-[11.5px] text-fg hover:border-line-strong">
+                  <Icon name={a.kind === "json" ? "json" : "file"} size={12} className="text-dim" />
+                  {a.name}
+                </a>
+              ))}
+              {artifacts.length === 0 && <span className="text-[11px] text-ghost">none written</span>}
+              <span className="grow" />
+              {error && finalState === "failed" && <Status tone="err">{error.slice(0, 120)}</Status>}
+              {finalState === "killed" && <span className="flex items-center gap-2"><Status tone="err">Killed by operator</Status><ControlRef control={KILL_CONTROL} /></span>}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className={`min-h-0 grow grid-cols-1 md:grid-cols-[minmax(150px,190px)_minmax(0,1fr)] xl:grid-cols-[minmax(160px,200px)_minmax(0,1fr)_minmax(280px,340px)] ${view === "cards" ? "hidden" : "grid"}`}>
         {/* ── graph rail: the spine, filling as the run advances. Below md it
             lies down as a horizontal strip so the transcript keeps the room. ── */}
         <aside className="flex min-h-0 min-w-0 flex-row gap-3 overflow-x-auto border-b border-line bg-raise/60 p-3 md:flex-col md:gap-1 md:overflow-x-visible md:overflow-y-auto md:border-r md:border-b-0">

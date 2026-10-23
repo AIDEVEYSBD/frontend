@@ -5,7 +5,10 @@ import { readFile } from "node:fs/promises";
  * Prices per token, from the deployment configuration. Foundry publishes no
  * price sheet, so the operator records cost per million tokens beside each
  * offered model on the Configuration page. The scripted provider is
- * genuinely free; a model with no recorded price is unknown, never zero.
+ * genuinely free. A model with no recorded price is costed at an estimate
+ * (the published list price when one is known, else the sheet's own median
+ * rate) and the figure is marked as estimated: a cost is never "unknown",
+ * because an unknown cost is one nobody can budget, route or stop.
  */
 
 const ROOT = path.resolve(process.cwd(), "..", "runtime");
@@ -37,7 +40,25 @@ let cache: { at: number; map: Map<string, { in: number; out: number }> } | null 
 /** The price sheet, as every caller passes it around. */
 export type Sheet = Map<string, { in: number; out: number }>;
 
-export async function priceSheet(): Promise<Map<string, { in: number; out: number }> | null> {
+/** The rate an unpriced model is estimated at: the median of what is configured, else a published mid-market rate. */
+const ESTIMATE_DEFAULT = { in: 1.0 / 1_000_000, out: 3.0 / 1_000_000 };
+
+export function estimateRate(sheet: Sheet | null): { in: number; out: number } {
+  const rows = sheet ? [...sheet.entries()].filter(([id]) => !assumed.includes(id)).map(([, p]) => p) : [];
+  if (!rows.length) return ESTIMATE_DEFAULT;
+  const med = (xs: number[]) => {
+    const s = [...xs].sort((a, b) => a - b);
+    return s[Math.floor(s.length / 2)];
+  };
+  return { in: med(rows.map((r) => r.in)), out: med(rows.map((r) => r.out)) };
+}
+
+/** Whether a model's cost comes from a configured or published price rather than the estimate. */
+export function isPriced(model: string, sheet: Sheet | null): boolean {
+  return model === "scripted" || Boolean(sheet?.has(model));
+}
+
+export async function priceSheet(): Promise<Sheet> {
   if (cache && Date.now() - cache.at < 30_000) return cache.map;
   try {
     const raw = JSON.parse(await readFile(path.join(ROOT, "workspace", "config.json"), "utf-8"));
@@ -57,14 +78,23 @@ export async function priceSheet(): Promise<Map<string, { in: number; out: numbe
     cache = { at: Date.now(), map };
     return map;
   } catch {
-    return cache?.map ?? null;
+    if (cache) return cache.map;
+    // No configuration at all: the published list prices still make a sheet.
+    const map = new Map<string, { in: number; out: number }>();
+    assumed = [];
+    for (const [id, p] of Object.entries(LIST_PRICES)) {
+      map.set(id, { in: p.in / 1_000_000, out: p.out / 1_000_000 });
+      assumed.push(id);
+    }
+    return map;
   }
 }
 
-export function costOf(model: string, tokens: { in: number; out: number }, sheet: Map<string, { in: number; out: number }> | null): number | null {
+/** The cost of a call. Never null: an unpriced model is costed at the estimate rate. */
+export function costOf(model: string, tokens: { in: number; out: number }, sheet: Sheet | null): number {
   if (model === "scripted") return 0;
-  const p = sheet?.get(model);
-  return p ? tokens.in * p.in + tokens.out * p.out : null;
+  const p = sheet?.get(model) ?? estimateRate(sheet);
+  return tokens.in * p.in + tokens.out * p.out;
 }
 
 /** Token usage and model calls recorded in one run's journal. */

@@ -1,5 +1,5 @@
 import { dbReady, query } from "@/lib/server/db";
-import { assumedPrices, priceSheet } from "@/lib/server/prices";
+import { assumedPrices, estimateRate, priceSheet } from "@/lib/server/prices";
 import { readRuns } from "@/lib/server/runs";
 import { azureSpend } from "@/lib/server/azure-spend";
 import { readConfig } from "@/app/api/config/route";
@@ -109,12 +109,12 @@ export async function GET() {
     calls: calls.slice(0, 40_000),
     evals,
     azure,
+    /** The $/M rate an unpriced model is estimated at, so the calculator never says "unknown". */
+    estimate: (() => { const r = estimateRate(sheet); return { in: r.in * 1_000_000, out: r.out * 1_000_000 }; })(),
     budget: budgetNow.budget_usd,
     period: budgetNow.period,
     budgetState: budgetNow,
-    costBasis: sheet
-      ? `configured price per model × journalled tokens; local providers are $0 per token and priced by the hour${assumedPrices().length ? `; list price assumed for ${assumedPrices().join(", ")} until one is set on the Configuration page` : ""}`
-      : "price sheet unreachable — cloud costs unknown",
+    costBasis: `configured price per model × journalled tokens; local providers are $0 per token and priced by the hour${assumedPrices().length ? `; list price assumed for ${assumedPrices().join(", ")}` : ""}; any other unpriced model is estimated at the sheet's median rate and marked as estimated`,
   });
 }
 

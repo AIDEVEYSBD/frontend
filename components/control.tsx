@@ -43,6 +43,7 @@ interface RunRow {
   ms: number;
   entries: number;
   cost: number | null;
+  estimated?: number;
   tokens: { in: number; out: number };
   models: string[];
   suspendedAt: string;
@@ -157,7 +158,7 @@ interface ControlData {
 
 const sumCosts = (xs: (number | null)[]): number | null =>
   xs.every((x) => x === null) ? null : xs.reduce((a: number, b) => a + (b ?? 0), 0);
-const countUnpriced = (xs: (number | null)[]): number => xs.filter((x) => x === null).length;
+const countUnpriced = (rs: RunRow[]): number => rs.filter((r) => (r.estimated ?? 0) > 0).length;
 
 /** The estate read, re-cut to a window. Field names keep their "7d" suffix —
     they are "the window" everywhere below, and the label says which. */
@@ -172,7 +173,7 @@ function rewindow(d: ControlData, now: number, w: Win): ControlData {
       runs7d: mine.length,
       avgMs7d: mine.length ? Math.round(mine.reduce((s, r) => s + r.ms, 0) / mine.length) : null,
       cost7d: sumCosts(mine.map((r) => r.cost)),
-      unpriced7d: countUnpriced(mine.map((r) => r.cost)),
+      unpriced7d: countUnpriced(mine),
       tokens7d: mine.reduce((s, r) => s + r.tokens.in + r.tokens.out, 0),
       models: [...new Set(mine.flatMap((r) => r.models))],
     };
@@ -208,7 +209,7 @@ function rewindow(d: ControlData, now: number, w: Win): ControlData {
     .map(([model, a]) => ({ model, local: model === "scripted", tokens: a.in + a.out, in: a.in, out: a.out, cost: a.cost, runs: a.runs.size }))
     .sort((a, b) => b.tokens - a.tokens);
   const cost7d = sumCosts(recent.map((r) => r.cost));
-  const unpriced7d = countUnpriced(recent.map((r) => r.cost));
+  const unpriced7d = countUnpriced(recent);
   return {
     ...d,
     agents,
@@ -244,7 +245,7 @@ const fmtMs = (ms: number | null) =>
   ms === null ? "—" : ms >= 60_000 ? `${(ms / 60_000).toFixed(1)}m` : `${(ms / 1000).toFixed(1)}s`;
 
 const fmtCost = (c: number | null) =>
-  c === null ? "unknown" : c === 0 ? "$0.00" : c < 0.005 ? "<$0.01" : `$${c.toFixed(2)}`;
+  c === null ? "$0.00" : c === 0 ? "$0.00" : c < 0.005 ? "<$0.01" : `$${c.toFixed(2)}`;
 
 const fmtTokens = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n));
 
@@ -578,7 +579,7 @@ export function Control() {
         <Kpi label="Runs" value={cut("runs")?.totals ? String(cut("runs")!.totals.runs7d) : "…"} sub="every journal counted"
           win={wf("runs")} onWin={() => tile("runs")} spark={cut("runs")?.days.map((d) => d.runs)} active={drill?.kind === "kpi" && drill.which === "runs"}
           onOpen={() => open({ kind: "kpi", which: "runs" })} />
-        <Kpi label="Spend" value={cut("spend")?.totals ? fmtCost(cut("spend")!.totals.cost7d) : "…"} sub={cut("spend")?.totals ? `${fmtTokens(cut("spend")!.totals.tokens7d)} tokens${cut("spend")!.totals.unpriced7d ? ` · ${cut("spend")!.totals.unpriced7d} unpriced` : ""}` : ""}
+        <Kpi label="Spend" value={cut("spend")?.totals ? fmtCost(cut("spend")!.totals.cost7d) : "…"} sub={cut("spend")?.totals ? `${fmtTokens(cut("spend")!.totals.tokens7d)} tokens${cut("spend")!.totals.unpriced7d ? ` · ${cut("spend")!.totals.unpriced7d} estimated` : ""}` : ""}
           win={wf("spend")} onWin={() => tile("spend")} spark={cut("spend")?.days.map((d) => d.cost ?? 0)} active={drill?.kind === "kpi" && drill.which === "spend"}
           onOpen={() => open({ kind: "kpi", which: "spend" })} />
         <Kpi label="Avg run time" value={cut("time")?.totals ? fmtMs(cut("time")!.totals.avgMs7d) : "…"} sub="wall clock"
@@ -1207,7 +1208,7 @@ function FinOpsPanel({
         {[
           { label: "Billed · MTD", value: fmtBilled(azure?.configured && azure.error === null ? azure.mtd : null), tone: "text-fg" },
           { label: "Billed · 7d", value: fmtBilled(billed), tone: "text-fg" },
-          { label: finops?.unpriced7d ? `Journalled · ${window} · ${finops.unpriced7d} unpriced` : `Journalled · ${window}`, value: fmtCost(spend), tone: "text-fg" },
+          { label: finops?.unpriced7d ? `Journalled · ${window} · ${finops.unpriced7d} estimated` : `Journalled · ${window}`, value: fmtCost(spend), tone: "text-fg" },
           { label: finops?.budget != null ? `Budget · per ${PERIOD_LABEL[finops.period]}` : "Budget", value: finops?.budget != null ? `$${finops.budget.toFixed(2)}` : "unset", tone: state?.exceeded ? "text-err" : "text-fg" },
         ].map((x) => (
           <div key={x.label} className="flex flex-col items-center gap-0.5 px-1 py-2.5">
@@ -1221,7 +1222,7 @@ function FinOpsPanel({
           <span className="font-medium">{state.exceeded ? "Budget exhausted · new runs are refused" : `This ${PERIOD_LABEL[finops.period]} so far`}</span>
           <span className="tnum">{fmtCost(state.spent)} of ${finops.budget.toFixed(2)}{usedPct !== null ? ` · ${usedPct}%` : ""}</span>
           {state.remaining !== null && !state.exceeded && <span className="tnum">{fmtCost(Math.max(0, state.remaining))} left</span>}
-          {state.unpriced > 0 && <span>{state.unpriced} unpriced run{state.unpriced === 1 ? "" : "s"} not counted</span>}
+          {state.unpriced > 0 && <span>{state.unpriced} run{state.unpriced === 1 ? "" : "s"} at estimated prices</span>}
         </div>
       )}
       {burnPct !== null && windowBudget !== null && (

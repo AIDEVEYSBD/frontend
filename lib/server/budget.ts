@@ -29,7 +29,7 @@ export interface BudgetState extends Budget {
   since: string;
   /** Priced spend journalled inside the period. */
   spent: number;
-  /** Runs inside the period whose cost is unknown (not counted in `spent`). */
+  /** Runs inside the period priced partly at the estimate rate (counted in `spent`, marked as estimated). */
   unpriced: number;
   remaining: number | null;
   /** Spent is at or over the budget: new runs are refused. */
@@ -69,8 +69,8 @@ export async function budgetState(): Promise<BudgetState> {
   // is made once per run start.
   const runs = await readRuns(await priceSheet());
   const inPeriod = runs.filter((r) => new Date(r.at).getTime() >= since.getTime());
-  const spent = inPeriod.reduce((s, r) => s + (r.cost ?? 0), 0);
-  const unpriced = inPeriod.filter((r) => r.cost === null).length;
+  const spent = inPeriod.reduce((s, r) => s + r.cost, 0);
+  const unpriced = inPeriod.filter((r) => r.estimated > 0).length;
   const remaining = b.budget_usd === null ? null : b.budget_usd - spent;
   return {
     ...b,

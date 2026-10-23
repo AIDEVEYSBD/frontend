@@ -174,6 +174,67 @@ function MarkGlyph({ ok }: { ok: boolean }) {
 
 const csvEscape = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
 
+/* ═══════════════════ typed inputs ═══════════════════ */
+
+/**
+ * What a case's input field is worth, typed to the entry node's contract.
+ * Text is what a form or a sheet gives us; the workflow's intake expects a
+ * bool, a number or an object where it says so. Only the unambiguous
+ * readings convert; anything else is kept as typed and the runtime refuses
+ * it with the real reason rather than guessing.
+ */
+function typedValue(kind: Kind, raw: unknown): unknown {
+  if (typeof raw !== "string") return raw;
+  const text = raw.trim();
+  if (kind === "string") return raw;
+  if (text === "") return undefined;
+  if (kind === "bool") {
+    if (/^(true|yes|on|1)$/i.test(text)) return true;
+    if (/^(false|no|off|0)$/i.test(text)) return false;
+    return raw;
+  }
+  if (kind === "number") {
+    const n = Number(text);
+    return Number.isFinite(n) ? n : raw;
+  }
+  if (kind === "object" || kind === "list" || kind === "any") {
+    if (!/^[[{]/.test(text) && kind !== "any") return raw;
+    try {
+      const v: unknown = JSON.parse(text);
+      if (kind === "object" && (v === null || typeof v !== "object" || Array.isArray(v))) return raw;
+      if (kind === "list" && !Array.isArray(v)) return raw;
+      return v;
+    } catch {
+      return raw;
+    }
+  }
+  return raw;
+}
+
+/** A case's input with every declared field typed; blank optional fields drop out. */
+function typedInput(input: Record<string, unknown>, keys: { name: string; kind: Kind }[]): Record<string, unknown> {
+  const kinds = new Map(keys.map((k) => [k.name, k.kind]));
+  const out: Record<string, unknown> = {};
+  for (const [name, raw] of Object.entries(input)) {
+    const v = typedValue(kinds.get(name) ?? "string", raw);
+    if (v !== undefined) out[name] = v;
+  }
+  return out;
+}
+
+/** The editor shows every field as text; objects and lists as their JSON. */
+function fieldText(v: unknown): string {
+  if (v === undefined || v === null) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "boolean" || typeof v === "number") return String(v);
+  return JSON.stringify(v, null, 2);
+}
+
+/** The starting value a new case gets for a field: false for a bool, nothing otherwise. */
+function blankValue(kind: Kind): unknown {
+  return kind === "bool" ? false : "";
+}
+
 function csvTemplate(inputKeys: { name: string }[], labels?: Labels): string {
   const head = [
     "id",
@@ -242,7 +303,7 @@ function parseCsv(text: string): string[][] {
   return rows;
 }
 
-function casesFromCsv(text: string): EvalCase[] | string {
+function casesFromCsv(text: string, keys: { name: string; kind: Kind }[] = []): EvalCase[] | string {
   const rows = parseCsv(text);
   if (rows.length < 2) return "the sheet needs a header row and at least one case row";
   const head = rows[0].map((h) => h.trim());
@@ -266,7 +327,7 @@ function casesFromCsv(text: string): EvalCase[] | string {
     return {
       id: slug(get(col("id")) || `case-${n + 1}`),
       note: get(col("note")),
-      input: Object.fromEntries(inputCols.map(({ key, i }) => [key, get(i)])),
+      input: typedInput(Object.fromEntries(inputCols.map(({ key, i }) => [key, get(i)])), keys),
       // A labeled row needs no check; an unlabeled one must at least finish.
       checks: checks.length ? checks : expected ? [] : [{ kind: "state", equals: "done" }],
       ...(expected ? { expected } : {}),
@@ -366,11 +427,11 @@ interface AgentOpt {
   name: string;
 }
 
-function blankCase(n: number, keys: { name: string }[], labels?: Labels | null): EvalCase {
+function blankCase(n: number, keys: { name: string; kind?: Kind }[], labels?: Labels | null): EvalCase {
   return {
     id: `case-${n}`,
     note: "",
-    input: Object.fromEntries(keys.map((k) => [k.name, ""])),
+    input: Object.fromEntries(keys.map((k) => [k.name, blankValue(k.kind ?? "string")])),
     checks: labels ? [] : [{ kind: "contains", value: "" }],
     ...(labels ? { expected: labels.space[0] } : {}),
   };
@@ -506,6 +567,7 @@ function SetBuilder({
         cases: cases.map((c, i) => ({
           ...c,
           id: c.id.trim() || `case-${i + 1}`,
+          input: typedInput(c.input, inputKeys),
           checks: c.checks.filter(
             (ch) => ch.kind === "state" || (ch.kind === "field" ? ch.path : ch.value),
           ),
@@ -579,7 +641,7 @@ function SetBuilder({
               onChange={async (e) => {
                 const f = e.target.files?.[0];
                 if (!f) return;
-                const parsed = casesFromCsv(await f.text());
+                const parsed = casesFromCsv(await f.text(), inputKeys);
                 if (typeof parsed === "string") setError(parsed);
                 else {
                   setCases(parsed);
@@ -815,11 +877,41 @@ function SetBuilder({
 
                 {/* inputs, derived from the spec */}
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {(inputKeys.length ? inputKeys : [{ name: "input", kind: "string" as Kind }]).map(
-                    (k) => (
+                  {(inputKeys.length ? inputKeys : [{ name: "input", kind: "string" as Kind }]).map((k) =>
+                    k.kind === "bool" ? (
+                      <Field key={k.name} label={`${k.name} · bool`}>
+                        <div className="flex h-9 items-center">
+                          <Switch
+                            label={c.input[k.name] === true || String(c.input[k.name]).toLowerCase() === "true" ? "true" : "false"}
+                            checked={c.input[k.name] === true || String(c.input[k.name]).toLowerCase() === "true"}
+                            onChange={(on) => patchCase(i, { input: { ...c.input, [k.name]: on } })}
+                          />
+                        </div>
+                      </Field>
+                    ) : k.kind === "number" ? (
+                      <Field key={k.name} label={`${k.name} · number`}>
+                        <Input
+                          mono
+                          value={fieldText(c.input[k.name])}
+                          onChange={(v) => patchCase(i, { input: { ...c.input, [k.name]: v } })}
+                          invalid={fieldText(c.input[k.name]).trim() !== "" && !Number.isFinite(Number(fieldText(c.input[k.name])))}
+                        />
+                      </Field>
+                    ) : k.kind === "object" || k.kind === "list" ? (
+                      <Field key={k.name} label={`${k.name} · ${k.kind} as JSON`}>
+                        <Textarea
+                          mono
+                          value={fieldText(c.input[k.name])}
+                          onChange={(v) => patchCase(i, { input: { ...c.input, [k.name]: v } })}
+                          rows={3}
+                          placeholder={k.kind === "list" ? "[ ... ]" : "{ ... }"}
+                          invalid={typeof c.input[k.name] === "string" && c.input[k.name] !== "" && typeof typedValue(k.kind, c.input[k.name]) === "string"}
+                        />
+                      </Field>
+                    ) : (
                       <Field key={k.name} label={k.name}>
                         <Textarea
-                          value={String(c.input[k.name] ?? "")}
+                          value={fieldText(c.input[k.name])}
                           onChange={(v) => patchCase(i, { input: { ...c.input, [k.name]: v } })}
                           rows={2}
                         />

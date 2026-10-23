@@ -32,18 +32,18 @@ interface Config { models: Offered[]; default_model: string; class_defaults: Par
 interface NodeSpec { id: string; harness: string; model: string; model_class: string; purpose: string; tools: number; risk: string; sinks: number; structured: boolean }
 interface AgentSpec { id: string; name: string; deployed: boolean; gated: boolean; nodes: NodeSpec[] }
 interface Run { id: string; system: string; state: string; at: string; ms: number; cost: number | null; tokens: { in: number; out: number }; denials: number; modelCalls: number }
-interface Call { run: string; system: string; at: string; state: string; node: string; model: string; in: number; out: number; ms: number; cost: number | null; tools: number }
+interface Call { run: string; system: string; at: string; state: string; node: string; model: string; in: number; out: number; ms: number; cost: number | null; estimated?: boolean; tools: number }
 interface Eval { id: string; agent: string; model: string; passed: number; total: number; at: string; batch_id: string; compare: boolean; forced: boolean; incumbent: string | null; cost_per_case: number | null; cost_total: number | null; avg_ms: number | null }
 interface Azure { configured: boolean; currency: string | null; mtd: number | null; last7d: number | null; error: string | null }
 type Period = "day" | "week" | "month";
 const PERIOD_DAYS: Record<Period, number> = { day: 1, week: 7, month: 30 };
 interface BudgetState { since: string; spent: number; unpriced: number; remaining: number | null; exceeded: boolean; used: number | null }
-interface Data { now: string; config: Config; agents: AgentSpec[]; runs: Run[]; calls: Call[]; evals: Eval[]; azure: Azure; budget: number | null; period: Period; budgetState: BudgetState; costBasis: string }
+interface Data { now: string; config: Config; agents: AgentSpec[]; runs: Run[]; calls: Call[]; evals: Eval[]; azure: Azure; estimate?: { in: number; out: number }; budget: number | null; period: Period; budgetState: BudgetState; costBasis: string }
 
 /* ═══════════════════ formatting ═══════════════════ */
 
 const fmtCost = (c: number | null, precise = false) =>
-  c === null ? "unknown" : c === 0 ? "$0.00" : c < 0.01 && precise ? `$${c.toFixed(4)}` : c < 0.005 ? "<$0.01" : c < 100 ? `$${c.toFixed(2)}` : `$${Math.round(c).toLocaleString("en-GB")}`;
+  c === null ? "$0.00" : c === 0 ? "$0.00" : c < 0.01 && precise ? `$${c.toFixed(4)}` : c < 0.005 ? "<$0.01" : c < 100 ? `$${c.toFixed(2)}` : `$${Math.round(c).toLocaleString("en-GB")}`;
 const fmtTokens = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k` : String(Math.round(n)));
 const fmtMs = (ms: number | null) => (ms === null ? "—" : ms < 1000 ? `${Math.round(ms)}ms` : ms < 60_000 ? `${(ms / 1000).toFixed(1)}s` : `${(ms / 60_000).toFixed(1)}m`);
 const pct = (x: number) => `${Math.round(x * 100)}%`;
@@ -58,26 +58,29 @@ const ago = (iso: string | null) => {
 
 /* ═══════════════════ model economics ═══════════════════ */
 
-interface ModelInfo { id: string; label: string; price_in: number | null; price_out: number | null; provider: Provider | null; local: boolean; hourly: number | null; tier: ModelClass | null }
+interface ModelInfo { id: string; label: string; price_in: number | null; price_out: number | null; provider: Provider | null; local: boolean; hourly: number | null; tier: ModelClass | null; estimated: boolean }
 
-function modelBook(cfg: Config): Map<string, ModelInfo> {
+function modelBook(cfg: Config, estimate?: { in: number; out: number }): Map<string, ModelInfo> {
   const providers = new Map(cfg.providers.map((p) => [p.id, p]));
   const book = new Map<string, ModelInfo>();
   for (const m of cfg.models) {
     const provider = providers.get(m.provider ?? FOUNDRY_ID) ?? null;
     const local = Boolean(provider?.local);
+    const priced = typeof m.price_in === "number" || typeof m.price_out === "number";
+    // An unpriced cloud model is costed at the estimate rate, and says so.
     book.set(m.id, {
       id: m.id,
       label: m.label,
-      price_in: local ? 0 : typeof m.price_in === "number" ? m.price_in : null,
-      price_out: local ? 0 : typeof m.price_out === "number" ? m.price_out : null,
+      price_in: local ? 0 : priced ? Number(m.price_in ?? 0) : (estimate?.in ?? null),
+      price_out: local ? 0 : priced ? Number(m.price_out ?? 0) : (estimate?.out ?? null),
       provider,
       local,
       hourly: provider?.hourly_usd ?? null,
       tier: m.class ?? null,
+      estimated: !local && !priced,
     });
   }
-  book.set("scripted", { id: "scripted", label: "scripted (no model)", price_in: 0, price_out: 0, provider: null, local: true, hourly: 0, tier: null });
+  book.set("scripted", { id: "scripted", label: "scripted (no model)", price_in: 0, price_out: 0, provider: null, local: true, hourly: 0, tier: null, estimated: false });
   return book;
 }
 
@@ -139,7 +142,7 @@ export function FinOps() {
     setOverrides({});
   };
 
-  const book = useMemo(() => (data ? modelBook(data.config) : new Map<string, ModelInfo>()), [data]);
+  const book = useMemo(() => (data ? modelBook(data.config, data.estimate) : new Map<string, ModelInfo>()), [data]);
   const [loadedAt] = useState(() => Date.now());
   const now = data ? new Date(data.now).getTime() : loadedAt;
   const inWin = useCallback((at: string, w: Win) => now - new Date(at).getTime() <= winMs(w), [now]);
@@ -181,7 +184,7 @@ export function FinOps() {
     const cost = sumCost(kpiCalls.map((c) => c.cost));
     const tokens = kpiCalls.reduce((s, c) => s + c.in + c.out, 0);
     const localTokens = kpiCalls.filter((c) => book.get(c.model)?.local).reduce((s, c) => s + c.in + c.out, 0);
-    const unpriced = kpiCalls.filter((c) => c.cost === null).length;
+    const unpriced = kpiCalls.filter((c) => c.estimated).length;
     const days = spanDays(winFor("kpi"), kpiCalls);
     return {
       cost,
@@ -415,7 +418,7 @@ export function FinOps() {
   const calcCalls = callsIn(calcWin);
   const calcTarget: ModelInfo | null = useMemo(() => {
     if (calcModel === "custom") {
-      return { id: "custom", label: "Custom model", price_in: Number(customIn) || 0, price_out: Number(customOut) || 0, provider: null, local: customLocal, hourly: Number(customHourly) || 0, tier: null };
+      return { id: "custom", label: "Custom model", price_in: Number(customIn) || 0, price_out: Number(customOut) || 0, provider: null, local: customLocal, hourly: Number(customHourly) || 0, tier: null, estimated: false };
     }
     return book.get(calcModel) ?? null;
   }, [calcModel, customIn, customOut, customHourly, customLocal, book]);
@@ -572,7 +575,7 @@ export function FinOps() {
             <WindowPick value={winFor("kpi")} onChange={(w) => setCardWin("kpi", w)} inherited={!overrides.kpi} />
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8">
-            <Kpi label={`Spend · ${winFor("kpi")}`} value={data ? fmtCost(totals.cost) : "…"} sub={totals.unpriced ? `${totals.unpriced} calls unpriced` : `${totals.calls} model calls`} tone="ok"
+            <Kpi label={`Spend · ${winFor("kpi")}`} value={data ? fmtCost(totals.cost) : "…"} sub={totals.unpriced ? `${totals.calls} calls · ${totals.unpriced} estimated` : `${totals.calls} model calls`} tone="ok"
               onOpen={() => setDrill({ kind: "calls", title: `Model calls · ${winFor("kpi")}`, subtitle: "Every call in the window, newest first, with the price it was costed at.", rows: kpiCalls })} />
             <Kpi label="Tokens" value={data ? fmtTokens(totals.tokens) : "…"} sub={`${fmtTokens(kpiCalls.reduce((s, c) => s + c.in, 0))} in · ${fmtTokens(kpiCalls.reduce((s, c) => s + c.out, 0))} out`}
               onOpen={() => setDrill({ kind: "calls", title: "Tokens by call", rows: [...kpiCalls].sort((a, b) => b.in + b.out - (a.in + a.out)) })} />
@@ -805,7 +808,7 @@ export function FinOps() {
                 <div className="flex flex-col gap-1">
                   <span className="text-[10.5px] font-medium text-faint">Every offered model on this workload</span>
                   <RankBar
-                    data={calc.perModel.map(({ m, cost }, i) => ({ label: m.id, value: cost ?? 0, color: m.local ? "var(--color-ok)" : CAT[i % CAT.length], meta: cost === null ? "price unknown" : `${fmtCost(cost)}${m.local ? ` · local at ${fmtCost(m.hourly)}/h` : ""}` }))}
+                    data={calc.perModel.map(({ m, cost }, i) => ({ label: m.id, value: cost ?? 0, color: m.local ? "var(--color-ok)" : CAT[i % CAT.length], meta: cost === null ? "hardware hour not priced" : `${fmtCost(cost)}${m.local ? ` · local at ${fmtCost(m.hourly)}/h` : m.estimated ? " · estimated rate" : ""}` }))}
                     onPick={(label) => setCalcModel(label)}
                   />
                 </div>
@@ -1106,10 +1109,10 @@ function DrillView({ drill, data, book, profiles, evidence, verdicts, routes, on
     const rows = profiles.flatMap((p) => p.rows.filter((c) => c.model === drill.id));
     const steps = profiles.filter((p) => p.rows.some((c) => c.model === drill.id));
     return (
-      <DrillModal title={drill.id} subtitle={info ? `${info.label} · ${info.local ? `local on ${info.provider?.label ?? "local hardware"}` : info.provider?.label ?? "Azure AI Foundry"}${info.tier ? ` · ${info.tier} tier` : ""}` : "not in the offered list — costed as unknown"} count={rows.length} onClose={onClose}>
+      <DrillModal title={drill.id} subtitle={info ? `${info.label} · ${info.local ? `local on ${info.provider?.label ?? "local hardware"}` : info.provider?.label ?? "Azure AI Foundry"}${info.tier ? ` · ${info.tier} tier` : ""}` : "not in the offered list — costed at the estimate rate"} count={rows.length} onClose={onClose}>
         <div className="grid grid-cols-2 gap-x-6 border-b border-line px-4 py-2 sm:grid-cols-4">
-          <Fact k="$/M in" v={info?.price_in === null || !info ? "unknown" : `$${info.price_in}`} />
-          <Fact k="$/M out" v={info?.price_out === null || !info ? "unknown" : `$${info.price_out}`} />
+          <Fact k="$/M in" v={info?.price_in === null || !info ? `$${(data?.estimate?.in ?? 0).toFixed(2)} est.` : `$${info.price_in}${info.estimated ? " est." : ""}`} />
+          <Fact k="$/M out" v={info?.price_out === null || !info ? `$${(data?.estimate?.out ?? 0).toFixed(2)} est.` : `$${info.price_out}${info.estimated ? " est." : ""}`} />
           <Fact k="Cost in window" v={fmtCost(sumCost(rows.map((c) => c.cost)))} />
           <Fact k="Steps using it" v={String(steps.length)} />
         </div>
