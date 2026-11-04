@@ -217,6 +217,7 @@ export const CONDITION_LABEL: Record<ConditionName, string> = {
   review: "Policy review",
   findings: "Open findings",
   regression: "No regression",
+  autonomy: "Autonomy tier",
 };
 
 /** What each condition asks of exactly the digest being deployed. */
@@ -225,6 +226,7 @@ export const CONDITION_ASKS: Record<ConditionName, string> = {
   review: "an approving policy review by someone who did not author this version",
   findings: "nothing open for the agent: its tool servers and peers approved, no guardian, drift or side-channel attention, no breaker open on its sinks",
   regression: "a score not below the deployed predecessor's on the same suite",
+  autonomy: "every control the tier its metadata.autonomy declares requires",
 };
 
 export const conditionLabel = (c: string): string => CONDITION_LABEL[c as ConditionName] ?? c.replace(/_/g, " ");
@@ -267,6 +269,8 @@ export function itemLine(item: Record<string, unknown>): string {
     return `${who}: ${n_(item.passed) ?? 0}/${n_(item.total) ?? 0}${score !== null ? ` (${score.toFixed(4)})` : ""} on ${s_(item.set) || "its suite"}${th !== null ? `, threshold ${th}` : ""} · ${s_(item.id)}`;
   }
   if ("kind" in item && "ref" in item) return `${s_(item.kind).replace(/_/g, " ")} ${s_(item.ref)}: ${s_(item.detail)}`;
+  // L9: one requirement of the agent's autonomy tier the gate found unmet.
+  if ("requirement" in item) return `${s_(item.tier) ? `${s_(item.tier)} ` : ""}${s_(item.requirement).replace(/_/g, " ")}: ${s_(item.detail)}`;
   return s_(item.detail) || s_(item.id) || JSON.stringify(item);
 }
 

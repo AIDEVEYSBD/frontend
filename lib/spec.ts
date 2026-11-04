@@ -114,7 +114,16 @@ export interface Tool {
   taints?: boolean;
   /** Acts on the outside world. Tainted input reaching one of these is the attack. */
   is_sink?: boolean;
+  /** L9: the class of what this tool returns. Content read carries it like taint. */
+  data_class?: DataClass;
+  /** L9: a sink's limit: content of a higher class is refused (`control: data_class`). */
+  max_data_class?: DataClass;
+  /** L9: impact tags. `ot_write` and `sis` do not load; `ot_read` reads replicated OT data only. */
+  impact?: string[];
 }
+
+/** L9: public < internal < confidential < restricted. */
+export type DataClass = "public" | "internal" | "confidential" | "restricted";
 
 export interface Step {
   id?: string;
@@ -198,6 +207,12 @@ export interface Policy {
   gates: Gate[];
   injection: { patterns: string[]; prohibited_actions: string[]; action: "block" | "flag" };
   block_tainted_sinks: boolean;
+  /**
+   * What the builder has no form for and must never drop: `budget`, and L9's
+   * `limits`, `mass_action`, `redaction`. A document opened and saved here
+   * keeps them, or its autonomy tier's requirements would silently stop being met.
+   */
+  [extra: string]: unknown;
 }
 
 export interface Evals {
@@ -238,6 +253,8 @@ export interface AgentSystem {
   name: string;
   owner?: string;
   description?: string;
+  /** L9: `L0` to `L5`, `metadata.autonomy`; the tier the promotion gate holds this agent to. Absent reads as L0. */
+  autonomy?: string;
   entry: string;
   nodes: Node[];
   edges: Edge[];
@@ -631,6 +648,21 @@ export function validate(s: AgentSystem): Problem[] {
     }
   }
 
+  // The OT boundary: the parser refuses these outright, so the spec would not load.
+  for (const t of s.tools) {
+    const tags = (t.impact ?? []).map((i) => String(i).replace(/-/g, "_"));
+    if (tags.includes("ot_write") || tags.includes("sis")) {
+      out.push({
+        severity: "error",
+        title: `${t.name} is out of an agent's reach`,
+        detail: tags.includes("sis")
+          ? "It is tagged sis: a safety instrumented system is out of reach altogether, for reading or writing."
+          : "It is tagged ot_write: an agent may not write to operational technology, so a spec that registers it does not load.",
+        fix: "Remove it; read a replica through an ot_read tool instead.",
+      });
+    }
+  }
+
   const sinkTools = s.tools.filter((t) => t.is_sink);
   for (const t of sinkTools) {
     if (!t.scope || Object.keys(t.scope).length === 0) {
@@ -677,6 +709,7 @@ export function toDocument(s: AgentSystem): unknown {
       name: s.name,
       ...(s.owner ? { owner: s.owner } : {}),
       ...(s.description ? { description: s.description } : {}),
+      ...(s.autonomy ? { autonomy: s.autonomy } : {}),
     },
     spec: {
       entry: s.entry,
@@ -829,6 +862,7 @@ export function fromDocument(doc: unknown): AgentSystem {
     name: String(meta.name ?? meta.id ?? "Untitled agent"),
     ...(meta.owner ? { owner: String(meta.owner) } : {}),
     ...(meta.description ? { description: String(meta.description) } : {}),
+    ...(meta.autonomy ? { autonomy: String(meta.autonomy) } : {}),
     entry: String(spec.entry ?? nodes[0]?.id ?? ""),
     nodes,
     edges: ((spec.edges as Edge[] | undefined) ?? []).map((e) => ({
@@ -839,6 +873,7 @@ export function fromDocument(doc: unknown): AgentSystem {
     })),
     tools: ((spec.tools as Tool[] | undefined) ?? []).map((t) => ({ ...t })),
     policy: {
+      ...rawPolicy,
       grants: ((rawPolicy.grants as Grant[] | undefined) ?? []).map((g) => ({
         node: String(g.node),
         tools: (g.tools ?? []).map(String),

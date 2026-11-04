@@ -42,7 +42,7 @@ export const PAGES: Record<string, PageInfo> = {
   "/lifecycle": {
     title: "Lifecycle",
     shows:
-      "Each agent from design to retirement: designed, reviewed, approved, canary, deployed, retired, every stage lit only by its own record, with where the version stands now. It holds the policy reviews (signed by someone who did not author the version), the promotion gate's deploys with an administrator's override, deployments per environment, rollback with the runs it flags, canary and shadow beside production (a share of queued starts on the candidate, or a mirror of production runs in shadow mode, where nothing above read executes, with the disagreement rate between the pairs), the lineage of an agent cut from a template with the drift since, and retirement.",
+      "Each agent from design to retirement: designed, reviewed, approved, canary, deployed, retired, every stage lit only by its own record, with where the version stands now. It holds the policy reviews (signed by someone who did not author the version), the promotion gate's deploys with an administrator's override, deployments per environment, rollback with the runs it flags, canary and shadow beside production (a share of queued starts on the candidate, or a mirror of production runs in shadow mode, where nothing above read executes, with the disagreement rate between the pairs), the lineage of an agent cut from a template with the drift since, each agent's autonomy tier with the controls it lacks, and retirement.",
     suggested: ["What does the promotion gate need for this version?", "How does a shadow run differ from a canary?", "Why is this stage dark?"],
   },
   "/templates": {
@@ -56,6 +56,42 @@ export const PAGES: Record<string, PageInfo> = {
     shows:
       "What runs write, as records: each document (report, contract, register export) with its state (draft, reviewed at the report gate, published through the sink the gate held, or withdrawn), its history and its file, served only from the outbox with the digest it was written with; and the registers a records backend wrote to, each item with its state and the runs that wrote it.",
     suggested: ["Why is this deliverable not downloadable?", "How does the report gate review a deliverable?", "What does a withdrawn deliverable mean?"],
+  },
+  "/policy": {
+    title: "Policy",
+    shows:
+      "Policy as reviewed change. The rules that decide what runs may do (an attached agent's grants and gate risk, the guardian's limits, the estate breakers, rate limits, the screener, retention, redaction, the controls each autonomy tier requires, an attestation period) are proposed with a diff in their own vocabulary, approved by someone other than the proposer, and applied at their effective time. An applied change can be rolled back at once as a recorded emergency. A simulation rules every recorded tool call in a window again under a proposal with the runtime's own enforcer; nothing executes. A spec's own policy changes through its versions, reviews and the promotion gate.",
+    suggested: ["Why can't I approve my own change?", "What does an emergency rollback skip?", "What would this proposal have refused last week?"],
+  },
+  "/evidence": {
+    title: "Evidence",
+    shows:
+      "An assessor's evidence pack for a control or a framework over a period: the control's firings, the signed decisions on its gates, the policy versions and changes in force, the identities that acted, and the chain verification of every run cited. It reads as JSON and downloads as a zip with a manifest and a SHA-256 per file.",
+    suggested: ["What is in an evidence pack?", "What does a partly verifiable chain mean?", "How do I verify a pack offline?"],
+  },
+  "/attestations": {
+    title: "Attestations",
+    shows:
+      "Owner attestations: each deployed agent's owner says, on a schedule, that it still does what was approved. The page shows every deployed agent's standing with the overdue list, and each attestation with what changed in the spec since the last one. An overdue attestation is raised as attention.",
+    suggested: ["Who can attest an agent?", "When does an attestation fall due?", "What does the diff compare?"],
+  },
+  "/frameworks": {
+    title: "Frameworks",
+    shows:
+      "Regulatory views: the estate through one framework or regulation, each agent mapped to its obligations with the evidence that meets each (evidenced, configured, not evidenced or not applicable). Frameworks with no clause mapped to a control, DPDP, SEBI and RBI today, say so plainly.",
+    suggested: ["Why does DPDP show no obligations?", "What does evidenced mean here?", "How is an obligation read for an agent?"],
+  },
+  "/ledger": {
+    title: "Ledger",
+    shows:
+      "The hash chain across the estate: every run's journal is chained, and its last hash is anchored here in order, each run's first entry naming the anchor before it. Walking the ledger verifies every run, and names where a chain breaks, a gap in the ledger, or a genesis no earlier row holds. Retention rules and the tombstones a deletion leaves are here too.",
+    suggested: ["What does a broken chain mean?", "Why is a run tombstoned?", "What is an unanchored run?"],
+  },
+  "/bom": {
+    title: "AI-BOM",
+    shows:
+      "An agent's AI bill of materials: its models with deployment and route, its tools with their data classes and sinks' limits, the servers behind them with their names, versions and pinned tool-list digests, its peers with their card digests, the template it was cut from and its digests. It downloads as CycloneDX.",
+    suggested: ["What does a data class do?", "Which servers does this agent depend on?", "How do I export this for a vendor review?"],
   },
   "/roster": {
     title: "Roster",
@@ -83,7 +119,7 @@ export const PAGES: Record<string, PageInfo> = {
   "/guardian": {
     title: "Guardian",
     shows:
-      "The guardian: a supervisory model that reads each covered run's trajectory against the run's goal and a rubric. Its limits are a person's: which agents it watches, whether it may hold a run at its next gate or block it, an hourly cap, a confidence floor, its model and cadence. Outside its limits it only raises attention. The page lists every verdict it acted on or raised, with the reason and the model.",
+      "The guardian: a supervisory model that reads each covered run's trajectory against the run's goal and a rubric. Its limits are a person's, changed through a reviewed policy change: which agents it watches, whether it may hold a run at its next gate or block it, an hourly cap, a confidence floor, its model and cadence. Outside its limits it only raises attention. The page lists every verdict it acted on or raised, with the reason and the model.",
     suggested: ["What may the guardian do on its own?", "Why was a verdict only raised for a person?", "How is the hourly cap counted?"],
   },
   "/peers": {

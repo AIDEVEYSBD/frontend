@@ -234,12 +234,14 @@ export class DoorError extends Error {
 
 /* ═══════════════════ operating the estate ═══════════════════ */
 
-export type AttentionKind = "gate" | "refusal" | "budget" | "dead_letter" | "health" | "drift" | "guardian" | "side_channel" | "breaker" | "override" | "rollback";
-const ATTENTION_KINDS: AttentionKind[] = ["gate", "refusal", "budget", "dead_letter", "health", "drift", "guardian", "side_channel", "breaker", "override", "rollback"];
+export type AttentionKind = "gate" | "refusal" | "budget" | "dead_letter" | "health" | "drift" | "guardian" | "side_channel" | "breaker" | "override" | "rollback" | "policy_rollback" | "attestation";
+const ATTENTION_KINDS: AttentionKind[] = ["gate", "refusal", "budget", "dead_letter", "health", "drift", "guardian", "side_channel", "breaker", "override", "rollback", "policy_rollback", "attestation"];
 /** The kinds L7 added: the fleet read as a system (drift per agent, the guardian's verdicts, two agents coordinating through a shared store, an estate breaker that opened). */
 export const L7_ATTENTION_KINDS: AttentionKind[] = ["drift", "guardian", "side_channel", "breaker"];
 /** The kinds L8 added: a deploy an administrator passed past the promotion gate, and a rollback with the runs it flagged (each 7 days). */
 export const L8_ATTENTION_KINDS: AttentionKind[] = ["override", "rollback"];
+/** The kinds L9 added: an emergency rollback of a policy change, for a person to review (7 days), and an owner's attestation overdue. */
+export const L9_ATTENTION_KINDS: AttentionKind[] = ["policy_rollback", "attestation"];
 
 /**
  * What a row's one button does, derived from the backend's action: answer
@@ -680,6 +682,9 @@ function l7Action(kind: AttentionKind, method: string, path: string, agent: stri
     return { kind: "open", href };
   }
   if (kind === "override" || kind === "rollback") return { kind: "open", href: lifecycleHref(path, agent) };
+  // L9: a rollback names the history door and an overdue attestation the door that clears it; a person reads the diff first, so both open a page.
+  if (kind === "policy_rollback") return { kind: "open", href: data && typeof data.change === "string" && data.change ? `/policy?change=${encodeURIComponent(data.change)}` : "/policy" };
+  if (kind === "attestation") return { kind: "open", href: agent ? `/attestations?agent=${encodeURIComponent(agent)}` : "/attestations" };
   return { kind: "open" };
 }
 
@@ -694,7 +699,7 @@ export function attentionOf(v: unknown): AttentionItem {
   // the inbox, the lifecycle): those open a page here, never re-read the door.
   const body = a.body && typeof a.body === "object" && !Array.isArray(a.body) ? obj(a.body) : null;
   const data = o.data && typeof o.data === "object" && !Array.isArray(o.data) ? obj(o.data) : null;
-  const l7 = L7_ATTENTION_KINDS.includes(kind) || L8_ATTENTION_KINDS.includes(kind) ? l7Action(kind, method, path, str(o.agent), body, data) : null;
+  const l7 = L7_ATTENTION_KINDS.includes(kind) || L8_ATTENTION_KINDS.includes(kind) || L9_ATTENTION_KINDS.includes(kind) ? l7Action(kind, method, path, str(o.agent), body, data) : null;
   const actionKind: AttentionActionKind = l7
     ? l7.kind
     : kind === "gate" ? "answer" : !method || page ? "open" : kind === "dead_letter" && method === "POST" ? "replay" : method === "GET" ? "check" : "open";

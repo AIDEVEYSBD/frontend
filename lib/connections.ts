@@ -11,13 +11,16 @@
 import { TOOL_BY_ID } from "./catalogue";
 import type { AgentSystem } from "./spec";
 import { newSource, SOURCE_META } from "./retrieval";
+import { dataClassChoices } from "./bom";
 
 export interface FieldDef {
   key: string;
   label: string;
   hint?: string;
   mono?: boolean;
-  kind?: "text" | "number" | "bool" | "csv";
+  kind?: "text" | "number" | "bool" | "csv" | "choice";
+  /** For `choice`. */
+  choices?: { value: string; label: string }[];
   placeholder?: string;
   /** The runtime refuses the connection without this at deploy time. */
   required?: boolean;
@@ -40,6 +43,24 @@ export interface ConnectorDef {
   defaults: Record<string, unknown>;
 }
 
+/** L9: a retrieval source declares the class of what it returns; content read carries it like taint. */
+const DATA_CLASS_FIELD: FieldDef = {
+  key: "data_class",
+  label: "Data class",
+  kind: "choice",
+  hint: "What it returns carries this class; a sink or peer with a lower limit refuses it.",
+  choices: dataClassChoices("undeclared"),
+};
+
+/** L9: the highest class a peer may be sent. */
+const MAX_DATA_CLASS_FIELD: FieldDef = {
+  key: "max_data_class",
+  label: "Highest data class it takes",
+  kind: "choice",
+  hint: "Content of a higher class is refused here, before it is sent.",
+  choices: dataClassChoices("no limit declared"),
+};
+
 const DSN_HINT = "Vault references welcome: postgres://user:${secret:db-pass}@host:5455/db";
 
 export const CONNECTOR_DEFS: ConnectorDef[] = [
@@ -53,7 +74,8 @@ export const CONNECTOR_DEFS: ConnectorDef[] = [
     blurb: SOURCE_META[kind].blurb.split(".")[0],
     icon: { folder: "folder", documents: "file", vector: "vector", tavily: "globe", images: "image", tool: "plug" }[kind],
     hex: { folder: "var(--t-c1)", documents: "var(--t-c3)", vector: "var(--t-c10)", tavily: "var(--t-c2)", images: "var(--t-c8)", tool: "var(--t-c4)" }[kind],
-    fields: (
+    fields: [
+      ...((
       {
         folder: [{ key: "root", label: "Root", mono: true, hint: "Relative paths resolve in the workspace." }],
         documents: [{ key: "root", label: "Root", mono: true }],
@@ -75,7 +97,9 @@ export const CONNECTOR_DEFS: ConnectorDef[] = [
           { key: "results_path", label: "Results path", mono: true },
         ],
       } as Record<string, FieldDef[]>
-    )[kind],
+    )[kind] ?? []),
+      DATA_CLASS_FIELD,
+    ],
     defaults: newSource(kind, new Set()) as unknown as Record<string, unknown>,
   })),
 
@@ -165,6 +189,7 @@ export const CONNECTOR_DEFS: ConnectorDef[] = [
       { key: "auth_token", label: "Auth token", mono: true, placeholder: "${secret:peer-token}",
         hint: "Sent as a bearer token. Use a vault reference so the token never lives in the spec. Unauthenticated peers are accepted and reported as such." },
       { key: "timeout_s", label: "Timeout (s)", kind: "number" },
+      MAX_DATA_CLASS_FIELD,
     ],
     defaults: { kind: "a2a", name: "peer", url: "", auth_token: "", timeout_s: 60 },
   },

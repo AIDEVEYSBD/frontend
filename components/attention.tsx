@@ -68,6 +68,11 @@ import { useNow } from "./gate-form";
  * and a drift read against the benchmark names that eval. A redirect the
  * guardian could not make offers the steer it would have sent, its guidance
  * still the person's to change.
+ *
+ * L9 adds two kinds. An emergency rollback of a policy change opens that
+ * change on the Policy page, for a person to review what skipped review; an
+ * overdue attestation opens the agent's attestations, where the owner reads
+ * the diff before attesting.
  */
 
 const KIND_TONE: Record<AttentionItem["kind"], "warn" | "err" | "queue" | "run"> = {
@@ -82,6 +87,8 @@ const KIND_TONE: Record<AttentionItem["kind"], "warn" | "err" | "queue" | "run">
   breaker: "err",
   override: "warn",
   rollback: "warn",
+  policy_rollback: "err",
+  attestation: "warn",
 };
 
 const RunLink = ({ run }: { run: string }) => (

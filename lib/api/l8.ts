@@ -445,9 +445,9 @@ export function reviewListOf(v: unknown): ReviewList {
 
 /* ═══════════════════ the promotion gate ═══════════════════ */
 
-/** The four conditions a production deploy is held to, in the order the backend reads them. */
-export type ConditionName = "eval" | "review" | "findings" | "regression";
-export const CONDITION_NAMES: ConditionName[] = ["eval", "review", "findings", "regression"];
+/** The five conditions a production deploy is held to, in the order the backend reads them (L9 added `autonomy`). */
+export type ConditionName = "eval" | "review" | "findings" | "regression" | "autonomy";
+export const CONDITION_NAMES: ConditionName[] = ["eval", "review", "findings", "regression", "autonomy"];
 
 /** One condition as the gate read it for exactly the digest it was asked to deploy. */
 export type Condition = {

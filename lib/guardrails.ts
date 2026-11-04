@@ -589,8 +589,20 @@ export function explainControl(control: string): { name: string; decides: string
     CONTROLS.find((x) => x.journal === control) ??
     (alias ? CONTROLS.find((x) => x.id === alias) : undefined);
   if (c) return { name: c.title, decides: c.statement, id: c.id };
-  return { name: control, decides: "" };
+  return UNMAPPED[control] ?? { name: control, decides: "" };
 }
+
+/**
+ * Keys the journal names that no register row maps (phase L9): the runtime
+ * enforces them, so a refusal must still say what refused it, with no row to
+ * link to.
+ */
+const UNMAPPED: Record<string, { name: string; decides: string }> = {
+  limit: { name: "Argument limit", decides: "a call outside a limit the policy declares is refused before execution, whatever the model said" },
+  data_class: { name: "Data class", decides: "content of a class above what a sink or peer takes is refused" },
+  mass_action: { name: "Mass action", decides: "a run issuing more calls of one sink than the policy allows is gated at the next one" },
+  delegation: { name: "Delegation", decides: "a delegated call stays inside what the delegator was allowed" },
+};
 
 /**
  * Keys that name a register row other than by its journal key. A typed

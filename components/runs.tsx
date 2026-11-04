@@ -35,6 +35,9 @@ import { KillAlreadyView, KillReceiptView, RunTreePanel } from "./run-tree";
 import { RateLimitNote, useRetryReady } from "./rate-limit";
 import { killRefusalOf, killRun, rateLimitOf, type KillReceipt, type KillRefusal, type RateLimit } from "@/lib/api/l7";
 import { LineageDrawer } from "./lineage";
+import { ProvenanceDrawer, RunAssurance } from "./provenance";
+import { decisionsOf, type SignedDecision } from "@/lib/api/l9";
+import { hasProvenance } from "@/lib/provenance";
 import { ApproveDialog } from "./approve";
 import { SteerPanel } from "./steer";
 import { followsLive, steerOffer } from "@/lib/steer";
@@ -810,6 +813,8 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
               </Button>
             </div>
           </div>
+        ) : phase === "done" && liveRunId ? (
+          <RunAssurance run={liveRunId} />
         ) : null
       }
       footer={
@@ -918,6 +923,8 @@ function RunRecord({ id, onReread }: { id: string; onReread: () => void }) {
   const [loadError, setLoadError] = useState("");
   /** L8: what the record says beyond the journal: a rollback's flag, an A2A task's taint, the eval it is a case of. */
   const [flags, setFlags] = useState<RunFlags | null>(null);
+  /** L9: the signed answers on the record, stamped with the controls that opened each gate. */
+  const [decisions, setDecisions] = useState<SignedDecision[]>([]);
 
   useEffect(() => {
     api
@@ -925,6 +932,7 @@ function RunRecord({ id, onReread }: { id: string; onReread: () => void }) {
       .then(({ data, error, response }) => {
         if (!data) throw new Error(errorText(error, response));
         setFlags(runFlagsOf(data));
+        setDecisions(decisionsOf(data));
         setRaw((data.journal?.entries ?? []) as unknown as Entry[]);
         setMeta({
           system: data.system ?? "",
@@ -1094,7 +1102,12 @@ function RunRecord({ id, onReread }: { id: string; onReread: () => void }) {
       result={atEnd ? meta.result : null}
       suspension={null}
       onAnswered={() => {}}
-      setup={flags ? <RunFlagsBanner flags={flags} agent={meta.system} /> : null}
+      setup={
+        <>
+          {flags ? <RunFlagsBanner flags={flags} agent={meta.system} /> : null}
+          <RunAssurance run={meta.runId || id} decisions={decisions} entries={entries} />
+        </>
+      }
       segments={segments}
       tNow={playback.t}
       traceOf={id}
@@ -1306,7 +1319,12 @@ function FollowTheater({
         runLive={running}
         notice={receipt ? <KillReceiptView receipt={receipt} onDismiss={() => setReceipt(null)} /> : already ? <KillAlreadyView refusal={already} onDismiss={() => setAlready(null)} /> : null}
         steer={offer.show ? <SteerPanel runId={id} holdBlocked={offer.hold.allowed ? undefined : offer.hold.reason} /> : null}
-        setup={flags ? <RunFlagsBanner flags={flags} agent={system} /> : null}
+        setup={
+          <>
+            {flags ? <RunFlagsBanner flags={flags} agent={system} /> : null}
+            <RunAssurance key={running ? "running" : "settled"} run={id} />
+          </>
+        }
         footer={
           running ? (
             <div className="flex h-11 shrink-0 items-center gap-3 border-t border-line bg-surface px-4">
@@ -2177,6 +2195,8 @@ function TheaterTranscript({ entries, live, runId = "" }: { entries: Entry[]; li
   const [filter, setFilter] = useState("all");
   /** The entry whose lineage is open: what it was derived from, what it fed. */
   const [lineage, setLineage] = useState<string | null>(null);
+  /** The entry whose provenance is open: its chain, from the input and prompt to the result. */
+  const [provenance, setProvenance] = useState<string | null>(null);
 
   useEffect(() => {
     const el = scroller.current;
@@ -2235,7 +2255,7 @@ function TheaterTranscript({ entries, live, runId = "" }: { entries: Entry[]; li
 
       <div ref={scroller} onScroll={onScroll} className="flex min-h-0 grow flex-col gap-3.5 overflow-y-auto px-4 py-4">
         {shown.map((e, i) => (
-          <JournalRow key={e.id ?? i} e={e} entries={entries} onLineage={setLineage} />
+          <JournalRow key={e.id ?? i} e={e} entries={entries} onLineage={setLineage} onProvenance={setProvenance} />
         ))}
         {shown.length === 0 && (
           <p className="text-[12px] text-faint">Nothing of this kind in the journal{live ? " yet" : ""}.</p>
@@ -2243,6 +2263,7 @@ function TheaterTranscript({ entries, live, runId = "" }: { entries: Entry[]; li
       </div>
 
       {lineage && <LineageDrawer runId={runId} entryId={lineage} entries={entries} onClose={() => setLineage(null)} />}
+      {provenance && <ProvenanceDrawer entries={entries} entryId={provenance} onClose={() => setProvenance(null)} />}
 
       {/* Events landing below the fold while scrolled up — say so. */}
       {unseen > 0 && live && (
@@ -2344,10 +2365,14 @@ function parseJsonText(text: string): [string, string][] | null {
   return out.length ? out : null;
 }
 
-function JournalRow({ e, entries, onLineage }: { e: Entry; entries: Entry[]; onLineage?: (id: string) => void }) {
+function JournalRow({ e, entries, onLineage, onProvenance }: { e: Entry; entries: Entry[]; onLineage?: (id: string) => void; onProvenance?: (id: string) => void }) {
   const [open, setOpen] = useState(false);
   const lineageButton = onLineage && e.id ? (
     <Button size="sm" variant="quiet" onClick={() => onLineage(e.id)}>Lineage</Button>
+  ) : null;
+  /** Any decision's chain: what it stands on, from the input and prompt to the result. */
+  const provenanceButton = onProvenance && e.id && hasProvenance(e) ? (
+    <Button size="sm" variant="quiet" onClick={() => onProvenance(e.id)}>Provenance</Button>
   ) : null;
 
   /* Reasoning: the model's own words, as prose — the landing's signature row.
@@ -2364,6 +2389,7 @@ function JournalRow({ e, entries, onLineage }: { e: Entry; entries: Entry[]; onL
             <span className="text-[10.5px] font-medium text-run">reasoning</span>
             {e.tainted && <Tag tone="warn">tainted input</Tag>}
             {e.tainted && lineageButton}
+            {provenanceButton}
           </span>
           {e.tainted && (
             <span className="text-[11px] text-faint">
@@ -2441,6 +2467,7 @@ function JournalRow({ e, entries, onLineage }: { e: Entry; entries: Entry[]; onL
             <div className="flex flex-col gap-2 border-t border-line px-3 py-2.5">
               <CurlBlock tool={String(e.data?.tool ?? "")} args={e.data?.args ?? {}} />
               {sandbox ? <SandboxOutput run={sandbox} /> : response && <ResponseBlock value={response.data?.value} />}
+              {provenanceButton && <span className="self-start">{provenanceButton}</span>}
             </div>
           )}
         </div>
@@ -2474,6 +2501,7 @@ function JournalRow({ e, entries, onLineage }: { e: Entry; entries: Entry[]; onL
               {tool && <Mono className="text-[10.5px] text-mist">{tool}</Mono>}
               <span className="grow" />
               {lineageButton}
+              {provenanceButton}
             </span>
             {/* The rule, in full. Truncating the reason is how a refusal turns
                 into a mystery two weeks later. */}
@@ -2590,6 +2618,7 @@ function JournalRow({ e, entries, onLineage }: { e: Entry; entries: Entry[]; onL
         <span className="text-[12.5px] text-fg">{e.title}</span>
         {e.detail && <span className="truncate text-[11.5px] text-faint">{e.detail}</span>}
       </div>
+      {provenanceButton && <span className="ml-auto shrink-0">{provenanceButton}</span>}
     </div>
   );
 }

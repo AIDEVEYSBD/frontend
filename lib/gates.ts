@@ -396,6 +396,8 @@ export const ATTENTION_LABEL: Record<AttentionItem["kind"], string> = {
   breaker: "breaker",
   override: "override",
   rollback: "rollback",
+  policy_rollback: "Policy rollback",
+  attestation: "Attestation",
 };
 
 export const ACTION_LABEL: Record<AttentionItem["action"]["kind"], string> = {

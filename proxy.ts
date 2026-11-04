@@ -20,7 +20,10 @@ import { passthrough } from "@/lib/passthrough";
  *   /.well-known/agent.json), the L8 doors (the eval runner's reads at
  *   /api/evals/runs, the templates, the deliverables, the registers and the
  *   eval sets at /api/eval-sets; the lifecycle, canary and lineage doors
- *   travel with /api/agents), and the health check) are forwarded
+ *   travel with /api/agents), the L9 doors (policy changes and simulation at
+ *   /api/policy, the ledger, the controls catalogue, evidence, attestations,
+ *   autonomy tiers, retention and the regulatory views; a run's chain travels
+ *   with /api/runs, the AI-BOM with /api/agents), and the health check) are forwarded
  *   there at request time, with the shared secret attached and the session
  *   cookie forwarded. This happens before, and independently of, the
  *   RUNTIME_ORIGIN rewrite below. The local backend is `http://localhost:8000`

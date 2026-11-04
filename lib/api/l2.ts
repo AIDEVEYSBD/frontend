@@ -138,7 +138,7 @@ export async function attachAgent(body: AttachRequest): Promise<Schemas["Attache
   return data;
 }
 
-/** `PATCH /api/attached`: an attached agent's standing policy (grants, gate risk, injection action, the block). */
+/** `PATCH /api/attached`: an attached agent's injection action, block and signing secret. Its grants and gate risk answer 409 since L9: they are a policy target (`proposePolicyChange`, lib/api/l9.ts). */
 export async function setAttachedPolicy(patch: PolicyPatch): Promise<Schemas["PolicyChanged"]> {
   const { data, error, response } = await api.PATCH("/api/attached", { body: patch });
   if (!data) throw doorError(error, response);

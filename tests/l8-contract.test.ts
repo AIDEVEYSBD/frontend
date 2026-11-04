@@ -1046,7 +1046,7 @@ describe("the console's shapes and the generated client agree", () => {
 
   it("every name the backend serves is one the console knows", () => {
     expect(l8.STAGE_NAMES).toEqual(["designed", "reviewed", "approved", "canary", "deployed", "retired"]);
-    expect(l8.CONDITION_NAMES).toEqual(["eval", "review", "findings", "regression"]);
+    expect(l8.CONDITION_NAMES).toEqual(["eval", "review", "findings", "regression", "autonomy"]);
     expect(l8.VERDICTS).toEqual(["approved", "changes_requested"]);
     expect(l7.GUARDIAN_ACTS).toEqual(["hold", "block", "redirect"]);
     expect(l7.MEASURE_NAMES).toEqual(expect.arrayContaining(["benchmark_outcomes", "benchmark_labels"]));

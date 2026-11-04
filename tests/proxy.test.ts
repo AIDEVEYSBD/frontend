@@ -66,10 +66,52 @@ describe("backend-owned paths", () => {
       "/api/deliverables",
       "/api/registers",
       "/api/eval-sets",
+      "/api/policy",
+      "/api/ledger",
+      "/api/controls",
+      "/api/evidence",
+      "/api/attestations",
+      "/api/autonomy-tiers",
+      "/api/retention",
+      "/api/frameworks",
     ]) {
       expect(BACKEND_PREFIXES, `${p} is the backend's`).toContain(p);
     }
     expect(BACKEND_PATHS).toEqual(["/.well-known/agent.json"]);
+  });
+
+  // Phase L9: every door of policy and evidence is a console door behind the
+  // cookie. A run's chain travels with /api/runs, an agent's attestations and
+  // AI-BOM with /api/agents. The console's own /api/control is not /api/controls.
+  it("hands the L9 doors to the backend, behind the cookie", () => {
+    for (const p of [
+      "/api/policy/targets",
+      "/api/policy/changes",
+      "/api/policy/changes/pc-840832a26fa141f7",
+      "/api/policy/changes/pc-840832a26fa141f7/approve",
+      "/api/policy/changes/pc-840832a26fa141f7/reject",
+      "/api/policy/changes/pc-840832a26fa141f7/rollback",
+      "/api/policy/simulate",
+      "/api/runs/tiny-2026-11-04T10-27-07-u0z3/verify",
+      "/api/ledger/verify",
+      "/api/controls",
+      "/api/evidence",
+      "/api/attestations",
+      "/api/agents/triage/attestations",
+      "/api/autonomy-tiers",
+      "/api/retention",
+      "/api/agents/boxed/bom",
+      "/api/frameworks",
+      "/api/frameworks/eu_ai_act/view",
+    ]) {
+      expect(isBackendPath(p), `${p} is the backend's`).toBe(true);
+      expect(isMachineDoor(p), `${p} is a person's, behind the cookie`).toBe(false);
+      expect(isPassthroughPath(p), `${p} is rewritten, not passed through`).toBe(false);
+      expect(upstreamFor(p, "?state=pending", BOTH)).toEqual({ to: "backend", url: `http://localhost:8000${p}?state=pending` });
+    }
+    for (const p of ["/api/control", "/api/policyx", "/api/ledgerx", "/api/controlsx", "/api/evidencex", "/api/retentionx"]) {
+      expect(isBackendPath(p), `${p} is not the backend's`).toBe(false);
+    }
   });
 
   // Phase L8 (second round): the templates, the deliverables, the registers

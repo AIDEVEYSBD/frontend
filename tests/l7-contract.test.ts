@@ -977,7 +977,6 @@ describe("the console's shapes and the generated client agree", () => {
     expectTypeOf<Agrees<l7.GuardianStats, Schemas["GuardianStats"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l7.GuardianView, Schemas["GuardianView"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l7.GuardianAction, Schemas["GuardianAction"]>>().toEqualTypeOf<true>();
-    expectTypeOf<Agrees<l7.GuardianPatch, Partial<Schemas["GuardianUpdate"]>>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<Pick<l5.AttentionItem, "agents" | "runs" | "data">, Schemas["AttentionItem"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l7.KillRefusal, Schemas["KillRefused"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l7.KillInfo, Schemas["KillInfo"]>>().toEqualTypeOf<true>();

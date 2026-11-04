@@ -38,7 +38,7 @@ export const EMPTY: AgentSystem = {
 
 export type Action =
   | { type: "load"; system: AgentSystem }
-  | { type: "meta"; patch: Partial<Pick<AgentSystem, "id" | "name" | "owner" | "description">> }
+  | { type: "meta"; patch: Partial<Pick<AgentSystem, "id" | "name" | "owner" | "description" | "autonomy">> }
   | { type: "add-node"; harness: HarnessKind; x: number; y: number }
   | { type: "add-node-connected"; harness: HarnessKind; x: number; y: number; from: string }
   | { type: "insert-on-edge"; harness: HarnessKind; edge: number }
@@ -60,6 +60,7 @@ export type Action =
   | { type: "set-trigger"; trigger: Trigger }
   | { type: "set-outputs"; outputs: OutputDecl[] }
   | { type: "tool-config"; name: string; config: Record<string, unknown> }
+  | { type: "patch-tool"; name: string; patch: Partial<Pick<Tool, "data_class" | "max_data_class">> }
   | { type: "grant-tool-card"; node: string; card: string }
   | { type: "grant-custom-tool"; node: string; tool: Tool }
   | { type: "add-connection"; tool: string; kind: string; node: string; name?: string }
@@ -372,6 +373,17 @@ export function reduce(s: AgentSystem, a: Action): AgentSystem {
 
     case "set-outputs":
       return { ...s, outputs: a.outputs };
+
+    case "patch-tool": {
+      // "" clears a class: a binding that declares none carries no key at all.
+      const drop = (t: Tool): Tool => {
+        const next = { ...t, ...a.patch };
+        if (!next.data_class) delete next.data_class;
+        if (!next.max_data_class) delete next.max_data_class;
+        return next;
+      };
+      return { ...s, tools: s.tools.map((t) => (t.name === a.name ? drop(t) : t)) };
+    }
 
     case "tool-config": {
       // Config lives on every binding of the same server, so retrieval.search

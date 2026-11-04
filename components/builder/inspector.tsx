@@ -19,6 +19,9 @@ import {
   type Step,
 } from "@/lib/spec";
 import type { Action } from "@/lib/builder-store";
+import { dataClassChoices } from "@/lib/bom";
+import { TIERS } from "@/lib/api/l9";
+import type { DataClass } from "@/lib/spec";
 import { Button, Status } from "../ui";
 import { Banner } from "../overlays";
 import { Area, Check, Cross, CsvText, Mini, Num, Pick, Plus, Row, Section, Text } from "./controls";
@@ -192,10 +195,8 @@ export function Inspector({
               ? `Behind this endpoint: ${entry.behind}`
               : binding?.summary || `Served by ${look.label}`;
             return (
-              <div
-                key={t}
-                className="flex items-center gap-2 rounded-sm border border-line bg-raise py-1 pr-1 pl-1.5"
-              >
+              <div key={t} className="flex flex-col gap-1 rounded-sm border border-line bg-raise py-1 pr-1 pl-1.5">
+                <span className="flex items-center gap-2">
                 {look.mark(18, look.label)}
                 <span className="flex min-w-0 grow flex-col">
                   <span className="truncate font-mono text-[11px] text-mist">{t}</span>
@@ -209,6 +210,35 @@ export function Inspector({
                 <Mini label={`Revoke ${t}`} tone="err" onClick={() => dispatch({ type: "revoke", node: node.id, tool: t })}>
                   <Cross size={10} />
                 </Mini>
+                </span>
+                {binding && (
+                  <span className="flex flex-wrap items-center gap-x-3 gap-y-1 pl-[26px]">
+                    <label className="flex items-center gap-1.5 text-[10px] text-faint">
+                      Returns
+                      <span className="block w-[120px]">
+                        <Pick
+                          aria-label={`Data class of what ${t} returns`}
+                          value={binding.data_class ?? ""}
+                          onChange={(v) => dispatch({ type: "patch-tool", name: t, patch: { data_class: (v || undefined) as DataClass | undefined } })}
+                          options={dataClassChoices("undeclared")}
+                        />
+                      </span>
+                    </label>
+                    {binding.is_sink && (
+                      <label className="flex items-center gap-1.5 text-[10px] text-faint">
+                        Takes up to
+                        <span className="block w-[120px]">
+                          <Pick
+                            aria-label={`Highest data class ${t} takes`}
+                            value={binding.max_data_class ?? ""}
+                            onChange={(v) => dispatch({ type: "patch-tool", name: t, patch: { max_data_class: (v || undefined) as DataClass | undefined } })}
+                            options={dataClassChoices("no limit")}
+                          />
+                        </span>
+                      </label>
+                    )}
+                  </span>
+                )}
               </div>
             );
           })}
@@ -860,6 +890,14 @@ function SystemPanel({ system, dispatch }: { system: AgentSystem; dispatch: (a: 
             onChange={(v) => dispatch({ type: "meta", patch: { owner: v } })}
           />
         </Row>
+        <Row label="Autonomy tier" hint="The promotion gate holds it to every control this tier requires. Lifecycle shows what it lacks.">
+          <Pick
+            aria-label="Autonomy tier"
+            value={system.autonomy ?? ""}
+            onChange={(v) => dispatch({ type: "meta", patch: { autonomy: v || undefined } })}
+            options={[{ value: "", label: "None declared (L0)" }, ...TIERS.map((t) => ({ value: t, label: t }))]}
+          />
+        </Row>
         <Row label="What it does">
           <Area
             rows={3}
@@ -1231,6 +1269,13 @@ function ConnectorInspector({
                   placeholder={f.placeholder}
                   onValues={(v) => patch({ [f.key]: v })}
                 />
+              </Row>
+            );
+          }
+          if (f.kind === "choice") {
+            return (
+              <Row key={f.key} label={f.label} tight hint={f.hint}>
+                <Pick aria-label={f.label} value={String(value ?? "")} onChange={(v) => patch({ [f.key]: v || undefined })} options={f.choices ?? []} />
               </Row>
             );
           }

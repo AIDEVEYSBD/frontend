@@ -6,13 +6,16 @@ import { Button, Meter, Status, Tag } from "./ui";
 import { Checkbox, Field, Input, Switch, Textarea } from "./forms";
 import { Pick } from "./select";
 import { ChipEditor } from "./gate-form";
+import { OpenChanges, ProposalNote } from "./policy";
 import { hueFor } from "@/lib/hue";
 import { soon } from "@/lib/soon";
 import { useModels } from "@/lib/use-models";
 import { useSession } from "@/lib/use-session";
 import { listAgents } from "@/lib/api/l2";
 import { DoorError, auditLine } from "@/lib/api/l5";
-import { getGuardian, listGuardianActions, setGuardian, type GuardianAction, type GuardianView } from "@/lib/api/l7";
+import { getGuardian, listGuardianActions, type GuardianAction, type GuardianView } from "@/lib/api/l7";
+import { proposePolicyChange, type PolicyChange } from "@/lib/api/l9";
+import { effectiveAt, effectiveProblem, proposedField, proposedLine } from "@/lib/policy";
 import { cadenceText, capText, coverageText, formOf, formProblems, mayOf, mayText, outcomeText, patchOf, refusedField, verdictText, type GuardianField, type GuardianForm } from "@/lib/guardian";
 
 /**
@@ -26,12 +29,14 @@ import { cadenceText, capText, coverageText, formOf, formProblems, mayOf, mayTex
  * could not make is offered to a person as the steer it would have sent. Every act is journalled on the run as a note signed
  * `guardian`, which the run's transcript shows as an operator's action.
  *
- * The limits (`GET`/`PUT /api/guardian`) are a person's: the form sends only
- * what changed (the door merges, and writes one audit event naming the
- * fields), and every control needs the configure permission, so a viewer
- * reads all of it and changes none of it. Its stats are the backend
- * instance's since it started; its actions (`GET /api/guardian/actions`)
- * come from the record.
+ * The limits are a person's, and since L9 a reviewed person's: `GET
+ * /api/guardian` reads them, and the form proposes only what changed through
+ * the policy door (`POST /api/policy/changes`, target `guardian`); someone
+ * other than the proposer approves it on the Policy page, and `PUT
+ * /api/guardian` answers 409 naming that door. Every control needs the
+ * configure permission, so a viewer reads all of it and changes none of it.
+ * Its stats are the backend instance's since it started; its actions (`GET
+ * /api/guardian/actions`) come from the record.
  */
 
 function ago(iso: string): string {
@@ -57,8 +62,12 @@ export function Guardian() {
   const [known, setKnown] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState("");
+  const [saved, setSaved] = useState<PolicyChange | null>(null);
   const [saveError, setSaveError] = useState("");
+  const [reason, setReason] = useState("");
+  const [effective, setEffective] = useState("");
+  /** Moved by a proposal, so the list of what waits on review is read again. */
+  const [proposals, setProposals] = useState(0);
   /** The limit the door refused, in its own words (`400 {error, field}`), marked on the form until it is edited. */
   const [refused, setRefused] = useState<{ field: GuardianField; error: string } | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
@@ -96,7 +105,7 @@ export function Guardian() {
   const edit = (patch: Partial<GuardianForm>) => {
     setForm((f) => (f ? { ...f, ...patch } : f));
     setDirty(true);
-    setSaved("");
+    setSaved(null);
     setSaveError("");
     setRefused(null);
   };
@@ -106,22 +115,27 @@ export function Guardian() {
   const patch = view && form ? patchOf(view, form) : {};
   const changed = Object.keys(patch);
 
-  const save = async () => {
-    if (!view || !form || !changed.length || Object.keys(problems).length) return;
+  const blocked = !changed.length || Object.keys(problems).length > 0 || !reason.trim() || Boolean(effectiveProblem(effective));
+
+  /** The limits do not move here: they go to review, and read as they were until someone else approves. */
+  const propose = async () => {
+    if (!view || !form || blocked) return;
     setSaving(true);
     setSaveError("");
     try {
-      const v = await setGuardian(patch);
-      setView(v);
-      setForm(formOf(v));
+      const c = await proposePolicyChange({ target: { kind: "guardian" }, proposed: { ...patch }, effective_at: effectiveAt(effective), reason: reason.trim() });
+      setForm(formOf(view));
       setDirty(false);
-      setSaved(`Saved: ${changed.join(", ")}${auditLine(v.audit_id)}.`);
+      setReason("");
+      setEffective("");
+      setSaved(c);
+      setProposals((n) => n + 1);
     } catch (e) {
       // A 400 names the limit it refused: mark it on the form, in the door's words.
-      const field = e instanceof DoorError && e.status === 400 ? refusedField(e.field) : null;
+      const field = e instanceof DoorError && e.status === 400 ? refusedField(proposedField(e) ?? e.field) : null;
       if (field && field !== "body") {
         setRefused({ field, error: (e as Error).message });
-        setSaveError(`Not saved: ${field.replace(/_/g, " ")} is marked above.`);
+        setSaveError(`Not proposed: ${field.replace(/_/g, " ")} is marked above.`);
       } else setSaveError((e as Error).message);
     } finally {
       setSaving(false);
@@ -166,7 +180,9 @@ export function Guardian() {
             <p className="px-4 py-4 text-[12px] text-faint">Reading the guardian&rsquo;s limits…</p>
           ) : (
             <div className="flex flex-col gap-4 px-4 py-4">
-              {!editable && <p className="text-[11.5px] text-warn">Changing the guardian&rsquo;s limits needs the configure permission; these are shown as set.</p>}
+              {!editable && <p className="text-[11.5px] text-warn">Proposing a change to the guardian&rsquo;s limits needs the configure permission; these are shown as set.</p>}
+              {editable && <p className="text-[11px] text-faint">A change here goes to review: someone other than you approves it on the Policy page, and these read as they are until it applies.</p>}
+              <OpenChanges target={{ kind: "guardian", id: "estate" }} tick={proposals} />
               <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
                 <Switch label={form.enabled ? "On: it judges the runs it covers" : "Off: it judges no run"} checked={form.enabled} onChange={(on) => edit({ enabled: on })} disabled={!editable} />
                 {problemOf("enabled") && <span className="text-[11px] text-err">{problemOf("enabled")}</span>}
@@ -231,9 +247,11 @@ export function Guardian() {
                 <Textarea rows={3} value={form.rubric} onChange={(v) => edit({ rubric: v })} disabled={!editable} placeholder="Triage only: never move money, never send case data outside the firm." />
               </Field>
 
+              {changed.length > 0 && <ProposalNote reason={reason} onReason={setReason} effective={effective} onEffective={setEffective} disabled={!editable} />}
+
               <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
-                <Button variant="solid" tone="ink" size="sm" permission="configure" disabled={!changed.length || Object.keys(problems).length > 0} loading={saving} onClick={save}>
-                  {changed.length ? `Save ${changed.length} change${changed.length === 1 ? "" : "s"}` : "No changes"}
+                <Button variant="solid" tone="ink" size="sm" permission="configure" disabled={blocked} loading={saving} onClick={propose}>
+                  {changed.length ? `Propose ${changed.length} change${changed.length === 1 ? "" : "s"}` : "No changes"}
                 </Button>
                 {dirty && (
                   <Button
@@ -248,8 +266,12 @@ export function Guardian() {
                     Discard
                   </Button>
                 )}
-                {changed.length > 0 && <span className="text-[11px] text-faint">Sends only {changed.join(", ")}; the rest keep their value.</span>}
-                {saved && <span className="text-[11.5px] text-ok">{saved}</span>}
+                {changed.length > 0 && <span className="text-[11px] text-faint">{reason.trim() ? `Proposes only ${changed.join(", ")}; the rest keep their value.` : "A change needs a reason."}</span>}
+                {saved && (
+                  <Link href={`/policy?change=${encodeURIComponent(saved.id)}`} className="focusable rounded-sm text-[11.5px] text-ok hover:underline">
+                    {proposedLine(saved)}
+                  </Link>
+                )}
                 {saveError && <span className="text-[11.5px] text-err">{saveError}</span>}
               </div>
             </div>

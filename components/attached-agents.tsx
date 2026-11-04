@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Button, Mono, Status, Tag } from "./ui";
 import { Pick } from "./select";
 import { Code, CopyButton } from "./code";
+import { OpenChanges, ProposalNote } from "./policy";
 import {
   A2A_STEPS,
   ENDPOINTS,
@@ -21,6 +23,8 @@ import {
 } from "@/lib/attached";
 import { agentActivityFor } from "@/lib/demo-activity";
 import { attachAgent, attachableTools, detachAgent, listAttached, setAttachedPolicy, type AttachedList, type PolicyPatch } from "@/lib/api/l2";
+import { proposePolicyChange, type PolicyChange } from "@/lib/api/l9";
+import { attachedSplit, effectiveAt, effectiveProblem, proposedLine } from "@/lib/policy";
 
 /** A seeded agent's row with its demonstration activity (lib/demo-activity.ts), never applied to one whose runs are on record. */
 function withDemoActivity(a: AttachedAgent): AttachedAgent {
@@ -108,6 +112,11 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
   const [draft, setDraft] = useState<{ grants: string[]; gate_at: AttachedAgent["gate_at"]; injection: AttachedAgent["injection"]; secret_name: string }>({ grants: [], gate_at: "", injection: "block", secret_name: "" });
   const [saving, setSaving] = useState(false);
   const [policyError, setPolicyError] = useState("");
+  /** Why grants or the gate should change, and when: a policy change carries both. */
+  const [reason, setReason] = useState("");
+  const [effective, setEffective] = useState("");
+  const [proposed, setProposed] = useState<PolicyChange | null>(null);
+  const [proposals, setProposals] = useState(0);
 
   const shown = (d: Pick<AttachedList, "agents" | "store">) => {
     // The backend measures activity from the run record; the seeded
@@ -149,7 +158,32 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
   const openPolicy = (a: AttachedAgent) => {
     setEditing(a.id);
     setPolicyError("");
+    setReason("");
+    setEffective("");
+    setProposed(null);
     setDraft({ grants: a.grants, gate_at: a.gate_at, injection: a.injection, secret_name: a.secret_name ?? "" });
+  };
+  /** Saves the row's own fields at once and proposes the rest. A refusal (a 409 naming the policy door among them) stays on the editor, in the door's words. */
+  const savePolicy = async (a: AttachedAgent) => {
+    const { reviewed: proposal, direct } = attachedSplit(a, draft);
+    const reviewing = Object.keys(proposal).length > 0;
+    if (reviewing && !reason.trim()) return setPolicyError("Grants and the gate go to review: say why.");
+    if (Object.keys(direct).length && !(await patch(a.id, direct as Omit<PolicyPatch, "id">))) return;
+    if (!reviewing) return setEditing("");
+    setSaving(true);
+    setPolicyError("");
+    try {
+      setProposed(await proposePolicyChange({ target: { kind: "attached", id: a.id }, proposed: proposal, effective_at: effectiveAt(effective), reason: reason.trim() }));
+      // Proposed is not applied: the editor goes back to the rules as they stand, and the proposal waits above it.
+      setDraft((d) => ({ ...d, grants: a.grants, gate_at: a.gate_at }));
+      setReason("");
+      setEffective("");
+      setProposals((n) => n + 1);
+    } catch (e) {
+      setPolicyError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const frameworks = useMemo(
@@ -517,20 +551,26 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
                           tone="ink"
                           permission="configure"
                           loading={saving}
-                          onClick={async () => {
-                            const body: Omit<PolicyPatch, "id"> = { grants: draft.grants, gate_at: draft.gate_at, injection: draft.injection };
-                            // The secret is sent only when it changed: the door checks the vault holds it, and "" removes it.
-                            if (draft.secret_name.trim() !== (a.secret_name ?? "")) body.secret_name = draft.secret_name.trim();
-                            if (await patch(a.id, body)) setEditing("");
-                          }}
+                          disabled={Boolean(effectiveProblem(effective))}
+                          onClick={() => savePolicy(a)}
                         >
-                          Save policy
+                          {Object.keys(attachedSplit(a, draft).reviewed).length ? "Propose for review" : "Save"}
                         </Button>
                         <Button size="sm" variant="solid" tone="err" onClick={() => setEditing("")}>Cancel</Button>
                       </div>
                       <span className="text-[10.5px] leading-[1.5] text-faint">
                         The A2A secret is the name the vault holds it under (or <Mono className="text-[10px]">{"${secret:name}"}</Mono>), never the secret itself: the agent signs every A2A request with it as <Mono className="text-[10px]">{a.id}</Mono>, and one name signs for one caller, peer or agent. Leave it empty to remove it.
                       </span>
+                      <span className="text-[10.5px] leading-[1.5] text-faint">
+                        The gate and the grants below go to review: someone other than you approves them on the Policy page, and they stand as they are until then. The injection filter and the A2A secret apply at once.
+                      </span>
+                      <OpenChanges target={{ kind: "attached", id: a.id }} tick={proposals} />
+                      {Object.keys(attachedSplit(a, draft).reviewed).length > 0 && <ProposalNote reason={reason} onReason={setReason} effective={effective} onEffective={setEffective} />}
+                      {proposed && (
+                        <Link href={`/policy?change=${encodeURIComponent(proposed.id)}`} className="focusable w-fit rounded-sm text-[11px] text-ok hover:underline">
+                          {proposedLine(proposed)}
+                        </Link>
+                      )}
                       {policyError && <span className="text-[11px] text-err">{policyError}</span>}
                       <div className="grid gap-px overflow-hidden rounded-sm border border-line bg-line sm:grid-cols-2 xl:grid-cols-3">
                         {servers.map(([server, label]) => (

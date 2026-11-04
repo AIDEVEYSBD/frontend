@@ -10,7 +10,9 @@ import { Pick } from "./select";
 import { DeployDialog, DeployedReceipt } from "./deploy-gate";
 import { CanaryPanel } from "./canary";
 import { LineageView } from "./templates";
+import { AutonomyPanel, TierTag } from "./autonomy";
 import { getLineage, type Lineage } from "@/lib/api/l8b";
+import { getAutonomyTiers, type AgentTier } from "@/lib/api/l9";
 import { hueFor } from "@/lib/hue";
 import { soon } from "@/lib/soon";
 import { useSession } from "@/lib/use-session";
@@ -608,6 +610,15 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
         <Button size="sm" variant="solid" tone="neutral" href={`/evals?agent=${encodeURIComponent(agent)}`}>
           Evals
         </Button>
+        <Button size="sm" variant="solid" tone="neutral" href={`/attestations?agent=${encodeURIComponent(agent)}`}>
+          Attestations
+        </Button>
+        <Button size="sm" variant="solid" tone="neutral" href={`/bom?agent=${encodeURIComponent(agent)}`}>
+          AI-BOM
+        </Button>
+        <Button size="sm" variant="solid" tone="neutral" href={`/policy?simulate=${encodeURIComponent(agent)}#simulate`}>
+          Simulate policy
+        </Button>
         <Button size="sm" variant="solid" tone="ink" permission="deploy" disabled={Boolean(retired) || latest === null} onClick={() => setDeployAsk(true)}>
           Deploy version {latest ?? "?"}…
         </Button>
@@ -647,6 +658,10 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
           </div>
         )}
         {data?.lifecycle ? <SpineView lifecycle={data.lifecycle} /> : <p className="text-[12px] text-faint">{data ? "No spine to draw." : "Reading the lifecycle…"}</p>}
+      </Section>
+
+      <Section id="autonomy" title="Autonomy tier" meta="what its metadata.autonomy declares, and the controls it lacks">
+        <AutonomyPanel agent={agent} tick={deployed ? 1 : 0} />
       </Section>
 
       <Section title="Benchmark" meta="the latest eval of what production runs, on the spec's own suite">
@@ -710,7 +725,7 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
 /* ═══════════════════ every agent ═══════════════════ */
 
 /** Every agent, with where it stands: the latest save, what production runs, retired. */
-export function LifecycleIndexView({ agents }: { agents: AgentSummary[] }) {
+export function LifecycleIndexView({ agents, tiers = {} }: { agents: AgentSummary[]; /** Each agent's autonomy tier, by id, as it arrives: the agents door does not carry it. */ tiers?: Record<string, AgentTier> }) {
   if (!agents.length) return <p className="text-[12px] text-faint">No agent is saved yet. Build one, save it, and its lifecycle starts here.</p>;
   return (
     <ul className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">
@@ -730,6 +745,7 @@ export function LifecycleIndexView({ agents }: { agents: AgentSummary[] }) {
                 <Status tone="queue">Not deployed</Status>
               )}
               {!retired && a.version !== null && a.version !== undefined && deployedV !== null && a.version !== deployedV && <Tag tone="warn">draft version {a.version}</Tag>}
+              {tiers[a.id] && <TierTag tier={tiers[a.id]} />}
               <span className="grow" />
               {retired && <span className="text-[11px] text-faint">{retired.reason}{retired.replacement ? ` · replaced by ${retired.replacement}` : ""}</span>}
             </Link>
@@ -742,14 +758,30 @@ export function LifecycleIndexView({ agents }: { agents: AgentSummary[] }) {
 
 function LifecycleIndex() {
   const [agents, setAgents] = useState<AgentSummary[] | null>(null);
+  const [tiers, setTiers] = useState<Record<string, AgentTier>>({});
   const [error, setError] = useState("");
   useEffect(() => {
+    let stop = false;
     listAgents()
-      .then(setAgents)
+      .then((rows) => {
+        setAgents(rows);
+        // One read per agent: a tier that cannot be read leaves its row without a tag.
+        for (const a of rows) {
+          if (retiredOf(a.retired)) continue;
+          getAutonomyTiers(a.id)
+            .then((t) => {
+              if (!stop && t.agent) setTiers((m) => ({ ...m, [a.id]: t.agent as AgentTier }));
+            })
+            .catch(() => {});
+        }
+      })
       .catch((e: Error) => {
         setAgents([]);
         setError(e.message);
       });
+    return () => {
+      stop = true;
+    };
   }, []);
   return (
     <div className="flex flex-col gap-4">
@@ -765,7 +797,7 @@ function LifecycleIndex() {
           {error}
         </Banner>
       )}
-      {agents === null ? <p className="text-[12px] text-faint">Reading the registry…</p> : <LifecycleIndexView agents={agents} />}
+      {agents === null ? <p className="text-[12px] text-faint">Reading the registry…</p> : <LifecycleIndexView agents={agents} tiers={tiers} />}
     </div>
   );
 }

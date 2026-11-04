@@ -30,10 +30,11 @@ import type { ConditionName } from "@/lib/api/l8";
 
 /**
  * The promotion gate, as a person meets it (phase L8). A deploy to
- * production is held to four conditions read for exactly the digest being
+ * production is held to five conditions read for exactly the digest being
  * deployed: an eval on the spec's own suite at or above its threshold, an
  * approving policy review by someone who did not author it, nothing open
- * for the agent, and no regression against the deployed predecessor. A
+ * for the agent, no regression against the deployed predecessor, and (L9)
+ * every control its declared autonomy tier requires. A
  * refusal (409) names every unmet condition with its detail and the items
  * the gate read; this shows them, and every condition beside them. An
  * administrator may deploy past the gate with a reason, passing every unmet
@@ -85,6 +86,11 @@ function ConditionRow({ c, agent }: { c: Pick<Condition, "condition" | "detail" 
       {c.condition === "review" && c.met !== true && !c.overridden && (
         <Link href={`/lifecycle?agent=${encodeURIComponent(agent)}#reviews`} className="focusable w-fit rounded-sm text-[11px] font-medium text-fg underline">
           Its reviews
+        </Link>
+      )}
+      {c.condition === "autonomy" && c.met !== true && !c.overridden && (
+        <Link href={`/lifecycle?agent=${encodeURIComponent(agent)}#autonomy`} className="focusable w-fit rounded-sm text-[11px] font-medium text-fg underline">
+          Its tier, and what it lacks
         </Link>
       )}
     </li>

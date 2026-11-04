@@ -798,7 +798,7 @@ export interface GuardianView {
   stats: GuardianStats;
 }
 
-/** `PUT /api/guardian`: a field left out keeps its value. */
+/** The guardian's limits a change may name; a field left out keeps its value. Since L9 they are proposed through the policy door (target `guardian`). */
 export type GuardianPatch = Partial<Pick<GuardianView, "enabled" | "model" | "agents" | "may" | "max_actions_per_hour" | "min_confidence" | "rubric" | "every_entries" | "every_s">>;
 
 /** One row of `GET /api/guardian/actions`: a verdict it acted on, or one it raised for a person instead. */
@@ -964,7 +964,11 @@ export async function getGuardian(): Promise<GuardianView> {
   return call("GET", "/api/guardian", undefined, guardianOf);
 }
 
-/** `PUT /api/guardian` (configure): the fields sent replace the ones set, the rest keep their value; one audit event per change. */
+/**
+ * `PUT /api/guardian` (configure). Refused since L9: it answers 409 naming the
+ * policy door, and its answer here is that DoorError. The Guardian page proposes
+ * instead (`proposePolicyChange`, lib/api/l9.ts); only the contract tests call this.
+ */
 export async function setGuardian(patch: GuardianPatch): Promise<GuardianView> {
   return call("PUT", "/api/guardian", patch, guardianOf);
 }

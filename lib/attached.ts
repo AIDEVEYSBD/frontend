@@ -255,10 +255,11 @@ export interface A2AStep {
 export const A2A_STEPS: A2AStep[] = [
   {
     title: "Register the agent",
-    body: "Name it, say who owns it, and give the factory its agent card URL. A key scoped to this agent is minted at the same time; every door below checks it. Then grant it tools and set its gate in the registry's policy editor — an agent starts with nothing — and name the vault secret it signs its A2A requests with.",
+    body: "Name it, say who owns it, and give the factory its agent card URL. A key scoped to this agent is minted at the same time; every door below checks it. Then propose its tools and its gate in the registry's policy editor, which someone other than you approves (an agent starts with nothing), and name the vault secret it signs its A2A requests with.",
     snippet: (c) => `POST ${ENDPOINTS.origin}/api/attached      { "name": "…", "mode": "a2a", "card_url": "…" }
 →    { "agent": "${c.agent}", "key": "${KEY(c)}" }
-PATCH ${ENDPOINTS.origin}/api/attached     { "id": "${c.agent}", "grants": ["aegis-registry.get_warden_rules"], "gate_at": "write", "secret_name": "${c.agent}-a2a" }`,
+POST ${ENDPOINTS.origin}/api/policy/changes  { "target": { "kind": "attached", "id": "${c.agent}" }, "proposed": { "grants": ["aegis-registry.get_warden_rules"], "gate_at": "write" }, "reason": "…" }
+PATCH ${ENDPOINTS.origin}/api/attached     { "id": "${c.agent}", "secret_name": "${c.agent}-a2a" }`,
     lang: "http",
   },
   {

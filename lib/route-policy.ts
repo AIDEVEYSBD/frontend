@@ -85,7 +85,16 @@ export const STRICT_READS: Record<string, string> = { "app/api/iam/": "iam" };
  * (`/api/eval-sets/{id}`), every one a console door behind the cookie; the
  * canary, the lineage and an agent's eval sets travel with `/api/agents`,
  * the queue's jobs (`/api/queue/jobs`) with `/api/queue`. The console's own
- * eval-set door (`/api/evals`) is a different prefix and stays here.
+ * eval-set door (`/api/evals`) is a different prefix and stays here. Phase L9
+ * policy as reviewed change and its simulation (`/api/policy`, with the
+ * targets, the changes and the simulate door beneath it), the ledger's walk
+ * (`/api/ledger/verify`), the controls catalogue (`/api/controls`), evidence
+ * packs (`/api/evidence`), attestation standings (`/api/attestations`), the
+ * autonomy tiers (`/api/autonomy-tiers`), retention (`/api/retention`) and the
+ * regulatory views (`/api/frameworks`), every one a console door behind the
+ * cookie; a run's chain (`/api/runs/{id}/verify`) travels with `/api/runs`, an
+ * agent's attestations and AI-BOM with `/api/agents`. `/api/control`, the
+ * console's own, is a different prefix from `/api/controls`.
  */
 export const BACKEND_PREFIXES = [
   "/api/runs",
@@ -126,6 +135,14 @@ export const BACKEND_PREFIXES = [
   "/api/deliverables",
   "/api/registers",
   "/api/eval-sets",
+  "/api/policy",
+  "/api/ledger",
+  "/api/controls",
+  "/api/evidence",
+  "/api/attestations",
+  "/api/autonomy-tiers",
+  "/api/retention",
+  "/api/frameworks",
 ];
 
 /**

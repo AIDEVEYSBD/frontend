@@ -147,6 +147,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agents/{agent}/attestations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The agent's attestations, newest first, its owner, its period and when the next is due */
+        get: operations["listAgentAttestations"];
+        put?: never;
+        /** The owner attests the agent still does what was approved (an administrator may for anyone): the record carries the spec diff since the last attestation */
+        post: operations["attestAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agents/{agent}/benchmark": {
         parameters: {
             query?: never;
@@ -156,6 +174,23 @@ export interface paths {
         };
         /** The latest eval of the deployed digest on the spec's own suite: score, passed, total, threshold, model, set, digest, matches_deployed */
         get: operations["getAgentBenchmark"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/{agent}/bom": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The agent's AI bill of materials: models (deployment and route), tools and their servers (name, version, serverInfo, pinned tool-list digest), peers (card digests), templates, and the spec digest; format=cyclonedx for CycloneDX 1.6 JSON */
+        get: operations["getAgentBom"];
         put?: never;
         post?: never;
         delete?: never;
@@ -613,7 +648,7 @@ export interface paths {
         delete: operations["detachAgent"];
         options?: never;
         head?: never;
-        /** An attached agent's standing policy: grants, gate risk, injection action, the block */
+        /** An attached agent's injection action, block and signing secret; its grants and gate risk change only through a reviewed policy change since L9 (409, control policy_change) */
         patch: operations["setAttachedPolicy"];
         trace?: never;
     };
@@ -643,6 +678,23 @@ export interface paths {
         };
         /** Everything that needs a person, ranked by severity × age, each with the action that clears it */
         get: operations["getAttention"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/attestations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every deployed agent's attestation standing: its owner, last attestation, when the next is due, and whether it is overdue */
+        get: operations["listAttestationStandings"];
         put?: never;
         post?: never;
         delete?: never;
@@ -685,6 +737,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/autonomy-tiers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The autonomy tiers L0 to L5, the controls each requires and who judges them; with ?agent=, its declared tier and what it lacks */
+        get: operations["getAutonomyTiers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/breakers": {
         parameters: {
             query?: never;
@@ -714,6 +783,23 @@ export interface paths {
         post?: never;
         /** Close an estate breaker by hand: every worker and every run here may call it again */
         delete: operations["closeBreaker"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/controls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The controls catalogue: every control id with its framework mappings (NIST 800-53, CSF 2.0, ISO 27001, ISO 42001, EU AI Act, NIST AI RMF, OWASP, the data guardrails, GDPR, DPDP, SEBI, RBI) and the journal keys that name it */
+        get: operations["getControls"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -890,6 +976,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** An assessor's evidence pack for a control (or a framework's controls) and a period: firings, signed decisions, the policy in force, the identities that acted, the runs cited; format=zip for files with a SHA-256 manifest */
+        get: operations["getEvidence"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/fleet": {
         parameters: {
             query?: never;
@@ -902,6 +1005,40 @@ export interface paths {
         put?: never;
         /** Pause, drain, resume or kill a set of agents: one decision, one audit event */
         post: operations["fleetAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/frameworks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The frameworks the controls catalogue maps, each with its obligations and the controls that meet each */
+        get: operations["listFrameworks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/frameworks/{name}/view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The estate through one framework: each agent mapped to the framework's obligations, with the evidence that meets each (its firings in the period, and its configuration) */
+        get: operations["getFrameworkView"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -935,7 +1072,12 @@ export interface paths {
         };
         /** The guardian's limits, as a person set them, and what it has done since this instance started */
         get: operations["getGuardian"];
-        /** Set the guardian's limits: which agents it watches, what it may do (hold, block, redirect), its hourly cap, its confidence floor, its model and rubric */
+        /**
+         * Refused since L9 (409, control policy_change): the guardian's limits change through a reviewed policy change, POST /api/policy/changes with target guardian
+         * @description L9: the guardian's limits are a policy target. A direct write is
+         *     refused, naming the door that changes them now (a reviewed policy
+         *     change, target `guardian`), with the proposal this body would be.
+         */
         put: operations["setGuardian"];
         post?: never;
         delete?: never;
@@ -1046,6 +1188,23 @@ export interface paths {
         post?: never;
         /** Revoke an API key; the row stays as the record of what it was */
         delete: operations["revokeKey"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ledger/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Walk the estate's run anchors in order: each run verified, each genesis link and each row of the ledger accounted for */
+        get: operations["verifyLedger"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1207,6 +1366,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/policy/changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Policy changes, newest first: each with its diff, proposer, approver, effective and applied times */
+        get: operations["listPolicyChanges"];
+        put?: never;
+        /** Propose a change to a policy target (an attached agent's grants and gate risk; the guardian, breakers, rate limits, screener, retention, redaction, autonomy tiers, an attestation period): pending, with its diff in the target's vocabulary */
+        post: operations["proposePolicyChange"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/policy/changes/{change_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One policy change, with its history */
+        get: operations["getPolicyChange"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/policy/changes/{change_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve a pending policy change (not its proposer: separation_of_duties); applied at its effective time, or at once */
+        post: operations["approvePolicyChange"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/policy/changes/{change_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject a pending (or approved, not yet applied) policy change, with a reason */
+        post: operations["rejectPolicyChange"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/policy/changes/{change_id}/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Roll back an applied policy change in one click: a change back to the rules before it, applied at once, recorded as an emergency rollback and raised as attention */
+        post: operations["rollbackPolicyChange"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/policy/simulate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rule every recorded tool call in the window's runs again under a proposed policy, with the runtime's own enforcer. Nothing is executed */
+        post: operations["simulatePolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/policy/targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What a policy change may target: each kind's fields in its own vocabulary, the direct write it replaced, and the estate's rules now */
+        get: operations["listPolicyTargets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ports/{name}/health": {
         parameters: {
             query?: never;
@@ -1301,6 +1580,23 @@ export interface paths {
         };
         /** One register's items, newest first, with their states */
         get: operations["listRegisterItems"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Retention per record class (set by a policy change), the last sweep, and the tombstones it left */
+        get: operations["getRetention"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1506,6 +1802,23 @@ export interface paths {
         };
         /** The whole run tree under one trace: the orchestrator, its sub-runs, its children and its peer calls, with costs and refusals rolled up */
         get: operations["getRunTree"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One run's journal against its genesis and the ledger: where the chain breaks, or that it holds; unchained for a run recorded before L9; tombstoned for one retention deleted */
+        get: operations["verifyRun"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2073,6 +2386,17 @@ export interface components {
             /** Store */
             store: string;
         };
+        /** AgentObligation */
+        AgentObligation: {
+            /** Controls */
+            controls: components["schemas"]["ControlEvidence"][];
+            /** Name */
+            name: string;
+            /** Ref */
+            ref: string;
+            /** Status */
+            status: string;
+        };
         /** AgentQueue */
         AgentQueue: {
             /**
@@ -2231,6 +2555,116 @@ export interface components {
             /** Version */
             version?: number | null;
         };
+        /** AgentTier */
+        AgentTier: {
+            /** Agent */
+            agent: string;
+            /** Digest */
+            digest: string;
+            /** Met */
+            met: boolean;
+            /** Missing */
+            missing?: string[];
+            /** Name */
+            name: string;
+            /** Pending */
+            pending?: string[];
+            /**
+             * Problem
+             * @default
+             */
+            problem: string;
+            /** Requires */
+            requires?: {
+                [key: string]: unknown;
+            }[];
+            /** Tier */
+            tier: string;
+            /** Version */
+            version?: number | null;
+        };
+        /** AgentView */
+        AgentView: {
+            /** Agent */
+            agent: string;
+            /** Autonomy */
+            autonomy?: string | null;
+            /** Deployed */
+            deployed?: {
+                [key: string]: unknown;
+            } | null;
+            /** Kind */
+            kind: string;
+            /** Obligations */
+            obligations: components["schemas"]["AgentObligation"][];
+            /** Summary */
+            summary: {
+                [key: string]: number;
+            };
+        };
+        /** AiBom */
+        AiBom: {
+            /** Agent */
+            agent: string;
+            /** Autonomy */
+            autonomy: string;
+            /** Count */
+            count?: {
+                [key: string]: number;
+            };
+            /** Deployed */
+            deployed: boolean;
+            /** Digest */
+            digest: string;
+            /** Digests */
+            digests: {
+                [key: string]: unknown;
+            };
+            /** Generated At */
+            generated_at: string;
+            /** Models */
+            models: components["schemas"]["BomModel"][];
+            /** Name */
+            name: string;
+            /**
+             * Owner
+             * @default
+             */
+            owner: string;
+            /** Peers */
+            peers: {
+                [key: string]: unknown;
+            }[];
+            /** Production */
+            production?: {
+                [key: string]: unknown;
+            } | null;
+            /** Runtime */
+            runtime: {
+                [key: string]: string;
+            };
+            /** Saved At */
+            saved_at?: string | null;
+            /**
+             * Saved By
+             * @default
+             */
+            saved_by: string;
+            /** Servers */
+            servers: {
+                [key: string]: unknown;
+            }[];
+            /** Templates */
+            templates: {
+                [key: string]: unknown;
+            };
+            /** Tools */
+            tools: {
+                [key: string]: unknown;
+            }[];
+            /** Version */
+            version?: number | null;
+        };
         /**
          * AmbiguousNode
          * @description 409: a bare name more than one node carries; ask again by one of the ids.
@@ -2240,6 +2674,25 @@ export interface components {
             candidates: string[];
             /** Error */
             error: string;
+        };
+        /** AnchorSeen */
+        AnchorSeen: {
+            /** Anchor */
+            anchor: string;
+            /** At */
+            at?: string | null;
+            /**
+             * Entries
+             * @default 0
+             */
+            entries: number;
+            /** Seq */
+            seq: number;
+            /**
+             * State
+             * @default
+             */
+            state: string;
         };
         /** ApplicationChanged */
         ApplicationChanged: {
@@ -2388,6 +2841,14 @@ export interface components {
             run?: string | null;
             /** Runs */
             runs?: string[] | null;
+        };
+        /** ApproveRequest */
+        ApproveRequest: {
+            /**
+             * Note
+             * @default
+             */
+            note: string;
         };
         /** AttachRequest */
         AttachRequest: {
@@ -2571,6 +3032,77 @@ export interface components {
             /** Items */
             items: components["schemas"]["AttentionItem"][];
         };
+        /** AttestRequest */
+        AttestRequest: {
+            /** Digest */
+            digest: string;
+            /** Statement */
+            statement: string;
+        };
+        /** AttestationList */
+        AttestationList: {
+            /** Agent */
+            agent: string;
+            /** Attestations */
+            attestations: components["schemas"]["AttestationView"][];
+            /** Count */
+            count: number;
+            /** Due At */
+            due_at?: string | null;
+            /** Last At */
+            last_at?: string | null;
+            /**
+             * Overdue
+             * @default false
+             */
+            overdue: boolean;
+            /** Owner */
+            owner: {
+                [key: string]: unknown;
+            };
+            /** Period Days */
+            period_days: number;
+        };
+        /** AttestationView */
+        AttestationView: {
+            /** Agent */
+            agent: string;
+            /**
+             * As Role
+             * @default
+             */
+            as_role: string;
+            /** At */
+            at: string;
+            /** By */
+            by: string;
+            /** Deployed */
+            deployed?: {
+                [key: string]: unknown;
+            } | null;
+            /** Diff */
+            diff?: {
+                [key: string]: unknown;
+            } | null;
+            /** Digest */
+            digest: string;
+            /** Due At */
+            due_at?: string | null;
+            /** Id */
+            id: string;
+            /** Matches Deployed */
+            matches_deployed?: boolean | null;
+            /** Period Days */
+            period_days: number;
+            /** Previous */
+            previous?: {
+                [key: string]: unknown;
+            } | null;
+            /** Statement */
+            statement: string;
+            /** Version */
+            version?: number | null;
+        };
         /** AuthEventView */
         AuthEventView: {
             /** At */
@@ -2596,6 +3128,35 @@ export interface components {
             detail: string;
             /** Level */
             level: string;
+        };
+        /** AutonomyTiers */
+        AutonomyTiers: {
+            agent?: components["schemas"]["AgentTier"] | null;
+            /** Attestation Within Days */
+            attestation_within_days: number;
+            /**
+             * Change
+             * @default
+             */
+            change: string;
+            /** Requirements */
+            requirements: components["schemas"]["Requirement"][];
+            /**
+             * Set At
+             * @default
+             */
+            set_at: string;
+            /**
+             * Set By
+             * @default
+             */
+            set_by: string;
+            /** Sources */
+            sources: {
+                [key: string]: string;
+            };
+            /** Tiers */
+            tiers: components["schemas"]["TierView"][];
         };
         /** BatchResult */
         BatchResult: {
@@ -2749,6 +3310,19 @@ export interface components {
              * @enum {string}
              */
             uses: "direct" | "transitive" | "called";
+        };
+        /** BomModel */
+        BomModel: {
+            /** Chosen By */
+            chosen_by: string[];
+            /** Model */
+            model: string;
+            /** Nodes */
+            nodes: string[];
+            /** Route */
+            route?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** BreakerOpening */
         BreakerOpening: {
@@ -3105,6 +3679,46 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** Catalogue */
+        Catalogue: {
+            /** Client Responsibilities */
+            client_responsibilities: {
+                [key: string]: unknown;
+            }[];
+            /** Controls */
+            controls: components["schemas"]["ControlView"][];
+            /** Count */
+            count: number;
+            /** Data Guardrails */
+            data_guardrails: {
+                [key: string]: unknown;
+            };
+            /** Families */
+            families: {
+                [key: string]: unknown;
+            }[];
+            /** Frameworks */
+            frameworks: components["schemas"]["FrameworkView"][];
+            /** Generated By */
+            generated_by: string;
+            keys: components["schemas"]["ControlKeys"];
+            /** Residual Risk */
+            residual_risk: {
+                [key: string]: unknown;
+            };
+            /** Sources */
+            sources: {
+                [key: string]: string[];
+            };
+            /** Standards */
+            standards: {
+                [key: string]: unknown;
+            }[];
+            /** Version */
+            version: number;
+        } & {
+            [key: string]: unknown;
+        };
         /** Certified */
         Certified: {
             /** At */
@@ -3136,6 +3750,48 @@ export interface components {
             from?: unknown;
             /** To */
             to?: unknown;
+        };
+        /** ChangeRequest */
+        ChangeRequest: {
+            /** Effective At */
+            effective_at?: string | null;
+            /** Proposed */
+            proposed: {
+                [key: string]: unknown;
+            };
+            /** Reason */
+            reason: string;
+            target: components["schemas"]["Target"];
+        };
+        /** ChangedCall */
+        ChangedCall: {
+            /**
+             * Control
+             * @default
+             */
+            control: string;
+            /** Entry */
+            entry: string;
+            /**
+             * Node
+             * @default
+             */
+            node: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /** Redacted Args */
+            redacted_args?: string[] | null;
+            /** Run */
+            run: string;
+            /** Tool */
+            tool: string;
+            /** Was */
+            was: string;
+            /** Would Be */
+            would_be: string;
         };
         /** ChatReply */
         ChatReply: {
@@ -3283,6 +3939,11 @@ export interface components {
             breakers?: {
                 [key: string]: string;
             };
+            /**
+             * Chain Anchor
+             * @default
+             */
+            chain_anchor: string;
             /** Delegation */
             delegation?: string | null;
             /** External Id */
@@ -3314,6 +3975,10 @@ export interface components {
              * @default 5
              */
             priority: number;
+            /** Redaction */
+            redaction?: {
+                [key: string]: unknown;
+            } | null;
             /** Run Id */
             run_id: string;
             /** Secrets */
@@ -3422,6 +4087,69 @@ export interface components {
             by: string;
             /** Gate */
             gate: string;
+        };
+        /** ControlEvidence */
+        ControlEvidence: {
+            /** Configuration */
+            configuration: string;
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+            /**
+             * Firings
+             * @default 0
+             */
+            firings: number;
+            /** Id */
+            id: string;
+            /** Latest */
+            latest?: string | null;
+            /** Title */
+            title: string;
+        };
+        /** ControlKeys */
+        ControlKeys: {
+            /** Aliases */
+            aliases: {
+                [key: string]: string;
+            };
+            /** Journal */
+            journal: {
+                [key: string]: string;
+            };
+            /** Labels */
+            labels: {
+                [key: string]: string;
+            };
+            /** Prefix Aliases */
+            prefix_aliases: string[][];
+        };
+        /** ControlView */
+        ControlView: {
+            /** Evidence */
+            evidence: string;
+            /** Family */
+            family: string;
+            /** Frameworks */
+            frameworks: {
+                [key: string]: components["schemas"]["FrameworkMapping"][];
+            };
+            /** Id */
+            id: string;
+            /** Implementation */
+            implementation: string;
+            /** Journal */
+            journal: string;
+            /** Order */
+            order?: number | null;
+            /** References */
+            references: components["schemas"]["app__controls__Reference"][];
+            /** Statement */
+            statement: string;
+            /** Title */
+            title: string;
         };
         /** ConversationList */
         ConversationList: {
@@ -3584,7 +4312,7 @@ export interface components {
              */
             format: string;
             /** History */
-            history?: components["schemas"]["HistoryStep"][];
+            history?: components["schemas"]["app__deliverables__HistoryStep"][];
             /** Id */
             id: string;
             /** Kind */
@@ -3841,6 +4569,23 @@ export interface components {
             detached: string;
             /** Keyrevoked */
             keyRevoked: boolean;
+        };
+        /** DiffChange */
+        DiffChange: {
+            /** Added */
+            added?: unknown[] | null;
+            /** Changed */
+            changed?: unknown[] | null;
+            /** Field */
+            field: string;
+            /** From */
+            from?: unknown;
+            /** Label */
+            label: string;
+            /** Removed */
+            removed?: unknown[] | null;
+            /** To */
+            to?: unknown;
         };
         /** Disconnected */
         Disconnected: {
@@ -4369,6 +5114,54 @@ export interface components {
             /** Trail */
             trail?: components["schemas"]["TrailEntry"][];
         };
+        /** EvidencePack */
+        EvidencePack: {
+            /** Chain */
+            chain: {
+                [key: string]: unknown;
+            };
+            /** Controls */
+            controls: {
+                [key: string]: unknown;
+            }[];
+            /** Counts */
+            counts: {
+                [key: string]: unknown;
+            };
+            /** Decisions */
+            decisions: {
+                [key: string]: unknown;
+            }[];
+            /** Excluded */
+            excluded?: {
+                [key: string]: number;
+            };
+            /** Firings */
+            firings: {
+                [key: string]: unknown;
+            }[];
+            /** Identities */
+            identities: {
+                [key: string]: unknown;
+            }[];
+            /** Pack */
+            pack: {
+                [key: string]: unknown;
+            };
+            /** Policy */
+            policy: {
+                [key: string]: unknown;
+            };
+            /** Runs */
+            runs: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+        };
         /** ExternalAnswer */
         ExternalAnswer: {
             /** Answer */
@@ -4385,6 +5178,10 @@ export interface components {
         ExternalAnswered: {
             /** By */
             by: string;
+            /** Decision */
+            decision?: {
+                [key: string]: unknown;
+            } | null;
             /** Delivered */
             delivered: string;
             /** Ok */
@@ -4581,6 +5378,88 @@ export interface components {
             paused?: {
                 [key: string]: components["schemas"]["PauseInfo"];
             };
+        };
+        /** FrameworkList */
+        FrameworkList: {
+            /** Count */
+            count: number;
+            /** Frameworks */
+            frameworks: components["schemas"]["FrameworkSummary"][];
+        };
+        /**
+         * FrameworkMapping
+         * @description One obligation a control meets in one framework, and where the mapping comes from.
+         */
+        FrameworkMapping: {
+            /** Basis */
+            basis?: string | null;
+            /** From */
+            from?: string | null;
+            /** Method */
+            method?: string | null;
+            /** Name */
+            name: string;
+            /** Quote */
+            quote?: string[] | null;
+            /** Ref */
+            ref: string;
+            /** Source */
+            source: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** FrameworkSummary */
+        FrameworkSummary: {
+            /** Corpus */
+            corpus?: {
+                [key: string]: unknown;
+            } | null;
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Mapping */
+            mapping: string[];
+            /** Name */
+            name: string;
+            /** Obligations */
+            obligations: {
+                [key: string]: unknown;
+            }[];
+            /** Short */
+            short: string;
+            /** Why */
+            why?: string | null;
+        };
+        /** FrameworkView */
+        FrameworkView: {
+            /** Aliases */
+            aliases?: string[];
+            /** Corpus */
+            corpus?: {
+                [key: string]: unknown;
+            } | null;
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Mapping */
+            mapping?: string[];
+            /** Name */
+            name: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Obligations */
+            obligations?: components["schemas"]["Obligation"][];
+            /** Short */
+            short: string;
+            /** Why */
+            why?: string | null;
+        } & {
+            [key: string]: unknown;
         };
         /** GateChange */
         GateChange: {
@@ -4842,31 +5721,6 @@ export interface components {
              */
             watching: number;
         };
-        /**
-         * GuardianUpdate
-         * @description `PUT /api/guardian`: the fields given replace the ones set; a field
-         *     left out keeps its value.
-         */
-        GuardianUpdate: {
-            /** Agents */
-            agents?: string[] | "*" | null;
-            /** Enabled */
-            enabled?: boolean | null;
-            /** Every Entries */
-            every_entries?: number | null;
-            /** Every S */
-            every_s?: number | null;
-            /** Max Actions Per Hour */
-            max_actions_per_hour?: number | null;
-            /** May */
-            may?: ("hold" | "block" | "redirect")[] | null;
-            /** Min Confidence */
-            min_confidence?: number | null;
-            /** Model */
-            model?: string | null;
-            /** Rubric */
-            rubric?: string | null;
-        };
         /** GuardianView */
         GuardianView: {
             /**
@@ -4878,6 +5732,11 @@ export interface components {
             agents?: string[] | "*";
             /** Audit Id */
             audit_id?: number | null;
+            /**
+             * Change
+             * @default
+             */
+            change: string;
             /**
              * Enabled
              * @default false
@@ -4980,70 +5839,6 @@ export interface components {
             of: number;
             /** Stage */
             stage?: number | null;
-        };
-        /** HistoryStep */
-        HistoryStep: {
-            /**
-             * Aborted
-             * @default false
-             */
-            aborted: boolean;
-            /**
-             * Applied
-             * @default true
-             */
-            applied: boolean;
-            /** At */
-            at?: string | null;
-            /**
-             * By
-             * @default
-             */
-            by: string;
-            /**
-             * Digest
-             * @default
-             */
-            digest: string;
-            /**
-             * Entry
-             * @default
-             */
-            entry: string;
-            /**
-             * Gate
-             * @default
-             */
-            gate: string;
-            /**
-             * Note
-             * @default
-             */
-            note: string;
-            /**
-             * Origin
-             * @default
-             */
-            origin: string;
-            /**
-             * Reviewed By
-             * @default
-             */
-            reviewed_by: string;
-            /**
-             * Source
-             * @default
-             */
-            source: string;
-            /** State */
-            state: string;
-            /** T */
-            t?: number | null;
-            /**
-             * Tool
-             * @default
-             */
-            tool: string;
         };
         /** IdentityCounts */
         IdentityCounts: {
@@ -5483,6 +6278,80 @@ export interface components {
             says: string;
             /** Window Days */
             window_days: number;
+        };
+        /** LedgerBreak */
+        LedgerBreak: {
+            /** Broken At */
+            broken_at?: number | null;
+            /** Reason */
+            reason: string;
+            /** Run */
+            run: string;
+            /** Seq */
+            seq?: number | null;
+        };
+        /** LedgerRow */
+        LedgerRow: {
+            /**
+             * Agent
+             * @default
+             */
+            agent: string;
+            /** Anchor */
+            anchor: string;
+            /** At */
+            at?: string | null;
+            /** Broken At */
+            broken_at?: number | null;
+            /** Chain */
+            chain: string;
+            /**
+             * Entries
+             * @default 0
+             */
+            entries: number;
+            /** Kind */
+            kind: string;
+            /** Run */
+            run: string;
+            /** Seq */
+            seq: number;
+            /**
+             * State
+             * @default
+             */
+            state: string;
+        };
+        /** LedgerVerification */
+        LedgerVerification: {
+            /** Anchors */
+            anchors: number;
+            /** Breaks */
+            breaks?: components["schemas"]["LedgerBreak"][];
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
+            first_break?: components["schemas"]["LedgerBreak"] | null;
+            /** From */
+            from?: string | null;
+            /** Head */
+            head?: {
+                [key: string]: unknown;
+            } | null;
+            /** Runs */
+            runs: number;
+            /** To */
+            to?: string | null;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+            /** Valid */
+            valid: boolean;
+            /** Walk */
+            walk?: components["schemas"]["LedgerRow"][];
         };
         /** Lifecycle */
         Lifecycle: {
@@ -5970,10 +6839,23 @@ export interface components {
             /** Removed */
             removed?: components["schemas"]["NodeRef"][];
         };
+        /** Obligation */
+        Obligation: {
+            /** Controls */
+            controls?: string[];
+            /** Name */
+            name: string;
+            /** Ref */
+            ref: string;
+            /** Sources */
+            sources?: string[];
+        } & {
+            [key: string]: unknown;
+        };
         /** OverrideBody */
         OverrideBody: {
             /** Conditions */
-            conditions?: ("eval" | "review" | "findings" | "regression")[] | null;
+            conditions?: ("eval" | "review" | "findings" | "regression" | "autonomy")[] | null;
             /** Reason */
             reason: string;
         };
@@ -6391,9 +7273,117 @@ export interface components {
             /** Permission */
             permission: string;
         };
+        /** PolicyChangeList */
+        PolicyChangeList: {
+            /** Changes */
+            changes: components["schemas"]["PolicyChangeView"][];
+            /** Count */
+            count: number;
+            /** States */
+            states: {
+                [key: string]: number;
+            };
+        };
+        /** PolicyChangeView */
+        PolicyChangeView: {
+            /** After */
+            after?: {
+                [key: string]: unknown;
+            } | null;
+            /** Applied At */
+            applied_at?: string | null;
+            /**
+             * Applied By
+             * @default
+             */
+            applied_by: string;
+            applied_diff?: components["schemas"]["PolicyDiff"] | null;
+            /** Approved At */
+            approved_at?: string | null;
+            /**
+             * Approved By
+             * @default
+             */
+            approved_by: string;
+            /** Audit Id */
+            audit_id?: number | null;
+            /** Before */
+            before?: {
+                [key: string]: unknown;
+            } | null;
+            diff: components["schemas"]["PolicyDiff"];
+            /** Effective At */
+            effective_at?: string | null;
+            /**
+             * Emergency
+             * @default false
+             */
+            emergency: boolean;
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /** History */
+            history?: components["schemas"]["app__policy__HistoryStep"][];
+            /** Id */
+            id: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Proposed */
+            proposed: {
+                [key: string]: unknown;
+            };
+            /** Proposed At */
+            proposed_at: string;
+            /** Proposed By */
+            proposed_by: string;
+            /** Reason */
+            reason: string;
+            /**
+             * Reject Reason
+             * @default
+             */
+            reject_reason: string;
+            /** Rejected At */
+            rejected_at?: string | null;
+            /**
+             * Rejected By
+             * @default
+             */
+            rejected_by: string;
+            /**
+             * Rollback Of
+             * @default
+             */
+            rollback_of: string;
+            /** Rolled Back At */
+            rolled_back_at?: string | null;
+            /**
+             * Rolled Back By
+             * @default
+             */
+            rolled_back_by: string;
+            /** State */
+            state: string;
+            target: components["schemas"]["Target"];
+        };
         /** PolicyChanged */
         PolicyChanged: {
             agent: components["schemas"]["AttachedAgentView"];
+        };
+        /** PolicyDiff */
+        PolicyDiff: {
+            /** Changes */
+            changes?: components["schemas"]["DiffChange"][];
+            /** Same */
+            same: boolean;
+            /** Summary */
+            summary?: string[];
+            target: components["schemas"]["Target"];
         };
         /** PolicyPatch */
         PolicyPatch: {
@@ -6713,37 +7703,10 @@ export interface components {
             /** Task Id */
             task_id?: string | null;
         };
-        /**
-         * Reference
-         * @description `agentfactory.authoring.reference()`: harnesses, capabilities with
-         *     their risk and taint facts, connector kinds with their config fields,
-         *     the authoring rules, and the document shape.
-         */
-        Reference: {
-            /** Api Version */
-            api_version: string;
-            /** Capabilities */
-            capabilities: {
-                [key: string]: unknown;
-            }[];
-            /** Connector Kinds */
-            connector_kinds: {
-                [key: string]: unknown;
-            };
-            /** Document Shape */
-            document_shape: {
-                [key: string]: unknown;
-            };
-            /** Example */
-            example?: {
-                [key: string]: unknown;
-            } | null;
-            /** Harnesses */
-            harnesses: string[];
-            /** Rules */
-            rules: string[];
-        } & {
-            [key: string]: unknown;
+        /** ReasonRequest */
+        ReasonRequest: {
+            /** Reason */
+            reason: string;
         };
         /** ReferenceRequest */
         ReferenceRequest: {
@@ -6884,6 +7847,18 @@ export interface components {
             /** Tools */
             tools: components["schemas"]["RegistryTool"][];
         };
+        /** RegulatoryView */
+        RegulatoryView: {
+            /** Agents */
+            agents: components["schemas"]["AgentView"][];
+            /** Count */
+            count: number;
+            framework: components["schemas"]["FrameworkSummary"];
+            /** Period */
+            period: {
+                [key: string]: string | null;
+            };
+        };
         /** Removed */
         Removed: {
             /** Keyrevoked */
@@ -6891,12 +7866,57 @@ export interface components {
             /** Removed */
             removed: string;
         };
+        /** Requirement */
+        Requirement: {
+            /** Id */
+            id: string;
+            /** Judged By */
+            judged_by: string;
+            /** Since */
+            since: string;
+            /** Title */
+            title: string;
+            /** What */
+            what: string;
+        };
         /** RerankView */
         RerankView: {
             /** Kind */
             kind?: string | null;
             /** Model */
             model?: string | null;
+        };
+        /** RetentionView */
+        RetentionView: {
+            /**
+             * Change
+             * @default
+             */
+            change: string;
+            /** Count */
+            count: number;
+            /** Last Sweep */
+            last_sweep?: {
+                [key: string]: unknown;
+            }[];
+            /** Last Sweep At */
+            last_sweep_at?: string | null;
+            /** Rules */
+            rules: {
+                [key: string]: number | null;
+            };
+            /**
+             * Set At
+             * @default
+             */
+            set_at: string;
+            /**
+             * Set By
+             * @default
+             */
+            set_by: string;
+            /** Tombstones */
+            tombstones: components["schemas"]["Tombstone"][];
         };
         /** RetireRequest */
         RetireRequest: {
@@ -7318,6 +8338,10 @@ export interface components {
         };
         /** RunResumed */
         RunResumed: {
+            /** Decision */
+            decision?: {
+                [key: string]: unknown;
+            } | null;
             /** Run */
             run: string;
             /** State */
@@ -7473,6 +8497,10 @@ export interface components {
         RunState: {
             /** Agent */
             agent?: string | null;
+            /** Decisions */
+            decisions?: {
+                [key: string]: unknown;
+            }[] | null;
             /**
              * Error
              * @default
@@ -7484,6 +8512,10 @@ export interface components {
             id: string;
             journal: components["schemas"]["RunJournal"];
             kill?: components["schemas"]["KillInfo"] | null;
+            /** Marks */
+            marks?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Model */
             model?: string | null;
             /** Provider */
@@ -7569,6 +8601,53 @@ export interface components {
              * @default false
              */
             truncated: boolean;
+        };
+        /** RunVerification */
+        RunVerification: {
+            /**
+             * Agent
+             * @default
+             */
+            agent: string;
+            /** Anchor */
+            anchor: string;
+            /** Anchored */
+            anchored: boolean;
+            /** Broken At */
+            broken_at?: number | null;
+            /** Chain */
+            chain: string;
+            /**
+             * Entries
+             * @default 0
+             */
+            entries: number;
+            /**
+             * Genesis
+             * @default
+             */
+            genesis: string;
+            /**
+             * Pending
+             * @default 0
+             */
+            pending: number;
+            /**
+             * Previous
+             * @default
+             */
+            previous: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            recorded?: components["schemas"]["AnchorSeen"] | null;
+            /** Run */
+            run: string;
+            tombstone?: components["schemas"]["TombstoneSeen"] | null;
+            /** Valid */
+            valid: boolean;
         };
         /** ScheduleView */
         ScheduleView: {
@@ -7917,6 +8996,74 @@ export interface components {
             /** Signedout */
             signedOut: number;
         };
+        /** SimulateRequest */
+        SimulateRequest: {
+            /** Agent */
+            agent?: string | null;
+            /** Limit */
+            limit?: number | null;
+            /** Proposed */
+            proposed: {
+                [key: string]: unknown;
+            };
+            target?: components["schemas"]["SimulationTarget"] | null;
+            /** Window */
+            window: string | {
+                [key: string]: string;
+            };
+        };
+        /** SimulationResult */
+        SimulationResult: {
+            /** Calls */
+            calls: number;
+            /** Changed */
+            changed: components["schemas"]["ChangedCall"][];
+            /** Excluded */
+            excluded?: {
+                [key: string]: number;
+            };
+            /** Notes */
+            notes?: string[];
+            /** Runs */
+            runs: number;
+            /** Skipped */
+            skipped?: {
+                [key: string]: unknown;
+            }[];
+            summary: components["schemas"]["SimulationSummary"];
+            /** Target */
+            target: {
+                [key: string]: string;
+            };
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+            /** Window */
+            window: {
+                [key: string]: string | null;
+            };
+        };
+        /** SimulationSummary */
+        SimulationSummary: {
+            /** Newly Allowed */
+            newly_allowed: number;
+            /** Newly Gated */
+            newly_gated: number;
+            /** Newly Refused */
+            newly_refused: number;
+        };
+        /** SimulationTarget */
+        SimulationTarget: {
+            /**
+             * Id
+             * @default
+             */
+            id: string;
+            /** Kind */
+            kind: string;
+        };
         /**
          * SpecDiff
          * @description What changed between two versions, in the spec's own vocabulary.
@@ -7978,6 +9125,35 @@ export interface components {
             stage: string;
             /** Version */
             version?: number | null;
+        };
+        /** Standing */
+        Standing: {
+            /** Agent */
+            agent: string;
+            /** Deployed */
+            deployed?: {
+                [key: string]: unknown;
+            } | null;
+            /** Due At */
+            due_at?: string | null;
+            last?: components["schemas"]["AttestationView"] | null;
+            /** Overdue */
+            overdue: boolean;
+            /** Owner */
+            owner: {
+                [key: string]: unknown;
+            };
+            /** Period Days */
+            period_days: number;
+        };
+        /** Standings */
+        Standings: {
+            /** Agents */
+            agents: components["schemas"]["Standing"][];
+            /** Count */
+            count: number;
+            /** Overdue */
+            overdue: number;
         };
         /** StateAccepted */
         StateAccepted: {
@@ -8212,6 +9388,55 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** Target */
+        Target: {
+            /**
+             * Id
+             * @default
+             */
+            id: string;
+            /** Kind */
+            kind: string;
+        };
+        /** TargetKindView */
+        TargetKindView: {
+            /** Current */
+            current?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Enforced
+             * @default backend
+             */
+            enforced: string;
+            /** Fields */
+            fields: string[];
+            /** Ids */
+            ids: string;
+            /** Kind */
+            kind: string;
+            /** Labels */
+            labels: {
+                [key: string]: string;
+            };
+            /**
+             * Replaces
+             * @default
+             */
+            replaces: string;
+            /** What */
+            what: string;
+        };
+        /** TargetKinds */
+        TargetKinds: {
+            /**
+             * Door
+             * @default POST /api/policy/changes
+             */
+            door: string;
+            /** Targets */
+            targets: components["schemas"]["TargetKindView"][];
+        };
         /** TemplateDocument */
         TemplateDocument: {
             /** Agent */
@@ -8286,6 +9511,25 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** TierView */
+        TierView: {
+            /** Adds */
+            adds?: string[];
+            /** Description */
+            description: string;
+            /** Doc Minimum Controls */
+            doc_minimum_controls: string;
+            /** Doc Name */
+            doc_name: string;
+            /** Example */
+            example: string;
+            /** Name */
+            name: string;
+            /** Requires */
+            requires: string[];
+            /** Tier */
+            tier: string;
+        };
         /** TokenCount */
         TokenCount: {
             /** In */
@@ -8299,6 +9543,43 @@ export interface components {
             in: number;
             /** Out */
             out: number;
+        };
+        /** Tombstone */
+        Tombstone: {
+            /** By */
+            by: string;
+            /** Class */
+            class: string;
+            /** Deleted At */
+            deleted_at: string;
+            /** Detail */
+            detail?: {
+                [key: string]: unknown;
+            } | null;
+            /** Digest */
+            digest: string;
+            /** Id */
+            id: string;
+            /** Record */
+            record: string;
+        };
+        /** TombstoneSeen */
+        TombstoneSeen: {
+            /** At */
+            at?: string | null;
+            /** Class */
+            class: string;
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /** Digest */
+            digest: string;
+            /** Seq */
+            seq: number;
+            /** Tombstone */
+            tombstone: string;
         };
         /** ToolChange */
         ToolChange: {
@@ -8803,6 +10084,10 @@ export interface components {
              * @default false
              */
             continuing: boolean;
+            /** Decision */
+            decision?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Delivered
              * @default
@@ -8825,6 +10110,128 @@ export interface components {
              * State
              * @default
              */
+            state: string;
+        };
+        /**
+         * Reference
+         * @description `agentfactory.authoring.reference()`: harnesses, capabilities with
+         *     their risk and taint facts, connector kinds with their config fields,
+         *     the authoring rules, and the document shape.
+         */
+        app__author__Reference: {
+            /** Api Version */
+            api_version: string;
+            /** Capabilities */
+            capabilities: {
+                [key: string]: unknown;
+            }[];
+            /** Connector Kinds */
+            connector_kinds: {
+                [key: string]: unknown;
+            };
+            /** Document Shape */
+            document_shape: {
+                [key: string]: unknown;
+            };
+            /** Example */
+            example?: {
+                [key: string]: unknown;
+            } | null;
+            /** Harnesses */
+            harnesses: string[];
+            /** Rules */
+            rules: string[];
+        } & {
+            [key: string]: unknown;
+        };
+        /** Reference */
+        app__controls__Reference: {
+            /** Name */
+            name: string;
+            /** Ref */
+            ref: string;
+            /** Std */
+            std: string;
+        };
+        /** HistoryStep */
+        app__deliverables__HistoryStep: {
+            /**
+             * Aborted
+             * @default false
+             */
+            aborted: boolean;
+            /**
+             * Applied
+             * @default true
+             */
+            applied: boolean;
+            /** At */
+            at?: string | null;
+            /**
+             * By
+             * @default
+             */
+            by: string;
+            /**
+             * Digest
+             * @default
+             */
+            digest: string;
+            /**
+             * Entry
+             * @default
+             */
+            entry: string;
+            /**
+             * Gate
+             * @default
+             */
+            gate: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /**
+             * Origin
+             * @default
+             */
+            origin: string;
+            /**
+             * Reviewed By
+             * @default
+             */
+            reviewed_by: string;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /** State */
+            state: string;
+            /** T */
+            t?: number | null;
+            /**
+             * Tool
+             * @default
+             */
+            tool: string;
+        };
+        /** HistoryStep */
+        app__policy__HistoryStep: {
+            /** At */
+            at?: string | null;
+            /**
+             * By
+             * @default
+             */
+            by: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** State */
             state: string;
         };
         /** AnswerResult */
@@ -9731,6 +11138,135 @@ export interface operations {
             };
         };
     };
+    listAgentAttestations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttestationList"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    attestAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttestationView"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     getAgentBenchmark: {
         parameters: {
             query?: never;
@@ -9749,6 +11285,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Benchmark"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getAgentBom: {
+        parameters: {
+            query?: {
+                version?: number | null;
+                format?: string;
+            };
+            header?: never;
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The BOM, or with format=cyclonedx a CycloneDX 1.6 document */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiBom"];
+                    "application/vnd.cyclonedx+json; version=1.6": Record<string, never>;
                 };
             };
             /** @description Bad Request */
@@ -12130,6 +13728,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Service Unavailable */
             503: {
                 headers: {
@@ -12217,6 +13824,47 @@ export interface operations {
             };
         };
     };
+    listAttestationStandings: {
+        parameters: {
+            query?: {
+                /** @description Only overdue (true) or current (false) */
+                overdue?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Standings"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     authorPropose: {
         parameters: {
             query?: never;
@@ -12278,7 +13926,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Reference"];
+                    "application/json": components["schemas"]["app__author__Reference"];
                 };
             };
             /** @description Unauthorized */
@@ -12292,6 +13940,64 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getAutonomyTiers: {
+        parameters: {
+            query?: {
+                agent?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutonomyTiers"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12377,6 +14083,44 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getControls: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Catalogue"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12985,6 +14729,65 @@ export interface operations {
             };
         };
     };
+    getEvidence: {
+        parameters: {
+            query?: {
+                /** @description A catalogue id (AF-HO-01) or a control key (report, lockdown, mass_action) */
+                control?: string | null;
+                /** @description A framework of the catalogue: its obligations' controls */
+                framework?: string | null;
+                /** @description ISO 8601; default 30 days before `to` */
+                from?: string | null;
+                /** @description ISO 8601; default now */
+                to?: string | null;
+                agent?: string | null;
+                format?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The pack (JSON), or with format=zip the archive */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidencePack"];
+                    "application/zip": string;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     getFleet: {
         parameters: {
             query?: never;
@@ -13043,6 +14846,106 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FleetResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    listFrameworks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FrameworkList"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getFrameworkView: {
+        parameters: {
+            query?: {
+                agent?: string | null;
+                from?: string | null;
+                to?: string | null;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegulatoryView"];
                 };
             };
             /** @description Bad Request */
@@ -13215,9 +15118,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
-                "application/json": components["schemas"]["GuardianUpdate"];
+                "application/json": unknown;
             };
         };
         responses: {
@@ -13228,15 +15131,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GuardianView"];
-                };
-            };
-            /** @description A limit that does not fit, in words, naming it under `field` */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Unauthorized */
@@ -13257,8 +15151,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Service Unavailable */
-            503: {
+            /** @description The guardian's limits are a policy target: `{error, control: policy_change, door, target, proposal}` */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13817,6 +15711,60 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    verifyLedger: {
+        parameters: {
+            query?: {
+                /** @description ISO 8601; rows recorded at or after it */
+                from?: string | null;
+                /** @description ISO 8601; rows recorded at or before it */
+                to?: string | null;
+                agent?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LedgerVerification"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14554,6 +16502,505 @@ export interface operations {
             };
         };
     };
+    listPolicyChanges: {
+        parameters: {
+            query?: {
+                /** @description A target kind, or kind:id */
+                target?: string | null;
+                state?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyChangeList"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    proposePolicyChange: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyChangeView"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getPolicyChange: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                change_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyChangeView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    approvePolicyChange: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                change_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ApproveRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyChangeView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    rejectPolicyChange: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                change_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReasonRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyChangeView"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    rollbackPolicyChange: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                change_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReasonRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyChangeView"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    simulatePolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SimulateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulationResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    listPolicyTargets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TargetKinds"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     portHealth: {
         parameters: {
             query?: never;
@@ -14870,6 +17317,57 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getRetention: {
+        parameters: {
+            query?: {
+                /** @description Only tombstones of this class */
+                class?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetentionView"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -15686,6 +18184,55 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunTree"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    verifyRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunVerification"];
                 };
             };
             /** @description Unauthorized */

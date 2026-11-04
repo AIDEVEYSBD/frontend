@@ -49,3 +49,15 @@ export function ControlRef({ control, size = "sm" }: { control: string; size?: "
     </Link>
   );
 }
+
+/** A control as a chip: its register row when it has one, else the key in words, since a refusal must still say what refused it. */
+export function ControlMark({ control }: { control: string }) {
+  if (!control) return null;
+  if (resolveControl(control)) return <ControlRef control={control} />;
+  const why = explainControl(control);
+  return (
+    <span title={why.decides || undefined} className="inline-flex items-center rounded-sm border border-line bg-surface px-1.5 py-px text-[10px] font-medium text-fg">
+      {why.name}
+    </span>
+  );
+}
