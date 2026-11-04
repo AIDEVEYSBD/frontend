@@ -381,7 +381,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Reinstate a version deployed before as a new production deployment; every run of the version rolled back from is flagged */
+        /** Reinstate a version deployed before as a new production deployment; every run of the versions rolled back past is flagged, and a retry pinned to one runs what production runs now */
         post: operations["rollbackAgent"];
         delete?: never;
         options?: never;
@@ -4005,6 +4005,10 @@ export interface components {
             } | null;
             /** Run Id */
             run_id: string;
+            /** Screener */
+            screener?: {
+                [key: string]: unknown;
+            } | null;
             /** Secrets */
             secrets?: {
                 [key: string]: string;
@@ -8566,6 +8570,10 @@ export interface components {
             model?: string | null;
             /** Provider */
             provider?: string | null;
+            /** Redacted */
+            redacted?: {
+                [key: string]: unknown;
+            }[];
             /** Result */
             result?: {
                 [key: string]: unknown;
@@ -9311,6 +9319,10 @@ export interface components {
             agent: string;
             /** Kind */
             kind: string;
+            /** Spec */
+            spec?: {
+                [key: string]: unknown;
+            } | null;
             /** Tree */
             tree: string;
         };

@@ -8,13 +8,13 @@
    "retired": null,
    "stages": [
     {
-     "at": "2026-11-04T11:56:50.298Z",
+     "at": "2026-11-04T13:05:58.336Z",
      "by": "Ada <ada@ey.com>",
      "digest": "0fbcb7f8a58bf68b",
      "lit": true,
      "record": {
       "digest": "0fbcb7f8a58bf68b",
-      "saved_at": "2026-11-04T11:56:50.298Z",
+      "saved_at": "2026-11-04T13:05:58.336Z",
       "saved_by": "Ada <ada@ey.com>",
       "version": 2
      },
@@ -22,20 +22,20 @@
      "version": 2
     },
     {
-     "at": "2026-11-04T11:56:50.326Z",
+     "at": "2026-11-04T13:05:58.373Z",
      "by": "Rui <rui@ey.com>",
      "digest": "0fbcb7f8a58bf68b",
      "lit": true,
      "record": {
       "agent": "triage",
-      "at": "2026-11-04T11:56:50.326Z",
+      "at": "2026-11-04T13:05:58.373Z",
       "authors": [
        "Ada <ada@ey.com>"
       ],
       "by": "Rui <rui@ey.com>",
       "by_sub": "autox|rui@ey.com",
       "digest": "0fbcb7f8a58bf68b",
-      "id": "rv-0fe815f7b75e474a",
+      "id": "rv-648b662ab14044b3",
       "note": "policy holds",
       "verdict": "approved",
       "version": 2
@@ -92,17 +92,17 @@
     "adopted": false,
     "deployment": {
      "agent": "triage",
-     "at": "2026-11-04T11:56:50.442Z",
+     "at": "2026-11-04T13:05:58.481Z",
      "by": "Ada <ada@ey.com>",
-     "decision": "gd-369de9728b94463e",
+     "decision": "gd-828f10dc5d2640ec",
      "digest": "ae164934c963c793",
      "environment": "production",
-     "eval_run": "ev-mw22a5pm-jh25",
+     "eval_run": "ev-mw24r2cw-rgm2",
      "flagged": [],
-     "id": "dp-c4f5241ae06540fd",
+     "id": "dp-590c5d9f12294564",
      "kind": "deploy",
      "override": {
-      "at": "2026-11-04T11:56:50.442Z",
+      "at": "2026-11-04T13:05:58.481Z",
       "audit_id": 7,
       "by": "Ada <ada@ey.com>",
       "passed": [
@@ -118,7 +118,7 @@
      },
      "previous": null,
      "reason": "",
-     "review": "rv-6440602e738a4d4a",
+     "review": "rv-d49d834f35394ae5",
      "version": 1
     },
     "digest": "ae164934c963c793",
@@ -128,13 +128,13 @@
    "retired": null,
    "stages": [
     {
-     "at": "2026-11-04T11:56:50.500Z",
+     "at": "2026-11-04T13:05:58.535Z",
      "by": "Ada <ada@ey.com>",
      "digest": "259166559ed614f7",
      "lit": true,
      "record": {
       "digest": "259166559ed614f7",
-      "saved_at": "2026-11-04T11:56:50.500Z",
+      "saved_at": "2026-11-04T13:05:58.535Z",
       "saved_by": "Ada <ada@ey.com>",
       "version": 2
      },
@@ -309,7 +309,7 @@
    },
    "spec_version": 1,
    "store": "file (db unreachable)",
-   "updated_at": "2026-11-04T11:56:50.614Z",
+   "updated_at": "2026-11-04T13:05:58.638Z",
    "version": 1
   },
   "status": 200
@@ -327,7 +327,7 @@
      "digest": "eeb67216625879cb",
      "name": "boxed",
      "nodes": 1,
-     "saved_at": "2026-11-04T11:56:50.614Z",
+     "saved_at": "2026-11-04T13:05:58.638Z",
      "saved_by": "Chandresh Singh",
      "tools": [
       "crm.lookup",
@@ -356,7 +356,7 @@
      "nodes": 1,
      "retired": null,
      "trigger": "prompt",
-     "updated_at": "2026-11-04T11:56:50.298Z",
+     "updated_at": "2026-11-04T13:05:58.336Z",
      "version": 2
     }
    ],
@@ -379,7 +379,7 @@
     "model": "",
     "rubric": ""
    },
-   "applied_at": "2026-11-04T11:56:47.365Z",
+   "applied_at": "2026-11-04T13:05:55.758Z",
    "applied_by": "Ben <ben@ey.com>",
    "applied_diff": {
     "changes": [
@@ -402,7 +402,7 @@
      "kind": "guardian"
     }
    },
-   "approved_at": "2026-11-04T11:56:47.365Z",
+   "approved_at": "2026-11-04T13:05:55.758Z",
    "approved_by": "Ben <ben@ey.com>",
    "audit_id": 8,
    "before": {
@@ -442,30 +442,30 @@
    "error": "",
    "history": [
     {
-     "at": "2026-11-04T11:56:47.317Z",
+     "at": "2026-11-04T13:05:55.714Z",
      "by": "Ada <ada@ey.com>",
      "note": "more room",
      "state": "pending"
     },
     {
-     "at": "2026-11-04T11:56:47.365Z",
+     "at": "2026-11-04T13:05:55.758Z",
      "by": "Ben <ben@ey.com>",
      "note": "agreed",
      "state": "approved"
     },
     {
-     "at": "2026-11-04T11:56:47.365Z",
+     "at": "2026-11-04T13:05:55.758Z",
      "by": "Ben <ben@ey.com>",
      "note": "guardian's hourly cap: 10 → 15",
      "state": "applied"
     }
    ],
-   "id": "pc-ca5f24a0322b40c4",
+   "id": "pc-016bad55f7014f51",
    "note": "agreed",
    "proposed": {
     "max_actions_per_hour": 15
    },
-   "proposed_at": "2026-11-04T11:56:47.317Z",
+   "proposed_at": "2026-11-04T13:05:55.714Z",
    "proposed_by": "Ada <ada@ey.com>",
    "reason": "more room",
    "reject_reason": "",
@@ -491,7 +491,7 @@
      "crm.update"
     ]
    },
-   "applied_at": "2026-11-04T11:56:47.786Z",
+   "applied_at": "2026-11-04T13:05:56.127Z",
    "applied_by": "Ben <ben@ey.com>",
    "applied_diff": {
     "changes": [
@@ -528,7 +528,7 @@
      "kind": "attached"
     }
    },
-   "approved_at": "2026-11-04T11:56:47.786Z",
+   "approved_at": "2026-11-04T13:05:56.127Z",
    "approved_by": "Ben <ben@ey.com>",
    "audit_id": 12,
    "before": {
@@ -575,25 +575,25 @@
    "error": "",
    "history": [
     {
-     "at": "2026-11-04T11:56:47.761Z",
+     "at": "2026-11-04T13:05:56.105Z",
      "by": "Ada <ada@ey.com>",
      "note": "the desk needs lookups",
      "state": "pending"
     },
     {
-     "at": "2026-11-04T11:56:47.786Z",
+     "at": "2026-11-04T13:05:56.127Z",
      "by": "Ben <ben@ey.com>",
      "note": "",
      "state": "approved"
     },
     {
-     "at": "2026-11-04T11:56:47.786Z",
+     "at": "2026-11-04T13:05:56.127Z",
      "by": "Ben <ben@ey.com>",
      "note": "grant crm.lookup added for copilot; grant crm.update added for copilot; gate risk: never → write for copilot",
      "state": "applied"
     }
    ],
-   "id": "pc-1b1bd824ef654da4",
+   "id": "pc-f7807ec99dba4749",
    "note": "",
    "proposed": {
     "gate_at": "write",
@@ -602,7 +602,7 @@
      "crm.update"
     ]
    },
-   "proposed_at": "2026-11-04T11:56:47.761Z",
+   "proposed_at": "2026-11-04T13:05:56.105Z",
    "proposed_by": "Ada <ada@ey.com>",
    "reason": "the desk needs lookups",
    "reject_reason": "",
@@ -635,7 +635,7 @@
      "employee_id"
     ]
    },
-   "applied_at": "2026-11-04T11:56:51.013Z",
+   "applied_at": "2026-11-04T13:05:58.983Z",
    "applied_by": "Ben <ben@ey.com>",
    "applied_diff": {
     "changes": [
@@ -684,7 +684,7 @@
      "kind": "redaction"
     }
    },
-   "approved_at": "2026-11-04T11:56:51.013Z",
+   "approved_at": "2026-11-04T13:05:58.983Z",
    "approved_by": "Ben <ben@ey.com>",
    "audit_id": 5,
    "before": {
@@ -747,25 +747,25 @@
    "error": "",
    "history": [
     {
-     "at": "2026-11-04T11:56:51.000Z",
+     "at": "2026-11-04T13:05:58.971Z",
      "by": "Ada <ada@ey.com>",
      "note": "personal data",
      "state": "pending"
     },
     {
-     "at": "2026-11-04T11:56:51.013Z",
+     "at": "2026-11-04T13:05:58.983Z",
      "by": "Ben <ben@ey.com>",
      "note": "",
      "state": "approved"
     },
     {
-     "at": "2026-11-04T11:56:51.013Z",
+     "at": "2026-11-04T13:05:58.983Z",
      "by": "Ben <ben@ey.com>",
      "note": "redacted from internal up email added; redacted at restricted employee_id added; redaction pattern employee_id added",
      "state": "applied"
     }
    ],
-   "id": "pc-56994b704b674705",
+   "id": "pc-2817fdd6365143e2",
    "note": "",
    "proposed": {
     "internal": [
@@ -778,7 +778,7 @@
      "employee_id"
     ]
    },
-   "proposed_at": "2026-11-04T11:56:51.000Z",
+   "proposed_at": "2026-11-04T13:05:58.971Z",
    "proposed_by": "Ada <ada@ey.com>",
    "reason": "personal data",
    "reject_reason": "",
@@ -798,21 +798,21 @@
  "approve.refused.proposer": {
   "body": {
    "control": "separation_of_duties",
-   "error": "Ada <ada@ey.com> proposed policy change pc-ca5f24a0322b40c4: its proposer may not approve it; another administrator does",
+   "error": "Ada <ada@ey.com> proposed policy change pc-016bad55f7014f51: its proposer may not approve it; another administrator does",
    "proposed_by": "Ada <ada@ey.com>"
   },
   "status": 403
  },
  "approve.refused.rejected": {
   "body": {
-   "error": "policy change pc-e86b0eb14d6a4cc9 is rejected, not pending",
+   "error": "policy change pc-11d771fe025e4691 is rejected, not pending",
    "state": "rejected"
   },
   "status": 409
  },
  "approve.refused.twice": {
   "body": {
-   "error": "policy change pc-ca5f24a0322b40c4 is applied, not pending",
+   "error": "policy change pc-016bad55f7014f51 is applied, not pending",
    "state": "applied"
   },
   "status": 409
@@ -829,7 +829,7 @@
    "applied_at": null,
    "applied_by": "",
    "applied_diff": null,
-   "approved_at": "2026-11-04T11:56:47.549Z",
+   "approved_at": "2026-11-04T13:05:55.917Z",
    "approved_by": "Ben <ben@ey.com>",
    "audit_id": 25,
    "before": null,
@@ -854,29 +854,29 @@
      "kind": "breakers"
     }
    },
-   "effective_at": "2026-11-04T13:56:46.839Z",
+   "effective_at": "2026-11-04T15:05:55.291Z",
    "emergency": false,
    "error": "",
    "history": [
     {
-     "at": "2026-11-04T11:56:47.535Z",
+     "at": "2026-11-04T13:05:55.905Z",
      "by": "Ada <ada@ey.com>",
      "note": "tighten it",
      "state": "pending"
     },
     {
-     "at": "2026-11-04T11:56:47.549Z",
+     "at": "2026-11-04T13:05:55.917Z",
      "by": "Ben <ben@ey.com>",
      "note": "",
      "state": "approved"
     }
    ],
-   "id": "pc-f0c64382600c4e91",
+   "id": "pc-0f2c5be9963c49f4",
    "note": "",
    "proposed": {
     "calls": 9
    },
-   "proposed_at": "2026-11-04T11:56:47.535Z",
+   "proposed_at": "2026-11-04T13:05:55.905Z",
    "proposed_by": "Ada <ada@ey.com>",
    "reason": "tighten it",
    "reject_reason": "",
@@ -900,7 +900,7 @@
      "blocked": false,
      "card_url": "",
      "cost30d": 0.0,
-     "created_at": "2026-11-04T11:56:47.660Z",
+     "created_at": "2026-11-04T13:05:56.012Z",
      "demo": false,
      "denials30d": 0,
      "framework": "custom",
@@ -909,7 +909,7 @@
      "grants": [],
      "id": "copilot",
      "injection": "flag",
-     "key_prefix": "af_37280ac8",
+     "key_prefix": "af_880327c2",
      "language": "python",
      "last_seen": null,
      "mode": "sdk",
@@ -931,7 +931,7 @@
      "blocked": false,
      "card_url": "",
      "cost30d": 0.0,
-     "created_at": "2026-11-04T11:56:47.660Z",
+     "created_at": "2026-11-04T13:05:56.012Z",
      "demo": false,
      "denials30d": 0,
      "framework": "custom",
@@ -943,7 +943,7 @@
      ],
      "id": "copilot",
      "injection": "flag",
-     "key_prefix": "af_37280ac8",
+     "key_prefix": "af_880327c2",
      "language": "python",
      "last_seen": null,
      "mode": "sdk",
@@ -983,11 +983,11 @@
        "digest": "3a802c629fc8f32b",
        "version": 1
       },
-      "due_at": "2026-10-05T11:56:49.991Z",
+      "due_at": "2026-10-05T13:05:58.065Z",
       "last": {
        "agent": "triage",
        "as_role": "administrator",
-       "at": "2026-07-07T11:56:49.991Z",
+       "at": "2026-07-07T13:05:58.077Z",
        "by": "Ada <ada@ey.com>",
        "deployed": {
         "digest": "3a802c629fc8f32b",
@@ -1055,15 +1055,15 @@
         }
        },
        "digest": "2a7f51eba50c8c12",
-       "due_at": "2026-10-05T11:56:49.991Z",
-       "id": "at-d97fd835ba234ff3",
+       "due_at": "2026-10-05T13:05:58.077Z",
+       "id": "at-5ec68146c0a9417e",
        "matches_deployed": false,
        "period_days": 90,
        "previous": {
-        "at": "2026-11-04T11:56:49.977Z",
+        "at": "2026-11-04T13:05:58.065Z",
         "by": "Owen <owen@ey.com>",
         "digest": "3a802c629fc8f32b",
-        "id": "at-78f45f8c172544df",
+        "id": "at-0ceeaabc480e4d73",
         "version": 1
        },
        "statement": "reviewed the prompt change",
@@ -1077,7 +1077,7 @@
       "period_days": 90
      },
      "deadline": null,
-     "detail": "last attested by Ada <ada@ey.com> at 2026-07-07T11:56:49.991Z; every 90 days; owner owen@ey.com",
+     "detail": "last attested by Ada <ada@ey.com> at 2026-07-07T13:05:58.077Z; every 90 days; owner owen@ey.com",
      "holds": "",
      "id": "attestation:triage",
      "job": "",
@@ -1086,8 +1086,8 @@
      "run": "",
      "runs": [],
      "severity": 5,
-     "since": "2026-10-05T11:56:49.991Z",
-     "title": "triage: owner attestation overdue since 2026-10-05T11:56:49.991Z"
+     "since": "2026-10-05T13:05:58.065Z",
+     "title": "triage: owner attestation overdue since 2026-10-05T13:05:58.065Z"
     }
    ]
   },
@@ -1111,12 +1111,12 @@
       "triage"
      ],
      "data": {
-      "decision": "gd-369de9728b94463e",
-      "deployment": "dp-c4f5241ae06540fd",
+      "decision": "gd-828f10dc5d2640ec",
+      "deployment": "dp-590c5d9f12294564",
       "digest": "ae164934c963c793",
       "environment": "production",
       "override": {
-       "at": "2026-11-04T11:56:50.442Z",
+       "at": "2026-11-04T13:05:58.481Z",
        "audit_id": 7,
        "by": "Ada <ada@ey.com>",
        "passed": [
@@ -1135,14 +1135,14 @@
      "deadline": null,
      "detail": "reason: the guardian rolls out tomorrow; autonomy: L3 (Conditional) requires owner, budget, gate_writes_and_sinks, guardian: L3 requires an accountable owner: metadata.owner is empty; L3 requires a declared budget: policy.budget is not declared (the platform default applies); L3 requires every write and every sink gated: no gate covers every write and every sink: store.put (write, a sink) on decide; the guardian is off: a policy change to the guardian (target guardian) covers it",
      "holds": "",
-     "id": "override:dp-c4f5241ae06540fd",
+     "id": "override:dp-590c5d9f12294564",
      "job": "",
      "kind": "override",
      "rank": 6.0,
      "run": "",
      "runs": [],
      "severity": 6,
-     "since": "2026-11-04T11:56:50.442Z",
+     "since": "2026-11-04T13:05:58.481Z",
      "title": "triage: version 1 deployed past the promotion gate by Ada <ada@ey.com> (autonomy)"
     }
    ]
@@ -1161,15 +1161,15 @@
       "path": "/api/policy/changes?target=guardian:estate",
       "says": "an emergency rollback skips review: read why, and propose the rules again through a reviewed change if they should stand"
      },
-     "age_s": 0.1,
+     "age_s": 0.0,
      "agent": "",
      "agents": [],
      "data": {
       "audit_id": 14,
       "by": "Ada <ada@ey.com>",
-      "change": "pc-ef6e20a4d610425f",
+      "change": "pc-bc4918f497384cd9",
       "reason": "the cap let a run through",
-      "rollback_of": "pc-ca5f24a0322b40c4",
+      "rollback_of": "pc-016bad55f7014f51",
       "target": {
        "id": "estate",
        "kind": "guardian"
@@ -1178,15 +1178,15 @@
      "deadline": null,
      "detail": "the cap let a run through; guardian's hourly cap: 15 → 10",
      "holds": "",
-     "id": "policy_rollback:pc-ef6e20a4d610425f",
+     "id": "policy_rollback:pc-bc4918f497384cd9",
      "job": "",
      "kind": "policy_rollback",
      "rank": 7.0,
      "run": "",
      "runs": [],
      "severity": 7,
-     "since": "2026-11-04T11:56:47.425Z",
-     "title": "Ada <ada@ey.com> rolled back policy change pc-ca5f24a0322b40c4 on guardian"
+     "since": "2026-11-04T13:05:55.814Z",
+     "title": "Ada <ada@ey.com> rolled back policy change pc-016bad55f7014f51 on guardian"
     }
    ]
   },
@@ -1196,7 +1196,7 @@
   "body": {
    "agent": "triage",
    "as_role": "owner",
-   "at": "2026-11-04T11:56:49.977Z",
+   "at": "2026-11-04T13:05:58.065Z",
    "by": "Owen <owen@ey.com>",
    "deployed": {
     "digest": "3a802c629fc8f32b",
@@ -1204,8 +1204,8 @@
    },
    "diff": null,
    "digest": "3a802c629fc8f32b",
-   "due_at": "2027-02-02T11:56:49.977Z",
-   "id": "at-78f45f8c172544df",
+   "due_at": "2027-02-02T13:05:58.065Z",
+   "id": "at-0ceeaabc480e4d73",
    "matches_deployed": true,
    "period_days": 90,
    "previous": null,
@@ -1251,7 +1251,7 @@
   "body": {
    "agent": "triage",
    "as_role": "administrator",
-   "at": "2026-11-04T11:56:49.991Z",
+   "at": "2026-11-04T13:05:58.077Z",
    "by": "Ada <ada@ey.com>",
    "deployed": {
     "digest": "3a802c629fc8f32b",
@@ -1319,15 +1319,15 @@
     }
    },
    "digest": "2a7f51eba50c8c12",
-   "due_at": "2027-02-02T11:56:49.991Z",
-   "id": "at-d97fd835ba234ff3",
+   "due_at": "2027-02-02T13:05:58.077Z",
+   "id": "at-5ec68146c0a9417e",
    "matches_deployed": false,
    "period_days": 90,
    "previous": {
-    "at": "2026-11-04T11:56:49.977Z",
+    "at": "2026-11-04T13:05:58.065Z",
     "by": "Owen <owen@ey.com>",
     "digest": "3a802c629fc8f32b",
-    "id": "at-78f45f8c172544df",
+    "id": "at-0ceeaabc480e4d73",
     "version": 1
    },
    "statement": "reviewed the prompt change",
@@ -1340,7 +1340,7 @@
    "agent": "triage",
    "attestations": [],
    "count": 0,
-   "due_at": "2027-02-02T11:56:49.902Z",
+   "due_at": "2027-02-02T13:05:57.995Z",
    "last_at": null,
    "overdue": false,
    "owner": {
@@ -1365,7 +1365,7 @@
     {
      "agent": "triage",
      "as_role": "administrator",
-     "at": "2026-11-04T11:56:49.991Z",
+     "at": "2026-11-04T13:05:58.077Z",
      "by": "Ada <ada@ey.com>",
      "deployed": {
       "digest": "3a802c629fc8f32b",
@@ -1433,15 +1433,15 @@
       }
      },
      "digest": "2a7f51eba50c8c12",
-     "due_at": "2027-02-02T11:56:49.991Z",
-     "id": "at-d97fd835ba234ff3",
+     "due_at": "2027-02-02T13:05:58.077Z",
+     "id": "at-5ec68146c0a9417e",
      "matches_deployed": false,
      "period_days": 90,
      "previous": {
-      "at": "2026-11-04T11:56:49.977Z",
+      "at": "2026-11-04T13:05:58.065Z",
       "by": "Owen <owen@ey.com>",
       "digest": "3a802c629fc8f32b",
-      "id": "at-78f45f8c172544df",
+      "id": "at-0ceeaabc480e4d73",
       "version": 1
      },
      "statement": "reviewed the prompt change",
@@ -1450,7 +1450,7 @@
     {
      "agent": "triage",
      "as_role": "owner",
-     "at": "2026-11-04T11:56:49.977Z",
+     "at": "2026-11-04T13:05:58.065Z",
      "by": "Owen <owen@ey.com>",
      "deployed": {
       "digest": "3a802c629fc8f32b",
@@ -1458,8 +1458,8 @@
      },
      "diff": null,
      "digest": "3a802c629fc8f32b",
-     "due_at": "2027-02-02T11:56:49.977Z",
-     "id": "at-78f45f8c172544df",
+     "due_at": "2027-02-02T13:05:58.065Z",
+     "id": "at-0ceeaabc480e4d73",
      "matches_deployed": true,
      "period_days": 90,
      "previous": null,
@@ -1468,8 +1468,8 @@
     }
    ],
    "count": 2,
-   "due_at": "2027-02-02T11:56:49.991Z",
-   "last_at": "2026-11-04T11:56:49.991Z",
+   "due_at": "2027-02-02T13:05:58.065Z",
+   "last_at": "2026-11-04T13:05:58.077Z",
    "overdue": false,
    "owner": {
     "owner": "owen@ey.com",
@@ -1501,7 +1501,7 @@
      "crm": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     }
    },
-   "generated_at": "2026-11-04T11:56:50.623Z",
+   "generated_at": "2026-11-04T13:05:58.645Z",
    "models": [
     {
      "chosen_by": [
@@ -1544,7 +1544,7 @@
     "package": "agentfactory",
     "version": "0.1.0"
    },
-   "saved_at": "2026-11-04T11:56:50.614Z",
+   "saved_at": "2026-11-04T13:05:58.638Z",
    "saved_by": "Chandresh Singh",
    "servers": [
     {
@@ -1763,7 +1763,7 @@
      "version": "1"
     },
     "properties": [],
-    "timestamp": "2026-11-04T11:56:50.635Z",
+    "timestamp": "2026-11-04T13:05:58.657Z",
     "tools": {
      "components": [
       {
@@ -1774,7 +1774,7 @@
      ]
     }
    },
-   "serialNumber": "urn:uuid:e1c75de3-4629-47cb-a403-913cf55d8c91",
+   "serialNumber": "urn:uuid:e579c76e-c796-4d4c-b605-25b46e34dabf",
    "services": [
     {
      "bom-ref": "server:crm",
@@ -2018,7 +2018,7 @@
     "spec": "dcab00f2adeab046",
     "tool_lists": {}
    },
-   "generated_at": "2026-11-04T11:56:50.782Z",
+   "generated_at": "2026-11-04T13:05:58.776Z",
    "models": [
     {
      "chosen_by": [
@@ -2045,7 +2045,7 @@
     "package": "agentfactory",
     "version": "0.1.0"
    },
-   "saved_at": "2026-11-04T11:56:50.764Z",
+   "saved_at": "2026-11-04T13:05:58.760Z",
    "saved_by": "Chandresh Singh",
    "servers": [],
    "templates": {
@@ -2085,7 +2085,7 @@
     "failures": 10,
     "window_s": 60.0
    },
-   "applied_at": "2026-11-04T13:56:47.839Z",
+   "applied_at": "2026-11-04T15:05:56.291Z",
    "applied_by": "scheduler",
    "applied_diff": {
     "changes": [
@@ -2108,7 +2108,7 @@
      "kind": "breakers"
     }
    },
-   "approved_at": "2026-11-04T11:56:47.549Z",
+   "approved_at": "2026-11-04T13:05:55.917Z",
    "approved_by": "Ben <ben@ey.com>",
    "audit_id": 26,
    "before": {
@@ -2138,35 +2138,35 @@
      "kind": "breakers"
     }
    },
-   "effective_at": "2026-11-04T13:56:46.839Z",
+   "effective_at": "2026-11-04T15:05:55.291Z",
    "emergency": false,
    "error": "",
    "history": [
     {
-     "at": "2026-11-04T11:56:47.535Z",
+     "at": "2026-11-04T13:05:55.905Z",
      "by": "Ada <ada@ey.com>",
      "note": "tighten it",
      "state": "pending"
     },
     {
-     "at": "2026-11-04T11:56:47.549Z",
+     "at": "2026-11-04T13:05:55.917Z",
      "by": "Ben <ben@ey.com>",
      "note": "",
      "state": "approved"
     },
     {
-     "at": "2026-11-04T13:56:47.839Z",
+     "at": "2026-11-04T15:05:56.291Z",
      "by": "scheduler",
      "note": "breaker calls threshold: 200 → 9",
      "state": "applied"
     }
    ],
-   "id": "pc-f0c64382600c4e91",
+   "id": "pc-0f2c5be9963c49f4",
    "note": "",
    "proposed": {
     "calls": 9
    },
-   "proposed_at": "2026-11-04T11:56:47.535Z",
+   "proposed_at": "2026-11-04T13:05:55.905Z",
    "proposed_by": "Ada <ada@ey.com>",
    "reason": "tighten it",
    "reject_reason": "",
@@ -2189,7 +2189,7 @@
    "applied_at": null,
    "applied_by": "",
    "applied_diff": null,
-   "approved_at": "2026-11-04T11:56:47.813Z",
+   "approved_at": "2026-11-04T13:05:56.150Z",
    "approved_by": "Ben <ben@ey.com>",
    "audit_id": 16,
    "before": null,
@@ -2214,35 +2214,35 @@
      "kind": "attached"
     }
    },
-   "effective_at": "2026-11-04T12:56:46.839Z",
+   "effective_at": "2026-11-04T14:05:55.291Z",
    "emergency": false,
    "error": "no attached agent \"copilot\"",
    "history": [
     {
-     "at": "2026-11-04T11:56:47.811Z",
+     "at": "2026-11-04T13:05:56.148Z",
      "by": "Ada <ada@ey.com>",
      "note": "tighten it",
      "state": "pending"
     },
     {
-     "at": "2026-11-04T11:56:47.813Z",
+     "at": "2026-11-04T13:05:56.150Z",
      "by": "Ben <ben@ey.com>",
      "note": "",
      "state": "approved"
     },
     {
-     "at": "2026-11-04T12:56:47.839Z",
+     "at": "2026-11-04T14:05:56.291Z",
      "by": "scheduler",
      "note": "no attached agent \"copilot\"",
      "state": "failed"
     }
    ],
-   "id": "pc-1ce09d85e36243c9",
+   "id": "pc-0cffc9f9450f4a8b",
    "note": "",
    "proposed": {
     "gate_at": "risky"
    },
-   "proposed_at": "2026-11-04T11:56:47.811Z",
+   "proposed_at": "2026-11-04T13:05:56.148Z",
    "proposed_by": "Ada <ada@ey.com>",
    "reason": "tighten it",
    "reject_reason": "",
@@ -2278,7 +2278,7 @@
     "model": "",
     "rubric": ""
    },
-   "applied_at": "2026-11-04T11:56:47.425Z",
+   "applied_at": "2026-11-04T13:05:55.814Z",
    "applied_by": "Ada <ada@ey.com>",
    "applied_diff": {
     "changes": [
@@ -2301,7 +2301,7 @@
      "kind": "guardian"
     }
    },
-   "approved_at": "2026-11-04T11:56:47.425Z",
+   "approved_at": "2026-11-04T13:05:55.814Z",
    "approved_by": "Ada <ada@ey.com>",
    "audit_id": 14,
    "before": {
@@ -2341,24 +2341,24 @@
    "error": "",
    "history": [
     {
-     "at": "2026-11-04T11:56:47.425Z",
+     "at": "2026-11-04T13:05:55.814Z",
      "by": "Ada <ada@ey.com>",
-     "note": "emergency rollback of pc-ca5f24a0322b40c4: the cap let a run through",
+     "note": "emergency rollback of pc-016bad55f7014f51: the cap let a run through",
      "state": "applied"
     }
    ],
-   "id": "pc-ef6e20a4d610425f",
+   "id": "pc-bc4918f497384cd9",
    "note": "emergency rollback: no second person",
    "proposed": {
     "max_actions_per_hour": 10
    },
-   "proposed_at": "2026-11-04T11:56:47.425Z",
+   "proposed_at": "2026-11-04T13:05:55.814Z",
    "proposed_by": "Ada <ada@ey.com>",
    "reason": "the cap let a run through",
    "reject_reason": "",
    "rejected_at": null,
    "rejected_by": "",
-   "rollback_of": "pc-ca5f24a0322b40c4",
+   "rollback_of": "pc-016bad55f7014f51",
    "rolled_back_at": null,
    "rolled_back_by": "",
    "state": "applied",
@@ -2382,7 +2382,7 @@
     "model": "",
     "rubric": ""
    },
-   "applied_at": "2026-11-04T11:56:47.365Z",
+   "applied_at": "2026-11-04T13:05:55.758Z",
    "applied_by": "Ben <ben@ey.com>",
    "applied_diff": {
     "changes": [
@@ -2405,7 +2405,7 @@
      "kind": "guardian"
     }
    },
-   "approved_at": "2026-11-04T11:56:47.365Z",
+   "approved_at": "2026-11-04T13:05:55.758Z",
    "approved_by": "Ben <ben@ey.com>",
    "audit_id": 8,
    "before": {
@@ -2445,44 +2445,44 @@
    "error": "",
    "history": [
     {
-     "at": "2026-11-04T11:56:47.317Z",
+     "at": "2026-11-04T13:05:55.714Z",
      "by": "Ada <ada@ey.com>",
      "note": "more room",
      "state": "pending"
     },
     {
-     "at": "2026-11-04T11:56:47.365Z",
+     "at": "2026-11-04T13:05:55.758Z",
      "by": "Ben <ben@ey.com>",
      "note": "agreed",
      "state": "approved"
     },
     {
-     "at": "2026-11-04T11:56:47.365Z",
+     "at": "2026-11-04T13:05:55.758Z",
      "by": "Ben <ben@ey.com>",
      "note": "guardian's hourly cap: 10 → 15",
      "state": "applied"
     },
     {
-     "at": "2026-11-04T11:56:47.425Z",
+     "at": "2026-11-04T13:05:55.814Z",
      "by": "Ada <ada@ey.com>",
-     "note": "by pc-ef6e20a4d610425f: the cap let a run through",
+     "note": "by pc-bc4918f497384cd9: the cap let a run through",
      "state": "rolled_back"
     }
    ],
-   "id": "pc-ca5f24a0322b40c4",
+   "id": "pc-016bad55f7014f51",
    "note": "agreed",
    "proposed": {
     "max_actions_per_hour": 15
    },
-   "proposed_at": "2026-11-04T11:56:47.317Z",
+   "proposed_at": "2026-11-04T13:05:55.714Z",
    "proposed_by": "Ada <ada@ey.com>",
    "reason": "more room",
    "reject_reason": "",
    "rejected_at": null,
    "rejected_by": "",
    "rollback_of": "",
-   "rolled_back_at": "2026-11-04T11:56:47.425Z",
-   "rolled_back_by": "pc-ef6e20a4d610425f",
+   "rolled_back_at": "2026-11-04T13:05:55.814Z",
+   "rolled_back_by": "pc-bc4918f497384cd9",
    "state": "rolled_back",
    "target": {
     "id": "estate",
@@ -2515,7 +2515,7 @@
       "failures": 10,
       "window_s": 60.0
      },
-     "applied_at": "2026-11-04T13:56:47.839Z",
+     "applied_at": "2026-11-04T15:05:56.291Z",
      "applied_by": "scheduler",
      "applied_diff": {
       "changes": [
@@ -2538,7 +2538,7 @@
        "kind": "breakers"
       }
      },
-     "approved_at": "2026-11-04T11:56:47.549Z",
+     "approved_at": "2026-11-04T13:05:55.917Z",
      "approved_by": "Ben <ben@ey.com>",
      "audit_id": 26,
      "before": {
@@ -2568,35 +2568,35 @@
        "kind": "breakers"
       }
      },
-     "effective_at": "2026-11-04T13:56:46.839Z",
+     "effective_at": "2026-11-04T15:05:55.291Z",
      "emergency": false,
      "error": "",
      "history": [
       {
-       "at": "2026-11-04T11:56:47.535Z",
+       "at": "2026-11-04T13:05:55.905Z",
        "by": "Ada <ada@ey.com>",
        "note": "tighten it",
        "state": "pending"
       },
       {
-       "at": "2026-11-04T11:56:47.549Z",
+       "at": "2026-11-04T13:05:55.917Z",
        "by": "Ben <ben@ey.com>",
        "note": "",
        "state": "approved"
       },
       {
-       "at": "2026-11-04T13:56:47.839Z",
+       "at": "2026-11-04T15:05:56.291Z",
        "by": "scheduler",
        "note": "breaker calls threshold: 200 → 9",
        "state": "applied"
       }
      ],
-     "id": "pc-f0c64382600c4e91",
+     "id": "pc-0f2c5be9963c49f4",
      "note": "",
      "proposed": {
       "calls": 9
      },
-     "proposed_at": "2026-11-04T11:56:47.535Z",
+     "proposed_at": "2026-11-04T13:05:55.905Z",
      "proposed_by": "Ada <ada@ey.com>",
      "reason": "tighten it",
      "reject_reason": "",
@@ -2623,7 +2623,7 @@
       "model": "",
       "rubric": ""
      },
-     "applied_at": "2026-11-04T11:56:47.425Z",
+     "applied_at": "2026-11-04T13:05:55.814Z",
      "applied_by": "Ada <ada@ey.com>",
      "applied_diff": {
       "changes": [
@@ -2646,7 +2646,7 @@
        "kind": "guardian"
       }
      },
-     "approved_at": "2026-11-04T11:56:47.425Z",
+     "approved_at": "2026-11-04T13:05:55.814Z",
      "approved_by": "Ada <ada@ey.com>",
      "audit_id": 14,
      "before": {
@@ -2686,24 +2686,24 @@
      "error": "",
      "history": [
       {
-       "at": "2026-11-04T11:56:47.425Z",
+       "at": "2026-11-04T13:05:55.814Z",
        "by": "Ada <ada@ey.com>",
-       "note": "emergency rollback of pc-ca5f24a0322b40c4: the cap let a run through",
+       "note": "emergency rollback of pc-016bad55f7014f51: the cap let a run through",
        "state": "applied"
       }
      ],
-     "id": "pc-ef6e20a4d610425f",
+     "id": "pc-bc4918f497384cd9",
      "note": "emergency rollback: no second person",
      "proposed": {
       "max_actions_per_hour": 10
      },
-     "proposed_at": "2026-11-04T11:56:47.425Z",
+     "proposed_at": "2026-11-04T13:05:55.814Z",
      "proposed_by": "Ada <ada@ey.com>",
      "reason": "the cap let a run through",
      "reject_reason": "",
      "rejected_at": null,
      "rejected_by": "",
-     "rollback_of": "pc-ca5f24a0322b40c4",
+     "rollback_of": "pc-016bad55f7014f51",
      "rolled_back_at": null,
      "rolled_back_by": "",
      "state": "applied",
@@ -2735,7 +2735,7 @@
       "model": "",
       "rubric": ""
      },
-     "applied_at": "2026-11-04T11:56:47.425Z",
+     "applied_at": "2026-11-04T13:05:55.814Z",
      "applied_by": "Ada <ada@ey.com>",
      "applied_diff": {
       "changes": [
@@ -2758,7 +2758,7 @@
        "kind": "guardian"
       }
      },
-     "approved_at": "2026-11-04T11:56:47.425Z",
+     "approved_at": "2026-11-04T13:05:55.814Z",
      "approved_by": "Ada <ada@ey.com>",
      "audit_id": 14,
      "before": {
@@ -2798,24 +2798,24 @@
      "error": "",
      "history": [
       {
-       "at": "2026-11-04T11:56:47.425Z",
+       "at": "2026-11-04T13:05:55.814Z",
        "by": "Ada <ada@ey.com>",
-       "note": "emergency rollback of pc-ca5f24a0322b40c4: the cap let a run through",
+       "note": "emergency rollback of pc-016bad55f7014f51: the cap let a run through",
        "state": "applied"
       }
      ],
-     "id": "pc-ef6e20a4d610425f",
+     "id": "pc-bc4918f497384cd9",
      "note": "emergency rollback: no second person",
      "proposed": {
       "max_actions_per_hour": 10
      },
-     "proposed_at": "2026-11-04T11:56:47.425Z",
+     "proposed_at": "2026-11-04T13:05:55.814Z",
      "proposed_by": "Ada <ada@ey.com>",
      "reason": "the cap let a run through",
      "reject_reason": "",
      "rejected_at": null,
      "rejected_by": "",
-     "rollback_of": "pc-ca5f24a0322b40c4",
+     "rollback_of": "pc-016bad55f7014f51",
      "rolled_back_at": null,
      "rolled_back_by": "",
      "state": "applied",
@@ -2836,7 +2836,7 @@
       "model": "",
       "rubric": ""
      },
-     "applied_at": "2026-11-04T11:56:47.365Z",
+     "applied_at": "2026-11-04T13:05:55.758Z",
      "applied_by": "Ben <ben@ey.com>",
      "applied_diff": {
       "changes": [
@@ -2859,7 +2859,7 @@
        "kind": "guardian"
       }
      },
-     "approved_at": "2026-11-04T11:56:47.365Z",
+     "approved_at": "2026-11-04T13:05:55.758Z",
      "approved_by": "Ben <ben@ey.com>",
      "audit_id": 8,
      "before": {
@@ -2899,44 +2899,44 @@
      "error": "",
      "history": [
       {
-       "at": "2026-11-04T11:56:47.317Z",
+       "at": "2026-11-04T13:05:55.714Z",
        "by": "Ada <ada@ey.com>",
        "note": "more room",
        "state": "pending"
       },
       {
-       "at": "2026-11-04T11:56:47.365Z",
+       "at": "2026-11-04T13:05:55.758Z",
        "by": "Ben <ben@ey.com>",
        "note": "agreed",
        "state": "approved"
       },
       {
-       "at": "2026-11-04T11:56:47.365Z",
+       "at": "2026-11-04T13:05:55.758Z",
        "by": "Ben <ben@ey.com>",
        "note": "guardian's hourly cap: 10 → 15",
        "state": "applied"
       },
       {
-       "at": "2026-11-04T11:56:47.425Z",
+       "at": "2026-11-04T13:05:55.814Z",
        "by": "Ada <ada@ey.com>",
-       "note": "by pc-ef6e20a4d610425f: the cap let a run through",
+       "note": "by pc-bc4918f497384cd9: the cap let a run through",
        "state": "rolled_back"
       }
      ],
-     "id": "pc-ca5f24a0322b40c4",
+     "id": "pc-016bad55f7014f51",
      "note": "agreed",
      "proposed": {
       "max_actions_per_hour": 15
      },
-     "proposed_at": "2026-11-04T11:56:47.317Z",
+     "proposed_at": "2026-11-04T13:05:55.714Z",
      "proposed_by": "Ada <ada@ey.com>",
      "reason": "more room",
      "reject_reason": "",
      "rejected_at": null,
      "rejected_by": "",
      "rollback_of": "",
-     "rolled_back_at": "2026-11-04T11:56:47.425Z",
-     "rolled_back_by": "pc-ef6e20a4d610425f",
+     "rolled_back_at": "2026-11-04T13:05:55.814Z",
+     "rolled_back_by": "pc-bc4918f497384cd9",
      "state": "rolled_back",
      "target": {
       "id": "estate",
@@ -2998,18 +2998,18 @@
      "error": "",
      "history": [
       {
-       "at": "2026-11-04T11:56:47.204Z",
+       "at": "2026-11-04T13:05:55.616Z",
        "by": "Ada <ada@ey.com>",
        "note": "a sensitive agent",
        "state": "pending"
       }
      ],
-     "id": "pc-3dc2b727d21b4265",
+     "id": "pc-1004c788cc3a458a",
      "note": "",
      "proposed": {
       "period_days": 30
      },
-     "proposed_at": "2026-11-04T11:56:47.204Z",
+     "proposed_at": "2026-11-04T13:05:55.616Z",
      "proposed_by": "Ada <ada@ey.com>",
      "reason": "a sensitive agent",
      "reject_reason": "",
@@ -3059,18 +3059,18 @@
      "error": "",
      "history": [
       {
-       "at": "2026-11-04T11:56:47.192Z",
+       "at": "2026-11-04T13:05:55.605Z",
        "by": "Ada <ada@ey.com>",
        "note": "tighter for L5",
        "state": "pending"
       }
      ],
-     "id": "pc-08b33c3166ce40b8",
+     "id": "pc-7b2f6feccae44ba6",
      "note": "",
      "proposed": {
       "attestation_within_days": 14
      },
-     "proposed_at": "2026-11-04T11:56:47.192Z",
+     "proposed_at": "2026-11-04T13:05:55.605Z",
      "proposed_by": "Ada <ada@ey.com>",
      "reason": "tighter for L5",
      "reject_reason": "",
@@ -3120,18 +3120,18 @@
      "error": "",
      "history": [
       {
-       "at": "2026-11-04T11:56:47.180Z",
+       "at": "2026-11-04T13:05:55.594Z",
        "by": "Ada <ada@ey.com>",
        "note": "one noisy agent",
        "state": "pending"
       }
      ],
-     "id": "pc-664d1543294e49f0",
+     "id": "pc-3daa3b9d92684a7f",
      "note": "",
      "proposed": {
       "run_starts_per_minute": 2
      },
-     "proposed_at": "2026-11-04T11:56:47.180Z",
+     "proposed_at": "2026-11-04T13:05:55.594Z",
      "proposed_by": "Ada <ada@ey.com>",
      "reason": "one noisy agent",
      "reject_reason": "",
@@ -3191,19 +3191,19 @@
      "error": "",
      "history": [
       {
-       "at": "2026-11-04T11:56:47.168Z",
+       "at": "2026-11-04T13:05:55.583Z",
        "by": "Ada <ada@ey.com>",
        "note": "the records schedule",
        "state": "pending"
       }
      ],
-     "id": "pc-4031cd79796545e3",
+     "id": "pc-129ab354aa144114",
      "note": "",
      "proposed": {
       "journals": 180,
       "runs": 365
      },
-     "proposed_at": "2026-11-04T11:56:47.168Z",
+     "proposed_at": "2026-11-04T13:05:55.583Z",
      "proposed_by": "Ada <ada@ey.com>",
      "reason": "the records schedule",
      "reject_reason": "",
@@ -3279,13 +3279,13 @@
      "error": "",
      "history": [
       {
-       "at": "2026-11-04T11:56:47.155Z",
+       "at": "2026-11-04T13:05:55.573Z",
        "by": "Ada <ada@ey.com>",
        "note": "case ids",
        "state": "pending"
       }
      ],
-     "id": "pc-70ab94da917240c7",
+     "id": "pc-0808c8668265489b",
      "note": "",
      "proposed": {
       "internal": [
@@ -3298,7 +3298,7 @@
        "employee_id"
       ]
      },
-     "proposed_at": "2026-11-04T11:56:47.155Z",
+     "proposed_at": "2026-11-04T13:05:55.573Z",
      "proposed_by": "Ada <ada@ey.com>",
      "reason": "case ids",
      "reject_reason": "",
@@ -3353,13 +3353,13 @@
      "error": "",
      "history": [
       {
-       "at": "2026-11-04T11:56:47.144Z",
+       "at": "2026-11-04T13:05:55.562Z",
        "by": "Ada <ada@ey.com>",
        "note": "the new phrasing",
        "state": "pending"
       }
      ],
-     "id": "pc-a897c2ed552b4785",
+     "id": "pc-ae3cba50646545fe",
      "note": "",
      "proposed": {
       "patterns": [
@@ -3367,7 +3367,7 @@
        "add me"
       ]
      },
-     "proposed_at": "2026-11-04T11:56:47.144Z",
+     "proposed_at": "2026-11-04T13:05:55.562Z",
      "proposed_by": "Ada <ada@ey.com>",
      "reason": "the new phrasing",
      "reject_reason": "",
@@ -9410,16 +9410,16 @@
  },
  "deploy.override.autonomy": {
   "body": {
-   "at": "2026-11-04T11:56:50.443Z",
+   "at": "2026-11-04T13:05:58.482Z",
    "conditions": [
     {
      "condition": "eval",
      "detail": "2/3 on triage-bench (0.6667) is at or above the threshold 0.6",
      "items": [
       {
-       "at": "2026-11-04T11:56:50.420Z",
+       "at": "2026-11-04T13:05:58.456Z",
        "digest": "ae164934c963c793",
-       "id": "ev-mw22a5pm-jh25",
+       "id": "ev-mw24r2cw-rgm2",
        "passed": 2,
        "score": 0.6666666666666666,
        "set": "triage-bench",
@@ -9433,18 +9433,18 @@
     },
     {
      "condition": "review",
-     "detail": "approved by Rui <rui@ey.com> at 2026-11-04T11:56:50.441Z",
+     "detail": "approved by Rui <rui@ey.com> at 2026-11-04T13:05:58.480Z",
      "items": [
       {
        "agent": "triage",
-       "at": "2026-11-04T11:56:50.441Z",
+       "at": "2026-11-04T13:05:58.480Z",
        "authors": [
         "Ada <ada@ey.com>"
        ],
        "by": "Rui <rui@ey.com>",
        "by_sub": "autox|rui@ey.com",
        "digest": "ae164934c963c793",
-       "id": "rv-6440602e738a4d4a",
+       "id": "rv-d49d834f35394ae5",
        "note": "policy holds",
        "verdict": "approved",
        "version": 1
@@ -9504,14 +9504,14 @@
      "overridden": true
     }
    ],
-   "decision": "gd-369de9728b94463e",
+   "decision": "gd-828f10dc5d2640ec",
    "deployed": true,
-   "deployment": "dp-c4f5241ae06540fd",
+   "deployment": "dp-590c5d9f12294564",
    "digest": "ae164934c963c793",
    "environment": "production",
    "id": "triage",
    "override": {
-    "at": "2026-11-04T11:56:50.442Z",
+    "at": "2026-11-04T13:05:58.481Z",
     "audit_id": 7,
     "by": "Ada <ada@ey.com>",
     "passed": [
@@ -9553,9 +9553,9 @@
      "detail": "2/3 on triage-bench (0.6667) is at or above the threshold 0.6",
      "items": [
       {
-       "at": "2026-11-04T11:56:50.212Z",
+       "at": "2026-11-04T13:05:58.259Z",
        "digest": "ae164934c963c793",
-       "id": "ev-mw22a5jv-1z3q",
+       "id": "ev-mw24r27f-z02q",
        "passed": 2,
        "score": 0.6666666666666666,
        "set": "triage-bench",
@@ -9569,18 +9569,18 @@
     },
     {
      "condition": "review",
-     "detail": "approved by Rui <rui@ey.com> at 2026-11-04T11:56:50.234Z",
+     "detail": "approved by Rui <rui@ey.com> at 2026-11-04T13:05:58.277Z",
      "items": [
       {
        "agent": "triage",
-       "at": "2026-11-04T11:56:50.234Z",
+       "at": "2026-11-04T13:05:58.277Z",
        "authors": [
         "Ada <ada@ey.com>"
        ],
        "by": "Rui <rui@ey.com>",
        "by_sub": "autox|rui@ey.com",
        "digest": "ae164934c963c793",
-       "id": "rv-f41063f366354399",
+       "id": "rv-7723072ec85f412c",
        "note": "policy holds",
        "verdict": "approved",
        "version": 1
@@ -9640,7 +9640,7 @@
      "overridden": false
     }
    ],
-   "decision": "gd-57ca6e210b234d8b",
+   "decision": "gd-3e411117d0284fc6",
    "digest": "ae164934c963c793",
    "environment": "production",
    "error": "the promotion gate is not met for \"triage\" version 1 (ae164934c963c793): autonomy",
@@ -9761,7 +9761,7 @@
     "blocked": false,
     "card_url": "",
     "cost30d": 0.0,
-    "created_at": "2026-11-04T11:56:47.660Z",
+    "created_at": "2026-11-04T13:05:56.012Z",
     "demo": false,
     "denials30d": 0,
     "framework": "custom",
@@ -9770,7 +9770,7 @@
     "grants": [],
     "id": "copilot",
     "injection": "flag",
-    "key_prefix": "af_37280ac8",
+    "key_prefix": "af_880327c2",
     "language": "python",
     "last_seen": null,
     "mode": "sdk",
@@ -9813,7 +9813,7 @@
      {
       "broken_at": 0,
       "reason": "entry 0 is not what was written: its hash does not match its content",
-      "run": "bounded-2026-11-04T11-56-49-926n"
+      "run": "bounded-2026-11-04T13-05-57-qzqf"
      }
     ],
     "counts": {
@@ -9968,17 +9968,17 @@
    "firings": [
     {
      "agent": "bounded",
-     "at": "2026-11-04T11:56:49.641Z",
+     "at": "2026-11-04T13:05:57.752Z",
      "control_ids": [
       "AF-AC-05"
      ],
      "detail": "store.put: key='k-C-1' is not one of ['nope'] (policy.limits)",
-     "entry": "9ac6577f9eb1",
+     "entry": "814bdb48aab6",
      "key": "limit",
      "kind": "denied",
      "label": "Argument limit",
      "node": "act",
-     "run": "bounded-2026-11-04T11-56-49-926n",
+     "run": "bounded-2026-11-04T13-05-57-qzqf",
      "t": 0,
      "title": "Refused store.put",
      "tool": "store.put"
@@ -9989,11 +9989,11 @@
     "agent": null,
     "control": "limit",
     "framework": null,
-    "from": "2026-10-05T11:56:49.671Z",
-    "generated_at": "2026-11-04T11:56:49.672Z",
+    "from": "2026-10-05T13:05:57.780Z",
+    "generated_at": "2026-11-04T13:05:57.780Z",
     "generated_by": "Chandresh Singh",
     "keys": [],
-    "to": "2026-11-04T11:56:49.671Z"
+    "to": "2026-11-04T13:05:57.780Z"
    },
    "policy": {
     "changes": [],
@@ -10003,18 +10003,18 @@
    "runs": [
     {
      "agent": "bounded",
-     "anchor": "a9ec277e61dd28631fb3b648eff29602d62ccdcb45843db455f88e98cf027eeb",
+     "anchor": "1573af6690887aa67b8842f8f057ee9bc689d28b564f01625b8bcc220b195f05",
      "anchored": false,
      "broken_at": 0,
      "chain": "broken",
      "disagrees": [],
      "eval": null,
-     "finished_at": "2026-11-04T11:56:49.643Z",
-     "id": "bounded-2026-11-04T11-56-49-926n",
+     "finished_at": "2026-11-04T13:05:57.753Z",
+     "id": "bounded-2026-11-04T13-05-57-qzqf",
      "reason": "entry 0 is not what was written: its hash does not match its content",
      "source": "console",
      "spec_digest": "702a10f0766fa4b3",
-     "started_at": "2026-11-04T11:56:49.641Z",
+     "started_at": "2026-11-04T13:05:57.752Z",
      "state": "failed",
      "valid": false
     }
@@ -10167,7 +10167,7 @@
      "aborted": false,
      "agent": "gated",
      "approved": true,
-     "at": "2026-11-04T11:56:49.292Z",
+     "at": "2026-11-04T13:05:57.441Z",
      "by": "Chandresh Singh",
      "chained": true,
      "control_ids": [
@@ -10176,12 +10176,12 @@
      "controls": [
       "gate"
      ],
-     "digest": "sha256:da386b1162e69239d9054c74d3db4ce833cead6362525952e2d9ae0e7ebae30c",
-     "entry": "81d9b194ffb8",
-     "gate": "c80fbe0145ab",
+     "digest": "sha256:9b78ca959b178a5e83611e76cf51a0b4e1f32dea259eccbbfe72f594fa60c434",
+     "entry": "bae04478f017",
+     "gate": "e0f61cbd3762",
      "node": "review",
      "note": "fine",
-     "run": "gated-2026-11-04T11-56-49-2i7m",
+     "run": "gated-2026-11-04T13-05-57-k3cn",
      "shape": "decision",
      "via": "resume"
     }
@@ -10192,17 +10192,17 @@
    "firings": [
     {
      "agent": "gated",
-     "at": "2026-11-04T11:56:49.287Z",
+     "at": "2026-11-04T13:05:57.438Z",
      "control_ids": [
       "AF-HO-01"
      ],
      "detail": "dlp-lead",
-     "entry": "9c83a6f5b9da",
+     "entry": "0473950c8991",
      "key": "gate",
      "kind": "gate.open",
      "label": "Authorisation gate",
      "node": "review",
-     "run": "gated-2026-11-04T11-56-49-2i7m",
+     "run": "gated-2026-11-04T13-05-57-k3cn",
      "t": 0,
      "title": "Awaiting a human decision",
      "tool": ""
@@ -10222,11 +10222,11 @@
     "agent": null,
     "control": "AF-HO-01",
     "framework": null,
-    "from": "2026-10-05T11:56:49.321Z",
-    "generated_at": "2026-11-04T11:56:49.321Z",
+    "from": "2026-10-05T13:05:57.445Z",
+    "generated_at": "2026-11-04T13:05:57.446Z",
     "generated_by": "Chandresh Singh",
     "keys": [],
-    "to": "2026-11-04T11:56:49.321Z"
+    "to": "2026-11-04T13:05:57.445Z"
    },
    "policy": {
     "changes": [],
@@ -10237,7 +10237,7 @@
       "deployed": false,
       "digest": "1bdcc09ebdcb7a76",
       "reviews": [],
-      "saved_at": "2026-11-04T11:56:49.285Z",
+      "saved_at": "2026-11-04T13:05:57.436Z",
       "saved_by": "Chandresh Singh",
       "version": 1
      }
@@ -10246,18 +10246,18 @@
    "runs": [
     {
      "agent": "gated",
-     "anchor": "e620cebb67b0f7a6503734107ecefdd6c914df0785427d609f8a6851ffbaaa1a",
+     "anchor": "a511a0ef5646c31dfadd5f3415e1da2e928145b780852cd5616fe49e8b4df6b7",
      "anchored": true,
      "broken_at": null,
      "chain": "ok",
      "disagrees": [],
      "eval": null,
-     "finished_at": "2026-11-04T11:56:49.293Z",
-     "id": "gated-2026-11-04T11-56-49-2i7m",
+     "finished_at": "2026-11-04T13:05:57.443Z",
+     "id": "gated-2026-11-04T13-05-57-k3cn",
      "reason": "",
      "source": "console",
      "spec_digest": "1bdcc09ebdcb7a76",
-     "started_at": "2026-11-04T11:56:49.287Z",
+     "started_at": "2026-11-04T13:05:57.438Z",
      "state": "done",
      "valid": true
     }
@@ -10411,11 +10411,11 @@
     "agent": null,
     "control": "AF-HO-01",
     "framework": null,
-    "from": "2026-10-05T11:56:49.273Z",
-    "generated_at": "2026-11-04T11:56:49.273Z",
+    "from": "2026-10-05T13:05:57.425Z",
+    "generated_at": "2026-11-04T13:05:57.425Z",
     "generated_by": "Chandresh Singh",
     "keys": [],
-    "to": "2026-11-04T11:56:49.273Z"
+    "to": "2026-11-04T13:05:57.425Z"
    },
    "policy": {
     "changes": [],
@@ -10434,7 +10434,7 @@
      {
       "broken_at": 7,
       "reason": "the journal's chain holds, and the record beside it disagrees with what the chain says: decisions[0].by",
-      "run": "gated-2026-11-04T11-56-49-94k5"
+      "run": "gated-2026-11-04T13-05-57-6zej"
      }
     ],
     "counts": {
@@ -10577,7 +10577,7 @@
      "aborted": false,
      "agent": "gated",
      "approved": true,
-     "at": "2026-11-04T11:56:49.438Z",
+     "at": "2026-11-04T13:05:57.546Z",
      "by": "Chandresh Singh",
      "chained": true,
      "control_ids": [
@@ -10586,7 +10586,7 @@
      "controls": [
       "gate"
      ],
-     "digest": "sha256:af319014cc0a170192eef263a8999f1b79f9274e83933eafc01ce657044ee0e6",
+     "digest": "sha256:a0975d1700c6d5914472d7fb3e01d7cfdbb42fdf5eb63d3815c93ac777811f12",
      "disagrees": [
       {
        "chain": "Chandresh Singh",
@@ -10594,11 +10594,11 @@
        "record": "Mallory <mallory@evil.example>"
       }
      ],
-     "entry": "43b3869fb1ac",
-     "gate": "e815955d13ae",
+     "entry": "857d4a88cd03",
+     "gate": "7a38f603a752",
      "node": "review",
      "note": "fine",
-     "run": "gated-2026-11-04T11-56-49-94k5",
+     "run": "gated-2026-11-04T13-05-57-6zej",
      "shape": "decision",
      "via": "resume"
     }
@@ -10609,17 +10609,17 @@
    "firings": [
     {
      "agent": "gated",
-     "at": "2026-11-04T11:56:49.434Z",
+     "at": "2026-11-04T13:05:57.541Z",
      "control_ids": [
       "AF-HO-01"
      ],
      "detail": "dlp-lead",
-     "entry": "402e78dfb8c8",
+     "entry": "eaa95169878a",
      "key": "gate",
      "kind": "gate.open",
      "label": "Authorisation gate",
      "node": "review",
-     "run": "gated-2026-11-04T11-56-49-94k5",
+     "run": "gated-2026-11-04T13-05-57-6zej",
      "t": 0,
      "title": "Awaiting a human decision",
      "tool": ""
@@ -10639,11 +10639,11 @@
     "agent": null,
     "control": "AF-HO-01",
     "framework": null,
-    "from": "2026-10-05T11:56:49.515Z",
-    "generated_at": "2026-11-04T11:56:49.516Z",
+    "from": "2026-10-05T13:05:57.611Z",
+    "generated_at": "2026-11-04T13:05:57.611Z",
     "generated_by": "Chandresh Singh",
     "keys": [],
-    "to": "2026-11-04T11:56:49.515Z"
+    "to": "2026-11-04T13:05:57.611Z"
    },
    "policy": {
     "changes": [],
@@ -10654,7 +10654,7 @@
       "deployed": false,
       "digest": "1bdcc09ebdcb7a76",
       "reviews": [],
-      "saved_at": "2026-11-04T11:56:49.432Z",
+      "saved_at": "2026-11-04T13:05:57.540Z",
       "saved_by": "Chandresh Singh",
       "version": 1
      }
@@ -10663,7 +10663,7 @@
    "runs": [
     {
      "agent": "gated",
-     "anchor": "6aee447409a955fabab0fc50f17d5c0e14a815b3f059ae5f3d8299e6f01820a4",
+     "anchor": "2596df9dea217c6e2571c652d8d775e696b6bbc65c91a238e6312b09684fca90",
      "anchored": false,
      "broken_at": 7,
      "chain": "broken",
@@ -10671,18 +10671,18 @@
       {
        "at": 7,
        "chain": "Chandresh Singh",
-       "entry": "43b3869fb1ac",
+       "entry": "857d4a88cd03",
        "field": "decisions[0].by",
        "record": "Mallory <mallory@evil.example>"
       }
      ],
      "eval": null,
-     "finished_at": "2026-11-04T11:56:49.439Z",
-     "id": "gated-2026-11-04T11-56-49-94k5",
+     "finished_at": "2026-11-04T13:05:57.547Z",
+     "id": "gated-2026-11-04T13-05-57-6zej",
      "reason": "the journal's chain holds, and the record beside it disagrees with what the chain says: decisions[0].by",
      "source": "console",
      "spec_digest": "1bdcc09ebdcb7a76",
-     "started_at": "2026-11-04T11:56:49.434Z",
+     "started_at": "2026-11-04T13:05:57.541Z",
      "state": "done",
      "valid": false
     }
@@ -13693,7 +13693,7 @@
      "aborted": false,
      "agent": "gated",
      "approved": true,
-     "at": "2026-11-04T11:56:49.292Z",
+     "at": "2026-11-04T13:05:57.441Z",
      "by": "Chandresh Singh",
      "chained": true,
      "control_ids": [
@@ -13702,12 +13702,12 @@
      "controls": [
       "gate"
      ],
-     "digest": "sha256:da386b1162e69239d9054c74d3db4ce833cead6362525952e2d9ae0e7ebae30c",
-     "entry": "81d9b194ffb8",
-     "gate": "c80fbe0145ab",
+     "digest": "sha256:9b78ca959b178a5e83611e76cf51a0b4e1f32dea259eccbbfe72f594fa60c434",
+     "entry": "bae04478f017",
+     "gate": "e0f61cbd3762",
      "node": "review",
      "note": "fine",
-     "run": "gated-2026-11-04T11-56-49-2i7m",
+     "run": "gated-2026-11-04T13-05-57-k3cn",
      "shape": "decision",
      "via": "resume"
     }
@@ -13718,17 +13718,17 @@
    "firings": [
     {
      "agent": "gated",
-     "at": "2026-11-04T11:56:49.287Z",
+     "at": "2026-11-04T13:05:57.438Z",
      "control_ids": [
       "AF-HO-01"
      ],
      "detail": "dlp-lead",
-     "entry": "9c83a6f5b9da",
+     "entry": "0473950c8991",
      "key": "gate",
      "kind": "gate.open",
      "label": "Authorisation gate",
      "node": "review",
-     "run": "gated-2026-11-04T11-56-49-2i7m",
+     "run": "gated-2026-11-04T13-05-57-k3cn",
      "t": 0,
      "title": "Awaiting a human decision",
      "tool": ""
@@ -13748,11 +13748,11 @@
     "agent": "gated",
     "control": null,
     "framework": "eu_ai_act",
-    "from": "2026-10-05T11:56:49.333Z",
-    "generated_at": "2026-11-04T11:56:49.333Z",
+    "from": "2026-10-05T13:05:57.458Z",
+    "generated_at": "2026-11-04T13:05:57.458Z",
     "generated_by": "Chandresh Singh",
     "keys": [],
-    "to": "2026-11-04T11:56:49.333Z"
+    "to": "2026-11-04T13:05:57.458Z"
    },
    "policy": {
     "changes": [],
@@ -13763,7 +13763,7 @@
       "deployed": false,
       "digest": "1bdcc09ebdcb7a76",
       "reviews": [],
-      "saved_at": "2026-11-04T11:56:49.285Z",
+      "saved_at": "2026-11-04T13:05:57.436Z",
       "saved_by": "Chandresh Singh",
       "version": 1
      }
@@ -13772,18 +13772,18 @@
    "runs": [
     {
      "agent": "gated",
-     "anchor": "e620cebb67b0f7a6503734107ecefdd6c914df0785427d609f8a6851ffbaaa1a",
+     "anchor": "a511a0ef5646c31dfadd5f3415e1da2e928145b780852cd5616fe49e8b4df6b7",
      "anchored": true,
      "broken_at": null,
      "chain": "ok",
      "disagrees": [],
      "eval": null,
-     "finished_at": "2026-11-04T11:56:49.293Z",
-     "id": "gated-2026-11-04T11-56-49-2i7m",
+     "finished_at": "2026-11-04T13:05:57.443Z",
+     "id": "gated-2026-11-04T13-05-57-k3cn",
      "reason": "",
      "source": "console",
      "spec_digest": "1bdcc09ebdcb7a76",
-     "started_at": "2026-11-04T11:56:49.287Z",
+     "started_at": "2026-11-04T13:05:57.438Z",
      "state": "done",
      "valid": true
     }
@@ -13821,11 +13821,11 @@
     "agent": null,
     "control": null,
     "framework": "dpdp",
-    "from": "2026-10-05T11:56:49.202Z",
-    "generated_at": "2026-11-04T11:56:49.203Z",
+    "from": "2026-10-05T13:05:57.359Z",
+    "generated_at": "2026-11-04T13:05:57.359Z",
     "generated_by": "Chandresh Singh",
     "keys": [],
-    "to": "2026-11-04T11:56:49.202Z"
+    "to": "2026-11-04T13:05:57.359Z"
    },
    "policy": {
     "changes": [],
@@ -14000,7 +14000,7 @@
    "firings": [
     {
      "agent": "older",
-     "at": "2026-11-03T11:56:46.840Z",
+     "at": "2026-11-03T13:05:55.292Z",
      "control_ids": [
       "AF-AC-01"
      ],
@@ -14021,11 +14021,11 @@
     "agent": null,
     "control": "AF-AC-01",
     "framework": null,
-    "from": "2026-10-05T11:56:49.719Z",
-    "generated_at": "2026-11-04T11:56:49.720Z",
+    "from": "2026-10-05T13:05:57.823Z",
+    "generated_at": "2026-11-04T13:05:57.823Z",
     "generated_by": "Chandresh Singh",
     "keys": [],
-    "to": "2026-11-04T11:56:49.719Z"
+    "to": "2026-11-04T13:05:57.823Z"
    },
    "policy": {
     "changes": [],
@@ -14046,7 +14046,7 @@
      "reason": "no entry carries a hash: the record was written before the journal was chained",
      "source": "console",
      "spec_digest": "0000000000000000",
-     "started_at": "2026-11-03T11:56:46.839396Z",
+     "started_at": "2026-11-03T13:05:55.291231Z",
      "state": "done",
      "valid": false
     }
@@ -14203,28 +14203,28 @@
     "agent": null,
     "control": "kill",
     "framework": null,
-    "from": "2026-10-05T11:56:49.774Z",
-    "generated_at": "2026-11-04T11:56:49.774Z",
+    "from": "2026-10-05T13:05:57.871Z",
+    "generated_at": "2026-11-04T13:05:57.872Z",
     "generated_by": "Owen <owen@ey.com>",
     "keys": [],
-    "to": "2026-11-04T11:56:49.774Z"
+    "to": "2026-11-04T13:05:57.871Z"
    },
    "policy": {
     "changes": [
      {
-      "applied_at": "2026-11-04T11:56:49.764Z",
+      "applied_at": "2026-11-04T13:05:57.864Z",
       "applied_by": "Ben <ben@ey.com>",
-      "approved_at": "2026-11-04T11:56:49.764Z",
+      "approved_at": "2026-11-04T13:05:57.864Z",
       "approved_by": "Ben <ben@ey.com>",
       "audit_id": 5,
       "emergency": false,
-      "id": "pc-4d946edc04eb41f4",
+      "id": "pc-f5f8f222a61a40d2",
       "in_force_at_start": false,
-      "proposed_at": "2026-11-04T11:56:49.763Z",
+      "proposed_at": "2026-11-04T13:05:57.862Z",
       "proposed_by": "Ada <ada@ey.com>",
       "reason": "tighten it",
       "rollback_of": "",
-      "rolled_back_by": "pc-df39e618be894181",
+      "rolled_back_by": "pc-4ae6f3c220f843f8",
       "state": "rolled_back",
       "summary": [
        "guardian's hourly cap: 10 → 7"
@@ -14233,18 +14233,18 @@
       "target_kind": "guardian"
      },
      {
-      "applied_at": "2026-11-04T11:56:49.770Z",
+      "applied_at": "2026-11-04T13:05:57.868Z",
       "applied_by": "Ada <ada@ey.com>",
-      "approved_at": "2026-11-04T11:56:49.770Z",
+      "approved_at": "2026-11-04T13:05:57.868Z",
       "approved_by": "Ada <ada@ey.com>",
       "audit_id": 8,
       "emergency": true,
-      "id": "pc-df39e618be894181",
+      "id": "pc-4ae6f3c220f843f8",
       "in_force_at_start": false,
-      "proposed_at": "2026-11-04T11:56:49.770Z",
+      "proposed_at": "2026-11-04T13:05:57.868Z",
       "proposed_by": "Ada <ada@ey.com>",
       "reason": "undo",
-      "rollback_of": "pc-4d946edc04eb41f4",
+      "rollback_of": "pc-f5f8f222a61a40d2",
       "rolled_back_by": "",
       "state": "applied",
       "summary": [
@@ -14455,7 +14455,7 @@
      "aborted": false,
      "agent": "quarterly",
      "approved": true,
-     "at": "2026-11-04T11:56:49.576Z",
+     "at": "2026-11-04T13:05:57.678Z",
      "by": "Chandresh Singh",
      "chained": true,
      "control_ids": [
@@ -14464,12 +14464,12 @@
      "controls": [
       "report"
      ],
-     "digest": "sha256:d3c0ec5be96e6a22eb75c66ea885d9ad0c4f9a2eb6af871917403ee555cb3cc5",
-     "entry": "6accd07f4ab4",
-     "gate": "f9d2d9b854ca",
+     "digest": "sha256:ed7de82de9ecf8405c71df2dc6c61617fd3de12dc096bd579b87475aaeb50fd7",
+     "entry": "c143d2c3e796",
+     "gate": "1d0c68511930",
      "node": "file",
      "note": "",
-     "run": "quarterly-2026-11-04T11-56-49-jbt4",
+     "run": "quarterly-2026-11-04T13-05-57-uonm",
      "shape": "decision",
      "via": "resume"
     }
@@ -14480,34 +14480,34 @@
    "firings": [
     {
      "agent": "quarterly",
-     "at": "2026-11-04T11:56:49.551Z",
+     "at": "2026-11-04T13:05:57.644Z",
      "control_ids": [
       "AF-HO-01"
      ],
      "detail": "notify.send is a sink, and this run holds 1 deliverable nobody has reviewed ('Review of C-1'): a person reviews what the run wrote before anything leaves (policy.deliverables.review_before_sinks)",
-     "entry": "f9d2d9b854ca",
+     "entry": "1d0c68511930",
      "key": "report",
      "kind": "gate.open",
      "label": "A deliverable held for a person's review",
      "node": "file",
-     "run": "quarterly-2026-11-04T11-56-49-jbt4",
+     "run": "quarterly-2026-11-04T13-05-57-uonm",
      "t": 1,
      "title": "Awaiting a human decision on notify.send",
      "tool": "notify.send"
     },
     {
      "agent": "quarterly",
-     "at": "2026-11-04T11:56:49.551Z",
+     "at": "2026-11-04T13:05:57.644Z",
      "control_ids": [
       "AF-HO-01"
      ],
      "detail": "notify.send is a sink, and this run holds 1 deliverable nobody has reviewed ('Review of C-1'): a person reviews what the run wrote before anything leaves (policy.deliverables.review_before_sinks)",
-     "entry": "6accd07f4ab4",
+     "entry": "c143d2c3e796",
      "key": "report",
      "kind": "gate.answer",
      "label": "A deliverable held for a person's review",
      "node": "file",
-     "run": "quarterly-2026-11-04T11-56-49-jbt4",
+     "run": "quarterly-2026-11-04T13-05-57-uonm",
      "t": 1,
      "title": "notify.send approved",
      "tool": "notify.send"
@@ -14527,11 +14527,11 @@
     "agent": null,
     "control": "AF-HO-01",
     "framework": null,
-    "from": "2026-10-05T11:56:49.620Z",
-    "generated_at": "2026-11-04T11:56:49.621Z",
+    "from": "2026-10-05T13:05:57.729Z",
+    "generated_at": "2026-11-04T13:05:57.730Z",
     "generated_by": "Chandresh Singh",
     "keys": [],
-    "to": "2026-11-04T11:56:49.620Z"
+    "to": "2026-11-04T13:05:57.729Z"
    },
    "policy": {
     "changes": [],
@@ -14542,7 +14542,7 @@
       "deployed": false,
       "digest": "d0668b2588b95155",
       "reviews": [],
-      "saved_at": "2026-11-04T11:56:49.548Z",
+      "saved_at": "2026-11-04T13:05:57.641Z",
       "saved_by": "Chandresh Singh",
       "version": 1
      }
@@ -14551,18 +14551,18 @@
    "runs": [
     {
      "agent": "quarterly",
-     "anchor": "0a094971894e6ec09ce513ebb88b74812ee3f6fed9b9b253e4e1cdf093844b61",
+     "anchor": "bb82bfcbdfe83c27203e644d583280d897c9140bf723d19ec87439e2bf922710",
      "anchored": true,
      "broken_at": null,
      "chain": "ok",
      "disagrees": [],
      "eval": null,
-     "finished_at": "2026-11-04T11:56:49.578Z",
-     "id": "quarterly-2026-11-04T11-56-49-jbt4",
+     "finished_at": "2026-11-04T13:05:57.681Z",
+     "id": "quarterly-2026-11-04T13-05-57-uonm",
      "reason": "",
      "source": "console",
      "spec_digest": "d0668b2588b95155",
-     "started_at": "2026-11-04T11:56:49.550Z",
+     "started_at": "2026-11-04T13:05:57.643Z",
      "state": "done",
      "valid": true
     }
@@ -14717,11 +14717,11 @@
     "agent": null,
     "control": "AF-HO-01",
     "framework": null,
-    "from": "2026-10-05T11:56:49.400Z",
-    "generated_at": "2026-11-04T11:56:49.400Z",
+    "from": "2026-10-05T13:05:57.513Z",
+    "generated_at": "2026-11-04T13:05:57.513Z",
     "generated_by": "Chandresh Singh",
     "keys": [],
-    "to": "2026-11-04T11:56:49.400Z"
+    "to": "2026-11-04T13:05:57.513Z"
    },
    "policy": {
     "changes": [],
@@ -14734,11 +14734,11 @@
   "status": 200
  },
  "evidence.zip": {
-  "bytes": 7660,
+  "bytes": 7709,
   "headers": {
    "content-disposition": "attachment; filename=\"evidence-AF-HO-01-2026-10-05-2026-11-04.zip\"",
    "content-type": "application/zip",
-   "x-evidence-manifest-sha256": "0eb9a4e262bcda5504c0b8a1c5fadfa4abb41cf483323501cab31051d4f62378"
+   "x-evidence-manifest-sha256": "ccd24a05a23a8c822635fc7ba60fc2261608de6c6cff2a85fac94799a0baf6a9"
   },
   "status": 200
  },
@@ -16383,8 +16383,8 @@
     "why": "Neither the console's register nor docs/ maps a clause of the DPDP Act to a control; none is invented. The view lists each agent with no obligations mapped."
    },
    "period": {
-    "from": "2026-10-05T11:56:50.891Z",
-    "to": "2026-11-04T11:56:50.891Z"
+    "from": "2026-10-05T13:05:58.873Z",
+    "to": "2026-11-04T13:05:58.873Z"
    }
   },
   "status": 200
@@ -16553,8 +16553,8 @@
     "why": null
    },
    "period": {
-    "from": "2026-10-05T11:56:50.833Z",
-    "to": "2026-11-04T11:56:50.833Z"
+    "from": "2026-10-05T13:05:58.822Z",
+    "to": "2026-11-04T13:05:58.822Z"
    }
   },
   "status": 200
@@ -16661,7 +16661,7 @@
          "detail": "gates: at write",
          "firings": 1,
          "id": "AF-HO-01",
-         "latest": "2026-11-04T11:56:50.848Z",
+         "latest": "2026-11-04T13:05:58.835Z",
          "title": "Authorisation gate"
         },
         {
@@ -17170,8 +17170,8 @@
     "why": null
    },
    "period": {
-    "from": "2026-10-05T11:56:50.865Z",
-    "to": "2026-11-04T11:56:50.865Z"
+    "from": "2026-10-05T13:05:58.850Z",
+    "to": "2026-11-04T13:05:58.850Z"
    }
   },
   "status": 200
@@ -17240,7 +17240,7 @@
          "detail": "gates: at write",
          "firings": 1,
          "id": "AF-HO-01",
-         "latest": "2026-11-04T11:56:50.848Z",
+         "latest": "2026-11-04T13:05:58.835Z",
          "title": "Authorisation gate"
         },
         {
@@ -17667,8 +17667,8 @@
     "why": null
    },
    "period": {
-    "from": "2026-10-05T11:56:50.878Z",
-    "to": "2026-11-04T11:56:50.878Z"
+    "from": "2026-10-05T13:05:58.862Z",
+    "to": "2026-11-04T13:05:58.862Z"
    }
   },
   "status": 200
@@ -17710,8 +17710,8 @@
     "why": "Neither the console's register nor docs/ maps a clause of RBI's Cyber Security Framework to a control; none is invented. The view lists each agent with no obligations mapped."
    },
    "period": {
-    "from": "2026-10-05T11:56:50.919Z",
-    "to": "2026-11-04T11:56:50.919Z"
+    "from": "2026-10-05T13:05:58.897Z",
+    "to": "2026-11-04T13:05:58.897Z"
    }
   },
   "status": 200
@@ -17747,8 +17747,8 @@
     "why": "Neither the console's register nor docs/ maps a clause of SEBI's CSCRF to a control; none is invented. The view lists each agent with no obligations mapped."
    },
    "period": {
-    "from": "2026-10-05T11:56:50.906Z",
-    "to": "2026-11-04T11:56:50.906Z"
+    "from": "2026-10-05T13:05:58.885Z",
+    "to": "2026-11-04T13:05:58.885Z"
    }
   },
   "status": 200
@@ -17781,7 +17781,7 @@
     {
      "broken_at": 1,
      "reason": "entry 1 is not what was written: its hash does not match its content",
-     "run": "tiny-2026-11-04T11-56-48-q1rd",
+     "run": "tiny-2026-11-04T13-05-56-d532",
      "seq": 1
     }
    ],
@@ -17795,14 +17795,14 @@
    "first_break": {
     "broken_at": 1,
     "reason": "entry 1 is not what was written: its hash does not match its content",
-    "run": "tiny-2026-11-04T11-56-48-q1rd",
+    "run": "tiny-2026-11-04T13-05-56-d532",
     "seq": 1
    },
    "from": null,
    "head": {
-    "anchor": "05a433752975f055f8dcb424a4e9a80964e76be372c4dc94ec0f3f5af6b86cdd",
-    "at": "2026-11-04T11:56:48.469Z",
-    "run": "tiny-2026-11-04T11-56-48-wvy0",
+    "anchor": "1ad353200619749331914275cb1efc623b6ce9a05c2a8b878f09d139e4af9668",
+    "at": "2026-11-04T13:05:56.711Z",
+    "run": "tiny-2026-11-04T13-05-56-fqd0",
     "seq": 2
    },
    "runs": 2,
@@ -17812,25 +17812,25 @@
    "walk": [
     {
      "agent": "tiny",
-     "anchor": "5c693b7a1d4dadf1e91c1070368bcb4b7916f81dbc7992fd174c4d68cabaaedc",
-     "at": "2026-11-04T11:56:48.454Z",
+     "anchor": "d861cac5628d314ad5046331a539e8f7a85178dae520d3f744102d51bce42c4f",
+     "at": "2026-11-04T13:05:56.697Z",
      "broken_at": 1,
      "chain": "broken",
      "entries": 5,
      "kind": "run",
-     "run": "tiny-2026-11-04T11-56-48-q1rd",
+     "run": "tiny-2026-11-04T13-05-56-d532",
      "seq": 1,
      "state": "done"
     },
     {
      "agent": "tiny",
-     "anchor": "05a433752975f055f8dcb424a4e9a80964e76be372c4dc94ec0f3f5af6b86cdd",
-     "at": "2026-11-04T11:56:48.469Z",
+     "anchor": "1ad353200619749331914275cb1efc623b6ce9a05c2a8b878f09d139e4af9668",
+     "at": "2026-11-04T13:05:56.711Z",
      "broken_at": null,
      "chain": "ok",
      "entries": 5,
      "kind": "run",
-     "run": "tiny-2026-11-04T11-56-48-wvy0",
+     "run": "tiny-2026-11-04T13-05-56-fqd0",
      "seq": 2,
      "state": "done"
     }
@@ -17866,20 +17866,20 @@
    "breaks": [
     {
      "broken_at": 3,
-     "reason": "the ledger recorded c8625773501596f15d4707b154499cdf30b8c52a952209039d53b2860f6bc2a5 for this run (anchor 1, 5 entries) and it is not on the chain: entries were cut off the end or the journal was rebuilt",
-     "run": "tiny-2026-11-04T11-56-48-zz5q",
+     "reason": "the ledger recorded adbb7f883bd0b3361b827a4b365a211069a0d7de888a04af97ca145984954935 for this run (anchor 1, 5 entries) and it is not on the chain: entries were cut off the end or the journal was rebuilt",
+     "run": "tiny-2026-11-04T13-05-56-d2uu",
      "seq": 1
     },
     {
      "broken_at": null,
      "reason": "anchors 2 to 2 are missing from the ledger",
-     "run": "tiny-2026-11-04T11-56-48-d0w2",
+     "run": "tiny-2026-11-04T13-05-56-njcb",
      "seq": 3
     },
     {
      "broken_at": null,
-     "reason": "its genesis names an anchor no earlier row of the ledger holds (50e1fd1c7f945496c9e667e205c8939213ea32be710ee662e454bf42adc1167c)",
-     "run": "tiny-2026-11-04T11-56-48-d0w2",
+     "reason": "its genesis names an anchor no earlier row of the ledger holds (9ae6522640163ef7cb9d597be195b77ec05b5f07fb0dc9475204c433e8131358)",
+     "run": "tiny-2026-11-04T13-05-56-njcb",
      "seq": 3
     }
    ],
@@ -17892,15 +17892,15 @@
    },
    "first_break": {
     "broken_at": 3,
-    "reason": "the ledger recorded c8625773501596f15d4707b154499cdf30b8c52a952209039d53b2860f6bc2a5 for this run (anchor 1, 5 entries) and it is not on the chain: entries were cut off the end or the journal was rebuilt",
-    "run": "tiny-2026-11-04T11-56-48-zz5q",
+    "reason": "the ledger recorded adbb7f883bd0b3361b827a4b365a211069a0d7de888a04af97ca145984954935 for this run (anchor 1, 5 entries) and it is not on the chain: entries were cut off the end or the journal was rebuilt",
+    "run": "tiny-2026-11-04T13-05-56-d2uu",
     "seq": 1
    },
    "from": null,
    "head": {
-    "anchor": "f5d86dbf747c0150e1497e604e3de3898dc2e523cabed5859dd576e7e3dcfd8a",
-    "at": "2026-11-04T11:56:48.652Z",
-    "run": "tiny-2026-11-04T11-56-48-d0w2",
+    "anchor": "6ed702fff24335feb187b24df685189eaa8657ef362003f07a9b929ee0b06aeb",
+    "at": "2026-11-04T13:05:56.852Z",
+    "run": "tiny-2026-11-04T13-05-56-njcb",
     "seq": 3
    },
    "runs": 2,
@@ -17910,25 +17910,25 @@
    "walk": [
     {
      "agent": "tiny",
-     "anchor": "c8625773501596f15d4707b154499cdf30b8c52a952209039d53b2860f6bc2a5",
-     "at": "2026-11-04T11:56:48.607Z",
+     "anchor": "adbb7f883bd0b3361b827a4b365a211069a0d7de888a04af97ca145984954935",
+     "at": "2026-11-04T13:05:56.811Z",
      "broken_at": 3,
      "chain": "broken",
      "entries": 5,
      "kind": "run",
-     "run": "tiny-2026-11-04T11-56-48-zz5q",
+     "run": "tiny-2026-11-04T13-05-56-d2uu",
      "seq": 1,
      "state": "done"
     },
     {
      "agent": "tiny",
-     "anchor": "f5d86dbf747c0150e1497e604e3de3898dc2e523cabed5859dd576e7e3dcfd8a",
-     "at": "2026-11-04T11:56:48.652Z",
+     "anchor": "6ed702fff24335feb187b24df685189eaa8657ef362003f07a9b929ee0b06aeb",
+     "at": "2026-11-04T13:05:56.852Z",
      "broken_at": null,
      "chain": "ok",
      "entries": 5,
      "kind": "run",
-     "run": "tiny-2026-11-04T11-56-48-d0w2",
+     "run": "tiny-2026-11-04T13-05-56-njcb",
      "seq": 3,
      "state": "done"
     }
@@ -17950,9 +17950,9 @@
    "first_break": null,
    "from": null,
    "head": {
-    "anchor": "05a433752975f055f8dcb424a4e9a80964e76be372c4dc94ec0f3f5af6b86cdd",
-    "at": "2026-11-04T11:56:48.469Z",
-    "run": "tiny-2026-11-04T11-56-48-wvy0",
+    "anchor": "1ad353200619749331914275cb1efc623b6ce9a05c2a8b878f09d139e4af9668",
+    "at": "2026-11-04T13:05:56.711Z",
+    "run": "tiny-2026-11-04T13-05-56-fqd0",
     "seq": 2
    },
    "runs": 2,
@@ -17962,25 +17962,25 @@
    "walk": [
     {
      "agent": "tiny",
-     "anchor": "5c693b7a1d4dadf1e91c1070368bcb4b7916f81dbc7992fd174c4d68cabaaedc",
-     "at": "2026-11-04T11:56:48.454Z",
+     "anchor": "d861cac5628d314ad5046331a539e8f7a85178dae520d3f744102d51bce42c4f",
+     "at": "2026-11-04T13:05:56.697Z",
      "broken_at": null,
      "chain": "ok",
      "entries": 5,
      "kind": "run",
-     "run": "tiny-2026-11-04T11-56-48-q1rd",
+     "run": "tiny-2026-11-04T13-05-56-d532",
      "seq": 1,
      "state": "done"
     },
     {
      "agent": "tiny",
-     "anchor": "05a433752975f055f8dcb424a4e9a80964e76be372c4dc94ec0f3f5af6b86cdd",
-     "at": "2026-11-04T11:56:48.469Z",
+     "anchor": "1ad353200619749331914275cb1efc623b6ce9a05c2a8b878f09d139e4af9668",
+     "at": "2026-11-04T13:05:56.711Z",
      "broken_at": null,
      "chain": "ok",
      "entries": 5,
      "kind": "run",
-     "run": "tiny-2026-11-04T11-56-48-wvy0",
+     "run": "tiny-2026-11-04T13-05-56-fqd0",
      "seq": 2,
      "state": "done"
     }
@@ -18002,9 +18002,9 @@
    "first_break": null,
    "from": null,
    "head": {
-    "anchor": "5c693b7a1d4dadf1e91c1070368bcb4b7916f81dbc7992fd174c4d68cabaaedc",
-    "at": "2026-11-04T11:56:48.454Z",
-    "run": "tiny-2026-11-04T11-56-48-q1rd",
+    "anchor": "d861cac5628d314ad5046331a539e8f7a85178dae520d3f744102d51bce42c4f",
+    "at": "2026-11-04T13:05:56.697Z",
+    "run": "tiny-2026-11-04T13-05-56-d532",
     "seq": 1
    },
    "runs": 1,
@@ -18014,13 +18014,13 @@
    "walk": [
     {
      "agent": "tiny",
-     "anchor": "5c693b7a1d4dadf1e91c1070368bcb4b7916f81dbc7992fd174c4d68cabaaedc",
-     "at": "2026-11-04T11:56:48.454Z",
+     "anchor": "d861cac5628d314ad5046331a539e8f7a85178dae520d3f744102d51bce42c4f",
+     "at": "2026-11-04T13:05:56.697Z",
      "broken_at": null,
      "chain": "ok",
      "entries": 5,
      "kind": "run",
-     "run": "tiny-2026-11-04T11-56-48-q1rd",
+     "run": "tiny-2026-11-04T13-05-56-d532",
      "seq": 1,
      "state": "done"
     }
@@ -18042,9 +18042,9 @@
    "first_break": null,
    "from": null,
    "head": {
-    "anchor": "2d8fa0de5bbb94c7ff4767b6b4c64640efaf383f205b27daddd67396b6f05e98",
-    "at": "2026-12-05T11:56:48.834Z",
-    "run": "tiny-2026-11-04T11-56-48-ans0",
+    "anchor": "c065b8bfb13cbecee046785af44db0d6e8a0cfa7385e60ce5b9378ac64b9dcf5",
+    "at": "2026-12-05T13:05:57.020Z",
+    "run": "tiny-2026-11-04T13-05-57-odib",
     "seq": 3
    },
    "runs": 2,
@@ -18054,37 +18054,37 @@
    "walk": [
     {
      "agent": "tiny",
-     "anchor": "2d8fa0de5bbb94c7ff4767b6b4c64640efaf383f205b27daddd67396b6f05e98",
-     "at": "2026-11-04T11:56:48.829Z",
+     "anchor": "c065b8bfb13cbecee046785af44db0d6e8a0cfa7385e60ce5b9378ac64b9dcf5",
+     "at": "2026-11-04T13:05:57.015Z",
      "broken_at": null,
      "chain": "tombstoned",
      "entries": 5,
      "kind": "run",
-     "run": "tiny-2026-11-04T11-56-48-ans0",
+     "run": "tiny-2026-11-04T13-05-57-odib",
      "seq": 1,
      "state": "done"
     },
     {
      "agent": "tiny",
-     "anchor": "4e7b29a36c3344cbbe5ba4e59974c0698510ca1d13dafdfcbafb76e206b6eec6",
-     "at": "2026-11-04T11:56:48.833Z",
+     "anchor": "70af15a849db692f5efe343c6125bb2120a84d6cb94660eff5868ab0cefa20fb",
+     "at": "2026-11-04T13:05:57.018Z",
      "broken_at": null,
      "chain": "ok",
      "entries": 5,
      "kind": "run",
-     "run": "tiny-2026-11-04T11-56-48-4bjy",
+     "run": "tiny-2026-11-04T13-05-57-wu9g",
      "seq": 2,
      "state": "done"
     },
     {
      "agent": "tiny",
-     "anchor": "2d8fa0de5bbb94c7ff4767b6b4c64640efaf383f205b27daddd67396b6f05e98",
-     "at": "2026-12-05T11:56:48.834Z",
+     "anchor": "c065b8bfb13cbecee046785af44db0d6e8a0cfa7385e60ce5b9378ac64b9dcf5",
+     "at": "2026-12-05T13:05:57.020Z",
      "broken_at": null,
      "chain": "tombstoned",
      "entries": 5,
      "kind": "tombstone",
-     "run": "tiny-2026-11-04T11-56-48-ans0",
+     "run": "tiny-2026-11-04T13-05-57-odib",
      "seq": 3,
      "state": "done"
     }
@@ -18176,18 +18176,18 @@
    "error": "",
    "history": [
     {
-     "at": "2026-11-04T11:56:47.317Z",
+     "at": "2026-11-04T13:05:55.714Z",
      "by": "Ada <ada@ey.com>",
      "note": "more room",
      "state": "pending"
     }
    ],
-   "id": "pc-ca5f24a0322b40c4",
+   "id": "pc-016bad55f7014f51",
    "note": "",
    "proposed": {
     "max_actions_per_hour": 15
    },
-   "proposed_at": "2026-11-04T11:56:47.317Z",
+   "proposed_at": "2026-11-04T13:05:55.714Z",
    "proposed_by": "Ada <ada@ey.com>",
    "reason": "more room",
    "reject_reason": "",
@@ -18254,13 +18254,13 @@
    "error": "",
    "history": [
     {
-     "at": "2026-11-04T11:56:47.761Z",
+     "at": "2026-11-04T13:05:56.105Z",
      "by": "Ada <ada@ey.com>",
      "note": "the desk needs lookups",
      "state": "pending"
     }
    ],
-   "id": "pc-1b1bd824ef654da4",
+   "id": "pc-f7807ec99dba4749",
    "note": "",
    "proposed": {
     "gate_at": "write",
@@ -18269,7 +18269,7 @@
      "crm.update"
     ]
    },
-   "proposed_at": "2026-11-04T11:56:47.761Z",
+   "proposed_at": "2026-11-04T13:05:56.105Z",
    "proposed_by": "Ada <ada@ey.com>",
    "reason": "the desk needs lookups",
    "reject_reason": "",
@@ -18322,18 +18322,18 @@
    "error": "",
    "history": [
     {
-     "at": "2026-11-04T11:56:47.204Z",
+     "at": "2026-11-04T13:05:55.616Z",
      "by": "Ada <ada@ey.com>",
      "note": "a sensitive agent",
      "state": "pending"
     }
    ],
-   "id": "pc-3dc2b727d21b4265",
+   "id": "pc-1004c788cc3a458a",
    "note": "",
    "proposed": {
     "period_days": 30
    },
-   "proposed_at": "2026-11-04T11:56:47.204Z",
+   "proposed_at": "2026-11-04T13:05:55.616Z",
    "proposed_by": "Ada <ada@ey.com>",
    "reason": "a sensitive agent",
    "reject_reason": "",
@@ -18381,23 +18381,23 @@
      "kind": "breakers"
     }
    },
-   "effective_at": "2026-11-04T13:56:46.839Z",
+   "effective_at": "2026-11-04T15:05:55.291Z",
    "emergency": false,
    "error": "",
    "history": [
     {
-     "at": "2026-11-04T11:56:47.535Z",
+     "at": "2026-11-04T13:05:55.905Z",
      "by": "Ada <ada@ey.com>",
      "note": "tighten it",
      "state": "pending"
     }
    ],
-   "id": "pc-f0c64382600c4e91",
+   "id": "pc-0f2c5be9963c49f4",
    "note": "",
    "proposed": {
     "calls": 9
    },
-   "proposed_at": "2026-11-04T11:56:47.535Z",
+   "proposed_at": "2026-11-04T13:05:55.905Z",
    "proposed_by": "Ada <ada@ey.com>",
    "reason": "tighten it",
    "reject_reason": "",
@@ -18455,13 +18455,13 @@
    "error": "",
    "history": [
     {
-     "at": "2026-11-04T11:56:47.144Z",
+     "at": "2026-11-04T13:05:55.562Z",
      "by": "Ada <ada@ey.com>",
      "note": "the new phrasing",
      "state": "pending"
     }
    ],
-   "id": "pc-a897c2ed552b4785",
+   "id": "pc-ae3cba50646545fe",
    "note": "",
    "proposed": {
     "patterns": [
@@ -18469,7 +18469,7 @@
      "add me"
     ]
    },
-   "proposed_at": "2026-11-04T11:56:47.144Z",
+   "proposed_at": "2026-11-04T13:05:55.562Z",
    "proposed_by": "Ada <ada@ey.com>",
    "reason": "the new phrasing",
    "reject_reason": "",
@@ -18522,18 +18522,18 @@
    "error": "",
    "history": [
     {
-     "at": "2026-11-04T11:56:47.993Z",
+     "at": "2026-11-04T13:05:56.304Z",
      "by": "Ada <ada@ey.com>",
      "note": "the new contract",
      "state": "pending"
     }
    ],
-   "id": "pc-2ac589e878784497",
+   "id": "pc-8d6e5e87d8e84cab",
    "note": "",
    "proposed": {
     "max_data_class": "confidential"
    },
-   "proposed_at": "2026-11-04T11:56:47.993Z",
+   "proposed_at": "2026-11-04T13:05:56.304Z",
    "proposed_by": "Ada <ada@ey.com>",
    "reason": "the new contract",
    "reject_reason": "",
@@ -18586,18 +18586,18 @@
    "error": "",
    "history": [
     {
-     "at": "2026-11-04T11:56:47.180Z",
+     "at": "2026-11-04T13:05:55.594Z",
      "by": "Ada <ada@ey.com>",
      "note": "one noisy agent",
      "state": "pending"
     }
    ],
-   "id": "pc-664d1543294e49f0",
+   "id": "pc-3daa3b9d92684a7f",
    "note": "",
    "proposed": {
     "run_starts_per_minute": 2
    },
-   "proposed_at": "2026-11-04T11:56:47.180Z",
+   "proposed_at": "2026-11-04T13:05:55.594Z",
    "proposed_by": "Ada <ada@ey.com>",
    "reason": "one noisy agent",
    "reject_reason": "",
@@ -18676,13 +18676,13 @@
    "error": "",
    "history": [
     {
-     "at": "2026-11-04T11:56:47.155Z",
+     "at": "2026-11-04T13:05:55.573Z",
      "by": "Ada <ada@ey.com>",
      "note": "case ids",
      "state": "pending"
     }
    ],
-   "id": "pc-70ab94da917240c7",
+   "id": "pc-0808c8668265489b",
    "note": "",
    "proposed": {
     "internal": [
@@ -18695,7 +18695,7 @@
      "employee_id"
     ]
    },
-   "proposed_at": "2026-11-04T11:56:47.155Z",
+   "proposed_at": "2026-11-04T13:05:55.573Z",
    "proposed_by": "Ada <ada@ey.com>",
    "reason": "case ids",
    "reject_reason": "",
@@ -18774,13 +18774,13 @@
    "error": "",
    "history": [
     {
-     "at": "2026-11-04T11:56:51.000Z",
+     "at": "2026-11-04T13:05:58.971Z",
      "by": "Ada <ada@ey.com>",
      "note": "personal data",
      "state": "pending"
     }
    ],
-   "id": "pc-56994b704b674705",
+   "id": "pc-2817fdd6365143e2",
    "note": "",
    "proposed": {
     "internal": [
@@ -18793,7 +18793,7 @@
      "employee_id"
     ]
    },
-   "proposed_at": "2026-11-04T11:56:51.000Z",
+   "proposed_at": "2026-11-04T13:05:58.971Z",
    "proposed_by": "Ada <ada@ey.com>",
    "reason": "personal data",
    "reject_reason": "",
@@ -18856,19 +18856,19 @@
    "error": "",
    "history": [
     {
-     "at": "2026-11-04T11:56:47.168Z",
+     "at": "2026-11-04T13:05:55.583Z",
      "by": "Ada <ada@ey.com>",
      "note": "the records schedule",
      "state": "pending"
     }
    ],
-   "id": "pc-4031cd79796545e3",
+   "id": "pc-129ab354aa144114",
    "note": "",
    "proposed": {
     "journals": 180,
     "runs": 365
    },
-   "proposed_at": "2026-11-04T11:56:47.168Z",
+   "proposed_at": "2026-11-04T13:05:55.583Z",
    "proposed_by": "Ada <ada@ey.com>",
    "reason": "the records schedule",
    "reject_reason": "",
@@ -18921,18 +18921,18 @@
    "error": "",
    "history": [
     {
-     "at": "2026-11-04T11:56:47.192Z",
+     "at": "2026-11-04T13:05:55.605Z",
      "by": "Ada <ada@ey.com>",
      "note": "tighter for L5",
      "state": "pending"
     }
    ],
-   "id": "pc-08b33c3166ce40b8",
+   "id": "pc-7b2f6feccae44ba6",
    "note": "",
    "proposed": {
     "attestation_within_days": 14
    },
-   "proposed_at": "2026-11-04T11:56:47.192Z",
+   "proposed_at": "2026-11-04T13:05:55.605Z",
    "proposed_by": "Ada <ada@ey.com>",
    "reason": "tighter for L5",
    "reject_reason": "",
@@ -19094,28 +19094,28 @@
    "error": "",
    "history": [
     {
-     "at": "2026-11-04T11:56:47.495Z",
+     "at": "2026-11-04T13:05:55.869Z",
      "by": "Ada <ada@ey.com>",
      "note": "tighten it",
      "state": "pending"
     },
     {
-     "at": "2026-11-04T11:56:47.510Z",
+     "at": "2026-11-04T13:05:55.882Z",
      "by": "Ben <ben@ey.com>",
      "note": "too tight for the batch window",
      "state": "rejected"
     }
    ],
-   "id": "pc-e86b0eb14d6a4cc9",
+   "id": "pc-11d771fe025e4691",
    "note": "",
    "proposed": {
     "calls": 7
    },
-   "proposed_at": "2026-11-04T11:56:47.495Z",
+   "proposed_at": "2026-11-04T13:05:55.869Z",
    "proposed_by": "Ada <ada@ey.com>",
    "reason": "tighten it",
    "reject_reason": "too tight for the batch window",
-   "rejected_at": "2026-11-04T11:56:47.510Z",
+   "rejected_at": "2026-11-04T13:05:55.882Z",
    "rejected_by": "Ben <ben@ey.com>",
    "rollback_of": "",
    "rolled_back_at": null,
@@ -19130,7 +19130,7 @@
  },
  "reject.refused.applied": {
   "body": {
-   "error": "policy change pc-ca5f24a0322b40c4 is applied: only a pending or approved change is rejected",
+   "error": "policy change pc-016bad55f7014f51 is applied: only a pending or approved change is rejected",
    "state": "applied"
   },
   "status": 409
@@ -19147,7 +19147,7 @@
    "decision": {
     "aborted": false,
     "approved": true,
-    "at": "2026-11-04T11:56:49.013Z",
+    "at": "2026-11-04T13:05:57.183Z",
     "by": "Chandresh Singh",
     "by_sub": "local:operator",
     "control_ids": [
@@ -19156,14 +19156,14 @@
     "controls": [
      "gate"
     ],
-    "digest": "sha256:70b0bf5d4e2e05b884282285468791d83ad10c698bb3b044a7b7af36226c7a94",
-    "gate": "aebe132c2caa",
+    "digest": "sha256:ff5348e4cdffda569f356f6a814599a585a3d6acebc20220c5b076c5bd6c66ac",
+    "gate": "98a78c909cb0",
     "node": "review",
     "note": "fine",
     "shape": "decision",
     "via": "resume"
    },
-   "run": "gated-2026-11-04T11-56-48-afqy",
+   "run": "gated-2026-11-04T13-05-57-tt3y",
    "state": "running"
   },
   "status": 202
@@ -19207,7 +19207,7 @@
     "journals": null,
     "runs": 30
    },
-   "set_at": "2026-11-04T11:56:48.753Z",
+   "set_at": "2026-11-04T13:05:56.950Z",
    "set_by": "seed",
    "tombstones": []
   },
@@ -19219,12 +19219,12 @@
    "count": 1,
    "last_sweep": [
     {
-     "before": "2026-11-05T11:56:48.834Z",
+     "before": "2026-11-05T13:05:57.020Z",
      "class": "runs",
      "deleted": 1
     }
    ],
-   "last_sweep_at": "2026-12-05T11:56:48.834Z",
+   "last_sweep_at": "2026-12-05T13:05:57.020Z",
    "rules": {
     "auth_events": null,
     "deliverables": null,
@@ -19232,21 +19232,21 @@
     "journals": null,
     "runs": 30
    },
-   "set_at": "2026-11-04T11:56:48.753Z",
+   "set_at": "2026-11-04T13:05:56.950Z",
    "set_by": "seed",
    "tombstones": [
     {
      "by": "retention",
      "class": "runs",
-     "deleted_at": "2026-12-05T11:56:48.834Z",
+     "deleted_at": "2026-12-05T13:05:57.020Z",
      "detail": {
       "agent": "tiny",
-      "finished_at": "2026-11-04T11:56:48.829Z",
+      "finished_at": "2026-11-04T13:05:57.015Z",
       "state": "done"
      },
-     "digest": "sha256:dd7294e8ca87948ec6882b447680cdb96ee6c5bf7eb253f55e354d8888b804cd",
-     "id": "ts-61a61df014934250",
-     "record": "tiny-2026-11-04T11-56-48-ans0"
+     "digest": "sha256:3ce5401f26b80f2399c4d045d3c618cd25a864abe5c7a3f4786ad81e3ea02ccb",
+     "id": "ts-c966af2d2a2a4d96",
+     "record": "tiny-2026-11-04T13-05-57-odib"
     }
    ]
   },
@@ -19265,7 +19265,7 @@
     "model": "",
     "rubric": ""
    },
-   "applied_at": "2026-11-04T11:56:47.425Z",
+   "applied_at": "2026-11-04T13:05:55.814Z",
    "applied_by": "Ada <ada@ey.com>",
    "applied_diff": {
     "changes": [
@@ -19288,7 +19288,7 @@
      "kind": "guardian"
     }
    },
-   "approved_at": "2026-11-04T11:56:47.425Z",
+   "approved_at": "2026-11-04T13:05:55.814Z",
    "approved_by": "Ada <ada@ey.com>",
    "audit_id": 14,
    "before": {
@@ -19328,24 +19328,24 @@
    "error": "",
    "history": [
     {
-     "at": "2026-11-04T11:56:47.425Z",
+     "at": "2026-11-04T13:05:55.814Z",
      "by": "Ada <ada@ey.com>",
-     "note": "emergency rollback of pc-ca5f24a0322b40c4: the cap let a run through",
+     "note": "emergency rollback of pc-016bad55f7014f51: the cap let a run through",
      "state": "applied"
     }
    ],
-   "id": "pc-ef6e20a4d610425f",
+   "id": "pc-bc4918f497384cd9",
    "note": "emergency rollback: no second person",
    "proposed": {
     "max_actions_per_hour": 10
    },
-   "proposed_at": "2026-11-04T11:56:47.425Z",
+   "proposed_at": "2026-11-04T13:05:55.814Z",
    "proposed_by": "Ada <ada@ey.com>",
    "reason": "the cap let a run through",
    "reject_reason": "",
    "rejected_at": null,
    "rejected_by": "",
-   "rollback_of": "pc-ca5f24a0322b40c4",
+   "rollback_of": "pc-016bad55f7014f51",
    "rolled_back_at": null,
    "rolled_back_by": "",
    "state": "applied",
@@ -19358,7 +19358,7 @@
  },
  "rollback.refused.again": {
   "body": {
-   "error": "policy change pc-ca5f24a0322b40c4 is rolled_back: only an applied change is rolled back",
+   "error": "policy change pc-016bad55f7014f51 is rolled_back: only an applied change is rolled back",
    "state": "rolled_back"
   },
   "status": 409
@@ -19372,7 +19372,7 @@
  },
  "rollback.refused.pending": {
   "body": {
-   "error": "policy change pc-ca5f24a0322b40c4 is pending: only an applied change is rolled back",
+   "error": "policy change pc-016bad55f7014f51 is pending: only an applied change is rolled back",
    "state": "pending"
   },
   "status": 409
@@ -19392,7 +19392,7 @@
     {
      "aborted": false,
      "approved": true,
-     "at": "2026-11-04T11:56:49.013Z",
+     "at": "2026-11-04T13:05:57.183Z",
      "by": "Chandresh Singh",
      "by_sub": "local:operator",
      "chained": true,
@@ -19402,9 +19402,9 @@
      "controls": [
       "gate"
      ],
-     "digest": "sha256:70b0bf5d4e2e05b884282285468791d83ad10c698bb3b044a7b7af36226c7a94",
-     "entry": "83448cd7dc1c",
-     "gate": "aebe132c2caa",
+     "digest": "sha256:ff5348e4cdffda569f356f6a814599a585a3d6acebc20220c5b076c5bd6c66ac",
+     "entry": "d690f42906c0",
+     "gate": "98a78c909cb0",
      "node": "review",
      "note": "fine",
      "shape": "decision",
@@ -19412,8 +19412,8 @@
     }
    ],
    "error": "",
-   "finished_at": "2026-11-04T11:56:49.014Z",
-   "id": "gated-2026-11-04T11-56-48-afqy",
+   "finished_at": "2026-11-04T13:05:57.185Z",
+   "id": "gated-2026-11-04T13-05-57-tt3y",
    "journal": {
     "duration_ms": 1,
     "entries": [
@@ -19423,21 +19423,21 @@
        "record": 2,
        "spec_digest": "1bdcc09ebdcb7a76",
        "system": "gated",
-       "trace_id": "t-747d1ab4d353422e"
+       "trace_id": "t-b022940b07fb42c5"
       },
       "detail": "",
-      "hash": "46f5559648333abf5a9ba122859b344e2fd25620587c731ad07b3d4732d42082",
-      "id": "73f55928320b",
+      "hash": "5787950d380b409dcc2c00c00949bf72f2964937aa4fcbb3f90d49b8808c8541",
+      "id": "7811780b80fd",
       "kind": "run.start",
       "node": "",
-      "prev": "d46a7e1f33c7f82ef65dff72dd215c09ccea82818da97d6e7d04b495d4bd0c65",
+      "prev": "5e28a1ac8f7488fb4bf1f6554f6b6a54b1ba436efee7cbb63c097c04fb4a0cd8",
       "t": 0,
       "tainted": false,
-      "title": "Run gated-2026-11-04T11-56-48-afqy"
+      "title": "Run gated-2026-11-04T13-05-57-tt3y"
      },
      {
       "because": [
-       "73f55928320b"
+       "7811780b80fd"
       ],
       "data": {
        "inputs": {
@@ -19445,18 +19445,18 @@
        }
       },
       "detail": "sequence · 1 steps",
-      "hash": "4fbad7395c73748e2a217c68edd83fc6495428b96cc77f36dbc5bfceaf1c9b39",
-      "id": "51c1f9040ec5",
+      "hash": "3457a623a13aa5a6faf563916fe74fb05317b2cfb6efec97c1a05c3005b87721",
+      "id": "9718a983c2e1",
       "kind": "node.enter",
       "node": "decide",
-      "prev": "46f5559648333abf5a9ba122859b344e2fd25620587c731ad07b3d4732d42082",
+      "prev": "5787950d380b409dcc2c00c00949bf72f2964937aa4fcbb3f90d49b8808c8541",
       "t": 0,
       "tainted": false,
       "title": "Decide"
      },
      {
       "because": [
-       "51c1f9040ec5"
+       "9718a983c2e1"
       ],
       "data": {
        "intents": [],
@@ -19468,19 +19468,19 @@
        }
       },
       "detail": "benign",
-      "hash": "95a8eb937f617c64ceb17a1a40ee372c1480f031bb2ecd8dcd1f40af4521a80d",
-      "id": "0d25e79b8f77",
+      "hash": "93f16a186a29969a4b6aa098c3abdb536c89b1dd9fb6b8b88d49ee1ddb80a359",
+      "id": "dd5ffcb9bd5a",
       "kind": "model.call",
       "node": "decide",
-      "prev": "4fbad7395c73748e2a217c68edd83fc6495428b96cc77f36dbc5bfceaf1c9b39",
+      "prev": "3457a623a13aa5a6faf563916fe74fb05317b2cfb6efec97c1a05c3005b87721",
       "t": 0,
       "tainted": false,
       "title": "scripted"
      },
      {
       "because": [
-       "51c1f9040ec5",
-       "0d25e79b8f77"
+       "9718a983c2e1",
+       "dd5ffcb9bd5a"
       ],
       "data": {
        "emitted": {
@@ -19488,22 +19488,22 @@
        }
       },
       "detail": "",
-      "hash": "77305d1199640a5d8b42948cda0d78a2317bf81f252c3ea24cc620942d8b17f6",
-      "id": "c87c9ca713bf",
+      "hash": "1aad0da25378888c16587aa7400d26c7ab5929a14e3d998f470e1843c6aba4bd",
+      "id": "af02abdf84c9",
       "kind": "node.exit",
       "node": "decide",
-      "prev": "95a8eb937f617c64ceb17a1a40ee372c1480f031bb2ecd8dcd1f40af4521a80d",
+      "prev": "93f16a186a29969a4b6aa098c3abdb536c89b1dd9fb6b8b88d49ee1ddb80a359",
       "t": 0,
       "tainted": false,
       "title": "Decide complete"
      },
      {
       "because": [
-       "51c1f9040ec5",
-       "0d25e79b8f77"
+       "9718a983c2e1",
+       "dd5ffcb9bd5a"
       ],
       "data": {
-       "deadline": "2026-11-05T11:56:48Z",
+       "deadline": "2026-11-05T13:05:57Z",
        "interface": "approval",
        "on_timeout": "escalate",
        "presented": {
@@ -19515,42 +19515,42 @@
        "timeout_s": 86400.0
       },
       "detail": "awaiting approval from dlp-lead",
-      "hash": "e515139c637619d010445773e56e039775546779b48603cd00a81abfd9fe79fb",
-      "id": "aebe132c2caa",
+      "hash": "78b14d2dbb87222a5d734fa61cf9bf9d03be591ca8cd228a5d605853d60feeac",
+      "id": "98a78c909cb0",
       "kind": "suspend",
       "node": "review",
-      "prev": "77305d1199640a5d8b42948cda0d78a2317bf81f252c3ea24cc620942d8b17f6",
+      "prev": "1aad0da25378888c16587aa7400d26c7ab5929a14e3d998f470e1843c6aba4bd",
       "t": 0,
       "tainted": false,
       "title": "Analyst review"
      },
      {
       "because": [
-       "aebe132c2caa"
+       "98a78c909cb0"
       ],
       "data": {
        "approvers": [
         "dlp-lead"
        ],
        "control": "gate",
-       "deadline": "2026-11-05T11:56:48Z",
+       "deadline": "2026-11-05T13:05:57Z",
        "shape": "decision"
       },
       "detail": "dlp-lead",
-      "hash": "e0c62ced1a9d8430859985a8fb3df4fcc8c6b6971f83870ff46283eefe0974f6",
-      "id": "e53957032457",
+      "hash": "e3dd797a315f811d57870337d50fa3944b4f2980d877a0a729445a112530dd82",
+      "id": "1d9e5e9548fe",
       "kind": "gate.open",
       "node": "review",
-      "prev": "e515139c637619d010445773e56e039775546779b48603cd00a81abfd9fe79fb",
+      "prev": "78b14d2dbb87222a5d734fa61cf9bf9d03be591ca8cd228a5d605853d60feeac",
       "t": 0,
       "tainted": false,
       "title": "Awaiting a human decision"
      },
      {
       "because": [
-       "51c1f9040ec5",
-       "0d25e79b8f77",
-       "e53957032457"
+       "9718a983c2e1",
+       "dd5ffcb9bd5a",
+       "1d9e5e9548fe"
       ],
       "data": {
        "answer": {
@@ -19563,18 +19563,18 @@
        }
       },
       "detail": "approved by Chandresh Singh",
-      "hash": "ad46cd6dc06f46f3f1d04891fe75d26ced8eed6f4241b9941d5c58ccf9db6728",
-      "id": "75a794ea2fe9",
+      "hash": "7dc1f12b84db0f74fd1b4ba68587e659572443837e65ab7484459fd9b24c00cf",
+      "id": "164151774629",
       "kind": "resume",
       "node": "review",
-      "prev": "e0c62ced1a9d8430859985a8fb3df4fcc8c6b6971f83870ff46283eefe0974f6",
-      "t": 1,
+      "prev": "e3dd797a315f811d57870337d50fa3944b4f2980d877a0a729445a112530dd82",
+      "t": 0,
       "tainted": false,
       "title": "Analyst review resumed"
      },
      {
       "because": [
-       "75a794ea2fe9"
+       "164151774629"
       ],
       "data": {
        "approved": true,
@@ -19583,21 +19583,21 @@
         "gate"
        ],
        "note": "fine",
-       "opened": "e53957032457"
+       "opened": "1d9e5e9548fe"
       },
       "detail": "Chandresh Singh: fine",
-      "hash": "b5bf3b704ad53da78bb51abee7307478900c36c9c376ce43be6ce4cacccef3c4",
-      "id": "83448cd7dc1c",
+      "hash": "70a19f5d08594b78ffc149cd5c4463e004fc8d559ce4a8ca10b449d5d27951e2",
+      "id": "d690f42906c0",
       "kind": "gate.answer",
       "node": "review",
-      "prev": "ad46cd6dc06f46f3f1d04891fe75d26ced8eed6f4241b9941d5c58ccf9db6728",
+      "prev": "7dc1f12b84db0f74fd1b4ba68587e659572443837e65ab7484459fd9b24c00cf",
       "t": 1,
       "tainted": false,
       "title": "Approved"
      },
      {
       "because": [
-       "75a794ea2fe9"
+       "164151774629"
       ],
       "data": {
        "emitted": {
@@ -19605,19 +19605,19 @@
        }
       },
       "detail": "",
-      "hash": "3429baff35a3ce8ea9bc5ee74f00bb6c5d2cfeac2792a8fb0e3f57505a6e868e",
-      "id": "698e6efe0562",
+      "hash": "7abc42b3348b51cc6ccd50b03eb15303e2eafc10d1dd0f495fe336159d3a7807",
+      "id": "4ef267d007d0",
       "kind": "node.exit",
       "node": "review",
-      "prev": "b5bf3b704ad53da78bb51abee7307478900c36c9c376ce43be6ce4cacccef3c4",
+      "prev": "70a19f5d08594b78ffc149cd5c4463e004fc8d559ce4a8ca10b449d5d27951e2",
       "t": 1,
       "tainted": false,
       "title": "Analyst review complete"
      },
      {
       "because": [
-       "75a794ea2fe9",
-       "698e6efe0562"
+       "164151774629",
+       "4ef267d007d0"
       ],
       "data": {
        "denied": 0,
@@ -19625,20 +19625,21 @@
         "approved": true
        },
        "result_digest": "sha256:20ec2f38fc96bc7d416a9af537493ae0bae26c5ad4c5a0f2d94f56f9c3e04958",
-       "skipped": []
+       "skipped": [],
+       "values_digest": "sha256:85d63dd1a67aed33f8c3c8ed10d5969935d01047f296cb23b1d5720629b7192c"
       },
       "detail": "2 nodes ran, 0 skipped, 0 refused actions",
-      "hash": "2f0672f230ffb1ba74d61cd71091c3dda2066fe0c30a5ef4015cf71425b68cb5",
-      "id": "7b55dd4f0444",
+      "hash": "6bcfaad05908da3b242960182c9bb9a59e285d14f0a7f5de95ccb8bba8430aba",
+      "id": "c4a717fc1477",
       "kind": "run.end",
       "node": "",
-      "prev": "3429baff35a3ce8ea9bc5ee74f00bb6c5d2cfeac2792a8fb0e3f57505a6e868e",
+      "prev": "7abc42b3348b51cc6ccd50b03eb15303e2eafc10d1dd0f495fe336159d3a7807",
       "t": 1,
       "tainted": false,
       "title": "Run complete"
      }
     ],
-    "run_id": "gated-2026-11-04T11-56-48-afqy",
+    "run_id": "gated-2026-11-04T13-05-57-tt3y",
     "spec_digest": "1bdcc09ebdcb7a76",
     "system": "gated"
    },
@@ -19646,6 +19647,7 @@
    "marks": null,
    "model": "scripted",
    "provider": "scripted",
+   "redacted": [],
    "result": {
     "approved": true
    },
@@ -19721,11 +19723,11 @@
     "tool_calls": 0,
     "wall_clock_s": 0.0
    },
-   "started_at": "2026-11-04T11:56:48.996Z",
+   "started_at": "2026-11-04T13:05:57.168Z",
    "state": "done",
    "suspension": null,
    "system": "gated",
-   "trace_id": "t-747d1ab4d353422e",
+   "trace_id": "t-b022940b07fb42c5",
    "values": {
     "$input": {
      "case": "C-1"
@@ -20094,8 +20096,8 @@
    "data_class": null,
    "decisions": null,
    "error": "data_class: store.put's arguments carry restricted content, and store.put takes internal at most (max_data_class)",
-   "finished_at": "2026-11-04T11:56:49.128Z",
-   "id": "reader-2026-11-04T11-56-49-0k9m",
+   "finished_at": "2026-11-04T13:05:57.290Z",
+   "id": "reader-2026-11-04T13-05-57-84yi",
    "journal": {
     "duration_ms": 1,
     "entries": [
@@ -20105,21 +20107,21 @@
        "record": 2,
        "spec_digest": "7a3d5befd5ad5f10",
        "system": "reader",
-       "trace_id": "t-547ce8198c6b4329"
+       "trace_id": "t-749c07eabfaa4cdf"
       },
       "detail": "",
-      "hash": "3849f4f6ef3326f42c27742adfe88910451106def8954ad9a66624a751878a20",
-      "id": "3a46d6a759c1",
+      "hash": "67d36e3774f99d89c0010c514372db645e8f22b3cb18f3defd425341bbaa64be",
+      "id": "c5d7777425e1",
       "kind": "run.start",
       "node": "",
-      "prev": "beb1072461b2ecc52af9e0340d367bcf741df3113e555b29ab1485e8f301011f",
+      "prev": "a69e5200fae8b62a93dbf9d4a635ae988101b6a09a1b85ce168de954d3483ada",
       "t": 0,
       "tainted": false,
-      "title": "Run reader-2026-11-04T11-56-49-0k9m"
+      "title": "Run reader-2026-11-04T13-05-57-84yi"
      },
      {
       "because": [
-       "3a46d6a759c1"
+       "c5d7777425e1"
       ],
       "data": {
        "inputs": {
@@ -20127,18 +20129,18 @@
        }
       },
       "detail": "sequence · 2 steps",
-      "hash": "fae0f17441d786953626e582b1495afd94bd23524085cb9499787c5cef7ea662",
-      "id": "742023e7a023",
+      "hash": "c5983cbfdedd66d160358154e46a7827faf9522d81a7737ff8b442ff42928fdd",
+      "id": "8779d422fbb0",
       "kind": "node.enter",
       "node": "act",
-      "prev": "3849f4f6ef3326f42c27742adfe88910451106def8954ad9a66624a751878a20",
+      "prev": "67d36e3774f99d89c0010c514372db645e8f22b3cb18f3defd425341bbaa64be",
       "t": 0,
       "tainted": false,
       "title": "Act"
      },
      {
       "because": [
-       "742023e7a023"
+       "8779d422fbb0"
       ],
       "data": {
        "args": {
@@ -20147,18 +20149,18 @@
        "tool": "retrieval.search"
       },
       "detail": "",
-      "hash": "f74aa849e5efa4b18697958950edb8e408b56b9e833044e64acf4688f27cec21",
-      "id": "564234c97053",
+      "hash": "368d98c91217383723690b244adc628528ca88d291b2c9c0e72cf17da1ae8c92",
+      "id": "cb4961c18c91",
       "kind": "tool.call",
       "node": "act",
-      "prev": "fae0f17441d786953626e582b1495afd94bd23524085cb9499787c5cef7ea662",
+      "prev": "c5983cbfdedd66d160358154e46a7827faf9522d81a7737ff8b442ff42928fdd",
       "t": 0,
       "tainted": false,
       "title": "retrieval.search"
      },
      {
       "because": [
-       "564234c97053"
+       "cb4961c18c91"
       ],
       "data": {
        "data_class": "restricted",
@@ -20181,7 +20183,7 @@
           "meta": {
            "bytes": 36
           },
-          "origin": "/private/var/folders/61/jr7y7qys75b8m5kzjfkklys40000gn/T/pytest-of-plazor/pytest-831/test_run_record_data_class0/workspace/documents/pay.md",
+          "origin": "/private/var/folders/61/jr7y7qys75b8m5kzjfkklys40000gn/T/pytest-of-plazor/pytest-860/test_run_record_data_class0/workspace/documents/pay.md",
           "score": 1.0,
           "source": "hr",
           "title": "pay"
@@ -20190,19 +20192,19 @@
        }
       },
       "detail": "",
-      "hash": "47da6abd2ad203568c73ded08f264f30ef6f639b303d95f0a206b6ec00ad4785",
-      "id": "8be4fff30027",
+      "hash": "8168ae70357f6d76fec0b5480c4b71dcaa5f56effce96d078ff47aade1c04ef7",
+      "id": "41dc29d7730f",
       "kind": "tool.result",
       "node": "act",
-      "prev": "f74aa849e5efa4b18697958950edb8e408b56b9e833044e64acf4688f27cec21",
+      "prev": "368d98c91217383723690b244adc628528ca88d291b2c9c0e72cf17da1ae8c92",
       "t": 0,
       "tainted": false,
       "title": "retrieval.search returned"
      },
      {
       "because": [
-       "742023e7a023",
-       "8be4fff30027"
+       "8779d422fbb0",
+       "41dc29d7730f"
       ],
       "data": {
        "args": {
@@ -20224,7 +20226,7 @@
            "meta": {
             "bytes": 36
            },
-           "origin": "/private/var/folders/61/jr7y7qys75b8m5kzjfkklys40000gn/T/pytest-of-plazor/pytest-831/test_run_record_data_class0/workspace/documents/pay.md",
+           "origin": "/private/var/folders/61/jr7y7qys75b8m5kzjfkklys40000gn/T/pytest-of-plazor/pytest-860/test_run_record_data_class0/workspace/documents/pay.md",
            "score": 1.0,
            "source": "hr",
            "title": "pay"
@@ -20237,11 +20239,11 @@
        "tool": "store.put"
       },
       "detail": "store.put's arguments carry restricted content, and store.put takes internal at most (max_data_class)",
-      "hash": "30e7b231c8cb014ea60c6c9a6a19f5554e5d16564a8ca31494bfee189ded717f",
-      "id": "ed1b407a088f",
+      "hash": "6010e60e0b2d445a8788a64f1f589c44a9cd9002bf24520d9796cde59751db64",
+      "id": "75fbfff656c5",
       "kind": "denied",
       "node": "act",
-      "prev": "47da6abd2ad203568c73ded08f264f30ef6f639b303d95f0a206b6ec00ad4785",
+      "prev": "8168ae70357f6d76fec0b5480c4b71dcaa5f56effce96d078ff47aade1c04ef7",
       "t": 0,
       "tainted": false,
       "title": "Refused store.put"
@@ -20250,17 +20252,17 @@
       "because": [],
       "data": {},
       "detail": "data_class: store.put's arguments carry restricted content, and store.put takes internal at most (max_data_class)",
-      "hash": "2e8078199a7b6386053bc1d7deeb0d8d4d8a7b73c13b001832e8772b83314f62",
-      "id": "0551ab9cf188",
+      "hash": "57e7225940688940075ecfa295927d945f584f19ae3cf1363e30ebecd3a7b652",
+      "id": "ec24977f8b0e",
       "kind": "error",
       "node": "act",
-      "prev": "30e7b231c8cb014ea60c6c9a6a19f5554e5d16564a8ca31494bfee189ded717f",
+      "prev": "6010e60e0b2d445a8788a64f1f589c44a9cd9002bf24520d9796cde59751db64",
       "t": 1,
       "tainted": false,
       "title": "Refused"
      }
     ],
-    "run_id": "reader-2026-11-04T11-56-49-0k9m",
+    "run_id": "reader-2026-11-04T13-05-57-84yi",
     "spec_digest": "7a3d5befd5ad5f10",
     "system": "reader"
    },
@@ -20268,6 +20270,7 @@
    "marks": null,
    "model": "scripted",
    "provider": "scripted",
+   "redacted": [],
    "result": {},
    "skipped": [],
    "spec": {
@@ -20366,11 +20369,11 @@
     "tool_calls": 2,
     "wall_clock_s": 0.001
    },
-   "started_at": "2026-11-04T11:56:49.126Z",
+   "started_at": "2026-11-04T13:05:57.287Z",
    "state": "failed",
    "suspension": null,
    "system": "reader",
-   "trace_id": "t-547ce8198c6b4329",
+   "trace_id": "t-749c07eabfaa4cdf",
    "values": {
     "$input": {
      "case": "C-1"
@@ -20389,10 +20392,10 @@
    "data_class": null,
    "decisions": null,
    "error": "",
-   "finished_at": "2026-11-04T11:56:49.103Z",
-   "id": "acts-2026-11-04T11-56-49-kdr7",
+   "finished_at": "2026-11-04T13:05:57.267Z",
+   "id": "acts-2026-11-04T13-05-57-hlcc",
    "journal": {
-    "duration_ms": 0,
+    "duration_ms": 1,
     "entries": [
      {
       "because": [],
@@ -20400,21 +20403,21 @@
        "record": 2,
        "spec_digest": "ef3937da73c53440",
        "system": "acts",
-       "trace_id": "t-dcb8fb683fce420e"
+       "trace_id": "t-99dff3f1d7b54745"
       },
       "detail": "",
-      "hash": "dac20c8316a9bfbe6fb5a011f2c0ea2eb968f87b6bba6bea08cfd543d15328f0",
-      "id": "7d3831467e92",
+      "hash": "96e65e9637b344c3a69a4b88d66a42dfae94798d33e9694ca46c340d52e08ef8",
+      "id": "94a9719c8f59",
       "kind": "run.start",
       "node": "",
-      "prev": "bb6b9dfcbd31cef767c72f6a984ddf8adc0b26a2715ceb50c8a1ba09621a9915",
+      "prev": "c262f3d5cf20395f011ede1cd2927cdc603d971fca5308cb663d981a1bf66873",
       "t": 0,
       "tainted": false,
-      "title": "Run acts-2026-11-04T11-56-49-kdr7"
+      "title": "Run acts-2026-11-04T13-05-57-hlcc"
      },
      {
       "because": [
-       "7d3831467e92"
+       "94a9719c8f59"
       ],
       "data": {
        "inputs": {
@@ -20425,18 +20428,18 @@
        ]
       },
       "detail": "delegate · 1 tools · max 4 steps",
-      "hash": "c48492fc05b6c940a2a1bcd9e9b0cf881796ae5729157902d92ebde287bbd567",
-      "id": "f1adcd3224fe",
+      "hash": "23ac6b6df82959b6d21ea32b8247e37251f8eed374504317e6c7ce2e088f5f3e",
+      "id": "e9c378c0bac1",
       "kind": "node.enter",
       "node": "act",
-      "prev": "dac20c8316a9bfbe6fb5a011f2c0ea2eb968f87b6bba6bea08cfd543d15328f0",
+      "prev": "96e65e9637b344c3a69a4b88d66a42dfae94798d33e9694ca46c340d52e08ef8",
       "t": 0,
       "tainted": false,
       "title": "Act"
      },
      {
       "because": [
-       "f1adcd3224fe"
+       "e9c378c0bac1"
       ],
       "data": {
        "intents": [
@@ -20456,64 +20459,65 @@
        }
       },
       "detail": "calling",
-      "hash": "ea023b23ae3df6957b74e079dece159ff3a4baa27ba8d300a8b9fe82b1b46033",
-      "id": "be837b84983f",
+      "hash": "de96ea114e4f4eefcb760aefd18296c58cd3444ae3d9cae708db5c92ef0cf1e4",
+      "id": "e65fa1998ff3",
       "kind": "model.call",
       "node": "act",
-      "prev": "c48492fc05b6c940a2a1bcd9e9b0cf881796ae5729157902d92ebde287bbd567",
+      "prev": "23ac6b6df82959b6d21ea32b8247e37251f8eed374504317e6c7ce2e088f5f3e",
       "t": 0,
       "tainted": false,
       "title": "scripted"
      },
      {
       "because": [
-       "be837b84983f"
+       "e65fa1998ff3"
       ],
       "data": {
        "args": {
         "key": "k-C-1",
         "value": "C-1"
        },
+       "sink": true,
        "tool": "store.put"
       },
       "detail": "",
-      "hash": "f17b43a54a862dee1f0def9c6dca017a0502944c77c7fe3f10b2d0fecbd15a90",
-      "id": "8ba65656eccd",
+      "hash": "1939f5a3b1ddab9862be608fe109617601361b83838e4c52dfe7138581fd10a3",
+      "id": "5de019c99f70",
       "kind": "tool.call",
       "node": "act",
-      "prev": "ea023b23ae3df6957b74e079dece159ff3a4baa27ba8d300a8b9fe82b1b46033",
+      "prev": "de96ea114e4f4eefcb760aefd18296c58cd3444ae3d9cae708db5c92ef0cf1e4",
       "t": 0,
       "tainted": false,
       "title": "store.put"
      },
      {
       "because": [
-       "8ba65656eccd"
+       "5de019c99f70"
       ],
       "data": {
        "ms": 0,
        "tool": "store.put",
        "value": {
-        "expires_at": "2026-11-11T11:56:49Z",
+        "expires_at": "2026-11-11T13:05:57Z",
         "key": "k-C-1",
         "stored": true
        }
       },
       "detail": "",
-      "hash": "7eeb6cdb0a539ffbdd0205010d1249a2c1058639529d3b73dba697e161e360a4",
-      "id": "89b962d4aaee",
+      "hash": "fe6188b4a8b2e7c65a4c5e8a973d7f641eb12d5b1b8c7cf4896e864741a602e6",
+      "id": "dce03f9ab352",
       "kind": "tool.result",
       "node": "act",
-      "prev": "f17b43a54a862dee1f0def9c6dca017a0502944c77c7fe3f10b2d0fecbd15a90",
+      "prev": "1939f5a3b1ddab9862be608fe109617601361b83838e4c52dfe7138581fd10a3",
       "t": 0,
       "tainted": false,
       "title": "store.put returned"
      },
      {
       "because": [
-       "f1adcd3224fe",
-       "be837b84983f",
-       "89b962d4aaee"
+       "e9c378c0bac1",
+       "e65fa1998ff3",
+       "dce03f9ab352"
       ],
       "data": {
        "intents": [],
@@ -20525,21 +20529,21 @@
        }
       },
       "detail": "{\"verdict\": \"done\"}",
-      "hash": "fcd71817d8c779c508c460c93cb645f5691d4faa3fad814d44933289ab23be15",
-      "id": "e072a4948c20",
+      "hash": "0648dfa09033f431d354a924eeb09a45360e644b6efb4092ebf846abb0c27639",
+      "id": "706995fc30d3",
       "kind": "model.call",
       "node": "act",
-      "prev": "7eeb6cdb0a539ffbdd0205010d1249a2c1058639529d3b73dba697e161e360a4",
+      "prev": "fe6188b4a8b2e7c65a4c5e8a973d7f641eb12d5b1b8c7cf4896e864741a602e6",
       "t": 0,
       "tainted": false,
       "title": "scripted"
      },
      {
       "because": [
-       "f1adcd3224fe",
-       "be837b84983f",
-       "89b962d4aaee",
-       "e072a4948c20"
+       "e9c378c0bac1",
+       "e65fa1998ff3",
+       "dce03f9ab352",
+       "706995fc30d3"
       ],
       "data": {
        "emitted": {
@@ -20547,22 +20551,22 @@
        }
       },
       "detail": "settled after 2 model calls",
-      "hash": "e9701e315a4736cdf7c323d4a210abb83ef008daa3b72220177b9d7b5365df58",
-      "id": "37a4310fbd50",
+      "hash": "27b949f7b6fa0376e4eae9f4f484404bae3a6c77fd27123596c235a7c9f8e4ef",
+      "id": "af7be789207d",
       "kind": "node.exit",
       "node": "act",
-      "prev": "fcd71817d8c779c508c460c93cb645f5691d4faa3fad814d44933289ab23be15",
+      "prev": "0648dfa09033f431d354a924eeb09a45360e644b6efb4092ebf846abb0c27639",
       "t": 0,
       "tainted": false,
       "title": "Act complete"
      },
      {
       "because": [
-       "f1adcd3224fe",
-       "be837b84983f",
-       "89b962d4aaee",
-       "e072a4948c20",
-       "37a4310fbd50"
+       "e9c378c0bac1",
+       "e65fa1998ff3",
+       "dce03f9ab352",
+       "706995fc30d3",
+       "af7be789207d"
       ],
       "data": {
        "denied": 0,
@@ -20570,20 +20574,21 @@
         "verdict": "done"
        },
        "result_digest": "sha256:5d2c88f356bcafe6f06f38c57007daf97a6ceb0ab19b1da9f135a45de48075ae",
-       "skipped": []
+       "skipped": [],
+       "values_digest": "sha256:d7f05b54231fa58308f0836b436ff24ea3d56fec99bbe8d2176f8f8c9ffdbd42"
       },
       "detail": "1 nodes ran, 0 skipped, 0 refused actions",
-      "hash": "00eba6fc96991e8d8345ce20d49b0c296a6a892bda66570260aead25921f6fd8",
-      "id": "9ce45d128910",
+      "hash": "a168ec54a7ae49c66c4f03213efd4529bc63a888a8140b40973b9a377a2d193a",
+      "id": "cea8c13f1d79",
       "kind": "run.end",
       "node": "",
-      "prev": "e9701e315a4736cdf7c323d4a210abb83ef008daa3b72220177b9d7b5365df58",
-      "t": 0,
+      "prev": "27b949f7b6fa0376e4eae9f4f484404bae3a6c77fd27123596c235a7c9f8e4ef",
+      "t": 1,
       "tainted": false,
       "title": "Run complete"
      }
     ],
-    "run_id": "acts-2026-11-04T11-56-49-kdr7",
+    "run_id": "acts-2026-11-04T13-05-57-hlcc",
     "spec_digest": "ef3937da73c53440",
     "system": "acts"
    },
@@ -20591,6 +20596,7 @@
    "marks": null,
    "model": "scripted",
    "provider": "scripted",
+   "redacted": [],
    "result": {
     "verdict": "done"
    },
@@ -20654,11 +20660,11 @@
     "tool_calls": 1,
     "wall_clock_s": 0.001
    },
-   "started_at": "2026-11-04T11:56:49.101Z",
+   "started_at": "2026-11-04T13:05:57.265Z",
    "state": "done",
    "suspension": null,
    "system": "acts",
-   "trace_id": "t-dcb8fb683fce420e",
+   "trace_id": "t-99dff3f1d7b54745",
    "values": {
     "$input": {
      "case": "C-1"
@@ -20675,7 +20681,7 @@
  },
  "run_doc.deleted": {
   "body": {
-   "error": "no run \"tiny-2026-11-04T11-56-48-ans0\""
+   "error": "no run \"tiny-2026-11-04T13-05-57-odib\""
   },
   "status": 404
  },
@@ -20688,7 +20694,7 @@
     {
      "aborted": false,
      "approved": true,
-     "at": "2026-11-04T11:56:49.438Z",
+     "at": "2026-11-04T13:05:57.546Z",
      "by": "Chandresh Singh",
      "by_sub": "local:operator",
      "chained": true,
@@ -20698,7 +20704,7 @@
      "controls": [
       "gate"
      ],
-     "digest": "sha256:af319014cc0a170192eef263a8999f1b79f9274e83933eafc01ce657044ee0e6",
+     "digest": "sha256:a0975d1700c6d5914472d7fb3e01d7cfdbb42fdf5eb63d3815c93ac777811f12",
      "disagrees": [
       {
        "chain": "Chandresh Singh",
@@ -20706,8 +20712,8 @@
        "record": "Mallory <mallory@evil.example>"
       }
      ],
-     "entry": "43b3869fb1ac",
-     "gate": "e815955d13ae",
+     "entry": "857d4a88cd03",
+     "gate": "7a38f603a752",
      "node": "review",
      "note": "fine",
      "shape": "decision",
@@ -20715,8 +20721,8 @@
     }
    ],
    "error": "",
-   "finished_at": "2026-11-04T11:56:49.439Z",
-   "id": "gated-2026-11-04T11-56-49-94k5",
+   "finished_at": "2026-11-04T13:05:57.547Z",
+   "id": "gated-2026-11-04T13-05-57-6zej",
    "journal": {
     "duration_ms": 1,
     "entries": [
@@ -20726,21 +20732,21 @@
        "record": 2,
        "spec_digest": "1bdcc09ebdcb7a76",
        "system": "gated",
-       "trace_id": "t-1eea71949fa9403c"
+       "trace_id": "t-b4fbeb7a20dc4a8f"
       },
       "detail": "",
-      "hash": "db36da06b58547544ec95f57c21fbb838121967f9bcb4088c107c79efb405d92",
-      "id": "bc77f63e79bd",
+      "hash": "09caa6bc94d06e13544ec8e1800786057bfb06c9be88f0f471bd766366e451b5",
+      "id": "dac7be39577f",
       "kind": "run.start",
       "node": "",
-      "prev": "c3e3bed711597cbf308a24e9313448c2ea332aace1de0de7b5e5bd407041c691",
+      "prev": "46c4fc633141d1c1bc980235c8e7d4dce6329e8d2b4f4d0859f1bd9a469eaa5d",
       "t": 0,
       "tainted": false,
-      "title": "Run gated-2026-11-04T11-56-49-94k5"
+      "title": "Run gated-2026-11-04T13-05-57-6zej"
      },
      {
       "because": [
-       "bc77f63e79bd"
+       "dac7be39577f"
       ],
       "data": {
        "inputs": {
@@ -20748,18 +20754,18 @@
        }
       },
       "detail": "sequence · 1 steps",
-      "hash": "891e381a232622d70c51541816271383b485ce9a066c6c04a43a5f8235f72580",
-      "id": "b89f456eedad",
+      "hash": "be83b24a592041a14fc4ca386d6550432dc078ab585319d07fe888d95d4db53f",
+      "id": "9df0e62a0134",
       "kind": "node.enter",
       "node": "decide",
-      "prev": "db36da06b58547544ec95f57c21fbb838121967f9bcb4088c107c79efb405d92",
+      "prev": "09caa6bc94d06e13544ec8e1800786057bfb06c9be88f0f471bd766366e451b5",
       "t": 0,
       "tainted": false,
       "title": "Decide"
      },
      {
       "because": [
-       "b89f456eedad"
+       "9df0e62a0134"
       ],
       "data": {
        "intents": [],
@@ -20771,19 +20777,19 @@
        }
       },
       "detail": "benign",
-      "hash": "42abf8ebd5ff73188c99804670655444abb52286ee802ed888b3a5c4e5513b73",
-      "id": "0bf9c06b373f",
+      "hash": "4090fb20ec04efb763173e693d6f86109738ad3fb49c567d3dcaa0f881a9ba33",
+      "id": "daefbd735661",
       "kind": "model.call",
       "node": "decide",
-      "prev": "891e381a232622d70c51541816271383b485ce9a066c6c04a43a5f8235f72580",
+      "prev": "be83b24a592041a14fc4ca386d6550432dc078ab585319d07fe888d95d4db53f",
       "t": 0,
       "tainted": false,
       "title": "scripted"
      },
      {
       "because": [
-       "b89f456eedad",
-       "0bf9c06b373f"
+       "9df0e62a0134",
+       "daefbd735661"
       ],
       "data": {
        "emitted": {
@@ -20791,22 +20797,22 @@
        }
       },
       "detail": "",
-      "hash": "79b9fb81bf4f43eb6aaa7edc163c537d56263164e39d1b3bb528c11a16842126",
-      "id": "00e0011a56a0",
+      "hash": "ee3b49cb0297a82ffbabeb42d513b55f56d66ce9e76baafa5035fa4530ded572",
+      "id": "63996f7b2ef1",
       "kind": "node.exit",
       "node": "decide",
-      "prev": "42abf8ebd5ff73188c99804670655444abb52286ee802ed888b3a5c4e5513b73",
+      "prev": "4090fb20ec04efb763173e693d6f86109738ad3fb49c567d3dcaa0f881a9ba33",
       "t": 0,
       "tainted": false,
       "title": "Decide complete"
      },
      {
       "because": [
-       "b89f456eedad",
-       "0bf9c06b373f"
+       "9df0e62a0134",
+       "daefbd735661"
       ],
       "data": {
-       "deadline": "2026-11-05T11:56:49Z",
+       "deadline": "2026-11-05T13:05:57Z",
        "interface": "approval",
        "on_timeout": "escalate",
        "presented": {
@@ -20818,42 +20824,42 @@
        "timeout_s": 86400.0
       },
       "detail": "awaiting approval from dlp-lead",
-      "hash": "57e3341ed08a2d420a3e7ae10b5bff9c786c5fb2c3086353856b800b9d8a77e1",
-      "id": "e815955d13ae",
+      "hash": "e50ca57b1e3e2bcbf05656a812eb55c6412d7eec8fea9a712ee451c408993b06",
+      "id": "7a38f603a752",
       "kind": "suspend",
       "node": "review",
-      "prev": "79b9fb81bf4f43eb6aaa7edc163c537d56263164e39d1b3bb528c11a16842126",
+      "prev": "ee3b49cb0297a82ffbabeb42d513b55f56d66ce9e76baafa5035fa4530ded572",
       "t": 0,
       "tainted": false,
       "title": "Analyst review"
      },
      {
       "because": [
-       "e815955d13ae"
+       "7a38f603a752"
       ],
       "data": {
        "approvers": [
         "dlp-lead"
        ],
        "control": "gate",
-       "deadline": "2026-11-05T11:56:49Z",
+       "deadline": "2026-11-05T13:05:57Z",
        "shape": "decision"
       },
       "detail": "dlp-lead",
-      "hash": "9ee4b1d606293d42e7cc842ae4b88c412e83372988aec8798824d1cc5d009750",
-      "id": "402e78dfb8c8",
+      "hash": "d3f187c0774990b5b3ce16c7eb11dc62440274198e9f09170d47c75d53314323",
+      "id": "eaa95169878a",
       "kind": "gate.open",
       "node": "review",
-      "prev": "57e3341ed08a2d420a3e7ae10b5bff9c786c5fb2c3086353856b800b9d8a77e1",
+      "prev": "e50ca57b1e3e2bcbf05656a812eb55c6412d7eec8fea9a712ee451c408993b06",
       "t": 0,
       "tainted": false,
       "title": "Awaiting a human decision"
      },
      {
       "because": [
-       "b89f456eedad",
-       "0bf9c06b373f",
-       "402e78dfb8c8"
+       "9df0e62a0134",
+       "daefbd735661",
+       "eaa95169878a"
       ],
       "data": {
        "answer": {
@@ -20866,18 +20872,18 @@
        }
       },
       "detail": "approved by Chandresh Singh",
-      "hash": "d5330c80374bc0ad67ddbfcb5f7fa07b8acd741cabc3d46a0390422c0eced4cd",
-      "id": "e763b27a4382",
+      "hash": "96f9144267861ec33de9a32a07e086c7144187522fa93aace355a4ad0d17787f",
+      "id": "839bcf89301b",
       "kind": "resume",
       "node": "review",
-      "prev": "9ee4b1d606293d42e7cc842ae4b88c412e83372988aec8798824d1cc5d009750",
+      "prev": "d3f187c0774990b5b3ce16c7eb11dc62440274198e9f09170d47c75d53314323",
       "t": 1,
       "tainted": false,
       "title": "Analyst review resumed"
      },
      {
       "because": [
-       "e763b27a4382"
+       "839bcf89301b"
       ],
       "data": {
        "approved": true,
@@ -20886,21 +20892,21 @@
         "gate"
        ],
        "note": "fine",
-       "opened": "402e78dfb8c8"
+       "opened": "eaa95169878a"
       },
       "detail": "Chandresh Singh: fine",
-      "hash": "8a9d71e5ce92cb9bc0b304e14ee2864c6f5b9ac96e9c08ba3bc3f1000ecd7364",
-      "id": "43b3869fb1ac",
+      "hash": "224ce38976eca75565f54c6fa2d19144f67cdae0563dc99eff3b5d0ddc8137f7",
+      "id": "857d4a88cd03",
       "kind": "gate.answer",
       "node": "review",
-      "prev": "d5330c80374bc0ad67ddbfcb5f7fa07b8acd741cabc3d46a0390422c0eced4cd",
+      "prev": "96f9144267861ec33de9a32a07e086c7144187522fa93aace355a4ad0d17787f",
       "t": 1,
       "tainted": false,
       "title": "Approved"
      },
      {
       "because": [
-       "e763b27a4382"
+       "839bcf89301b"
       ],
       "data": {
        "emitted": {
@@ -20908,19 +20914,19 @@
        }
       },
       "detail": "",
-      "hash": "67978d9fa6092e202607bf29b8e976b6364aff0e953f7c869c9b009ba2298365",
-      "id": "29402a094066",
+      "hash": "1799dc6a74ffea3595e9b8cc9814ea7afcc9fcd4ae1f22547e648ff4715be777",
+      "id": "1a0460417ef8",
       "kind": "node.exit",
       "node": "review",
-      "prev": "8a9d71e5ce92cb9bc0b304e14ee2864c6f5b9ac96e9c08ba3bc3f1000ecd7364",
+      "prev": "224ce38976eca75565f54c6fa2d19144f67cdae0563dc99eff3b5d0ddc8137f7",
       "t": 1,
       "tainted": false,
       "title": "Analyst review complete"
      },
      {
       "because": [
-       "e763b27a4382",
-       "29402a094066"
+       "839bcf89301b",
+       "1a0460417ef8"
       ],
       "data": {
        "denied": 0,
@@ -20928,20 +20934,21 @@
         "approved": true
        },
        "result_digest": "sha256:20ec2f38fc96bc7d416a9af537493ae0bae26c5ad4c5a0f2d94f56f9c3e04958",
-       "skipped": []
+       "skipped": [],
+       "values_digest": "sha256:85d63dd1a67aed33f8c3c8ed10d5969935d01047f296cb23b1d5720629b7192c"
       },
       "detail": "2 nodes ran, 0 skipped, 0 refused actions",
-      "hash": "6aee447409a955fabab0fc50f17d5c0e14a815b3f059ae5f3d8299e6f01820a4",
-      "id": "b404f2750a76",
+      "hash": "2596df9dea217c6e2571c652d8d775e696b6bbc65c91a238e6312b09684fca90",
+      "id": "992552771a85",
       "kind": "run.end",
       "node": "",
-      "prev": "67978d9fa6092e202607bf29b8e976b6364aff0e953f7c869c9b009ba2298365",
+      "prev": "1799dc6a74ffea3595e9b8cc9814ea7afcc9fcd4ae1f22547e648ff4715be777",
       "t": 1,
       "tainted": false,
       "title": "Run complete"
      }
     ],
-    "run_id": "gated-2026-11-04T11-56-49-94k5",
+    "run_id": "gated-2026-11-04T13-05-57-6zej",
     "spec_digest": "1bdcc09ebdcb7a76",
     "system": "gated"
    },
@@ -20949,6 +20956,7 @@
    "marks": null,
    "model": "scripted",
    "provider": "scripted",
+   "redacted": [],
    "result": {
     "approved": true
    },
@@ -21024,11 +21032,11 @@
     "tool_calls": 0,
     "wall_clock_s": 0.0
    },
-   "started_at": "2026-11-04T11:56:49.434Z",
+   "started_at": "2026-11-04T13:05:57.541Z",
    "state": "done",
    "suspension": null,
    "system": "gated",
-   "trace_id": "t-1eea71949fa9403c",
+   "trace_id": "t-b4fbeb7a20dc4a8f",
    "values": {
     "$input": {
      "case": "C-1"
@@ -21054,8 +21062,8 @@
    "data_class": null,
    "decisions": null,
    "error": "",
-   "finished_at": "2026-11-04T11:56:51.028Z",
-   "id": "tiny-2026-11-04T11-56-51-g40s",
+   "finished_at": "2026-11-04T13:05:58.995Z",
+   "id": "tiny-2026-11-04T13-05-58-ok7p",
    "journal": {
     "duration_ms": 0,
     "entries": [
@@ -21065,21 +21073,21 @@
        "record": 2,
        "spec_digest": "6b31553ba73ff68c",
        "system": "tiny",
-       "trace_id": "t-18c0aca8ae124820"
+       "trace_id": "t-4772d8a5d76b43db"
       },
       "detail": "",
-      "hash": "6b63282f8524534b92c5b866776b5e85cc68c4bf7839de3683987021af91449b",
-      "id": "cb45bf052025",
+      "hash": "543f00e5f9dea4bdc4fd792ec845d0c579c852b06ae5ed72ab0b949f91f236af",
+      "id": "913c3c46b82b",
       "kind": "run.start",
       "node": "",
-      "prev": "a9ac8c41793ec6be52190d9586a6f609a447fcd109ddac6773a390e27e23188d",
+      "prev": "d4c7235bb9323664b0f3330d7bc1c6e2f8cf2af9b393dec6c76028f785fbf947",
       "t": 0,
       "tainted": false,
-      "title": "Run tiny-2026-11-04T11-56-51-g40s"
+      "title": "Run tiny-2026-11-04T13-05-58-ok7p"
      },
      {
       "because": [
-       "cb45bf052025"
+       "913c3c46b82b"
       ],
       "data": {
        "inputs": {
@@ -21087,11 +21095,11 @@
        }
       },
       "detail": "sequence · 1 steps",
-      "hash": "3d92caf7266aab61d64d674ebec1dd081ffe1a46dd726671d6a8b0fd5dd6895d",
-      "id": "074141fe39ab",
+      "hash": "a89dd1b2b5b872b2291dccaea098b0b0f9bedc483f0ad8b90700c70f66f106ea",
+      "id": "ce82ba8b6c8b",
       "kind": "node.enter",
       "node": "decide",
-      "prev": "6b63282f8524534b92c5b866776b5e85cc68c4bf7839de3683987021af91449b",
+      "prev": "543f00e5f9dea4bdc4fd792ec845d0c579c852b06ae5ed72ab0b949f91f236af",
       "redacted": [
        {
         "path": "data.inputs.case",
@@ -21104,7 +21112,7 @@
      },
      {
       "because": [
-       "074141fe39ab"
+       "ce82ba8b6c8b"
       ],
       "data": {
        "intents": [],
@@ -21116,11 +21124,11 @@
        }
       },
       "detail": "noted",
-      "hash": "434ba5b4632fef022a4b06df6f74050cdd29a6ebe327489d640b96a7cbc0dc48",
-      "id": "0eb2fa202f73",
+      "hash": "73496d61d87dc34c3465da10d647e72800c64ede8c97866dedf03de0d1a9dafb",
+      "id": "a92e0f9edb29",
       "kind": "model.call",
       "node": "decide",
-      "prev": "3d92caf7266aab61d64d674ebec1dd081ffe1a46dd726671d6a8b0fd5dd6895d",
+      "prev": "a89dd1b2b5b872b2291dccaea098b0b0f9bedc483f0ad8b90700c70f66f106ea",
       "redacted": [
        {
         "path": "data.prompt",
@@ -21133,8 +21141,8 @@
      },
      {
       "because": [
-       "074141fe39ab",
-       "0eb2fa202f73"
+       "ce82ba8b6c8b",
+       "a92e0f9edb29"
       ],
       "data": {
        "emitted": {
@@ -21142,20 +21150,20 @@
        }
       },
       "detail": "",
-      "hash": "3d52838aea2806b12b681059475bf8f12b11c3fb8341a878e0e6f34119a3c923",
-      "id": "ecd50a0506a3",
+      "hash": "d1664ccb5ed20e99c736fe3ccc0273f68438f928aca045d32e13c15c0a359f80",
+      "id": "d51af723e685",
       "kind": "node.exit",
       "node": "decide",
-      "prev": "434ba5b4632fef022a4b06df6f74050cdd29a6ebe327489d640b96a7cbc0dc48",
+      "prev": "73496d61d87dc34c3465da10d647e72800c64ede8c97866dedf03de0d1a9dafb",
       "t": 0,
       "tainted": false,
       "title": "Decide complete"
      },
      {
       "because": [
-       "074141fe39ab",
-       "0eb2fa202f73",
-       "ecd50a0506a3"
+       "ce82ba8b6c8b",
+       "a92e0f9edb29",
+       "d51af723e685"
       ],
       "data": {
        "denied": 0,
@@ -21163,20 +21171,21 @@
         "verdict": "noted"
        },
        "result_digest": "sha256:0a5974e64a32c2eea61edb1934f62d3abbfa4b2dc375a2f958de00f94ff1e1fd",
-       "skipped": []
+       "skipped": [],
+       "values_digest": "sha256:153cbadd561d99a0157709ca09d7105c95c428a30aa7a18dbce15578652a39f1"
       },
       "detail": "1 nodes ran, 0 skipped, 0 refused actions",
-      "hash": "510ded0f3b52b2368fd259e56a5a41478e5f20d264c2126402646ea5f11df1a8",
-      "id": "6fb950772622",
+      "hash": "8bef15b1310d9432ecdd53fdab7a5739401d68efbd5fdeb6db5f4e37da718b73",
+      "id": "be79e57f35ef",
       "kind": "run.end",
       "node": "",
-      "prev": "3d52838aea2806b12b681059475bf8f12b11c3fb8341a878e0e6f34119a3c923",
+      "prev": "d1664ccb5ed20e99c736fe3ccc0273f68438f928aca045d32e13c15c0a359f80",
       "t": 0,
       "tainted": false,
       "title": "Run complete"
      }
     ],
-    "run_id": "tiny-2026-11-04T11-56-51-g40s",
+    "run_id": "tiny-2026-11-04T13-05-58-ok7p",
     "spec_digest": "6b31553ba73ff68c",
     "system": "tiny"
    },
@@ -21184,6 +21193,12 @@
    "marks": null,
    "model": "scripted",
    "provider": "scripted",
+   "redacted": [
+    {
+     "path": "values.$input.case",
+     "rule": "email"
+    }
+   ],
    "result": {
     "verdict": "noted"
    },
@@ -21233,14 +21248,14 @@
     "tool_calls": 0,
     "wall_clock_s": 0.0
    },
-   "started_at": "2026-11-04T11:56:51.026Z",
+   "started_at": "2026-11-04T13:05:58.994Z",
    "state": "done",
    "suspension": null,
    "system": "tiny",
-   "trace_id": "t-18c0aca8ae124820",
+   "trace_id": "t-4772d8a5d76b43db",
    "values": {
     "$input": {
-     "case": "ask priya@acme.example"
+     "case": "ask [redacted:email]@acme.example"
     },
     "decide": {
      "verdict": "noted"
@@ -21260,7 +21275,7 @@
    "decisions": null,
    "error": "",
    "finished_at": null,
-   "id": "gated-2026-11-04T11-56-48-afqy",
+   "id": "gated-2026-11-04T13-05-57-tt3y",
    "journal": {
     "duration_ms": 0,
     "entries": [
@@ -21270,21 +21285,21 @@
        "record": 2,
        "spec_digest": "1bdcc09ebdcb7a76",
        "system": "gated",
-       "trace_id": "t-747d1ab4d353422e"
+       "trace_id": "t-b022940b07fb42c5"
       },
       "detail": "",
-      "hash": "46f5559648333abf5a9ba122859b344e2fd25620587c731ad07b3d4732d42082",
-      "id": "73f55928320b",
+      "hash": "5787950d380b409dcc2c00c00949bf72f2964937aa4fcbb3f90d49b8808c8541",
+      "id": "7811780b80fd",
       "kind": "run.start",
       "node": "",
-      "prev": "d46a7e1f33c7f82ef65dff72dd215c09ccea82818da97d6e7d04b495d4bd0c65",
+      "prev": "5e28a1ac8f7488fb4bf1f6554f6b6a54b1ba436efee7cbb63c097c04fb4a0cd8",
       "t": 0,
       "tainted": false,
-      "title": "Run gated-2026-11-04T11-56-48-afqy"
+      "title": "Run gated-2026-11-04T13-05-57-tt3y"
      },
      {
       "because": [
-       "73f55928320b"
+       "7811780b80fd"
       ],
       "data": {
        "inputs": {
@@ -21292,18 +21307,18 @@
        }
       },
       "detail": "sequence · 1 steps",
-      "hash": "4fbad7395c73748e2a217c68edd83fc6495428b96cc77f36dbc5bfceaf1c9b39",
-      "id": "51c1f9040ec5",
+      "hash": "3457a623a13aa5a6faf563916fe74fb05317b2cfb6efec97c1a05c3005b87721",
+      "id": "9718a983c2e1",
       "kind": "node.enter",
       "node": "decide",
-      "prev": "46f5559648333abf5a9ba122859b344e2fd25620587c731ad07b3d4732d42082",
+      "prev": "5787950d380b409dcc2c00c00949bf72f2964937aa4fcbb3f90d49b8808c8541",
       "t": 0,
       "tainted": false,
       "title": "Decide"
      },
      {
       "because": [
-       "51c1f9040ec5"
+       "9718a983c2e1"
       ],
       "data": {
        "intents": [],
@@ -21315,19 +21330,19 @@
        }
       },
       "detail": "benign",
-      "hash": "95a8eb937f617c64ceb17a1a40ee372c1480f031bb2ecd8dcd1f40af4521a80d",
-      "id": "0d25e79b8f77",
+      "hash": "93f16a186a29969a4b6aa098c3abdb536c89b1dd9fb6b8b88d49ee1ddb80a359",
+      "id": "dd5ffcb9bd5a",
       "kind": "model.call",
       "node": "decide",
-      "prev": "4fbad7395c73748e2a217c68edd83fc6495428b96cc77f36dbc5bfceaf1c9b39",
+      "prev": "3457a623a13aa5a6faf563916fe74fb05317b2cfb6efec97c1a05c3005b87721",
       "t": 0,
       "tainted": false,
       "title": "scripted"
      },
      {
       "because": [
-       "51c1f9040ec5",
-       "0d25e79b8f77"
+       "9718a983c2e1",
+       "dd5ffcb9bd5a"
       ],
       "data": {
        "emitted": {
@@ -21335,22 +21350,22 @@
        }
       },
       "detail": "",
-      "hash": "77305d1199640a5d8b42948cda0d78a2317bf81f252c3ea24cc620942d8b17f6",
-      "id": "c87c9ca713bf",
+      "hash": "1aad0da25378888c16587aa7400d26c7ab5929a14e3d998f470e1843c6aba4bd",
+      "id": "af02abdf84c9",
       "kind": "node.exit",
       "node": "decide",
-      "prev": "95a8eb937f617c64ceb17a1a40ee372c1480f031bb2ecd8dcd1f40af4521a80d",
+      "prev": "93f16a186a29969a4b6aa098c3abdb536c89b1dd9fb6b8b88d49ee1ddb80a359",
       "t": 0,
       "tainted": false,
       "title": "Decide complete"
      },
      {
       "because": [
-       "51c1f9040ec5",
-       "0d25e79b8f77"
+       "9718a983c2e1",
+       "dd5ffcb9bd5a"
       ],
       "data": {
-       "deadline": "2026-11-05T11:56:48Z",
+       "deadline": "2026-11-05T13:05:57Z",
        "interface": "approval",
        "on_timeout": "escalate",
        "presented": {
@@ -21362,39 +21377,39 @@
        "timeout_s": 86400.0
       },
       "detail": "awaiting approval from dlp-lead",
-      "hash": "e515139c637619d010445773e56e039775546779b48603cd00a81abfd9fe79fb",
-      "id": "aebe132c2caa",
+      "hash": "78b14d2dbb87222a5d734fa61cf9bf9d03be591ca8cd228a5d605853d60feeac",
+      "id": "98a78c909cb0",
       "kind": "suspend",
       "node": "review",
-      "prev": "77305d1199640a5d8b42948cda0d78a2317bf81f252c3ea24cc620942d8b17f6",
+      "prev": "1aad0da25378888c16587aa7400d26c7ab5929a14e3d998f470e1843c6aba4bd",
       "t": 0,
       "tainted": false,
       "title": "Analyst review"
      },
      {
       "because": [
-       "aebe132c2caa"
+       "98a78c909cb0"
       ],
       "data": {
        "approvers": [
         "dlp-lead"
        ],
        "control": "gate",
-       "deadline": "2026-11-05T11:56:48Z",
+       "deadline": "2026-11-05T13:05:57Z",
        "shape": "decision"
       },
       "detail": "dlp-lead",
-      "hash": "e0c62ced1a9d8430859985a8fb3df4fcc8c6b6971f83870ff46283eefe0974f6",
-      "id": "e53957032457",
+      "hash": "e3dd797a315f811d57870337d50fa3944b4f2980d877a0a729445a112530dd82",
+      "id": "1d9e5e9548fe",
       "kind": "gate.open",
       "node": "review",
-      "prev": "e515139c637619d010445773e56e039775546779b48603cd00a81abfd9fe79fb",
+      "prev": "78b14d2dbb87222a5d734fa61cf9bf9d03be591ca8cd228a5d605853d60feeac",
       "t": 0,
       "tainted": false,
       "title": "Awaiting a human decision"
      }
     ],
-    "run_id": "gated-2026-11-04T11-56-48-afqy",
+    "run_id": "gated-2026-11-04T13-05-57-tt3y",
     "spec_digest": "1bdcc09ebdcb7a76",
     "system": "gated"
    },
@@ -21403,11 +21418,12 @@
    "model": "scripted",
    "provenance": {
     "decide": [
-     "51c1f9040ec5",
-     "0d25e79b8f77"
+     "9718a983c2e1",
+     "dd5ffcb9bd5a"
     ]
    },
    "provider": "scripted",
+   "redacted": [],
    "result": {},
    "skipped": [],
    "spec": {
@@ -21481,14 +21497,14 @@
     "tool_calls": 0,
     "wall_clock_s": 0.0
    },
-   "started_at": "2026-11-04T11:56:48.996Z",
+   "started_at": "2026-11-04T13:05:57.168Z",
    "state": "suspended",
    "suspension": {
     "approvers": [
      "dlp-lead"
     ],
     "chain": [],
-    "deadline": "2026-11-05T11:56:48Z",
+    "deadline": "2026-11-05T13:05:57Z",
     "escalation_history": [],
     "escalations": 0,
     "external": false,
@@ -21512,7 +21528,7 @@
     "verdicts": []
    },
    "system": "gated",
-   "trace_id": "t-747d1ab4d353422e",
+   "trace_id": "t-b022940b07fb42c5",
    "values": {
     "$input": {
      "case": "C-1"
@@ -21535,35 +21551,35 @@
    "data_class": null,
    "decisions": null,
    "error": "",
-   "finished_at": "2026-11-04T11:56:48.948Z",
-   "id": "tiny-2026-11-04T11-56-48-lzca",
+   "finished_at": "2026-11-04T13:05:57.124Z",
+   "id": "tiny-2026-11-04T13-05-57-d85g",
    "journal": {
     "duration_ms": 0,
     "entries": [
      {
       "because": [],
       "data": {
-       "anchor": "b988942fbe4b345d8524368c573adf88572bbdeba9d56e4828074fec117f53e4",
+       "anchor": "6f871754eae0d260607877ef2fa966f91d0ce33a9fc01f517c95f7d3a69ab091",
        "by": "retention",
        "count": 5,
-       "deleted_at": "2026-11-15T11:56:48.949Z",
-       "digest": "sha256:270f4f40b3620dfd939b882ef5fd14925119754a6a3be08865aca7d9f36b64be",
-       "first": "37e1761f6d07",
-       "last": "db6fd379763a",
+       "deleted_at": "2026-11-15T13:05:57.125Z",
+       "digest": "sha256:dd4d3eca837182bc10abd11ad2b971b002b9e98e89f998f081080317c4b47316",
+       "first": "93b2fda234a2",
+       "last": "d5d37980beeb",
        "record": "journals"
       },
       "detail": "journals, by retention",
-      "hash": "5d81ecf46ea63b3d1590edcb945f87d497f9bee33437e47944045855c61e1f21",
-      "id": "4d1d06ca88e9",
+      "hash": "7150c078b1fe69d68a84d404cd85d96791c3156a2e2171fe02c3de780820a32b",
+      "id": "38342bc71fa0",
       "kind": "tombstone",
       "node": "",
-      "prev": "6707879ef315211a4be8d7a6d786d54a067c223e6be05d24e54a40323b690031",
+      "prev": "525635b3b8874148649e26493930d8c8ace8aa83964ed82bdfe017a93fc40ca5",
       "t": 0,
       "tainted": false,
       "title": "5 entries deleted"
      }
     ],
-    "run_id": "tiny-2026-11-04T11-56-48-lzca",
+    "run_id": "tiny-2026-11-04T13-05-57-d85g",
     "spec_digest": "6b31553ba73ff68c",
     "system": "tiny"
    },
@@ -21571,6 +21587,7 @@
    "marks": null,
    "model": "scripted",
    "provider": "scripted",
+   "redacted": [],
    "result": {
     "verdict": "benign"
    },
@@ -21620,11 +21637,11 @@
     "tool_calls": 0,
     "wall_clock_s": 0.0
    },
-   "started_at": "2026-11-04T11:56:48.946Z",
+   "started_at": "2026-11-04T13:05:57.122Z",
    "state": "done",
    "suspension": null,
    "system": "tiny",
-   "trace_id": "t-3c3e16e44ce94070",
+   "trace_id": "t-ef466c73f6a04006",
    "values": {
     "$input": {
      "case": "C-1"
@@ -21642,24 +21659,24 @@
  "run_verify.answered": {
   "body": {
    "agent": "gated",
-   "anchor": "2f0672f230ffb1ba74d61cd71091c3dda2066fe0c30a5ef4015cf71425b68cb5",
+   "anchor": "6bcfaad05908da3b242960182c9bb9a59e285d14f0a7f5de95ccb8bba8430aba",
    "anchored": true,
    "broken_at": null,
    "chain": "ok",
    "disagrees": [],
    "entries": 10,
-   "genesis": "d46a7e1f33c7f82ef65dff72dd215c09ccea82818da97d6e7d04b495d4bd0c65",
+   "genesis": "5e28a1ac8f7488fb4bf1f6554f6b6a54b1ba436efee7cbb63c097c04fb4a0cd8",
    "pending": 0,
    "previous": "",
    "reason": "",
    "recorded": {
-    "anchor": "2f0672f230ffb1ba74d61cd71091c3dda2066fe0c30a5ef4015cf71425b68cb5",
-    "at": "2026-11-04T11:56:49.014Z",
+    "anchor": "6bcfaad05908da3b242960182c9bb9a59e285d14f0a7f5de95ccb8bba8430aba",
+    "at": "2026-11-04T13:05:57.185Z",
     "entries": 10,
     "seq": 2,
     "state": "done"
    },
-   "run": "gated-2026-11-04T11-56-48-afqy",
+   "run": "gated-2026-11-04T13-05-57-tt3y",
    "tombstone": null,
    "valid": true
   },
@@ -21668,24 +21685,24 @@
  "run_verify.broken": {
   "body": {
    "agent": "tiny",
-   "anchor": "882852d4d7a6360d760d9361874a4246a1d04abd1af6938b21c15145d073f580",
+   "anchor": "bb9633b0ff56a5dd7870b7a5309c2af5128be6492f58066f113662170f992687",
    "anchored": false,
    "broken_at": 1,
    "chain": "broken",
    "disagrees": [],
    "entries": 5,
-   "genesis": "c0f4cbd436d8cab95388671a4f04612d79016ed2f14ffdf93bcf26b055577c41",
+   "genesis": "dacf9772515d5d9c7e031ba66e4589cfcdf612493e9470517ad2056506c7e2cb",
    "pending": 0,
    "previous": "",
    "reason": "entry 1 is not what was written: its hash does not match its content",
    "recorded": {
-    "anchor": "5c693b7a1d4dadf1e91c1070368bcb4b7916f81dbc7992fd174c4d68cabaaedc",
-    "at": "2026-11-04T11:56:48.454Z",
+    "anchor": "d861cac5628d314ad5046331a539e8f7a85178dae520d3f744102d51bce42c4f",
+    "at": "2026-11-04T13:05:56.697Z",
     "entries": 5,
     "seq": 1,
     "state": "done"
    },
-   "run": "tiny-2026-11-04T11-56-48-q1rd",
+   "run": "tiny-2026-11-04T13-05-56-d532",
    "tombstone": null,
    "valid": false
   },
@@ -21694,24 +21711,24 @@
  "run_verify.broken_cut": {
   "body": {
    "agent": "tiny",
-   "anchor": "c0a8711faaff18efd41644571f9f5e8b4d974e89dae414c97ec0c9e2b783405c",
+   "anchor": "be9b5ce7c6d367536db1b1b2271d736300f73063539e7d24814a3776240032e0",
    "anchored": false,
    "broken_at": 3,
    "chain": "broken",
    "disagrees": [],
    "entries": 3,
-   "genesis": "83890f3594932c4ff3d3345429dd3be1909b76501c6b7ed5d5d8374d283385ef",
+   "genesis": "5c30f753bee5bb5e08214e39ffb8ae5c68d8e2b1e97666b38f4eb24c53534684",
    "pending": 0,
    "previous": "",
-   "reason": "the ledger recorded c8625773501596f15d4707b154499cdf30b8c52a952209039d53b2860f6bc2a5 for this run (anchor 1, 5 entries) and it is not on the chain: entries were cut off the end or the journal was rebuilt",
+   "reason": "the ledger recorded adbb7f883bd0b3361b827a4b365a211069a0d7de888a04af97ca145984954935 for this run (anchor 1, 5 entries) and it is not on the chain: entries were cut off the end or the journal was rebuilt",
    "recorded": {
-    "anchor": "c8625773501596f15d4707b154499cdf30b8c52a952209039d53b2860f6bc2a5",
-    "at": "2026-11-04T11:56:48.607Z",
+    "anchor": "adbb7f883bd0b3361b827a4b365a211069a0d7de888a04af97ca145984954935",
+    "at": "2026-11-04T13:05:56.811Z",
     "entries": 5,
     "seq": 1,
     "state": "done"
    },
-   "run": "tiny-2026-11-04T11-56-48-zz5q",
+   "run": "tiny-2026-11-04T13-05-56-d2uu",
    "tombstone": null,
    "valid": false
   },
@@ -21720,7 +21737,7 @@
  "run_verify.disputed": {
   "body": {
    "agent": "gated",
-   "anchor": "6aee447409a955fabab0fc50f17d5c0e14a815b3f059ae5f3d8299e6f01820a4",
+   "anchor": "2596df9dea217c6e2571c652d8d775e696b6bbc65c91a238e6312b09684fca90",
    "anchored": false,
    "broken_at": 7,
    "chain": "broken",
@@ -21728,24 +21745,24 @@
     {
      "at": 7,
      "chain": "Chandresh Singh",
-     "entry": "43b3869fb1ac",
+     "entry": "857d4a88cd03",
      "field": "decisions[0].by",
      "record": "Mallory <mallory@evil.example>"
     }
    ],
    "entries": 10,
-   "genesis": "c3e3bed711597cbf308a24e9313448c2ea332aace1de0de7b5e5bd407041c691",
+   "genesis": "46c4fc633141d1c1bc980235c8e7d4dce6329e8d2b4f4d0859f1bd9a469eaa5d",
    "pending": 0,
    "previous": "",
    "reason": "the journal's chain holds, and the record beside it disagrees with what the chain says: decisions[0].by",
    "recorded": {
-    "anchor": "6aee447409a955fabab0fc50f17d5c0e14a815b3f059ae5f3d8299e6f01820a4",
-    "at": "2026-11-04T11:56:49.439Z",
+    "anchor": "2596df9dea217c6e2571c652d8d775e696b6bbc65c91a238e6312b09684fca90",
+    "at": "2026-11-04T13:05:57.548Z",
     "entries": 10,
     "seq": 2,
     "state": "done"
    },
-   "run": "gated-2026-11-04T11-56-49-94k5",
+   "run": "gated-2026-11-04T13-05-57-6zej",
    "tombstone": null,
    "valid": false
   },
@@ -21760,24 +21777,24 @@
  "run_verify.ok": {
   "body": {
    "agent": "tiny",
-   "anchor": "5c693b7a1d4dadf1e91c1070368bcb4b7916f81dbc7992fd174c4d68cabaaedc",
+   "anchor": "d861cac5628d314ad5046331a539e8f7a85178dae520d3f744102d51bce42c4f",
    "anchored": true,
    "broken_at": null,
    "chain": "ok",
    "disagrees": [],
    "entries": 5,
-   "genesis": "c0f4cbd436d8cab95388671a4f04612d79016ed2f14ffdf93bcf26b055577c41",
+   "genesis": "dacf9772515d5d9c7e031ba66e4589cfcdf612493e9470517ad2056506c7e2cb",
    "pending": 0,
    "previous": "",
    "reason": "",
    "recorded": {
-    "anchor": "5c693b7a1d4dadf1e91c1070368bcb4b7916f81dbc7992fd174c4d68cabaaedc",
-    "at": "2026-11-04T11:56:48.454Z",
+    "anchor": "d861cac5628d314ad5046331a539e8f7a85178dae520d3f744102d51bce42c4f",
+    "at": "2026-11-04T13:05:56.697Z",
     "entries": 5,
     "seq": 1,
     "state": "done"
    },
-   "run": "tiny-2026-11-04T11-56-48-q1rd",
+   "run": "tiny-2026-11-04T13-05-56-d532",
    "tombstone": null,
    "valid": true
   },
@@ -21786,7 +21803,7 @@
  "run_verify.tombstoned": {
   "body": {
    "agent": "tiny",
-   "anchor": "2d8fa0de5bbb94c7ff4767b6b4c64640efaf383f205b27daddd67396b6f05e98",
+   "anchor": "c065b8bfb13cbecee046785af44db0d6e8a0cfa7385e60ce5b9378ac64b9dcf5",
    "anchored": true,
    "broken_at": null,
    "chain": "tombstoned",
@@ -21795,22 +21812,22 @@
    "genesis": "",
    "pending": 0,
    "previous": "",
-   "reason": "retention deleted this run (runs, 2026-12-05T11:56:48.834Z); its tombstone anchor stands in for it",
+   "reason": "retention deleted this run (runs, 2026-12-05T13:05:57.020Z); its tombstone anchor stands in for it",
    "recorded": {
-    "anchor": "2d8fa0de5bbb94c7ff4767b6b4c64640efaf383f205b27daddd67396b6f05e98",
-    "at": "2026-11-04T11:56:48.829Z",
+    "anchor": "c065b8bfb13cbecee046785af44db0d6e8a0cfa7385e60ce5b9378ac64b9dcf5",
+    "at": "2026-11-04T13:05:57.015Z",
     "entries": 5,
     "seq": 1,
     "state": "done"
    },
-   "run": "tiny-2026-11-04T11-56-48-ans0",
+   "run": "tiny-2026-11-04T13-05-57-odib",
    "tombstone": {
-    "at": "2026-12-05T11:56:48.834Z",
+    "at": "2026-12-05T13:05:57.020Z",
     "class": "runs",
     "count": 5,
-    "digest": "sha256:dd7294e8ca87948ec6882b447680cdb96ee6c5bf7eb253f55e354d8888b804cd",
+    "digest": "sha256:3ce5401f26b80f2399c4d045d3c618cd25a864abe5c7a3f4786ad81e3ea02ccb",
     "seq": 3,
-    "tombstone": "ts-61a61df014934250"
+    "tombstone": "ts-c966af2d2a2a4d96"
    },
    "valid": true
   },
@@ -21819,31 +21836,31 @@
  "run_verify.tombstoned_journal": {
   "body": {
    "agent": "tiny",
-   "anchor": "b988942fbe4b345d8524368c573adf88572bbdeba9d56e4828074fec117f53e4",
+   "anchor": "6f871754eae0d260607877ef2fa966f91d0ce33a9fc01f517c95f7d3a69ab091",
    "anchored": true,
    "broken_at": null,
    "chain": "tombstoned",
    "disagrees": [],
    "entries": 1,
-   "genesis": "6707879ef315211a4be8d7a6d786d54a067c223e6be05d24e54a40323b690031",
+   "genesis": "525635b3b8874148649e26493930d8c8ace8aa83964ed82bdfe017a93fc40ca5",
    "pending": 0,
    "previous": "",
    "reason": "retention deleted 5 entries of this journal; the chain verifies around them and the ledger holds the deletion",
    "recorded": {
-    "anchor": "b988942fbe4b345d8524368c573adf88572bbdeba9d56e4828074fec117f53e4",
-    "at": "2026-11-04T11:56:48.948Z",
+    "anchor": "6f871754eae0d260607877ef2fa966f91d0ce33a9fc01f517c95f7d3a69ab091",
+    "at": "2026-11-04T13:05:57.124Z",
     "entries": 5,
     "seq": 1,
     "state": "done"
    },
-   "run": "tiny-2026-11-04T11-56-48-lzca",
+   "run": "tiny-2026-11-04T13-05-57-d85g",
    "tombstone": {
-    "at": "2026-11-15T11:56:48.949Z",
+    "at": "2026-11-15T13:05:57.125Z",
     "class": "journals",
     "count": 5,
-    "digest": "sha256:270f4f40b3620dfd939b882ef5fd14925119754a6a3be08865aca7d9f36b64be",
+    "digest": "sha256:dd4d3eca837182bc10abd11ad2b971b002b9e98e89f998f081080317c4b47316",
     "seq": 2,
-    "tombstone": "ts-856fbea244304d76"
+    "tombstone": "ts-8bff01ec5b7a4739"
    },
    "valid": true
   },
@@ -21852,18 +21869,18 @@
  "run_verify.unanchored": {
   "body": {
    "agent": "tiny",
-   "anchor": "0dc705d6f3ffa1a4a7e885723ef7327cc2ba4293c6a40f97a955f77cde75ab40",
+   "anchor": "2846fd015bb115c2193a233a71f258078d375f6f15d688f3643b2c0d7bdbfd34",
    "anchored": false,
    "broken_at": null,
    "chain": "unanchored",
    "disagrees": [],
    "entries": 2,
-   "genesis": "8fbad4e7f9c64c46289cee329441336e416bbfa94eccc7fe50108674d0b2be3f",
+   "genesis": "919c2c31c2be49ebd77641f31aff159c4940543636c3b50051c232b62fa59ba0",
    "pending": 1,
    "previous": "",
    "reason": "the run is still being written",
    "recorded": null,
-   "run": "tiny-2026-11-04T11-56-48-65bz",
+   "run": "tiny-2026-11-04T13-05-56-g2hl",
    "tombstone": null,
    "valid": true
   },
@@ -21898,7 +21915,7 @@
      "agent": "gated",
      "artifactNames": [],
      "artifacts": 0,
-     "at": "2026-11-04T11:56:49.020Z",
+     "at": "2026-11-04T13:05:57.185Z",
      "byModel": [
       {
        "cost": 0.0,
@@ -21926,8 +21943,8 @@
      "entries": 10,
      "estimated": 0,
      "eval": null,
-     "finished": "2026-11-04T11:56:49.014Z",
-     "id": "gated-2026-11-04T11-56-48-afqy",
+     "finished": "2026-11-04T13:05:57.185Z",
+     "id": "gated-2026-11-04T13-05-57-tt3y",
      "live": false,
      "modelCalls": 1,
      "models": [
@@ -21937,7 +21954,7 @@
      "review": null,
      "shadow": false,
      "source": "console",
-     "started": "2026-11-04T11:56:48.996Z",
+     "started": "2026-11-04T13:05:57.168Z",
      "state": "done",
      "step": "",
      "step_ms": 0,
@@ -21963,11 +21980,11 @@
    "changed": [
     {
      "control": "limit",
-     "entry": "8494aa6a04f0",
+     "entry": "8cb26b38f54a",
      "node": "act",
      "reason": "refused by limit as it stands; the proposed policy allows it",
      "redacted_args": null,
-     "run": "acts-2026-11-04T11-56-48-1ycw",
+     "run": "acts-2026-11-04T13-05-56-ilds",
      "tool": "store.put",
      "was": "refused",
      "would_be": "allowed"
@@ -21992,8 +22009,8 @@
    },
    "truncated": false,
    "window": {
-    "from": "2026-10-28T11:56:48.300Z",
-    "to": "2026-11-04T11:56:48.300Z"
+    "from": "2026-10-28T13:05:56.559Z",
+    "to": "2026-11-04T13:05:56.559Z"
    }
   },
   "status": 200
@@ -22033,8 +22050,8 @@
    },
    "truncated": false,
    "window": {
-    "from": "2026-10-28T11:56:48.370Z",
-    "to": "2026-11-04T11:56:48.370Z"
+    "from": "2026-10-28T13:05:56.623Z",
+    "to": "2026-11-04T13:05:56.623Z"
    }
   },
   "status": 200
@@ -22062,8 +22079,8 @@
    },
    "truncated": false,
    "window": {
-    "from": "2026-09-25T11:56:46.839Z",
-    "to": "2026-10-15T11:56:46.839Z"
+    "from": "2026-09-25T13:05:55.291Z",
+    "to": "2026-10-15T13:05:55.291Z"
    }
   },
   "status": 200
@@ -22074,11 +22091,11 @@
    "changed": [
     {
      "control": "gate",
-     "entry": "f277b576e232",
+     "entry": "d537231013be",
      "node": "act",
      "reason": "store.put is classified write and this system gates write and above",
      "redacted_args": null,
-     "run": "acts-2026-11-04T11-56-48-eccg",
+     "run": "acts-2026-11-04T13-05-56-o739",
      "tool": "store.put",
      "was": "allowed",
      "would_be": "gated"
@@ -22103,8 +22120,8 @@
    },
    "truncated": false,
    "window": {
-    "from": "2026-11-03T11:56:48.096Z",
-    "to": "2026-11-04T11:56:48.096Z"
+    "from": "2026-11-03T13:05:56.401Z",
+    "to": "2026-11-04T13:05:56.401Z"
    }
   },
   "status": 200
@@ -22132,8 +22149,8 @@
    },
    "truncated": false,
    "window": {
-    "from": "2026-11-02T11:56:46.839Z",
-    "to": "2026-11-05T11:56:46.839Z"
+    "from": "2026-11-02T13:05:55.291Z",
+    "to": "2026-11-05T13:05:55.291Z"
    }
   },
   "status": 200
@@ -22144,13 +22161,13 @@
    "changed": [
     {
      "control": "capability",
-     "entry": "5312d32ea4ab",
+     "entry": "229cfa8bb54b",
      "node": "act",
      "reason": "node 'act' was not granted 'store.put' (holds: nothing)",
      "redacted_args": [
       "data.args.key"
      ],
-     "run": "acts-2026-11-04T11-56-51-egc3",
+     "run": "acts-2026-11-04T13-05-59-jlvu",
      "tool": "store.put",
      "was": "allowed",
      "would_be": "refused"
@@ -22175,8 +22192,8 @@
    },
    "truncated": false,
    "window": {
-    "from": "2026-10-28T11:56:51.141Z",
-    "to": "2026-11-04T11:56:51.141Z"
+    "from": "2026-10-28T13:05:59.088Z",
+    "to": "2026-11-04T13:05:59.088Z"
    }
   },
   "status": 200
@@ -22244,11 +22261,11 @@
    "changed": [
     {
      "control": "capability",
-     "entry": "f277b576e232",
+     "entry": "d537231013be",
      "node": "act",
      "reason": "node 'act' was not granted 'store.put' (holds: nothing)",
      "redacted_args": null,
-     "run": "acts-2026-11-04T11-56-48-eccg",
+     "run": "acts-2026-11-04T13-05-56-o739",
      "tool": "store.put",
      "was": "allowed",
      "would_be": "refused"
@@ -22273,8 +22290,8 @@
    },
    "truncated": false,
    "window": {
-    "from": "2026-10-28T11:56:48.082Z",
-    "to": "2026-11-04T11:56:48.082Z"
+    "from": "2026-10-28T13:05:56.387Z",
+    "to": "2026-11-04T13:05:56.387Z"
    }
   },
   "request": {
@@ -22321,11 +22338,11 @@
       "digest": "3a802c629fc8f32b",
       "version": 1
      },
-     "due_at": "2027-02-02T11:56:49.991Z",
+     "due_at": "2027-02-02T13:05:58.065Z",
      "last": {
       "agent": "triage",
       "as_role": "administrator",
-      "at": "2026-11-04T11:56:49.991Z",
+      "at": "2026-11-04T13:05:58.077Z",
       "by": "Ada <ada@ey.com>",
       "deployed": {
        "digest": "3a802c629fc8f32b",
@@ -22393,15 +22410,15 @@
        }
       },
       "digest": "2a7f51eba50c8c12",
-      "due_at": "2027-02-02T11:56:49.991Z",
-      "id": "at-d97fd835ba234ff3",
+      "due_at": "2027-02-02T13:05:58.077Z",
+      "id": "at-5ec68146c0a9417e",
       "matches_deployed": false,
       "period_days": 90,
       "previous": {
-       "at": "2026-11-04T11:56:49.977Z",
+       "at": "2026-11-04T13:05:58.065Z",
        "by": "Owen <owen@ey.com>",
        "digest": "3a802c629fc8f32b",
-       "id": "at-78f45f8c172544df",
+       "id": "at-0ceeaabc480e4d73",
        "version": 1
       },
       "statement": "reviewed the prompt change",
@@ -22438,7 +22455,7 @@
       "digest": "3a802c629fc8f32b",
       "version": 1
      },
-     "due_at": "2027-02-02T11:56:49.902Z",
+     "due_at": "2027-02-02T13:05:57.995Z",
      "last": null,
      "overdue": false,
      "owner": {
@@ -22463,11 +22480,11 @@
       "digest": "3a802c629fc8f32b",
       "version": 1
      },
-     "due_at": "2026-10-05T11:56:49.991Z",
+     "due_at": "2026-10-05T13:05:58.065Z",
      "last": {
       "agent": "triage",
       "as_role": "administrator",
-      "at": "2026-07-07T11:56:49.991Z",
+      "at": "2026-07-07T13:05:58.077Z",
       "by": "Ada <ada@ey.com>",
       "deployed": {
        "digest": "3a802c629fc8f32b",
@@ -22535,15 +22552,15 @@
        }
       },
       "digest": "2a7f51eba50c8c12",
-      "due_at": "2026-10-05T11:56:49.991Z",
-      "id": "at-d97fd835ba234ff3",
+      "due_at": "2026-10-05T13:05:58.077Z",
+      "id": "at-5ec68146c0a9417e",
       "matches_deployed": false,
       "period_days": 90,
       "previous": {
-       "at": "2026-11-04T11:56:49.977Z",
+       "at": "2026-11-04T13:05:58.065Z",
        "by": "Owen <owen@ey.com>",
        "digest": "3a802c629fc8f32b",
-       "id": "at-78f45f8c172544df",
+       "id": "at-0ceeaabc480e4d73",
        "version": 1
       },
       "statement": "reviewed the prompt change",
@@ -22572,11 +22589,11 @@
       "digest": "3a802c629fc8f32b",
       "version": 1
      },
-     "due_at": "2026-10-05T11:56:49.991Z",
+     "due_at": "2026-10-05T13:05:58.065Z",
      "last": {
       "agent": "triage",
       "as_role": "administrator",
-      "at": "2026-07-07T11:56:49.991Z",
+      "at": "2026-07-07T13:05:58.077Z",
       "by": "Ada <ada@ey.com>",
       "deployed": {
        "digest": "3a802c629fc8f32b",
@@ -22644,15 +22661,15 @@
        }
       },
       "digest": "2a7f51eba50c8c12",
-      "due_at": "2026-10-05T11:56:49.991Z",
-      "id": "at-d97fd835ba234ff3",
+      "due_at": "2026-10-05T13:05:58.077Z",
+      "id": "at-5ec68146c0a9417e",
       "matches_deployed": false,
       "period_days": 90,
       "previous": {
-       "at": "2026-11-04T11:56:49.977Z",
+       "at": "2026-11-04T13:05:58.065Z",
        "by": "Owen <owen@ey.com>",
        "digest": "3a802c629fc8f32b",
-       "id": "at-78f45f8c172544df",
+       "id": "at-0ceeaabc480e4d73",
        "version": 1
       },
       "statement": "reviewed the prompt change",
@@ -24194,7 +24211,7 @@
   "body": {
    "agent": null,
    "attestation_within_days": 14,
-   "change": "pc-55ff9cfe684e4415",
+   "change": "pc-f4c98c9726844636",
    "requirements": [
     {
      "id": "owner",
@@ -24281,7 +24298,7 @@
      "what": "the owner attests at least every 30 days that the agent still does what was approved"
     }
    ],
-   "set_at": "2026-11-04T11:56:50.546Z",
+   "set_at": "2026-11-04T13:05:58.577Z",
    "set_by": "Ben <ben@ey.com>",
    "sources": {
     "changes": "policy target autonomy_tiers",
