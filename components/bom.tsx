@@ -58,6 +58,7 @@ function PeerRow({ p }: { p: BomPeer }) {
       </td>
       <td className="px-3 py-1.5 font-mono text-[10.5px] text-faint">{p.url}</td>
       <td className="px-3 py-1.5">{p.card_digest ? <DigestChip digest={p.card_digest} label="Card digest" /> : <span className="text-[11px] text-ghost">none</span>}</td>
+      <td className="px-3 py-1.5"><ClassTag value={p.effective_max_data_class} none="no limit declared" /></td>
     </tr>
   );
 }
@@ -195,6 +196,7 @@ export function BomView({ bom }: { bom: AiBom }) {
                   <th className="px-3 py-1.5 font-medium">Status</th>
                   <th className="px-3 py-1.5 font-medium">URL</th>
                   <th className="px-3 py-1.5 font-medium">Card</th>
+                  <th className="px-3 py-1.5 font-medium">Takes up to</th>
                 </tr>
               </thead>
               <tbody>

@@ -15,7 +15,7 @@ import { soon } from "@/lib/soon";
 import { listAgents, type AgentSummary } from "@/lib/api/l2";
 import { downloadEvidence, getControls, getEvidence, saveFile, type ControlsCatalogue, type EvidencePack } from "@/lib/api/l9";
 import { packChainLine } from "@/lib/chain";
-import { EMPTY_PACK_FORM, decisionLine, noFiringLine, packLine, packProblem, packQuery, periodLine, type PackForm } from "@/lib/evidence";
+import { EMPTY_PACK_FORM, decisionLine, noFiringLine, packLine, packProblem, packQuery, periodLine, stampLine, type PackForm } from "@/lib/evidence";
 import { whenText } from "@/lib/lifecycle";
 import { CHANGE_STATE_META, targetLine } from "@/lib/policy";
 
@@ -71,7 +71,7 @@ export function EvidencePackView({ pack }: { pack: EvidencePack }) {
         </Banner>
       )}
       <Banner tone={chain.tone} title={chain.title}>
-        {chain.line}
+        {p.chain.reason ? `${chain.line} ${p.chain.reason}.` : chain.line}
         {p.chain.broken.map((b) => (
           <span key={b.run} className="mt-1 block font-mono text-[10.5px] break-words">
             {b.run}: {b.reason}
@@ -140,6 +140,7 @@ export function EvidencePackView({ pack }: { pack: EvidencePack }) {
                 <td className="max-w-[420px] px-3 py-1.5 leading-[1.5] text-dim">{decisionLine(d)}</td>
                 <td className="px-3 py-1.5">
                   <span className="flex flex-wrap gap-1">{d.control_ids.length ? d.control_ids.map((c) => <ControlRef key={c} control={c} />) : d.controls.map((c) => <Tag key={c}>{c}</Tag>)}</span>
+                  <span className="mt-0.5 block text-[10.5px] text-ghost">{stampLine(d)}</span>
                 </td>
                 <td className="px-3 py-1.5">{d.digest ? <DigestChip digest={d.digest} label="Decision digest" /> : <span className="text-[11px] text-ghost">read back from the journal</span>}</td>
               </tr>
@@ -333,7 +334,7 @@ function EvidencePage() {
           <Field label="Control">
             <Pick value={form.control} onChange={(v) => edit({ control: v })} options={controls} />
           </Field>
-          <Field label="Or a control key" hint="what the journal names, for one the catalogue does not: limit, mass_action, report, lockdown">
+          <Field label="Or a control key" hint="what the journal names, for one the catalogue does not: lockdown, breaker, rate_limit">
             <Input mono value={form.key} onChange={(v) => edit({ key: v })} />
           </Field>
           <Field label="Framework" hint={picked && !picked.obligations.length ? "nothing is mapped to it: a pack would hold no controls" : undefined}>

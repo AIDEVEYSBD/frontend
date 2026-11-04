@@ -76,7 +76,7 @@ const filenameOf = (res: Response, fallback: string): string => /filename="?([^"
 export type ChangeState = "pending" | "approved" | "applied" | "rejected" | "rolled_back" | "failed";
 export const CHANGE_STATES: ChangeState[] = ["pending", "approved", "applied", "rejected", "rolled_back", "failed"];
 
-export type TargetKindName = "attached" | "guardian" | "breakers" | "rate_limits" | "screener" | "retention" | "redaction" | "autonomy_tiers" | "attestation";
+export type TargetKindName = "attached" | "guardian" | "breakers" | "rate_limits" | "screener" | "retention" | "redaction" | "autonomy_tiers" | "attestation" | "peer";
 
 export interface PolicyTarget {
   kind: string;
@@ -158,15 +158,25 @@ export interface PolicyChangeList {
 export interface TargetKind {
   kind: string;
   what: string;
-  /** estate | agent | attached | estate_or_agent */
+  /** estate | agent | attached | estate_or_agent | peer */
   ids: string;
   fields: string[];
   labels: Record<string, string>;
   /** The direct write it replaced, refused 409 since L9. */
   replaces: string;
   enforced: string;
-  /** The estate's rules now; null for a target per agent. */
+  /** The estate's rules now; null for a target held per id. */
   current: Record<string, unknown> | null;
+  /** Each id holding rules of its own, and those rules. */
+  by_id: Record<string, Record<string, unknown>>;
+}
+
+/** `GET /api/policy/targets/{kind}/{id}`: one target's rules now, and what a null in them inherits. */
+export interface TargetRules {
+  kind: string;
+  id: string;
+  current: Record<string, unknown>;
+  inherits: Record<string, unknown> | null;
 }
 
 export interface TargetKinds {
@@ -247,10 +257,17 @@ export function targetKindsOf(v: unknown): TargetKinds {
     targets: objs(o.targets).map((t) => {
       const labels: Record<string, string> = {};
       for (const [k, l] of Object.entries(obj(t.labels))) labels[k] = str(l);
-      return { kind: str(t.kind), what: str(t.what), ids: str(t.ids), fields: strs(t.fields), labels, replaces: str(t.replaces), enforced: str(t.enforced), current: isObj(t.current) ? obj(t.current) : null };
+      const byId: Record<string, Record<string, unknown>> = {};
+      for (const [id, rules] of Object.entries(obj(t.by_id))) byId[id] = obj(rules);
+      return { kind: str(t.kind), what: str(t.what), ids: str(t.ids), fields: strs(t.fields), labels, replaces: str(t.replaces), enforced: str(t.enforced), current: isObj(t.current) ? obj(t.current) : null, by_id: byId };
     }),
   };
 }
+
+export const targetRulesOf = (v: unknown): TargetRules => {
+  const o = obj(v);
+  return { kind: str(o.kind), id: str(o.id), current: obj(o.current), inherits: isObj(o.inherits) ? obj(o.inherits) : null };
+};
 
 /**
  * A direct write to a policy target, as the 409 reads: the door it goes
@@ -553,8 +570,7 @@ export function frameworkInfoOf(v: unknown): FrameworkInfo {
   return {
     id: str(o.id),
     name: str(o.name),
-    // A framework with no short name of its own has its id here; its name reads better.
-    short: str(o.short) && str(o.short) !== str(o.id) ? str(o.short) : str(o.name) || str(o.id),
+    short: str(o.short) || str(o.name) || str(o.id),
     kind: str(o.kind) || "framework",
     mapping: strs(o.mapping),
     why: strOrNull(o.why),
@@ -610,6 +626,12 @@ export interface SignedDecision {
   controls: string[];
   control_ids: string[];
   digest: string;
+  /** The controls come from the hash-chained `gate.answer`, not a stamp on the record beside it. */
+  chained: boolean;
+  /** That entry's id, when chained. */
+  entry: string;
+  /** What the record's own copy said that the chain does not: the chain's word is what is shown, and the run reads broken. */
+  disagrees: { field: string; record: string; chain: string }[];
 }
 
 export interface PackVersion {
@@ -667,7 +689,7 @@ export interface CitedRun {
 }
 
 /** `ok`: every run cited holds. `partial`: one from before the chain, or with no anchor yet. `broken`: one does not. */
-export type PackChainStatus = "ok" | "partial" | "broken";
+export type PackChainStatus = "unavailable" | "no_runs" | "ok" | "partial" | "broken";
 
 export interface EvidencePack {
   pack: { control: string | null; framework: string | null; agent: string | null; from: string; to: string; generated_at: string; generated_by: string; keys: string[] };
@@ -677,7 +699,7 @@ export interface EvidencePack {
   policy: { versions: PackVersion[]; changes: PackChange[]; deployments: PackDeployment[] };
   identities: { identity: string; acted_as: string[]; count: number }[];
   runs: CitedRun[];
-  chain: { status: PackChainStatus; runs: number; counts: Record<string, number>; broken: { run: string; broken_at: number | null; reason: string }[] };
+  chain: { status: PackChainStatus; runs: number; counts: Record<string, number>; broken: { run: string; broken_at: number | null; reason: string }[]; reason: string };
   counts: { controls: number; firings: number; decisions: number; runs: number; versions: number; changes: number; identities: number; by_key: Record<string, number> };
   excluded: { shadow: number };
   truncated: boolean;
@@ -697,6 +719,9 @@ export function signedDecisionOf(v: unknown): SignedDecision {
     note: str(o.note),
     shape: str(o.shape),
     via: str(o.via),
+    chained: o.chained === true,
+    entry: str(o.entry),
+    disagrees: objs(o.disagrees).map((x) => ({ field: str(x.field), record: str(x.record), chain: str(x.chain) })),
     controls: strs(o.controls),
     control_ids: strs(o.control_ids),
     digest: str(o.digest),
@@ -709,7 +734,8 @@ export function evidencePackOf(v: unknown): EvidencePack {
   const c = obj(o.counts);
   const policy = obj(o.policy);
   const chain = obj(o.chain);
-  const status = chain.status === "ok" || chain.status === "partial" ? chain.status : "broken";
+  // A status this client does not know reads as broken, never as holding.
+  const status = chain.status === "ok" || chain.status === "partial" || chain.status === "no_runs" || chain.status === "unavailable" ? chain.status : "broken";
   return {
     pack: {
       control: strOrNull(p.control),
@@ -790,7 +816,7 @@ export function evidencePackOf(v: unknown): EvidencePack {
       anchored: r.anchored === true,
       reason: str(r.reason),
     })),
-    chain: { status, runs: num(chain.runs), counts: counts(chain.counts), broken: objs(chain.broken).map((b) => ({ run: str(b.run), broken_at: numOrNull(b.broken_at), reason: str(b.reason) })) },
+    chain: { status, runs: num(chain.runs), counts: counts(chain.counts), broken: objs(chain.broken).map((b) => ({ run: str(b.run), broken_at: numOrNull(b.broken_at), reason: str(b.reason) })), reason: str(chain.reason) },
     counts: {
       controls: num(c.controls),
       firings: num(c.firings),
@@ -1119,6 +1145,8 @@ export interface BomPeer {
   url: string;
   card: { name: string; version: string } | null;
   card_digest: string;
+  /** The limit that holds: the stricter of the registry's and the spec's, "" when neither sets one. */
+  effective_max_data_class: string;
 }
 
 /** `GET /api/agents/{id}/bom` */
@@ -1198,6 +1226,7 @@ export function bomOf(v: unknown): AiBom {
     url: str(p.url),
     card: orNull(p.card, (x) => ({ name: str(obj(x).name), version: str(obj(x).version) })),
     card_digest: str(p.card_digest),
+    effective_max_data_class: str(p.effective_max_data_class),
   }));
   const runtime = obj(o.runtime);
   return {
@@ -1284,7 +1313,7 @@ export function regulatoryViewOf(v: unknown): RegulatoryView {
 
 /* ═══════════════════ the record: signed decisions ═══════════════════ */
 
-/** The signed answers on a run's record (`decisions`, outside the hash chain). */
+/** The signed answers on a run's record, each with what opened its gate, read from the chain where the record has it (`chained`). */
 export const decisionsOf = (record: unknown): SignedDecision[] => {
   const r = obj(record);
   return objs(r.decisions).map((d) => ({ ...signedDecisionOf(d), run: str(d.run) || str(r.id), agent: str(d.agent) || str(r.system) }));
@@ -1304,6 +1333,10 @@ export function rollbackAttentionOf(item: Pick<AttentionItem, "kind" | "data">):
 /* ═══════════════════ calls ═══════════════════ */
 
 /** `GET /api/policy/targets` (view): what may be proposed, and the estate's rules now. */
+export async function getPolicyTarget(kind: string, id: string): Promise<TargetRules> {
+  return read(await api.GET("/api/policy/targets/{kind}/{target_id}", { params: { path: { kind, target_id: id } } }), targetRulesOf);
+}
+
 export async function listPolicyTargets(): Promise<TargetKinds> {
   return read(await api.GET("/api/policy/targets"), targetKindsOf);
 }

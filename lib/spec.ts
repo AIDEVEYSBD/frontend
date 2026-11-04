@@ -232,6 +232,8 @@ export interface OutputDecl {
   kind: "response" | "document" | "json" | "webhook";
   from_node?: string;
   config?: Record<string, unknown>;
+  /** L9, a webhook only: its limit. A value of a higher class is refused (`control: data_class`) and nothing is posted. */
+  max_data_class?: DataClass;
 }
 
 export const TRIGGER_META: Record<Trigger["kind"], { label: string; blurb: string }> = {

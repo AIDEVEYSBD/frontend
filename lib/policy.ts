@@ -1,6 +1,7 @@
 import type { Tone } from "@/components/ui";
 import type { ChangeState, DiffChange, PolicyChange, PolicyDiff, PolicyTarget, Ruling, SimWindow, SimulationResult, TargetKind } from "./api/l9";
 import { DoorError } from "./api/l5";
+import { dataClassChoices } from "./bom";
 
 /**
  * Policy as reviewed change, as a person meets it (phase L9): the words for a
@@ -32,6 +33,7 @@ export const TARGET_LABEL: Record<string, string> = {
   redaction: "Redaction",
   autonomy_tiers: "Autonomy tiers",
   attestation: "Attestation period",
+  peer: "Peer data classes",
 };
 
 export const targetLabel = (kind: string): string => TARGET_LABEL[kind] ?? kind.replace(/_/g, " ");
@@ -174,6 +176,8 @@ const FIXED: Record<string, Pick<ProposalField, "kind" | "choices" | "hint" | "s
   "attached.gate_at": { kind: "choice", choices: GATE_CHOICES },
   "attestation.period_days": { kind: "number", hint: "days; the default is 90" },
   "guardian.agents": { kind: "list", hint: "agent ids; * for every agent", star: true },
+  "peer.data_class": { kind: "choice", choices: dataClassChoices("undeclared"), hint: "what it returns; a task it sends in starts at this class or higher" },
+  "peer.max_data_class": { kind: "choice", choices: dataClassChoices("no limit here"), hint: "a spec's own limit holds beside this one, and the lower decides" },
   "guardian.may": { kind: "list", hint: "hold, block, redirect" },
   "guardian.model": { kind: "text" },
   "guardian.rubric": { kind: "longtext" },
@@ -182,7 +186,7 @@ const FIXED: Record<string, Pick<ProposalField, "kind" | "choices" | "hint" | "s
 };
 
 /** The form's fields, from what the door says of the target: its names and labels, each field's kind read from the rules it holds now. */
-export function fieldsOf(t: Pick<TargetKind, "kind" | "fields" | "labels">, current: Record<string, unknown> | null): ProposalField[] {
+export function fieldsOf(t: Pick<TargetKind, "kind" | "fields" | "labels">, current: Record<string, unknown> | null, inherits: Record<string, unknown> | null = null): ProposalField[] {
   return t.fields.map((name) => {
     const fixed = FIXED[`${t.kind}.${name}`];
     const said = t.labels[name] ?? name.replace(/_/g, " ");
@@ -191,8 +195,16 @@ export function fieldsOf(t: Pick<TargetKind, "kind" | "fields" | "labels">, curr
     const v = current?.[name];
     const kind: FieldKind = typeof v === "boolean" ? "bool" : Array.isArray(v) ? "list" : typeof v === "string" ? "text" : v && typeof v === "object" ? "json" : "number";
     const nullable = v === null || v === undefined;
+    // An agent's own limit, shown so it can be cleared: empty goes back to the estate's.
+    if (inherits && kind === "number") return { name, label, kind, hint: `empty inherits the estate's: ${String(inherits[name] ?? "unset")}` };
     return { name, label, kind, ...(kind === "number" && nullable ? { hint: t.kind === "retention" ? "days; empty keeps the records" : "empty inherits the estate's" } : {}) };
   });
+}
+
+/** One id's own rules in a line, the fields it leaves to the estate left out. */
+export function byIdLine(t: Pick<TargetKind, "labels">, rules: Record<string, unknown>): string {
+  const set = Object.entries(rules).filter(([, v]) => v !== null && v !== "");
+  return set.length ? set.map(([k, v]) => `${t.labels[k] ?? k} ${shown(v)}`).join(", ") : "nothing of its own";
 }
 
 /** What the form holds: text until sent, so a half-typed value is not lost. */

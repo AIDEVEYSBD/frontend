@@ -5,9 +5,11 @@ import {
   OUTPUT_META,
   TRIGGER_META,
   type AgentSystem,
+  type DataClass,
   type OutputDecl,
   type Trigger,
 } from "@/lib/spec";
+import { dataClassChoices } from "@/lib/bom";
 import type { Action } from "@/lib/builder-store";
 import { Cross, Mini, Plus, Row, Section, Text } from "./controls";
 
@@ -201,6 +203,22 @@ export function BoundaryPanel({
                     invalid={!String(o.config?.url ?? "").trim()}
                     onChange={(v) =>
                       setOutputs(outputs.map((x, j) => (j === i ? { ...x, config: { ...x.config, url: v } } : x)))
+                    }
+                  />
+                </Row>
+              )}
+              {o.kind === "webhook" && (
+                <Row label="Highest data class it takes" tight hint="A result of a higher class is refused here, and nothing is posted.">
+                  <Pick
+                    aria-label={`Highest data class output ${i + 1} takes`}
+                    value={o.max_data_class ?? ""}
+                    options={dataClassChoices("no limit declared")}
+                    onChange={(v) =>
+                      setOutputs(outputs.map((x, j) => {
+                        if (j !== i) return x;
+                        const { max_data_class: _, ...rest } = x;
+                        return v ? { ...rest, max_data_class: v as DataClass } : rest;
+                      }))
                     }
                   />
                 </Row>

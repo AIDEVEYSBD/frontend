@@ -25,13 +25,13 @@ import * as l5 from "@/lib/api/l5";
 import * as l7 from "@/lib/api/l7";
 import * as l8 from "@/lib/api/l8";
 import * as l9 from "@/lib/api/l9";
-import { attachedSplit, changeLine, changeSummary, diffCells, diffOf, draftOf, effectiveAt, effectiveProblem, fieldsOf, movesOf, parseProposal, patchOf, proposedField, proposedLine, signedBy, simWindowOf, simulationGaps, simulationLine, targetLine, targetQuery } from "@/lib/policy";
+import { attachedSplit, byIdLine, changeLine, changeSummary, diffCells, diffOf, draftOf, effectiveAt, effectiveProblem, fieldsOf, movesOf, parseProposal, patchOf, proposedField, proposedLine, signedBy, simWindowOf, simulationGaps, simulationLine, targetLine, targetQuery } from "@/lib/policy";
 import { CHAIN_META, ledgerHeadline, ledgerNotes, packChainLine, verifyLine } from "@/lib/chain";
 import { decisionEntry, hasProvenance, provenanceOf } from "@/lib/provenance";
 import { requirementState, tierLine, tierTag } from "@/lib/autonomy";
 import { attestationLine, deployedNote, diffLine, dueLine, mayAttest, ownerLine, standingState } from "@/lib/attestations";
 import { frameworkLine, isUnmapped, unmappedLine, viewCounts } from "@/lib/frameworks";
-import { EMPTY_PACK_FORM, decisionLine, noFiringLine, packLine, packProblem, packQuery } from "@/lib/evidence";
+import { EMPTY_PACK_FORM, decisionLine, noFiringLine, packLine, packProblem, packQuery, stampLine } from "@/lib/evidence";
 import { classLines, chosenLine, impactLine, modelLine } from "@/lib/bom";
 import { conditionLabel, itemLine, overrideChoices } from "@/lib/lifecycle";
 import { patchOf as guardianPatchOf, formOf as guardianFormOf } from "@/lib/guardian";
@@ -46,6 +46,13 @@ import { AutonomyPanelView } from "@/components/autonomy";
 import { BomView } from "@/components/bom";
 import { FrameworkViewPanel } from "@/components/frameworks";
 import { ProvenanceChain } from "@/components/provenance";
+import { LifecycleIndexView } from "@/components/lifecycle";
+import { PeerRow } from "@/components/peers";
+import { BoundaryPanel } from "@/components/builder/boundary-panel";
+import { peerRegistryOf } from "@/lib/api/l7b";
+import { peerClassLine } from "@/lib/peers";
+import { explainControl } from "@/lib/guardrails";
+import { declaredTierLabel } from "@/lib/autonomy";
 
 /**
  * The L9 contract, held from the console's side.
@@ -53,8 +60,9 @@ import { ProvenanceChain } from "@/components/provenance";
  * L5's console was written from the contract's text and replaying the real
  * backend through it then failed 12 of 14 checks, so this phase went the other
  * way: tests/fixtures/l9-captures.json holds every L9 door's real answers,
- * captured from the backend's own app (at commit cd08be7, driven through its
- * doors in-process) before any of lib/api/l9.ts was written, including the
+ * captured from the backend's own app (driven through its doors in-process by
+ * backend/scripts/console_l9_capture.py) before any of lib/api/l9.ts was
+ * written and again as the doors moved, including the
  * empty states, the refusals (403, 409 naming the door, 400, 404) and every
  * reading of the chain. Each test stubs fetch with those answers and calls the
  * real client, and the last test fails if any capture was not replayed. When a
@@ -123,7 +131,7 @@ describe("the targets", () => {
     const t = await l9.listPolicyTargets();
     expect(sent[0]).toMatchObject({ method: "GET", url: "/api/policy/targets" });
     expect(t.door).toBe("POST /api/policy/changes");
-    expect(t.targets.map((x) => x.kind)).toEqual(["attached", "guardian", "breakers", "rate_limits", "screener", "retention", "redaction", "autonomy_tiers", "attestation"]);
+    expect(t.targets.map((x) => x.kind)).toEqual(["attached", "guardian", "breakers", "rate_limits", "screener", "retention", "redaction", "autonomy_tiers", "attestation", "peer"]);
     const guardian = t.targets.find((x) => x.kind === "guardian");
     expect(guardian?.replaces).toBe("PUT /api/guardian");
     expect(guardian?.labels.max_actions_per_hour).toBe("guardian's hourly cap");
@@ -725,14 +733,97 @@ describe("retention", () => {
   });
 });
 
+/* ═══════════════════ rules per target ═══════════════════ */
+
+describe("rules held per id", () => {
+  const targets = () => l9.targetKindsOf(body("targets.by_id")).targets;
+  const of = (kind: string) => targets().find((t) => t.kind === kind) as l9.TargetKind;
+
+  it("lists each id's own rules beside the estate's", () => {
+    expect(of("rate_limits").by_id.tiny.run_starts_per_minute).toBe(2);
+    expect(of("rate_limits").current?.run_starts_per_minute).not.toBe(2);
+    expect(of("attestation").by_id).toEqual({ tiny: { period_days: 30 } });
+    expect(of("peer").by_id.soc).toEqual({ data_class: "confidential", max_data_class: "internal" });
+    const out = html(createElement(TargetRules, { target: of("rate_limits") }));
+    expect(out).toContain("tiny");
+    expect(out).toContain("run starts per minute 2");
+    expect(byIdLine(of("peer"), { data_class: "", max_data_class: "internal" })).toBe("highest class the peer takes internal");
+    expect(byIdLine(of("rate_limits"), { run_starts_per_minute: null })).toBe("nothing of its own");
+  });
+
+  it("reads an agent's own rate limits, says what a blank inherits, and clears one", async () => {
+    serve("target.rate_limits");
+    const read = await l9.getPolicyTarget("rate_limits", "tiny");
+    expect(sent[0]).toMatchObject({ method: "GET", url: "/api/policy/targets/rate_limits/tiny" });
+    expect(read.current.run_starts_per_minute).toBe(2);
+    const estate = read.inherits?.run_starts_per_minute;
+    expect(typeof estate).toBe("number");
+    const fields = fieldsOf(of("rate_limits"), read.current, read.inherits);
+    const limit = fields.find((f) => f.name === "run_starts_per_minute");
+    expect(limit?.kind).toBe("number");
+    expect(limit?.hint).toBe(`empty inherits the estate's: ${String(estate)}`);
+    const draft = draftOf(fields, read.current);
+    expect(draft.run_starts_per_minute).toBe("2");
+    // Blanking the box clears it: null, which the door reads as inherit.
+    expect(patchOf(fields, { ...draft, run_starts_per_minute: "" }, read.current).patch).toEqual({ run_starts_per_minute: null });
+  });
+
+  it("reads the other per-id doors, and refuses by name", async () => {
+    serve("target.attestation", "target.peer", "target.not_found", "target.bad_kind");
+    expect((await l9.getPolicyTarget("attestation", "tiny")).current).toEqual({ period_days: 30 });
+    const peer = await l9.getPolicyTarget("peer", "soc");
+    expect(peer.current).toEqual({ data_class: "confidential", max_data_class: "internal" });
+    expect(peer.inherits).toBeNull();
+    const fields = fieldsOf(of("peer"), peer.current);
+    expect(fields.map((f) => f.kind)).toEqual(["choice", "choice"]);
+    expect(fields[1].choices?.map((c) => c.value)).toEqual(["", "public", "internal", "confidential", "restricted"]);
+    expect((await refused(l9.getPolicyTarget("peer", "ghost"))).status).toBe(404);
+    expect((await refused(l9.getPolicyTarget("nonsense", "x"))).field).toBe("target.kind");
+  });
+
+  it("proposes a peer's classes as a reviewed change, which the Peers page shows", () => {
+    const c = l9.policyChangeOf(body("propose.pending.peer"));
+    expect(c.state).toBe("pending");
+    expect(c.target).toEqual({ kind: "peer", id: "soc" });
+    expect(targetLine(c.target)).toBe("Peer data classes, soc");
+    const { peers } = peerRegistryOf(body("peers.classed"));
+    expect(peers[0]).toMatchObject({ data_class: "confidential", max_data_class: "internal" });
+    expect(peerClassLine(peers[0])).toBe("Returns confidential · takes up to internal");
+    expect(peerClassLine({ data_class: "", max_data_class: "" })).toBe("Returns undeclared · takes no limit here");
+    const out = html(createElement(PeerRow, { peer: peers[0], twoPerson: false, me: null, onChanged: () => {} }));
+    expect(out).toContain("Returns confidential");
+  });
+});
+
+describe("the Builder's webhook limit", () => {
+  it("round-trips, and is left out when it says nothing", () => {
+    const s = fromDocument(body<{ spec: unknown }>("agent.version_spec").spec);
+    const limited = reduce(s, { type: "set-outputs", outputs: [{ kind: "webhook", config: { url: "https://hooks.example/x" }, max_data_class: "internal" }] });
+    const outputs = (x: typeof s) => (toDocument(x) as unknown as { spec: { outputs: unknown[] } }).spec.outputs;
+    expect(outputs(limited)).toEqual([{ kind: "webhook", config: { url: "https://hooks.example/x" }, max_data_class: "internal" }]);
+    const plain = reduce(s, { type: "set-outputs", outputs: [{ kind: "webhook", config: { url: "https://hooks.example/x" } }] });
+    expect(outputs(plain)).toEqual([{ kind: "webhook", config: { url: "https://hooks.example/x" } }]);
+    const out = html(createElement(BoundaryPanel, { system: limited, dispatch: () => {} }));
+    expect(out).toContain("Highest data class it takes");
+  });
+});
+
 /* ═══════════════════ the catalogue and evidence ═══════════════════ */
 
 describe("the controls catalogue", () => {
   it("reads every control with its mappings, and a mapping's source", async () => {
     serve("controls");
     const c = await l9.getControls();
-    expect(c.count).toBe(27);
-    expect(c.controls).toHaveLength(27);
+    expect(c.count).toBe(31);
+    expect(c.controls).toHaveLength(31);
+    // The four the runtime fires that used to count toward nothing.
+    for (const [key, id] of [["limit", "AF-AC-05"], ["delegation", "AF-AC-06"], ["data_class", "AF-DP-06"], ["mass_action", "AF-RS-04"]]) {
+      expect(c.controls.find((x) => x.journal === key)?.id).toBe(id);
+      expect(explainControl(key).id, key).toBe(id);
+    }
+    expect(c.controls.find((x) => x.journal === "data_class")?.frameworks.eu_ai_act[0].ref).toBe("Art. 10");
+    // The report gate is an authorisation gate, and counts where one does.
+    expect(explainControl("report").id).toBe("AF-HO-01");
     const gate = c.controls.find((x) => x.id === "AF-HO-01") as l9.CatalogueControl;
     expect(gate.title).toBe("Authorisation gate");
     expect(gate.journal).toBe("gate");
@@ -752,12 +843,12 @@ describe("evidence packs", () => {
     expect(sent[0].url).toBe("/api/evidence?control=AF-HO-01");
     expect(p.controls[0].id).toBe("AF-HO-01");
     expect(p.firings).toEqual([]);
-    expect(p.chain).toEqual({ status: "ok", runs: 0, counts: {}, broken: [] });
+    expect(p.chain).toEqual({ status: "no_runs", runs: 0, counts: {}, broken: [], reason: "" });
     expect(noFiringLine(p)).toContain("not evidence it works");
     const out = html(createElement(EvidencePackView, { pack: p }));
     expect(out).toContain("No gate of this control was answered");
     expect(out).toContain("No run is cited");
-    // Nothing cited, so nothing verified: the door's `ok` for an empty list never reads as holding.
+    // Nothing cited, so nothing verified: the door's own status, read as it says.
     expect(packChainLine(p.chain)).toMatchObject({ title: "No run to verify", tone: "neutral" });
     expect(out).not.toContain("Every cited run holds");
   });
@@ -766,7 +857,7 @@ describe("evidence packs", () => {
     const p = l9.evidencePackOf(body("evidence.framework_unmapped"));
     expect(p.pack.framework).toBe("dpdp");
     expect(p.controls).toEqual([]);
-    expect(p.chain.status).toBe("ok");
+    expect(p.chain.status).toBe("no_runs");
     const out = html(createElement(EvidencePackView, { pack: p }));
     expect(out).toContain("No control is mapped to dpdp");
     expect(out).toContain("cannot be read as meeting it");
@@ -797,14 +888,52 @@ describe("evidence packs", () => {
     expect(p.controls.length).toBeGreaterThan(1);
   });
 
-  it("says a pack with a broken run is broken, and a key the catalogue does not map stays a key", () => {
+  it("says a pack with a broken run is broken, and a firing counts against its row", () => {
     const p = l9.evidencePackOf(body("evidence.broken"));
     expect(p.chain.status).toBe("broken");
     expect(p.chain.broken[0].broken_at).toBe(0);
     expect(p.runs[0]).toMatchObject({ chain: "broken", valid: false });
-    expect(p.firings[0]).toMatchObject({ key: "limit", label: "limit", control_ids: [] });
-    expect(p.controls).toEqual([]);
+    expect(p.firings[0]).toMatchObject({ key: "limit", label: "Argument limit", control_ids: ["AF-AC-05"] });
+    expect(p.controls.map((c) => c.id)).toEqual(["AF-AC-05"]);
     expect(html(createElement(EvidencePackView, { pack: p }))).toContain("A cited run is broken");
+  });
+
+  it("never reads an outage as ok or as an empty period, and says why", () => {
+    const p = l9.evidencePackOf(body("evidence.unavailable"));
+    expect(p.chain.status).toBe("unavailable");
+    expect(p.chain.reason).toContain("could not be read");
+    expect(packChainLine(p.chain)).toMatchObject({ title: "The run records could not be read", tone: "err" });
+    expect(noFiringLine(p)).toContain("could not be read");
+    const out = html(createElement(EvidencePackView, { pack: p }));
+    expect(out).toContain("The run records could not be read");
+    expect(out).not.toContain("No firing of this control");
+    expect(out).not.toContain("Every cited run holds");
+  });
+
+  it("shows the chain's signer when a record's copy was forged, and says the run is broken", async () => {
+    const p = l9.evidencePackOf(body("evidence.forged"));
+    expect(p.chain.status).toBe("broken");
+    expect(p.chain.broken[0].reason).toContain("decisions[0].by");
+    const d = p.decisions[0];
+    expect(d.by).toBe("Chandresh Singh");
+    expect(d.disagrees).toEqual([{ field: "by", record: "Mallory <mallory@evil.example>", chain: "Chandresh Singh" }]);
+    expect(stampLine(d)).toBe("The record's copy disagrees with the chain on by: this is the chain's");
+    const out = html(createElement(EvidencePackView, { pack: p }));
+    expect(out).toContain("A cited run is broken");
+    expect(out).not.toContain("Mallory");
+    expect(p.identities.map((i) => i.identity)).not.toContain("Mallory <mallory@evil.example>");
+    serve("run_verify.disputed");
+    const v = await l9.verifyRun("x");
+    expect(v.chain).toBe("broken");
+    expect(verifyLine(v)).toContain("disagrees with what the chain says");
+    expect(l9.decisionsOf(body("run_doc.disputed"))[0]).toMatchObject({ by: "Chandresh Singh", chained: true });
+  });
+
+  it("carries a report gate's approval in the authorisation gate's pack, read from the chain", () => {
+    const p = l9.evidencePackOf(body("evidence.report_in_gate_pack"));
+    expect(p.decisions[0]).toMatchObject({ controls: ["report"], control_ids: ["AF-HO-01"], chained: true });
+    expect(stampLine(p.decisions[0])).toBe("Read from the hash chain");
+    expect(p.firings.some((f) => f.key === "report" && f.label === "A deliverable held for a person's review")).toBe(true);
   });
 
   it("never reads a run from before the chain as ok", () => {
@@ -1053,8 +1182,11 @@ describe("a spec's L9 fields", () => {
     serve("agents.list", "agent.versions");
     const agents = await l2.listAgents();
     expect(agents[0]).toMatchObject({ id: "triage", version: 2 });
-    // The agents door carries no tier: the Lifecycle index reads one per agent.
-    expect(agents[0]).not.toHaveProperty("autonomy");
+    // The agents door carries the tier, so the Lifecycle index asks nothing per agent.
+    expect(agents[0].autonomy).toBe("L1");
+    expect(declaredTierLabel(agents[0].autonomy)).toBe("Tier L1");
+    expect(sent).toHaveLength(1);
+    expect(html(createElement(LifecycleIndexView, { agents }))).toContain("Tier L1");
     const v = await l2.listVersions("boxed");
     expect(v.versions[0].tools).toContain("store.put");
   });
@@ -1098,15 +1230,27 @@ describe("the provenance chain", () => {
     expect(chain.steps.find((s) => s.entry.kind === "node.enter")?.said).toContain("C-1");
     expect(chain.steps.find((s) => s.entry.kind === "suspend")?.said).toContain("Presented:");
     expect(chain.steps.find((s) => s.entry.kind === "run.end")?.said).toBe('Result: {"approved":true}');
-    // The three joins the runtime records no citation for, each marked.
-    const joined = chain.steps.filter((s) => s.link === "joined").map((s) => s.entry.kind);
-    expect(joined).toEqual(["run.start", "suspend", "run.end"]);
-    expect(chain.joined).toBe(3);
+    // Every step is a citation the runtime wrote: nothing is joined by position.
+    expect(chain.steps.filter((s) => s.link === "joined")).toEqual([]);
+    expect(chain.joined).toBe(0);
     expect(chain.steps.find((s) => s.root)?.link).toBe("root");
     expect(chain.missing).toEqual([]);
     const out = html(createElement(ProvenanceChain, { chain }));
     expect(out).toContain("this decision");
-    expect(out).toContain("joined by position");
+    expect(out).not.toContain("joined by position");
+  });
+
+  it("still joins a record from before the runtime cited across a resume, and marks each join", () => {
+    const doc = body<Doc>("run_doc.answered.older");
+    const entries = doc.journal.entries;
+    const root = decisionEntry(entries, l9.decisionsOf(doc)[0]);
+    const chain = provenanceOf(entries, root?.id as string);
+    const kinds = chain.steps.map((s) => s.entry.kind);
+    expect(kinds[0]).toBe("run.start");
+    expect(kinds[kinds.length - 1]).toBe("run.end");
+    expect(chain.steps.filter((s) => s.link === "joined").map((s) => s.entry.kind)).toEqual(["run.start", "suspend", "run.end"]);
+    expect(chain.joined).toBe(3);
+    expect(html(createElement(ProvenanceChain, { chain }))).toContain("joined by position");
   });
 
   it("runs from a model's tool call, whose own citations reach the prompt", () => {
@@ -1270,8 +1414,7 @@ describe("framework views", () => {
     expect(frameworkLine(f.find((x) => x.id === "eu_ai_act") as l9.FrameworkInfo)).toBe("7 obligations");
     expect(frameworkLine(f.find((x) => x.id === "dpdp") as l9.FrameworkInfo)).toBe("no obligations mapped");
     expect(f.find((x) => x.id === "iso_27001")?.corpus?.licence).toBe("licensed");
-    // A framework whose short name is its id reads by its name.
-    expect(f.find((x) => x.id === "data_guardrails")?.short).toBe("Agentic AI data security guardrails");
+    expect(f.find((x) => x.id === "data_guardrails")?.short).toBe("Data guardrails");
   });
 
   it("maps each agent to its obligations with the evidence that meets each", async () => {

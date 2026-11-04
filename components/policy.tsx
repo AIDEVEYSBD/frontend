@@ -14,12 +14,13 @@ import { Figures, JsonDetails, PageHeader, Section } from "./section";
 import { soon } from "@/lib/soon";
 import { useSession } from "@/lib/use-session";
 import { agentDocument, listAgents, listAttached, type AgentSummary } from "@/lib/api/l2";
+import { listPeers } from "@/lib/api/l7b";
 import { DoorError, auditLine } from "@/lib/api/l5";
 import {
   CHANGE_STATES,
   approvePolicyChange,
   getPolicyChange,
-  listAttestations,
+  getPolicyTarget,
   listPolicyChanges,
   listPolicyTargets,
   proposePolicyChange,
@@ -47,6 +48,7 @@ import {
   draftOf,
   effectiveAt,
   effectiveProblem,
+  byIdLine,
   fieldsOf,
   movesOf,
   parseProposal,
@@ -373,23 +375,18 @@ function FieldEditor({ field, value, onChange, error, disabled }: { field: Propo
   );
 }
 
-/** The rules a target holds now, for one of its ids: the door serves the estate's; an attached agent's and an attestation period are read from their own doors. */
-async function currentOf(target: TargetKind, id: string): Promise<Record<string, unknown> | null> {
-  if (target.ids === "estate" || id === "estate") return target.current;
-  if (target.kind === "attached") {
-    const row = (await listAttached()).agents.find((a) => a.id === id);
-    return row ? { grants: row.grants, gate_at: row.gate_at } : null;
-  }
-  if (target.kind === "attestation") return { period_days: (await listAttestations(id)).period_days };
-  // An agent's own rate limits have no door to read them from.
-  return null;
+/** The rules a target holds now, for one of its ids, and what a null in them inherits. */
+async function currentOf(target: TargetKind, id: string): Promise<{ rules: Record<string, unknown> | null; inherits: Record<string, unknown> | null }> {
+  if (target.ids === "estate" || id === "estate") return { rules: target.current, inherits: null };
+  const read = await getPolicyTarget(target.kind, id);
+  return { rules: read.current, inherits: read.inherits };
 }
 
 /** The proposal form for one target: its fields read from the door, with what it refused marked on them. */
-function ProposalFields({ target, id, current, onProposed }: { target: TargetKind; id: string; current: Record<string, unknown> | null; onProposed: (c: PolicyChange) => void }) {
+function ProposalFields({ target, id, current, inherits, onProposed }: { target: TargetKind; id: string; current: Record<string, unknown> | null; inherits: Record<string, unknown> | null; onProposed: (c: PolicyChange) => void }) {
   const { can, loaded } = useSession();
   const editable = !loaded || can("configure");
-  const fields = useMemo(() => fieldsOf(target, current), [target, current]);
+  const fields = useMemo(() => fieldsOf(target, current, inherits), [target, current, inherits]);
   const [draft, setDraft] = useState<Draft>(() => draftOf(fields, current));
   const [reason, setReason] = useState("");
   const [effective, setEffective] = useState("");
@@ -471,24 +468,28 @@ function ProposeForm({ targets, agents, kind, onKind, onProposed }: { targets: T
   const target = targets.find((t) => t.kind === kind) ?? targets[0];
   const [id, setId] = useState("estate");
   const [attached, setAttached] = useState<{ id: string; name: string }[]>([]);
-  const [current, setCurrent] = useState<{ key: string; rules: Record<string, unknown> | null } | null>(null);
+  const [peers, setPeers] = useState<{ id: string; name: string }[]>([]);
+  const [current, setCurrent] = useState<{ key: string; rules: Record<string, unknown> | null; inherits: Record<string, unknown> | null } | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
     listAttached()
       .then((l) => setAttached(l.agents.map((a) => ({ id: a.id, name: a.name }))))
       .catch(() => setAttached([]));
+    listPeers()
+      .then((l) => setPeers(l.peers.map((p) => ({ id: p.id, name: p.label }))))
+      .catch(() => setPeers([]));
   }, []);
   const needs = target?.ids ?? "estate";
-  const options = needs === "attached" ? attached.map((a) => ({ value: a.id, label: a.name })) : needs === "agent" ? agents.map((a) => ({ value: a.id, label: a.name })) : needs === "estate_or_agent" ? [{ value: "estate", label: "The estate" }, ...agents.map((a) => ({ value: a.id, label: a.name }))] : [];
+  const options = needs === "attached" ? attached.map((a) => ({ value: a.id, label: a.name })) : needs === "peer" ? peers.map((p) => ({ value: p.id, label: p.name })) : needs === "agent" ? agents.map((a) => ({ value: a.id, label: a.name })) : needs === "estate_or_agent" ? [{ value: "estate", label: "The estate" }, ...agents.map((a) => ({ value: a.id, label: a.name }))] : [];
   const picked = needs === "estate" ? "estate" : options.some((o) => o.value === id) ? id : (options[0]?.value ?? "");
   const key = `${kind}:${picked}`;
   useEffect(() => {
     if (!target || !picked) return;
     let stop = false;
     currentOf(target, picked)
-      .then((rules) => {
+      .then((read) => {
         if (stop) return;
-        setCurrent({ key, rules });
+        setCurrent({ key, ...read });
         setError("");
       })
       .catch((e) => {
@@ -506,13 +507,13 @@ function ProposeForm({ targets, agents, kind, onKind, onProposed }: { targets: T
           <Pick value={kind} onChange={onKind} options={targets.map((t) => ({ value: t.kind, label: targetLabel(t.kind) }))} />
         </Field>
         {needs !== "estate" && (
-          <Field label={needs === "attached" ? "Attached agent" : "Agent"} hint={options.length ? undefined : "none on record"}>
+          <Field label={needs === "attached" ? "Attached agent" : needs === "peer" ? "Peer" : "Agent"} hint={options.length ? undefined : "none on record"}>
             <Pick value={picked} onChange={setId} options={options} disabled={!options.length} />
           </Field>
         )}
       </div>
       {error && <p className="text-[11.5px] text-err">{error}</p>}
-      {current?.key === key && <ProposalFields key={key} target={target} id={picked} current={current.rules} onProposed={onProposed} />}
+      {current?.key === key && <ProposalFields key={key} target={target} id={picked} current={current.rules} inherits={current.inherits} onProposed={onProposed} />}
     </div>
   );
 }
@@ -714,6 +715,11 @@ export function TargetRules({ target, onPropose }: { target: TargetKind; onPropo
         )}
       </span>
       <p className="text-[11px] leading-[1.5] text-faint">{target.what}</p>
+      {Object.entries(target.by_id).map(([id, rules]) => (
+        <p key={id} className="text-[11px] leading-[1.5] text-dim">
+          <Mono className="text-[10.5px] text-fg">{id}</Mono>: {byIdLine(target, rules)}
+        </p>
+      ))}
       {target.current ? (
         <dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-[11px]">
           {rows.map(([k, v]) => (
@@ -728,7 +734,7 @@ export function TargetRules({ target, onPropose }: { target: TargetKind; onPropo
           ))}
         </dl>
       ) : (
-        <p className="text-[11px] text-ghost">Set per agent: pick one to propose.</p>
+        !Object.keys(target.by_id).length && <p className="text-[11px] text-ghost">{target.ids === "peer" ? "Set per peer: pick one to propose." : "Set per agent: pick one to propose."}</p>
       )}
     </div>
   );

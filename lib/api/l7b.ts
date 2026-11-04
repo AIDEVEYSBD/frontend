@@ -92,6 +92,10 @@ export interface Peer {
   added_at: string;
   last_fetch: PeerFetch | null;
   adopted: PeerAdoption | null;
+  /** What it returns, and the floor of what it hands in; "" undeclared. */
+  data_class: string;
+  /** The highest class it may be handed; "" no limit here. A spec's own holds beside it, and the lower decides. */
+  max_data_class: string;
 }
 
 /** `GET /api/peers` */
@@ -112,6 +116,10 @@ export interface NewPeer {
   secret_name: string;
   /** Who this control plane says it is to this peer; the deployment's `A2A_AGENT_ID` when left out. */
   agent?: string;
+  /** Optional: what it returns, and the floor of what it hands in. */
+  data_class?: Schemas["PeerAddRequest"]["data_class"];
+  /** Optional: the highest class it may be handed. */
+  max_data_class?: Schemas["PeerAddRequest"]["max_data_class"];
 }
 
 /** `POST /api/peers/{id}/rescan` */
@@ -157,6 +165,8 @@ export function peerOf(v: unknown): Peer {
     added_at: str(p.added_at),
     last_fetch: peerFetchOf(p.last_fetch),
     adopted: isObj(p.adopted) ? { at: str(adopted.at), from: str(adopted.from) } : null,
+    data_class: str(p.data_class),
+    max_data_class: str(p.max_data_class),
   };
 }
 

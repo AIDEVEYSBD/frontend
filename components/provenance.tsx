@@ -7,7 +7,7 @@ import { DigestChip } from "./digest-chip";
 import { DrillModal } from "./drill";
 import { RunChain } from "./chain";
 import type { SignedDecision } from "@/lib/api/l9";
-import { decisionLine } from "@/lib/evidence";
+import { decisionLine, stampLine } from "@/lib/evidence";
 import type { LineageEntry } from "@/lib/lineage";
 import { ROLE_LABEL, decisionEntry, provenanceOf, type Provenance } from "@/lib/provenance";
 
@@ -16,8 +16,9 @@ import { ROLE_LABEL, decisionEntry, provenanceOf, type Provenance } from "@/lib/
  * stands on and what it led to, step by step, from the journal the runtime
  * already keeps (lib/provenance.ts). Each step shows what was actually said
  * (the prompt, the answer, the arguments) and the hash that puts it on the
- * chain; a step the runtime does not cite and the walk joined by position says
- * so, because a reader relying on this should know which links are records.
+ * chain. On an older record, a step the runtime did not cite and the walk
+ * joined by position says so, because a reader relying on this should know
+ * which links are records.
  */
 
 /** The rules that redacted an entry as it was written: what it says here is what the chain hashed. */
@@ -72,7 +73,7 @@ export function ProvenanceDrawer({ entries, entryId, onClose }: { entries: Linea
       {chain.missing.length > 0 && <p className="border-b border-line px-4 py-2 text-[11px] text-err">The chain cites entries this record does not hold: {chain.missing.join(", ")}.</p>}
       {chain.joined > 0 && (
         <p className="border-b border-line px-4 py-2 text-[11px] leading-[1.5] text-faint">
-          {chain.joined} step{chain.joined === 1 ? " is" : "s are"} joined by journal position: the runtime records no citation across a resume, or into a run&rsquo;s first step or its end.
+          {chain.joined} step{chain.joined === 1 ? " is" : "s are"} joined by journal position: this run was recorded before the runtime cited across a resume, or into a run&rsquo;s first step or its end.
         </p>
       )}
       <ProvenanceChain chain={chain} onFocus={setFocus} />
@@ -97,6 +98,7 @@ export function DecisionsPanel({ decisions, entries }: { decisions: SignedDecisi
               <ControlMark key={c} control={c} />
             ))}
             {!d.control_ids.length && d.controls.map((c) => <Mono key={c} className="text-[10.5px] text-mist">{c}</Mono>)}
+            <span className="text-[10.5px] text-ghost">{stampLine(d)}</span>
             {d.digest && <DigestChip digest={d.digest} label="Digest of this decision" />}
             <span className="grow" />
             {entry && (

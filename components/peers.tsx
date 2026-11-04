@@ -1,9 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { Button, Mono, Status, Tag } from "./ui";
+import { Pick } from "./select";
 import { ControlRef } from "./control-ref";
 import { DigestChip } from "./digest-chip";
+import { dataClassChoices } from "@/lib/bom";
 import { hueFor } from "@/lib/hue";
 import { soon } from "@/lib/soon";
 import { useSession } from "@/lib/use-session";
@@ -22,6 +25,7 @@ import {
   fetchLine,
   orderPeers,
   peerBody,
+  peerClassLine,
   peerCounts,
   peerFormProblem,
   skillsOf,
@@ -174,6 +178,16 @@ export function RegisterPeerForm({ onAdded, onCancel }: { onAdded: (p: Peer) => 
           <input value={form.secret_name} onChange={(e) => set({ secret_name: e.target.value })} placeholder="soc-peer-a2a" spellCheck={false} className={`${INPUT} font-mono text-[11.5px]`} />
         </label>
       </div>
+      <div className="grid gap-2 md:grid-cols-2">
+        <label className="flex min-w-0 flex-col gap-1">
+          <span className="text-[10.5px] text-ghost">Data class of what it returns (optional; a task it sends in starts here or higher)</span>
+          <Pick aria-label="Data class of what the peer returns" value={form.data_class} onChange={(v) => set({ data_class: v })} options={dataClassChoices("undeclared")} />
+        </label>
+        <label className="flex min-w-0 flex-col gap-1">
+          <span className="text-[10.5px] text-ghost">Highest class it takes (optional; a spec&rsquo;s limit holds too, and the lower decides)</span>
+          <Pick aria-label="Highest data class the peer takes" value={form.max_data_class} onChange={(v) => set({ max_data_class: v })} options={dataClassChoices("no limit here")} />
+        </label>
+      </div>
       <p className="text-[10.5px] leading-[1.5] text-faint">
         Store the secret in the vault first (Settings, Keys) and give its name here, or <Mono className="text-[10px]">{"${secret:name}"}</Mono>; a value pasted where the name belongs is refused, and one name signs for one caller only.
       </p>
@@ -256,6 +270,10 @@ export function PeerRow({ peer: p, twoPerson, me, onChanged }: { peer: Peer; two
           </span>
         )}
         {title.version && <Mono className="text-[10.5px] text-faint">v{title.version}</Mono>}
+        <span className="text-[10.5px] text-faint">{peerClassLine(p)}</span>
+        <Link href="/policy" className="focusable rounded-sm text-[10.5px] text-dim hover:underline">
+          Changed on the Policy page
+        </Link>
         <span className="grow" />
         {confirming ? (
           <span className="inline-flex items-center gap-1.5">

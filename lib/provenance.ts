@@ -6,13 +6,14 @@ import type { SignedDecision } from "./api/l9";
  * and prompt, and what it led to, down to the result.
  *
  * The runtime records this: `because` names the entries each was derived from
- * and the model's entries carry the prompt they were sent. `because` alone
- * does not reach end to end, though. A journal's `resume` cites nothing (so a
- * gate's answer stops at the resume instead of reaching the gate and what the
- * gate rested on), `run.end` cites nothing, and the first `node.enter` cites
- * nothing. Those three joins are made here, by journal position, and each is
- * marked as such: `link: "joined"` is not a citation the runtime wrote, and
- * the page says so. Everything else is the runtime's own `because`.
+ * and the model's entries carry the prompt they were sent, and on a run
+ * recorded now that alone reaches end to end. A record from before it does
+ * not: its `resume` cites nothing that answers the gate (so a gate's answer
+ * stops at the resume instead of reaching the gate and what the gate rested
+ * on), its `run.end` cites nothing, and its first `node.enter` cites nothing.
+ * For those records alone the three joins are made here, by journal position,
+ * and each is marked as such: `link: "joined"` is not a citation the runtime
+ * wrote, and the page says so. A record that does cite gets no join at all.
  *
  * Pure, over a journal: the run page and a test see the same chain.
  */
@@ -99,19 +100,20 @@ export function saidOf(e: LineageEntry): string {
   }
 }
 
-/** The entries `because` does not reach, joined by position. */
+/** The entries `because` does not reach, joined by position: on an older record, which does not cite them. */
 function joinOf<E extends LineageEntry>(entries: readonly E[], index: Map<string, number>, e: E): E | null {
   const at = index.get(e.id) ?? -1;
   const back = (match: (x: E) => boolean): E | null => {
     for (let i = at - 1; i >= 0; i--) if (match(entries[i])) return entries[i];
     return null;
   };
-  // A resume answers the suspension on its node.
-  if (e.kind === "resume") return back((x) => x.kind === "suspend" && x.node === e.node);
+  const cited = (e.because ?? []).map((id) => entries[index.get(id) ?? -1]).filter(Boolean);
+  // A resume answers the suspension on its node. It may cite what its edges brought it and still not the gate.
+  if (e.kind === "resume" && !cited.some((x) => x.kind === "suspend" || x.kind === "gate.open")) return back((x) => x.kind === "suspend" && x.node === e.node);
   // The run's end is what its last step emitted.
-  if (e.kind === "run.end") return back((x) => x.kind === "node.exit");
+  if (e.kind === "run.end" && !cited.length) return back((x) => x.kind === "node.exit");
   // The first step of a run took the run's input.
-  if (e.kind === "node.enter" && !(e.because ?? []).length) return back((x) => x.kind === "run.start");
+  if (e.kind === "node.enter" && !cited.length) return back((x) => x.kind === "run.start");
   return null;
 }
 
@@ -171,8 +173,9 @@ export function provenanceOf<E extends LineageEntry>(entries: readonly E[], id: 
       forward.push(child);
     }
   }
+  // An older record's end cites nothing, so it is joined. A newer one's cites what it rests on: reached or not, that stands.
   const end = [...entries].reverse().find((e) => e.kind === "run.end");
-  if (end && !links.has(end.id)) links.set(end.id, "joined");
+  if (end && !links.has(end.id) && !(end.because ?? []).length) links.set(end.id, "joined");
 
   const steps = [...links.entries()]
     .map(([k, link]) => ({ entry: byId.get(k) as E, link }))
@@ -182,7 +185,9 @@ export function provenanceOf<E extends LineageEntry>(entries: readonly E[], id: 
 }
 
 /** The entry a signed decision's chain runs through: the gate's answer on the journal, else the gate it answers. */
-export function decisionEntry<E extends LineageEntry>(entries: readonly E[], d: Pick<SignedDecision, "gate" | "node">): E | null {
+export function decisionEntry<E extends LineageEntry>(entries: readonly E[], d: Pick<SignedDecision, "gate" | "node"> & { entry?: string }): E | null {
+  const named = d.entry ? entries.find((e) => e.id === d.entry) : undefined;
+  if (named) return named;
   const at = entries.findIndex((e) => e.id === d.gate);
   const answer = entries.slice(Math.max(at, 0)).find((e) => e.kind === "gate.answer" && (!d.node || e.node === d.node));
   return answer ?? entries[at] ?? null;

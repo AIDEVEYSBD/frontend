@@ -235,9 +235,13 @@ export interface PeerForm {
   secret_name: string;
   /** Optional: who this factory says it is to the peer; the deployment's own id when blank. */
   agent: string;
+  /** Optional: what it returns, and the floor of what it hands in. */
+  data_class: string;
+  /** Optional: the highest class it may be handed. */
+  max_data_class: string;
 }
 
-export const EMPTY_PEER_FORM: PeerForm = { label: "", id: "", url: "", secret_name: "", agent: "" };
+export const EMPTY_PEER_FORM: PeerForm = { label: "", id: "", url: "", secret_name: "", agent: "", data_class: "", max_data_class: "" };
 
 /** The backend's rules (backend/app/peers.py, app/a2a_client.py). */
 const PEER_ID = /^[a-z][a-z0-9_-]{0,62}$/;
@@ -290,5 +294,12 @@ export function peerBody(f: PeerForm): NewPeer {
   const body: NewPeer = { label: f.label.trim(), url: f.url.trim(), secret_name: f.secret_name.trim() };
   if (f.id.trim()) body.id = f.id.trim();
   if (f.agent.trim()) body.agent = f.agent.trim();
+  if (f.data_class) body.data_class = f.data_class as NewPeer["data_class"];
+  if (f.max_data_class) body.max_data_class = f.max_data_class as NewPeer["max_data_class"];
   return body;
+}
+
+/** A peer's classes, as its row says them. */
+export function peerClassLine(p: Pick<Peer, "data_class" | "max_data_class">): string {
+  return `Returns ${p.data_class || "undeclared"} · takes ${p.max_data_class ? `up to ${p.max_data_class}` : "no limit here"}`;
 }

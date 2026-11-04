@@ -32,5 +32,8 @@ export function tierTag(a: Pick<AgentTier, "tier" | "met" | "missing" | "problem
   return a.met ? { label: a.tier, tone: "neutral" } : { label: `${a.tier}: ${a.missing.length} missing`, tone: "err" };
 }
 
+/** The tier an agents row declares: what its `metadata.autonomy` says, unjudged. */
+export const declaredTierLabel = (tier: string | undefined): string => `Tier ${tier || "L0"}`;
+
 /** The security doc's reading of a tier beside the runtime's. */
 export const tierDocLine = (t: Pick<TierInfo, "doc_name" | "example" | "doc_minimum_controls">): string => [t.doc_name, t.example ? `such as ${t.example}` : "", t.doc_minimum_controls ? `minimum: ${t.doc_minimum_controls}` : ""].filter(Boolean).join(" · ");

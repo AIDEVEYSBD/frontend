@@ -126,6 +126,42 @@ export const CONTROLS: Control[] = [
       EU("Art. 15", "Accuracy, robustness and cybersecurity"),
     ],
   },
+  {
+    id: "AF-AC-05",
+    family: "AC",
+    title: "Argument limit",
+    statement:
+      "A limit declared on a tool's argument shall be enforced outside the model, and a call outside it shall be refused before it runs, whatever the model said.",
+    implementation:
+      "The workflow policy names a tool, an argument and a minimum, a maximum or a closed set of values. The policy engine compares the plain value after scope, before anything executes.",
+    evidence: "A refusal entry naming the tool, the argument and the limit it broke.",
+    journal: "limit",
+    order: 2,
+    references: [
+      ASI("ASI02", "Tool misuse and exploitation"),
+      ASI("ASI09", "Human-agent trust exploitation"),
+      LLM("LLM03", "Excessive agency"),
+      ISO("A.9", "Use of AI systems"),
+    ],
+  },
+  {
+    id: "AF-AC-06",
+    family: "AC",
+    title: "Delegation ceiling",
+    statement:
+      "Work handed to another agent shall run with no more than the party handing it could do: delegation shall narrow what a delegate may do, never widen it.",
+    implementation:
+      "A sub-run runs under its caller's effective grants, argument scopes and gate floor, and a peer's task under the signed envelope that carries them. A tool outside them, an argument outside their scope and work past the tree's depth cap are refused.",
+    evidence: "A refusal entry naming the tool or the depth, and the envelope on the run's record.",
+    journal: "delegation",
+    order: 2,
+    references: [
+      ASI("ASI02", "Tool misuse and exploitation"),
+      ASI("ASI03", "Identity and privilege abuse"),
+      ASI("ASI07", "Insecure inter-agent communication"),
+      LLM("LLM03", "Excessive agency"),
+    ],
+  },
 
   /* ── Data protection ── */
   {
@@ -277,6 +313,19 @@ export const CONTROLS: Control[] = [
       LLM("LLM08", "Hidden context exposure"),
       ISO("A.7", "Data for AI systems"),
     ],
+  },
+  {
+    id: "AF-DP-06",
+    family: "DP",
+    title: "Data class ceiling",
+    statement:
+      "Content shall carry the data class of its source, and shall not reach a sink, an output or a peer cleared for a lower class.",
+    implementation:
+      "Tools, retrieval sources and peers declare a class, and the mark travels with every value derived from the content, as taint does. A sink, a webhook output or a peer whose limit is lower refuses it, a grant may cap what its step reads, and a task handed to a peer carries its class in the signed envelope.",
+    evidence: "A refusal entry naming the class carried and the limit in force.",
+    journal: "data_class",
+    order: 3,
+    references: [LLM("LLM02", "Sensitive information disclosure"), ISO("A.7", "Data for AI systems")],
   },
 
   /* ── Identity and credentials ── */
@@ -459,6 +508,23 @@ export const CONTROLS: Control[] = [
       NIST("MANAGE", "Mechanisms to supersede or deactivate"),
     ],
   },
+  {
+    id: "AF-RS-04",
+    family: "RS",
+    title: "Mass-action gate",
+    statement:
+      "A run issuing more calls of one sink than its policy allows shall wait for a person at the next one, so that one bad decision cannot act at scale.",
+    implementation:
+      "The runtime counts each sink's calls per run, across a suspension. Every call past the policy's maximum, ten by default, is gated, on top of the circuit breakers.",
+    evidence: "A gate entry naming the sink, the count reached and the limit.",
+    journal: "mass_action",
+    order: 5,
+    references: [
+      ASI("ASI08", "Cascading failures"),
+      LLM("LLM03", "Excessive agency"),
+      EU("Art. 14", "Human oversight"),
+    ],
+  },
 
   /* ── Accountability ── */
   {
@@ -589,20 +655,8 @@ export function explainControl(control: string): { name: string; decides: string
     CONTROLS.find((x) => x.journal === control) ??
     (alias ? CONTROLS.find((x) => x.id === alias) : undefined);
   if (c) return { name: c.title, decides: c.statement, id: c.id };
-  return UNMAPPED[control] ?? { name: control, decides: "" };
+  return { name: control, decides: "" };
 }
-
-/**
- * Keys the journal names that no register row maps (phase L9): the runtime
- * enforces them, so a refusal must still say what refused it, with no row to
- * link to.
- */
-const UNMAPPED: Record<string, { name: string; decides: string }> = {
-  limit: { name: "Argument limit", decides: "a call outside a limit the policy declares is refused before execution, whatever the model said" },
-  data_class: { name: "Data class", decides: "content of a class above what a sink or peer takes is refused" },
-  mass_action: { name: "Mass action", decides: "a run issuing more calls of one sink than the policy allows is gated at the next one" },
-  delegation: { name: "Delegation", decides: "a delegated call stays inside what the delegator was allowed" },
-};
 
 /**
  * Keys that name a register row other than by its journal key. A typed
@@ -612,10 +666,13 @@ const UNMAPPED: Record<string, { name: string; decides: string }> = {
  * `screener.unavailable` when the screener could not judge, so nothing was
  * admitted), `two_person` when the server's own registrant tried to
  * approve it. The hits themselves name the screener's tool rules
- * (backend/README.md): `classifier.tool` for weak signals together.
+ * (backend/README.md): `classifier.tool` for weak signals together. The report
+ * gate is an authorisation gate that names what it holds: `report` counts
+ * where `gate` counts, so its approvals reach every pack `gate`'s do.
  */
 const ALIASES: Record<string, string> = {
   "contract.breach": "AF-IN-01",
+  report: "AF-HO-01",
   screener: "AF-DP-04",
   "screener.unavailable": "AF-DP-04",
   "classifier.tool": "AF-DP-04",
@@ -643,6 +700,7 @@ const PREFIX_ALIASES: [string, string][] = [
  */
 export const CONTROL_LABELS: Record<string, string> = {
   supply_chain: "Tool server not approved or its tools changed",
+  report: "A deliverable held for a person's review",
   two_person: "A second person must approve",
   screener: "A tool's name, description or schema failed screening",
   "screener.unavailable": "The screener could not judge, so nothing was admitted",

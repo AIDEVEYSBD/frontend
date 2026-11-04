@@ -9,7 +9,7 @@ const when = (iso: string | null | undefined): string => (iso ? iso.replace("T",
 
 export interface PackForm {
   control: string;
-  /** A control key the catalogue does not map (limit, mass_action, report, lockdown): takes the place of `control`. */
+  /** A control key the catalogue does not map (lockdown, breaker, rate_limit): takes the place of `control`. */
   key: string;
   framework: string;
   /** `YYYY-MM-DD`, or `datetime-local` text; empty for the door's default (30 days to now). */
@@ -59,5 +59,13 @@ export function decisionLine(d: Pick<SignedDecision, "approved" | "aborted" | "b
   return `${said} by ${d.by || "someone"} ${when(d.at)}${d.via && d.via !== "resume" ? ` (${d.via})` : ""}${d.note ? `: ${d.note}` : ""}`;
 }
 
+/** Where a decision was read from: the hash chain, or a stamp only the record's own copy holds. */
+export const stampLine = (d: Pick<SignedDecision, "chained" | "disagrees">): string =>
+  d.disagrees.length
+    ? `The record's copy disagrees with the chain on ${d.disagrees.map((x) => x.field).join(", ")}: this is the chain's`
+    : d.chained
+      ? "Read from the hash chain"
+      : "Controls stamped on the record, outside the chain";
+
 /** Why a pack has no firing: said plainly, since an assessor reads silence as a pass. */
-export const noFiringLine = (p: EvidencePack): string => (p.controls.length ? "No firing of this control in the period. Its statement and mappings still stand; a control that never fired is not evidence it works." : "No firing of this key in the period.");
+export const noFiringLine = (p: EvidencePack): string => (p.chain.status === "unavailable" ? "The run records could not be read, so nothing is known about firings in this period." : p.controls.length ? "No firing of this control in the period. Its statement and mappings still stand; a control that never fired is not evidence it works." : "No firing of this key in the period.");

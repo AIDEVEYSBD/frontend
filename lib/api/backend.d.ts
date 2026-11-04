@@ -1486,6 +1486,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/policy/targets/{kind}/{target_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One target's rules now: an agent's own rate limits (null inherits the estate's, served beside them), an attached agent's grants, an attestation period, a peer's data classes */
+        get: operations["getPolicyTarget"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ports/{name}/health": {
         parameters: {
             query?: never;
@@ -2516,6 +2533,11 @@ export interface components {
          * @description One deployed workflow, as the console's list shows it, plus what the registry knows.
          */
         AgentSummary: {
+            /**
+             * Autonomy
+             * @default L0
+             */
+            autonomy: string;
             /** Deployed At */
             deployed_at?: string | null;
             /**
@@ -3944,6 +3966,8 @@ export interface components {
              * @default
              */
             chain_anchor: string;
+            /** Data Class */
+            data_class?: string | null;
             /** Delegation */
             delegation?: string | null;
             /** External Id */
@@ -5939,6 +5963,8 @@ export interface components {
             claimed_by?: string | null;
             /** Created At */
             created_at: string;
+            /** Data Class */
+            data_class?: string | null;
             /**
              * Dead
              * @default false
@@ -6026,6 +6052,8 @@ export interface components {
             claimed_by?: string | null;
             /** Created At */
             created_at: string;
+            /** Data Class */
+            data_class?: string | null;
             /**
              * Dead
              * @default false
@@ -6109,6 +6137,8 @@ export interface components {
             claimed_by?: string | null;
             /** Created At */
             created_at: string;
+            /** Data Class */
+            data_class?: string | null;
             /**
              * Dead
              * @default false
@@ -7010,11 +7040,21 @@ export interface components {
             /** Approvals */
             approvals?: components["schemas"]["PeerApproval"][];
             card?: components["schemas"]["PeerCard"] | null;
+            /**
+             * Data Class
+             * @default
+             */
+            data_class: string;
             /** Id */
             id: string;
             /** Label */
             label: string;
             last_fetch?: components["schemas"]["PeerFetch"] | null;
+            /**
+             * Max Data Class
+             * @default
+             */
+            max_data_class: string;
             previous_card?: components["schemas"]["PeerCard"] | null;
             /** Secret Name */
             secret_name: string;
@@ -7030,6 +7070,8 @@ export interface components {
         PeerAddRequest: {
             /** Agent */
             agent?: string | null;
+            /** Data Class */
+            data_class?: ("public" | "internal" | "confidential" | "restricted") | null;
             /** Id */
             id?: string | null;
             /**
@@ -7037,6 +7079,8 @@ export interface components {
              * @default
              */
             label: string;
+            /** Max Data Class */
+            max_data_class?: ("public" | "internal" | "confidential" | "restricted") | null;
             /** Secret Name */
             secret_name: string;
             /** Url */
@@ -8497,6 +8541,8 @@ export interface components {
         RunState: {
             /** Agent */
             agent?: string | null;
+            /** Data Class */
+            data_class?: string | null;
             /** Decisions */
             decisions?: {
                 [key: string]: unknown;
@@ -8617,6 +8663,10 @@ export interface components {
             broken_at?: number | null;
             /** Chain */
             chain: string;
+            /** Disagrees */
+            disagrees?: {
+                [key: string]: unknown;
+            }[];
             /**
              * Entries
              * @default 0
@@ -9400,6 +9450,12 @@ export interface components {
         };
         /** TargetKindView */
         TargetKindView: {
+            /** By Id */
+            by_id?: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
             /** Current */
             current?: {
                 [key: string]: unknown;
@@ -9436,6 +9492,24 @@ export interface components {
             door: string;
             /** Targets */
             targets: components["schemas"]["TargetKindView"][];
+        };
+        /**
+         * TargetRules
+         * @description One target's rules now.
+         */
+        TargetRules: {
+            /** Current */
+            current: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: string;
+            /** Inherits */
+            inherits?: {
+                [key: string]: unknown;
+            } | null;
+            /** Kind */
+            kind: string;
         };
         /** TemplateDocument */
         TemplateDocument: {
@@ -14732,7 +14806,7 @@ export interface operations {
     getEvidence: {
         parameters: {
             query?: {
-                /** @description A catalogue id (AF-HO-01) or a control key (report, lockdown, mass_action) */
+                /** @description A catalogue id (AF-HO-01) or a control key (mass_action, lockdown, breaker) */
                 control?: string | null;
                 /** @description A framework of the catalogue: its obligations' controls */
                 framework?: string | null;
@@ -16992,6 +17066,65 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getPolicyTarget: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: string;
+                target_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TargetRules"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

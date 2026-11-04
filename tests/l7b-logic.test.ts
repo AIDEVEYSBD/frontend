@@ -60,8 +60,10 @@ describe("a peer's registration form", () => {
   });
 
   it("sends the contract's body: trimmed, blank optional fields left out", () => {
-    expect(peerBody({ label: " SOC ", id: " ", url: " https://p.example/a2a ", secret_name: " ${secret:soc} ", agent: "" })).toEqual({ label: "SOC", url: "https://p.example/a2a", secret_name: "${secret:soc}" });
-    expect(peerBody({ label: "", id: "soc", url: "https://p.example/a2a", secret_name: "soc", agent: "triage" })).toEqual({ label: "", id: "soc", url: "https://p.example/a2a", secret_name: "soc", agent: "triage" });
+    const blank = { data_class: "", max_data_class: "" };
+    expect(peerBody({ label: " SOC ", id: " ", url: " https://p.example/a2a ", secret_name: " ${secret:soc} ", agent: "", ...blank })).toEqual({ label: "SOC", url: "https://p.example/a2a", secret_name: "${secret:soc}" });
+    expect(peerBody({ label: "", id: "soc", url: "https://p.example/a2a", secret_name: "soc", agent: "triage", ...blank })).toEqual({ label: "", id: "soc", url: "https://p.example/a2a", secret_name: "soc", agent: "triage" });
+    expect(peerBody({ label: "", id: "soc", url: "https://p.example/a2a", secret_name: "soc", agent: "", data_class: "confidential", max_data_class: "internal" })).toEqual({ label: "", id: "soc", url: "https://p.example/a2a", secret_name: "soc", data_class: "confidential", max_data_class: "internal" });
   });
 });
 
@@ -134,6 +136,8 @@ describe("the registry's answers, read defensively", () => {
       secret_name: "",
       agent: "",
       status: "pending",
+      data_class: "",
+      max_data_class: "",
       card: null,
       previous_card: null,
       approvals: [],

@@ -231,7 +231,7 @@ export const GUARDRAILS: Guardrail[] = [
     evidence: "Context budget; limits; fail-closed tests",
     gate: "Oversized or policy-conflicting context is rejected",
     sources: ["https://cheatsheetseries.owasp.org/cheatsheets/RAG_Security_Cheat_Sheet.html"],
-    implementedBy: ["AF-AC-02", "AF-RS-01"],
+    implementedBy: ["AF-AC-02", "AF-RS-01", "AF-DP-06"],
     responsibility: "shared",
   },
   {
@@ -315,7 +315,7 @@ export const GUARDRAILS: Guardrail[] = [
     evidence: "Runtime policy; quotas; loop controls",
     gate: "Limits prevent uncontrolled execution and consumption",
     sources: ["https://genai.owasp.org/llmrisk/llm062025-excessive-agency/"],
-    implementedBy: ["AF-AC-02", "AF-RS-01", "AF-RS-02"],
+    implementedBy: ["AF-AC-02", "AF-RS-01", "AF-RS-02", "AF-RS-04", "AF-AC-06"],
     responsibility: "shared",
   },
   {
@@ -329,7 +329,7 @@ export const GUARDRAILS: Guardrail[] = [
     evidence: "Approval workflow; segregation of duties",
     gate: "High-risk actions cannot execute autonomously",
     sources: ["https://genai.owasp.org/llmrisk/llm062025-excessive-agency/"],
-    implementedBy: ["AF-HO-01", "AF-DP-02"],
+    implementedBy: ["AF-HO-01", "AF-DP-02", "AF-RS-04"],
     responsibility: "shared",
   },
   {
@@ -371,7 +371,7 @@ export const GUARDRAILS: Guardrail[] = [
     evidence: "Schema validation; parameterized interfaces; allow-lists",
     gate: "Free-text model output never executes directly",
     sources: ["https://cheatsheetseries.owasp.org/cheatsheets/RAG_Security_Cheat_Sheet.html", "https://genai.owasp.org/llmrisk/llm062025-excessive-agency/"],
-    implementedBy: ["AF-IN-01"],
+    implementedBy: ["AF-IN-01", "AF-AC-05"],
     responsibility: "platform",
   },
   {

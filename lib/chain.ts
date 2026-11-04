@@ -17,6 +17,8 @@ export const CHAIN_META: Record<ChainState, { label: string; tone: Tone; means: 
 };
 
 export const PACK_CHAIN_META: Record<PackChainStatus, { label: string; tone: Tone; means: string }> = {
+  unavailable: { label: "The run records could not be read", tone: "err", means: "nothing in this pack was checked, and an empty pack here is an outage, not a clean period" },
+  no_runs: { label: "No run to verify", tone: "neutral", means: "this pack cites no run, so the chain says nothing about it" },
   ok: { label: "Every cited run holds", tone: "ok", means: "each run cited verifies against the ledger" },
   partial: { label: "Partly verifiable", tone: "warn", means: "a run cited is from before the chain, or has no anchor yet" },
   broken: { label: "A cited run is broken", tone: "err", means: "a run cited is not what was written" },
@@ -32,14 +34,11 @@ export function verifyLine(v: RunVerification): string {
   return `${said}.${seq}${pending}`;
 }
 
-/**
- * What a pack's chain says. A pack that cites no run has verified nothing, so
- * it never reads as holding, whatever the door's `status` for an empty list is.
- */
+/** What a pack's chain says, from the door's own status. A pack that cites no run has its own: `no_runs`, never `ok`. */
 export function packChainLine(c: { status: PackChainStatus; runs: number }): { title: string; tone: Tone; line: string } {
-  if (!c.runs) return { title: "No run to verify", tone: "neutral", line: "This pack cites no run, so the chain says nothing about it." };
   const m = PACK_CHAIN_META[c.status];
-  return { title: m.label, tone: m.tone, line: `${m.means.charAt(0).toUpperCase()}${m.means.slice(1)}. ${c.runs} run${c.runs === 1 ? "" : "s"} cited.` };
+  const means = `${m.means.charAt(0).toUpperCase()}${m.means.slice(1)}.`;
+  return { title: m.label, tone: m.tone, line: c.status === "no_runs" || c.status === "unavailable" ? means : `${means} ${c.runs} run${c.runs === 1 ? "" : "s"} cited.` };
 }
 
 /** The walk as a headline. A break is a broken run, a gap, a genesis no row holds, or a row with no record. */
