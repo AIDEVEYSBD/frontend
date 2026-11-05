@@ -721,6 +721,22 @@ describe("the proxy, end to end, for the signed A2A doors", () => {
     expect(res.headers.get("x-af-signature")).toBe(ANSWER_SIGNATURE);
   });
 
+  it("makes a caller show the runtime key on a box with sign-in off, because the router adds it to whatever it forwards", async () => {
+    const proxy = await load({ BACKEND_ORIGIN: BACKEND, RUNTIME_KEY: "rk-test" });
+    const reached = upstream(() => new Response("{}"));
+    for (const [path, method] of [["/api/keys", "POST"], ["/api/agents", "GET"], ["/api/approvals/run-1", "POST"], ["/api/config", "GET"]]) {
+      const res = await proxy(new NextRequest(`${PUBLIC}${path}`, { method }));
+      expect(res.status, path).toBe(401);
+    }
+    expect(reached).toHaveLength(0);
+    const shown = await proxy(new NextRequest(`${PUBLIC}/api/agents`, { headers: { "x-runtime-key": "rk-test" } }));
+    expect(shown.status).toBe(200);
+    expect(shown.headers.get("x-middleware-rewrite")).toBe(`${BACKEND}/api/agents`);
+    // A machine door keeps its own key, so the runtime key is not asked for.
+    const door = await proxy(new NextRequest(`${PUBLIC}/api/trigger/some-agent`, { method: "POST" }));
+    expect(door.headers.get("x-middleware-rewrite")).toBe(`${BACKEND}/api/trigger/some-agent`);
+  });
+
   it("keeps the peer registry and the breakers behind the cookie, and rewrites them as every console door is", async () => {
     let proxy = await load({ BACKEND_ORIGIN: BACKEND, AUTH_SECRET: "auth-test" });
     const reached = upstream(() => new Response("{}"));

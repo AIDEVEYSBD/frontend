@@ -12,6 +12,12 @@ const runtimeOrigin = process.env.RUNTIME_ORIGIN?.replace(/\/+$/, "");
 
 const nextConfig: NextConfig = {
   devIndicators: false,
+  experimental: {
+    // Next's proxy drops an upstream that stays silent this long (30 s by
+    // default). Paths the backend owns can hold longer: a slow model call on
+    // the gateway, a long-poll on the SDK door. Cloud Run's own limit is an hour.
+    proxyTimeout: 3_600_000,
+  },
   // The cross-encoder reranker loads ONNX Runtime natively; bundling it breaks the binary.
   serverExternalPackages: ["@huggingface/transformers", "onnxruntime-node"],
   async rewrites() {

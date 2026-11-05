@@ -44,7 +44,8 @@ function secret(): string {
 /** Internal self-calls (the assistant, the MCP server) identify themselves with this. */
 export const INTERNAL_HEADER = "x-internal-auth";
 export function internalHeaders(): Record<string, string> {
-  return ssoEnabled() ? { [INTERNAL_HEADER]: secret() } : {};
+  const key = process.env.RUNTIME_KEY;
+  return { ...(ssoEnabled() ? { [INTERNAL_HEADER]: secret() } : {}), ...(key ? { "x-runtime-key": key } : {}) };
 }
 
 /* ── the identity provider, discovered once ── */

@@ -102,6 +102,17 @@ export async function proxy(request: NextRequest) {
     }
   }
 
+  // Sign-in off on the box that holds the backend: the runtime key is the only
+  // lock on it, and the router below adds that key to whatever it forwards, so
+  // the caller has to show it first. A machine door keeps its own key. The
+  // hosted console (RUNTIME_ORIGIN) is the caller here, and it sends the key.
+  if (isApi && KEY && !AUTH_SECRET && !ORIGIN && !machineDoor(pathname) && request.headers.get(HEADER) !== KEY) {
+    return NextResponse.json(
+      { error: "this control plane is reachable only through its console; the trigger endpoint accepts API keys" },
+      { status: 401 },
+    );
+  }
+
   // The path router: a backend-owned path to BACKEND_ORIGIN, else everything
   // to RUNTIME_ORIGIN when that is set. Either way the request's own headers
   // travel (the session cookie among them) with the runtime key added. The
