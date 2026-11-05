@@ -279,13 +279,27 @@ export function proposedLine(c: PolicyChange): string {
  * policy target and go to review; the injection filter and the A2A secret stay
  * `PATCH /api/attached`, which answers 409 for the others.
  */
+function sortedLimits(limits: Record<string, unknown>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const k of Object.keys(limits).sort()) {
+    const v = limits[k];
+    if (typeof v === "number" && Number.isFinite(v) && v > 0) out[k] = v;
+  }
+  return out;
+}
+
 export function attachedSplit(
-  row: { grants: string[]; gate_at: string; injection: string; secret_name?: string | null },
-  draft: { grants: string[]; gate_at: string; injection: string; secret_name: string },
+  row: { grants: string[]; gate_at: string; injection: string; secret_name?: string | null; model?: string; models?: string[]; fallbacks?: string[]; limits?: Record<string, unknown> },
+  draft: { grants: string[]; gate_at: string; injection: string; secret_name: string; model?: string; models?: string[]; fallbacks?: string[]; limits?: Record<string, unknown> },
 ): { reviewed: Record<string, unknown>; direct: { injection?: string; secret_name?: string } } {
   const reviewed: Record<string, unknown> = {};
   if ([...draft.grants].sort().join() !== [...row.grants].sort().join()) reviewed.grants = draft.grants;
   if (draft.gate_at !== row.gate_at) reviewed.gate_at = draft.gate_at;
+  // Routing and limits go the same way as the grants: a person other than the proposer says yes.
+  if (draft.model !== undefined && draft.model !== (row.model ?? "")) reviewed.model = draft.model;
+  if (draft.models !== undefined && draft.models.join() !== (row.models ?? []).join()) reviewed.models = draft.models;
+  if (draft.fallbacks !== undefined && draft.fallbacks.join() !== (row.fallbacks ?? []).join()) reviewed.fallbacks = draft.fallbacks;
+  if (draft.limits !== undefined && JSON.stringify(sortedLimits(draft.limits)) !== JSON.stringify(sortedLimits(row.limits ?? {}))) reviewed.limits = sortedLimits(draft.limits);
   const direct: { injection?: string; secret_name?: string } = {};
   if (draft.injection !== row.injection) direct.injection = draft.injection;
   // The secret is sent only when it changed: the door checks the vault holds it, and "" removes it.

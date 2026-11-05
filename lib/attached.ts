@@ -54,6 +54,11 @@ export interface Framework {
 
 export const FRAMEWORKS: Framework[] = [
   { id: "langgraph", label: "LangGraph", language: "python" },
+  { id: "opencode", label: "OpenCode", language: "typescript" },
+  { id: "claude-code", label: "Claude Code", language: "typescript" },
+  { id: "openai-codex", label: "OpenAI Codex", language: "typescript" },
+  { id: "goose", label: "Goose", language: "python" },
+  { id: "aider", label: "Aider", language: "python" },
   { id: "openai-agents", label: "OpenAI Agents SDK", language: "python" },
   { id: "semantic-kernel", label: "Semantic Kernel", language: "csharp" },
   { id: "autogen", label: "AutoGen", language: "python" },
@@ -307,6 +312,12 @@ GET  ${ENDPOINTS.card}   the factory's own card, signed the same way`,
 
 /* ═══════════════════ The registry row ═══════════════════ */
 
+export type AgentLimits = {
+  requests_per_minute?: number;
+  tokens_per_day?: number;
+  cost_per_day_usd?: number;
+};
+
 export interface AttachedAgent {
   id: string;
   name: string;
@@ -326,6 +337,12 @@ export interface AttachedAgent {
   blocked: boolean;
   /** The vault name of the secret it signs its A2A requests with (phase L7); "" when it has none, and then the tasks door does not hear it. Never the value. */
   secret_name: string;
+  /** How the model gateway routes it: the default (a model, a tier, or "" for the deployment's), what it may name, what is tried when one fails. */
+  model?: string;
+  models?: string[];
+  fallbacks?: string[];
+  /** requests_per_minute, tokens_per_day, cost_per_day_usd; empty for none. */
+  limits?: AgentLimits;
   /** Measured from the run record for a live agent; demonstration figures for a seeded one. */
   runs30d: number;
   cost30d: number | null;

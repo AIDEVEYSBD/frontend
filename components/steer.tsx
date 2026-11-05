@@ -26,6 +26,8 @@ const DELIVERED: Record<SteerResult["delivery"], string> = {
   "in-process": "taken at the run's next step",
   worker: "handed to the worker at its next heartbeat",
   sdk: "handed to the agent on its next control poll",
+
+  broker: "taken at the broker on its next call",
 };
 
 /**

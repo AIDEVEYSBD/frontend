@@ -17,6 +17,7 @@ import {
   SHOWN_ON,
   SNIPPETS,
   slugOf,
+  type AgentLimits,
   type AttachMode,
   type AttachedAgent,
   type Language,
@@ -43,6 +44,92 @@ function withDemoActivity(a: AttachedAgent): AttachedAgent {
  */
 
 const MODES: AttachMode[] = ["sdk", "a2a"];
+
+interface PolicyDraft {
+  grants: string[];
+  gate_at: AttachedAgent["gate_at"];
+  injection: AttachedAgent["injection"];
+  secret_name: string;
+  model: string;
+  models: string[];
+  fallbacks: string[];
+  limits: AgentLimits;
+}
+
+const names = (text: string) => text.split(",").map((n) => n.trim()).filter(Boolean);
+
+/** The agent asks for `auto` or a tier and the factory picks: here is who decides what that means for this agent. */
+function ModelRouting({ draft, onChange, catalogue, control }: {
+  draft: PolicyDraft;
+  onChange: (update: (d: PolicyDraft) => PolicyDraft) => void;
+  catalogue: { models: string[]; tiers: Record<string, string> };
+  control: string;
+}) {
+  const tiers = Object.entries(catalogue.tiers).filter(([, model]) => model);
+  const options = [
+    { value: "", label: "the deployment's default" },
+    ...tiers.map(([tier, model]) => ({ value: tier, label: `${tier} tier (${model})` })),
+    ...catalogue.models.map((m) => ({ value: m, label: m })),
+  ];
+  if (draft.model && !options.some((o) => o.value === draft.model)) options.push({ value: draft.model, label: draft.model });
+  const limit = (name: keyof AgentLimits, label: string, placeholder: string) => (
+    <label className="flex flex-col gap-1">
+      <span className="text-[10.5px] text-ghost">{label}</span>
+      <input
+        inputMode="decimal"
+        value={draft.limits[name] ?? ""}
+        placeholder={placeholder}
+        aria-label={label}
+        onChange={(e) => {
+          const n = Number(e.target.value);
+          onChange((d) => ({ ...d, limits: { ...d.limits, [name]: e.target.value.trim() && Number.isFinite(n) && n > 0 ? n : undefined } }));
+        }}
+        className={`${control} w-[110px] font-mono text-[11px]`}
+      />
+    </label>
+  );
+  return (
+    <div className="flex flex-col gap-2 border-t border-line pt-3">
+      <span className="text-[12px] font-semibold text-fg">Model routing</span>
+      <span className="text-[10.5px] leading-[1.5] text-faint">
+        The agent asks for <Mono className="text-[10px]">auto</Mono> or a tier, and the factory picks the model. Point its base URL at the gateway and it needs no model names or provider keys of its own.
+      </span>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1">
+          <span className="text-[10.5px] text-ghost">Default model</span>
+          <span className="block w-[260px]">
+            <Pick value={draft.model} onChange={(v) => onChange((d) => ({ ...d, model: v }))} options={options} aria-label="Default model" />
+          </span>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10.5px] text-ghost">Allowed models (empty: any offered)</span>
+          <input
+            defaultValue={draft.models.join(", ")}
+            onBlur={(e) => { const v = names(e.target.value); onChange((d) => ({ ...d, models: v })); }}
+            placeholder="small, medium"
+            spellCheck={false}
+            aria-label="Allowed models, separated by commas"
+            className={`${control} w-[210px] font-mono text-[11px]`}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10.5px] text-ghost">If a model fails, try</span>
+          <input
+            defaultValue={draft.fallbacks.join(", ")}
+            onBlur={(e) => { const v = names(e.target.value); onChange((d) => ({ ...d, fallbacks: v })); }}
+            placeholder="large"
+            spellCheck={false}
+            aria-label="Fallback models, separated by commas"
+            className={`${control} w-[170px] font-mono text-[11px]`}
+          />
+        </label>
+        {limit("requests_per_minute", "Requests a minute", "none")}
+        {limit("tokens_per_day", "Tokens a day", "none")}
+        {limit("cost_per_day_usd", "Dollars a day", "none")}
+      </div>
+    </div>
+  );
+}
 
 function ago(iso: string | null): string {
   if (!iso) return "never";
@@ -109,7 +196,9 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
   const [confirming, setConfirming] = useState("");
   const [registry, setRegistry] = useState<{ name: string; server: string; label: string; tool: string; description: string; risk: string }[]>([]);
   const [editing, setEditing] = useState("");
-  const [draft, setDraft] = useState<{ grants: string[]; gate_at: AttachedAgent["gate_at"]; injection: AttachedAgent["injection"]; secret_name: string }>({ grants: [], gate_at: "", injection: "block", secret_name: "" });
+  const [draft, setDraft] = useState<PolicyDraft>({ grants: [], gate_at: "", injection: "block", secret_name: "", model: "", models: [], fallbacks: [], limits: {} });
+  /** The deployment's offered models and tiers, for the routing picker. */
+  const [catalogue, setCatalogue] = useState<{ models: string[]; tiers: Record<string, string> }>({ models: [], tiers: {} });
   const [saving, setSaving] = useState(false);
   const [policyError, setPolicyError] = useState("");
   /** Why grants or the gate should change, and when: a policy change carries both. */
@@ -155,19 +244,41 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
       setSaving(false);
     }
   };
+  useEffect(() => {
+    let live = true;
+    fetch("/api/config")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((c: { models?: { id: string }[]; class_defaults?: Record<string, string> } | null) => {
+        if (live && c) setCatalogue({ models: (c.models ?? []).map((m) => m.id), tiers: c.class_defaults ?? {} });
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+
   const openPolicy = (a: AttachedAgent) => {
     setEditing(a.id);
     setPolicyError("");
     setReason("");
     setEffective("");
     setProposed(null);
-    setDraft({ grants: a.grants, gate_at: a.gate_at, injection: a.injection, secret_name: a.secret_name ?? "" });
+    setDraft({
+      grants: a.grants,
+      gate_at: a.gate_at,
+      injection: a.injection,
+      secret_name: a.secret_name ?? "",
+      model: a.model ?? "",
+      models: a.models ?? [],
+      fallbacks: a.fallbacks ?? [],
+      limits: a.limits ?? {},
+    });
   };
   /** Saves the row's own fields at once and proposes the rest. A refusal (a 409 naming the policy door among them) stays on the editor, in the door's words. */
   const savePolicy = async (a: AttachedAgent) => {
     const { reviewed: proposal, direct } = attachedSplit(a, draft);
     const reviewing = Object.keys(proposal).length > 0;
-    if (reviewing && !reason.trim()) return setPolicyError("Grants and the gate go to review: say why.");
+    if (reviewing && !reason.trim()) return setPolicyError("Grants, the gate, routing and limits go to review: say why.");
     if (Object.keys(direct).length && !(await patch(a.id, direct as Omit<PolicyPatch, "id">))) return;
     if (!reviewing) return setEditing("");
     setSaving(true);
@@ -175,7 +286,7 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
     try {
       setProposed(await proposePolicyChange({ target: { kind: "attached", id: a.id }, proposed: proposal, effective_at: effectiveAt(effective), reason: reason.trim() }));
       // Proposed is not applied: the editor goes back to the rules as they stand, and the proposal waits above it.
-      setDraft((d) => ({ ...d, grants: a.grants, gate_at: a.gate_at }));
+      setDraft((d) => ({ ...d, grants: a.grants, gate_at: a.gate_at, model: a.model ?? "", models: a.models ?? [], fallbacks: a.fallbacks ?? [], limits: a.limits ?? {} }));
       setReason("");
       setEffective("");
       setProposals((n) => n + 1);
@@ -454,7 +565,7 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
                   <td className="px-3 py-2.5 whitespace-nowrap">
                     {a.blocked ? <Status tone="err">blocked</Status> : <Status tone="ok">enforced</Status>}
                     <span className="block text-[10px] text-ghost">
-                      {a.blocked ? "every door refuses" : `${MODE_META[a.mode].enforcement} · ${a.grants.length} tool${a.grants.length === 1 ? "" : "s"} · gate ${a.gate_at || "never"}`}
+                      {a.blocked ? "every door refuses" : `${a.model ? `routes to ${a.model} · ` : ""}${MODE_META[a.mode].enforcement} · ${a.grants.length} tool${a.grants.length === 1 ? "" : "s"} · gate ${a.gate_at || "never"}`}
                     </span>
                   </td>
                   <td className="px-3 py-2.5 whitespace-nowrap text-[11.5px]">{a.owner || <span className="text-ghost">unowned</span>}</td>
@@ -558,11 +669,12 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
                         </Button>
                         <Button size="sm" variant="solid" tone="err" onClick={() => setEditing("")}>Cancel</Button>
                       </div>
+                      <ModelRouting draft={draft} onChange={setDraft} catalogue={catalogue} control={control} />
                       <span className="text-[10.5px] leading-[1.5] text-faint">
                         The A2A secret is the name the vault holds it under (or <Mono className="text-[10px]">{"${secret:name}"}</Mono>), never the secret itself: the agent signs every A2A request with it as <Mono className="text-[10px]">{a.id}</Mono>, and one name signs for one caller, peer or agent. Leave it empty to remove it.
                       </span>
                       <span className="text-[10.5px] leading-[1.5] text-faint">
-                        The gate and the grants below go to review: someone other than you approves them on the Policy page, and they stand as they are until then. The injection filter and the A2A secret apply at once.
+                        The gate, the grants, routing and limits go to review: someone other than you approves them on the Policy page, and they stand as they are until then. The injection filter and the A2A secret apply at once.
                       </span>
                       <OpenChanges target={{ kind: "attached", id: a.id }} tick={proposals} />
                       {Object.keys(attachedSplit(a, draft).reviewed).length > 0 && <ProposalNote reason={reason} onReason={setReason} effective={effective} onEffective={setEffective} />}

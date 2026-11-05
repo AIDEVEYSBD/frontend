@@ -2936,6 +2936,8 @@ export interface components {
             demo: boolean;
             /** Denials30D */
             denials30d: number;
+            /** Fallbacks */
+            fallbacks?: string[];
             /** Framework */
             framework: string;
             /**
@@ -2960,11 +2962,22 @@ export interface components {
             language: string;
             /** Last Seen */
             last_seen?: string | null;
+            /** Limits */
+            limits?: {
+                [key: string]: unknown;
+            };
             /**
              * Mode
              * @enum {string}
              */
             mode: "sdk" | "a2a";
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /** Models */
+            models?: string[];
             /** Name */
             name: string;
             /** Owner */
@@ -7457,6 +7470,8 @@ export interface components {
             entitlements?: {
                 [key: string]: string[];
             };
+            /** Fallbacks */
+            fallbacks?: string[];
             limits?: components["schemas"]["LimitsView"];
             /**
              * Model
@@ -8351,7 +8366,7 @@ export interface components {
              * Delivery
              * @enum {string}
              */
-            delivery: "in-process" | "worker" | "sdk" | "tree";
+            delivery: "in-process" | "worker" | "sdk" | "broker" | "tree";
             kill: components["schemas"]["KillInfo"];
             /** Reached */
             reached?: components["schemas"]["ReachedRun"][];
@@ -8622,7 +8637,7 @@ export interface components {
              * Delivery
              * @enum {string}
              */
-            delivery: "in-process" | "worker" | "sdk";
+            delivery: "in-process" | "worker" | "sdk" | "broker";
             /** Run */
             run: string;
             /** State */

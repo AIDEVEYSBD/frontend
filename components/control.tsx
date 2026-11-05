@@ -21,7 +21,8 @@ import { WindowPick, nextWin, winMs, type Win } from "./window-pick";
 import { Pick } from "./select";
 import { Checkbox } from "./forms";
 import { api, errorText, type RunRow as LedgerRow } from "@/lib/api/client";
-import { readQueue, type QueueSummary } from "@/lib/api/l2";
+import { listAttached, readQueue, type QueueSummary } from "@/lib/api/l2";
+import type { AttachedAgent } from "@/lib/attached";
 import { getLifecycle, STAGE_NAMES, type Lifecycle } from "@/lib/api/l8";
 import { STAGE_LABEL, spineOf } from "@/lib/lifecycle";
 import { DeployDialog } from "./deploy-gate";
@@ -376,6 +377,18 @@ export function Control() {
   const [stack, setStack] = useState<Drill[]>([]);
   /* The gates the inbox dialog is answering: one, or several of one agent and shape together. */
   const [answering, setAnswering] = useState<Gate[] | null>(null);
+  /** Third-party agents: on the estate with the factory's own, though no workflow row holds them. */
+  const [attached, setAttached] = useState<AttachedAgent[]>([]);
+  useEffect(() => {
+    let live = true;
+    const read = () => listAttached().then((l) => { if (live) setAttached((l.agents as AttachedAgent[]).filter((a) => !a.demo)); }).catch(() => undefined);
+    void read();
+    const t = setInterval(read, 15_000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, []);
   /* Inbox rows ticked for a batch answer, by run id. */
   const [picked, setPicked] = useState<Set<string>>(new Set());
   /* Estate rows ticked for a fleet action, by agent id. */
@@ -886,7 +899,19 @@ export function Control() {
                 </div>
               ))}
 
-              {data && data.agents.length === 0 && (
+              {attached.map((a) => (
+                <div key={a.id} className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-4 border-b border-line px-4 py-2.5">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate text-[12.5px] font-semibold text-fg">{a.name}</span>
+                    <Tag>{a.mode === "a2a" ? "A2A" : "SDK"}</Tag>
+                  </span>
+                  {a.blocked ? <Status tone="err">Blocked</Status> : <Status tone="ok">Attached</Status>}
+                  <span className="tnum text-[11.5px] text-faint">{a.runs30d} runs</span>
+                  <span className="tnum text-[11.5px] text-faint">${(a.cost30d ?? 0).toFixed(2)}</span>
+                </div>
+              ))}
+
+              {data && data.agents.length === 0 && attached.length === 0 && (
                 <p className="px-4 py-6 text-[12.5px] text-faint">
                   Nothing in the registry. Build a workflow and deploy it — it appears here with
                   its whole record.
