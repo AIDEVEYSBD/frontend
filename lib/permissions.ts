@@ -26,6 +26,9 @@ export const ROLE_PERMISSIONS: Record<string, readonly Permission[]> = {
   administrator: ["view", "run", "approve", "deploy", "configure", "iam"],
   operator: ["view", "run", "approve"],
   viewer: ["view"],
+  // Read-only under the names the AutoX admin gave it for this client.
+  npr_viewer: ["view"],
+  af_viewer: ["view"],
 };
 
 /**
