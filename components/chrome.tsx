@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ThemeToggle } from "./theme";
 import { CURRENT_USER } from "@/lib/user";
 import { useSession } from "@/lib/use-session";
 import { Button } from "./ui";
@@ -298,7 +297,60 @@ function CollapseButton({ rail }: { rail: boolean }) {
   );
 }
 
-function Sidebar({ groups, auto, onAuto }: { groups: NavGroup[]; auto: Group | null; onAuto: (g: Group | null) => void }) {
+/** Who is signed in, as the shell shows them. */
+interface Who { name: string; initials: string; email: string; role: string; sso: boolean; signOut: () => void }
+
+/** The signed-in person at the foot of the sidebar: who they are, the role they hold, and the way out. */
+function Person({ who }: { who: Who }) {
+  return (
+    <div className="flex items-center gap-2.5 px-2.5 py-1.5" title={`${who.name}${who.email ? ` · ${who.email}` : ""} · ${who.role}`}>
+      <span className="grid size-7 shrink-0 place-items-center rounded-full bg-white/15 text-[10px] font-semibold text-white">{who.initials}</span>
+      <span className="flex min-w-0 grow flex-col leading-tight">
+        <span className="truncate text-[12.5px] font-medium text-white">{who.name}</span>
+        <span className="truncate text-[10.5px] text-white/50">{who.role}</span>
+      </span>
+      {who.sso && (
+        <Button size="sm" variant="solid" tone="err" onClick={who.signOut}>Sign out</Button>
+      )}
+    </div>
+  );
+}
+
+/** The same on the collapsed rail: the initials, opening a card with the rest. */
+function RailPerson({ who }: { who: Who }) {
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  const ref = useDismiss<HTMLDivElement>(open, close);
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        aria-label={`${who.name}, ${who.role}`}
+        title={`${who.name} · ${who.role}`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className={`${SIDE_FOCUS} grid size-9 cursor-pointer place-items-center rounded-md transition-colors duration-100 hover:bg-white/8`}
+      >
+        <span className="grid size-7 place-items-center rounded-full bg-white/15 text-[10px] font-semibold text-white">{who.initials}</span>
+      </button>
+      {open && (
+        <div role="dialog" aria-label="Signed in" className="af-fade-up absolute bottom-0 left-full z-40 ml-3 flex w-[232px] flex-col gap-2.5 rounded-lg border border-line bg-surface p-3 text-fg elev-3">
+          <span className="flex min-w-0 flex-col leading-tight">
+            <span className="truncate text-[13px] font-semibold text-fg">{who.name}</span>
+            {who.email && <span className="truncate text-[11.5px] text-faint">{who.email}</span>}
+            <span className="mt-1 text-[11.5px] text-dim">{who.role}</span>
+          </span>
+          {who.sso && (
+            <Button size="sm" variant="solid" tone="err" onClick={who.signOut}>Sign out</Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Sidebar({ groups, auto, onAuto, who }: { groups: NavGroup[]; auto: Group | null; onAuto: (g: Group | null) => void; who: Who }) {
   const { rail } = usePrefs();
   if (rail) {
     return (
@@ -309,7 +361,10 @@ function Sidebar({ groups, auto, onAuto }: { groups: NavGroup[]; auto: Group | n
         <nav aria-label="Main" className="flex grow flex-col items-center gap-1.5 py-3">
           {groups.map((g) => <RailGroup key={g.label} g={g} />)}
         </nav>
-        <div className="flex w-full shrink-0 justify-center border-t border-white/10 py-2"><CollapseButton rail /></div>
+        <div className="flex w-full shrink-0 flex-col items-center gap-1 border-t border-white/10 py-2">
+          <RailPerson who={who} />
+          <CollapseButton rail />
+        </div>
       </aside>
     );
   }
@@ -319,7 +374,8 @@ function Sidebar({ groups, auto, onAuto }: { groups: NavGroup[]; auto: Group | n
         <BrandLockup onDark />
       </Link>
       <NavGroups groups={groups} auto={auto} onAuto={onAuto} />
-      <div className="flex shrink-0 flex-col border-t border-white/10 px-2.5 py-2">
+      <div className="flex shrink-0 flex-col gap-0.5 border-t border-white/10 px-2.5 py-2">
+        <Person who={who} />
         <CollapseButton rail={false} />
       </div>
     </aside>
@@ -404,52 +460,27 @@ export function Chrome({ children }: { children: React.ReactNode }) {
   if (isOpenPage(pathname)) return <>{children}</>;
   const who = session ?? { name: CURRENT_USER.name, initials: CURRENT_USER.initials, appRoles: [] as string[], sso: false, demoDefaultApplied: false, email: "" };
   const roleLabel = who.sso ? (who.appRoles.length ? who.appRoles.join(", ") : who.demoDefaultApplied ? "default role (no assignment)" : "no role") : CURRENT_USER.role;
+  const me: Who = { name: who.name, initials: who.initials, email: who.email, role: roleLabel, sso: who.sso, signOut };
   return (
     <div className="flex h-screen bg-canvas">
       <Material />
-      <Sidebar groups={groups} auto={auto} onAuto={setAuto} />
+      <Sidebar groups={groups} auto={auto} onAuto={setAuto} who={me} />
 
       <div className="flex min-w-0 grow flex-col">
-        <header className="relative z-20 flex h-12 shrink-0 items-center gap-3 border-b border-line bg-surface px-4">
-          {/* Below the sidebar's width the navigation is a drawer, opened from here. */}
+        {/* The sidebar holds everything a wide screen needs. Below its width the navigation is a drawer, opened from this bar. */}
+        <header className="relative z-20 flex h-12 shrink-0 items-center gap-3 border-b border-line bg-surface px-4 lg:hidden">
           <button
             type="button"
             aria-label="Open the navigation"
             aria-expanded={drawer}
             onClick={() => setDrawer(true)}
-            className="focusable grid size-7 shrink-0 cursor-pointer place-items-center rounded-md bg-raise text-fg lg:hidden"
+            className="focusable grid size-7 shrink-0 cursor-pointer place-items-center rounded-md bg-raise text-fg"
           >
             <NavIcon name="menu" size={15} />
           </button>
-          <Link href="/" aria-label="Agent Factory, home" className="focusable flex shrink-0 lg:hidden"><ABBWordmark height={13} /></Link>
-          <span className="truncate text-[13px] font-semibold text-fg lg:hidden">{hereGroup && hereGroup.items.length === 1 ? here?.group : here?.label}</span>
-
-          {here && hereGroup && (
-            <span className="hidden min-w-0 items-center gap-1.5 text-[12px] whitespace-nowrap text-faint lg:flex">
-              {hereGroup.items.length > 1 && (
-                <>
-                  {here.group}
-                  <NavIcon name="chevron-right" size={11} className="text-ghost" />
-                </>
-              )}
-              <span className="truncate font-medium text-fg">{hereGroup.items.length > 1 ? here.label : here.group}</span>
-              {here.tag && <Preview onSide={false} />}
-            </span>
-          )}
-
-          <div className="grow" />
-          <span className="mr-2 hidden items-center gap-2 sm:flex" title={`${who.name}${who.email ? ` · ${who.email}` : ""} · ${roleLabel}`}>
-            <span className="grid size-6 place-items-center rounded-full bg-ink text-[9.5px] font-semibold text-on-ink">{who.initials}</span>
-            <span className="flex flex-col leading-tight">
-              <span className="text-[11.5px] font-medium text-fg">{who.name}</span>
-              <span className="text-[9.5px] text-faint">{roleLabel}</span>
-            </span>
-            {who.sso && (
-              <Button size="sm" variant="solid" tone="err" onClick={signOut}>Sign out</Button>
-            )}
-          </span>
-
-          <div className="relative"><ThemeToggle /></div>
+          <Link href="/" aria-label="Agent Factory, home" className="focusable flex shrink-0"><ABBWordmark height={13} /></Link>
+          <span className="truncate text-[13px] font-semibold text-fg">{hereGroup && hereGroup.items.length === 1 ? here?.group : here?.label}</span>
+          {here?.tag && <Preview onSide={false} />}
         </header>
         <Assistant />
 
@@ -471,6 +502,9 @@ export function Chrome({ children }: { children: React.ReactNode }) {
               </button>
             </div>
             <NavGroups groups={groups} auto={auto} onAuto={setAuto} onNavigate={() => setDrawer(false)} />
+            <div className="flex shrink-0 flex-col border-t border-white/10 px-2.5 py-2">
+              <Person who={me} />
+            </div>
           </div>
         </div>
       )}

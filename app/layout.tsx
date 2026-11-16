@@ -3,7 +3,6 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Chrome } from "@/components/chrome";
 import { InlineScript } from "@/components/inline-script";
-import { themeScript } from "@/components/theme";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -27,9 +26,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
       className={`${inter.variable} ${jetbrains.variable} h-full antialiased`}
       data-accent="off"
+      data-theme="light"
     >
       <head>
-        <InlineScript html={themeScript} />
         <InlineScript html={`try{var a=localStorage.getItem("af.ui.accent");if(a)document.documentElement.dataset.accent=a;}catch(e){}`} />
       </head>
       <body className="min-h-full font-sans">

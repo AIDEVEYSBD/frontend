@@ -12,7 +12,6 @@ import {
 import { DeployPanel } from "./deploy";
 import { DemoFlow } from "./demo-flow";
 import { ABBWordmark, BrandLockup } from "./brand";
-import { ThemeToggle } from "./theme";
 import { SurfaceGrain } from "./material";
 
 /* ═══════════════════ Header ═══════════════════
@@ -25,7 +24,6 @@ export function LandingHeader() {
       <div className="relative flex h-14 w-full items-center gap-3 px-5 sm:px-8 lg:px-12 2xl:px-20">
         <BrandLockup />
         <div className="grow" />
-        <ThemeToggle />
         <Button tone="ink" variant="solid" size="sm" href="/control">
           Open console
         </Button>

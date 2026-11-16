@@ -6,7 +6,6 @@ import { Field, Textarea } from "./forms";
 import { Banner } from "./overlays";
 import { BrandLockup } from "./brand";
 import { Material } from "./material";
-import { ThemeToggle } from "./theme";
 import { DoorError, readExternalGate, submitExternalAnswer, type Answer, type AnswerResult, type ExternalGate } from "@/lib/api/l5";
 import { declaresNote, emptyForm, refusalErrors, validateForm, validateVerdicts, type FormState } from "@/lib/gates";
 import { Deadline, EvidencePanel, GateFields, NextLines, ShapeTag, VerdictTable, useNow } from "./gate-form";
@@ -110,7 +109,6 @@ export function AnswerPage({ token }: { token: string }) {
         <BrandLockup line={false} />
         <span className="text-[11.5px] text-faint">· a question for you</span>
         <span className="grow" />
-        <ThemeToggle />
       </header>
 
       <main className="mx-auto flex w-full max-w-[860px] flex-col gap-4 px-4 py-7 sm:px-5">
