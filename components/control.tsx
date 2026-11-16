@@ -21,7 +21,7 @@ import { soon } from "@/lib/soon";
 import { WindowPick, nextWin, winMs, type Win } from "./window-pick";
 import { Pick } from "./select";
 import { Checkbox } from "./forms";
-import { api, errorText, type RunRow as LedgerRow } from "@/lib/api/client";
+import { api, type RunRow as LedgerRow } from "@/lib/api/client";
 import { listAttached, readQueue, type QueueSummary } from "@/lib/api/l2";
 import type { AttachedAgent } from "@/lib/attached";
 import { getLifecycle, STAGE_NAMES, type Lifecycle } from "@/lib/api/l8";
@@ -32,6 +32,7 @@ import { productionRuns, shadowBesideLine, shadowSpentLine } from "@/lib/product
 import { partnerStatus, type PartnerPeer } from "@/lib/peers";
 import { auditLine, inFlight, type RunRowL5 } from "@/lib/api/l5";
 import { KillDialog } from "./kill-dialog";
+import { StopForm, stopNotice, type StopScope } from "./stop-form";
 import { killRefusalOf, killRun } from "@/lib/api/l7";
 import { alreadySummary, killSummary } from "@/lib/run-tree";
 import { RunSourceTag } from "./run-source";
@@ -367,6 +368,8 @@ export function Control() {
   const [error, setError] = useState("");
   /* The kill switch's question: which run (none means every run in flight), answered with a reason. */
   const [killAsk, setKillAsk] = useState<{ id?: string } | null>(null);
+  /* The stop form (every run, the ticked agents' runs, or the lockdown), and the choice it opens on. */
+  const [stopAsk, setStopAsk] = useState<StopScope | null>(null);
   // The page window, and per-card overrides (a KPI tile, the activity chart,
   // the model mix). Changing the page window clears every override.
   const [win, setWinState] = useState<Win>("7d");
@@ -520,27 +523,23 @@ export function Control() {
     [router],
   );
 
-  /* Which kill is in flight: a run id, or "*" for the whole estate. The
-     button that fired it shows the spinner until the request settles. */
+  /* Which single-run kill is in flight: the run's id. The button that fired
+     it shows the spinner until the request settles. Stopping every run, the
+     ticked agents' runs or the whole estate is the stop form's
+     (components/stop-form.tsx), which calls those doors itself. */
   const [killing, setKilling] = useState<string | null>(null);
   const kill = useCallback(
-    async (reason: string, id?: string) => {
-      setKilling(id ?? "*");
+    async (reason: string, id: string) => {
+      setKilling(id);
       setKillAsk(null);
       try {
-        if (id) {
-          // The kill reaches the run's whole tree (L7); the receipt says whom, and how.
-          try {
-            notice(killSummary(await killRun(id, reason)));
-          } catch (e) {
-            // Everything in flight already stopping on an earlier kill is that, not a refusal.
-            const refusal = killRefusalOf(e);
-            notice(refusal?.already.length ? alreadySummary(refusal) : `Kill refused: ${(e as Error).message.slice(0, 120)}`);
-          }
-        } else {
-          const { data, error, response } = await api.POST("/api/runs/kill-all", { body: { reason } });
-          if (!data) notice(`Kill refused: ${errorText(error, response).slice(0, 120)}`);
-          else notice(`Kill switch thrown on ${data.killed.length} run${data.killed.length === 1 ? "" : "s"}`);
+        // The kill reaches the run's whole tree (L7); the receipt says whom, and how.
+        try {
+          notice(killSummary(await killRun(id, reason)));
+        } catch (e) {
+          // Everything in flight already stopping on an earlier kill is that, not a refusal.
+          const refusal = killRefusalOf(e);
+          notice(refusal?.already.length ? alreadySummary(refusal) : `Kill refused: ${(e as Error).message.slice(0, 120)}`);
         }
         await load();
       } catch (e) {
@@ -624,9 +623,9 @@ export function Control() {
           <WindowPick value={win} onChange={setWin} />
         </span>
         <LogExport />
-        <LockdownSwitch state={lockdown} onChanged={(s) => { setLockdownState(s); load(); }} onNotice={notice} />
+        <LockdownSwitch state={lockdown} onChanged={(s) => { setLockdownState(s); load(); }} onNotice={notice} onLockDown={() => setStopAsk("lockdown")} />
         {t && t.active > 0 && (
-          <Button tone="err" variant="solid" size="sm" permission="run" loading={killing === "*"} onClick={() => setKillAsk({})}>
+          <Button tone="err" variant="solid" size="sm" permission="run" onClick={() => setStopAsk("all")}>
             <span className="size-1.5 rounded-[2px] bg-on-solid" />
             Kill all runs
           </Button>
@@ -769,6 +768,7 @@ export function Control() {
                   agents={[...selected]}
                   names={(id) => data?.agents.find((a) => a.id === id)?.name ?? id}
                   onClear={() => setSelected(new Set())}
+                  onStop={() => setStopAsk("agents")}
                   onDone={(r) => {
                     const verb = { pause: "Paused", resume: "Resumed", drain: "Draining", kill: "Killed runs on" }[r.action];
                     notice(`${verb} ${r.agents.length} agent${r.agents.length === 1 ? "" : "s"}${r.killed.length ? ` · ${r.killed.length} run${r.killed.length === 1 ? "" : "s"} killed` : ""}${auditLine(r.audit_id)}`);
@@ -1349,18 +1349,34 @@ export function Control() {
         />
       )}
 
-      {killAsk && (
+      {killAsk?.id && (
         <KillDialog
-          title={killAsk.id ? "Kill this run?" : "Stop every run in flight?"}
-          what={
-            killAsk.id
-              ? `${(data?.live ?? []).find((l) => l.id === killAsk.id)?.system ?? "run"} · ${killAsk.id}. The backend cancels it before its next model or tool call, and the kill reaches everything it set off: in-process sub-runs, child runs wherever they run, queued children. The journal records the reason and your name.`
-              : `${t?.active ?? 0} run${t?.active === 1 ? "" : "s"} in flight, in-process and on workers. Each is cancelled before its next model or tool call; every journal records the reason and your name.`
-          }
-          confirm={killAsk.id ? "Kill run" : "Kill all runs"}
+          title="Kill this run?"
+          what={`${(data?.live ?? []).find((l) => l.id === killAsk.id)?.system ?? "run"} · ${killAsk.id}. The backend cancels it before its next model or tool call, and the kill reaches everything it set off: in-process sub-runs, child runs wherever they run, queued children. The journal records the reason and your name.`}
+          confirm="Kill run"
           busy={killing !== null}
           onClose={() => setKillAsk(null)}
-          onConfirm={(reason) => kill(reason, killAsk.id)}
+          onConfirm={(reason) => killAsk.id && kill(reason, killAsk.id)}
+        />
+      )}
+
+      {/* Every run, the ticked agents' runs, or the lockdown: one form that shows the impact before it sends. */}
+      {stopAsk && (
+        <StopForm
+          initial={stopAsk}
+          agents={[...selected]}
+          names={(id) => data?.agents.find((a) => a.id === id)?.name ?? id}
+          lockdown={lockdown}
+          onClose={() => setStopAsk(null)}
+          onDone={(o) => {
+            if (o.scope === "lockdown") setLockdownState(o.state);
+            if (o.scope === "agents") {
+              setSelected(new Set());
+              reloadFleet();
+            }
+            notice(stopNotice(o));
+            load();
+          }}
         />
       )}
 

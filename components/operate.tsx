@@ -12,9 +12,13 @@ import { soon } from "@/lib/soon";
  * Both are operator decisions the backend journals as one audit event with
  * a reason and who, so each is a dialog that names what it is about to do
  * and takes the reason before anything is sent (the shape of
- * components/kill-dialog.tsx). Fleet needs the run permission, lockdown
- * configure; the buttons say so when the person lacks it. Which agents
- * stand paused or draining is the backend's to say (`GET /api/fleet`).
+ * components/kill-dialog.tsx). The two that stop work, killing the ticked
+ * agents' runs and switching the lockdown on, go to the one stop form
+ * (components/stop-form.tsx) when the page gives a way to open it; pause,
+ * resume, drain and lifting the lockdown keep the reason dialog here. Fleet
+ * needs the run permission, lockdown configure; the buttons say so when the
+ * person lacks it. Which agents stand paused or draining is the backend's
+ * to say (`GET /api/fleet`).
  */
 
 /* ═══════════════════ a reason dialog ═══════════════════ */
@@ -107,7 +111,20 @@ function ReasonDialog({
 /* ═══════════════════ fleet ═══════════════════ */
 
 /** The four fleet buttons for a selection of agents; each opens the reason dialog, then posts to `/api/fleet`. */
-export function FleetBar({ agents, names, onDone, onClear }: { agents: string[]; names: (id: string) => string; onDone: (r: FleetResult) => void; onClear: () => void }) {
+export function FleetBar({
+  agents,
+  names,
+  onDone,
+  onClear,
+  onStop,
+}: {
+  agents: string[];
+  names: (id: string) => string;
+  onDone: (r: FleetResult) => void;
+  onClear: () => void;
+  /** Opens the stop form (components/stop-form.tsx) for these agents; when given, Kill goes there instead of the reason dialog. */
+  onStop?: () => void;
+}) {
   const [ask, setAsk] = useState<FleetAction | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -135,7 +152,7 @@ export function FleetBar({ agents, names, onDone, onClear }: { agents: string[];
         {agents.length} selected
       </span>
       {FLEET_ACTIONS.map((a) => (
-        <Button key={a.id} size="sm" variant="solid" tone={a.tone} permission="run" onClick={() => setAsk(a.id)} disabled={agents.length === 0}>
+        <Button key={a.id} size="sm" variant="solid" tone={a.tone} permission="run" onClick={() => (a.id === "kill" && onStop ? onStop() : setAsk(a.id))} disabled={agents.length === 0}>
           {a.label}
         </Button>
       ))}
@@ -209,7 +226,18 @@ export function useLockdown(active = true, everyMs = 8000) {
 }
 
 /** The switch in the header: on or off, each through the reason dialog, `POST /api/lockdown`. */
-export function LockdownSwitch({ state, onChanged, onNotice }: { state: LockdownState | null; onChanged: (s: LockdownState) => void; onNotice: (text: string) => void }) {
+export function LockdownSwitch({
+  state,
+  onChanged,
+  onNotice,
+  onLockDown,
+}: {
+  state: LockdownState | null;
+  onChanged: (s: LockdownState) => void;
+  onNotice: (text: string) => void;
+  /** Opens the stop form (components/stop-form.tsx) on the lockdown; when given, switching on goes there. Lifting keeps the reason dialog. */
+  onLockDown?: () => void;
+}) {
   const [ask, setAsk] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const on = Boolean(state?.on);
@@ -229,7 +257,7 @@ export function LockdownSwitch({ state, onChanged, onNotice }: { state: Lockdown
   };
   return (
     <span className="flex items-center gap-2 rounded-md border border-line bg-surface px-2 py-1" title={on ? `Lockdown on · ${state?.reason ?? ""}` : "Lockdown off"}>
-      <Switch checked={on} onChange={(next) => setAsk(next)} disabled={state === null} label={on ? "Lockdown on" : "Lockdown"} />
+      <Switch checked={on} onChange={(next) => (next && onLockDown ? onLockDown() : setAsk(next))} disabled={state === null} label={on ? "Lockdown on" : "Lockdown"} />
       {ask !== null && (
         <ReasonDialog
           title={ask ? "Lock the estate down?" : "Lift the lockdown?"}

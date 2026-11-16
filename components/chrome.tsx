@@ -56,6 +56,7 @@ const NAV: NavItem[] = [
 
   { href: "/control", label: "Control", group: "Operations", icon: "layout-dashboard" },
   { href: "/runs", label: "Runs", group: "Operations", icon: "list-checks" },
+  { href: "/approvals", label: "Approvals", group: "Operations", icon: "inbox" },
   { href: "/deliverables", label: "Deliverables", group: "Operations", icon: "file-check" },
   { href: "/chat", label: "Chat", group: "Operations", icon: "message-square" },
 
@@ -67,6 +68,7 @@ const NAV: NavItem[] = [
   { href: "/evals", label: "Evals", group: "Agents", icon: "flask-conical" },
 
   { href: "/iam", label: "People and agents", group: "Identity", icon: "users", needs: "iam" },
+  { href: "/access", label: "Access log", group: "Identity", icon: "history", needs: "iam", tag: "preview" },
 
   { href: "/configuration", label: "Configuration", group: "Connections", icon: "sliders-horizontal" },
   { href: "/knowledge", label: "Knowledge", group: "Connections", icon: "book-open" },
