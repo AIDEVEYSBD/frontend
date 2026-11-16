@@ -25,6 +25,13 @@ import { groupsClaimName, groupsOverage, refreshedGroups, sessionGroups } from "
  * The session also keeps the identity provider's group claims (`groups`,
  * or the claim AUTH_GROUPS_CLAIM names; lib/sso-groups.ts), which the
  * backend reads beside the roles when a gate's approvers are checked.
+ *
+ * Google Identity-Aware Proxy is the second way in (IAP_AUDIENCE with
+ * AUTH_SECRET). IAP has already signed the person in before a request
+ * reaches the console and says who they are in a signed header; the console
+ * verifies that header, gives them a role from the deployment's own mapping
+ * (IAP names a person, never a role) and keeps the same server-side session
+ * the backend already trusts. Nothing behind the console changes.
  */
 
 export const ISSUER = (process.env.AUTOX_ISSUER ?? "https://sso.autogrc.cloud").replace(/\/+$/, "");
@@ -38,6 +45,71 @@ const REFRESH_AHEAD_S = 60;
 export function ssoEnabled(): boolean {
   return Boolean(process.env.AUTOX_CLIENT_ID && process.env.AUTOX_CLIENT_SECRET && process.env.AUTH_SECRET);
 }
+
+/* ── Google Identity-Aware Proxy ── */
+
+/** The header IAP puts on every request it lets through: a JWT it signed, naming the person. */
+export const IAP_HEADER = "x-goog-iap-jwt-assertion";
+const IAP_ISSUER = "https://cloud.google.com/iap";
+const IAP_KEYS = "https://www.gstatic.com/iap/verify/public_key-jwk";
+
+/** IAP sign-in is on when the deployment names the audience its assertions carry (and can sign a session cookie). */
+export function iapEnabled(): boolean {
+  return Boolean(process.env.IAP_AUDIENCE && process.env.AUTH_SECRET);
+}
+
+/** Whether anyone has to sign in at all, by either way in. */
+export function signInOn(): boolean {
+  return ssoEnabled() || iapEnabled();
+}
+
+export interface IapIdentity { sub: string; email: string; domain: string }
+
+let iapKeys: ReturnType<typeof createRemoteJWKSet> | null = null;
+
+/**
+ * The person an IAP assertion names, or a thrown error. Checked as Google
+ * documents it: ES256, IAP's issuer, this deployment's audience (the backend
+ * service or Cloud Run service IAP fronts), thirty seconds of clock skew,
+ * against Google's published keys. IAP_JWKS_URL points at a mirror of those
+ * keys for a network that cannot reach gstatic.com.
+ */
+export async function verifyIap(assertion: string): Promise<IapIdentity> {
+  if (!iapKeys) iapKeys = createRemoteJWKSet(new URL(process.env.IAP_JWKS_URL || IAP_KEYS));
+  const { payload } = await jwtVerify(assertion, iapKeys, {
+    issuer: IAP_ISSUER,
+    audience: process.env.IAP_AUDIENCE,
+    algorithms: ["ES256"],
+    clockTolerance: 30,
+  });
+  const sub = String(payload.sub ?? "");
+  if (!sub) throw new Error("the assertion carried no subject");
+  return { sub, email: String(payload.email ?? "").toLowerCase(), domain: String(payload.hd ?? "") };
+}
+
+/**
+ * The roles a person signed in through IAP holds here. IAP_ROLE_MAP is JSON:
+ * a key is an email address or "@domain", a value is a role or a list of
+ * roles from lib/permissions.ts, for example
+ *   {"alice@example.com": "administrator", "@example.com": ["operator"]}
+ * The address wins over its domain. Someone the map does not name gets no
+ * role, so the default role (viewer) is what they hold. A map that is not
+ * valid JSON names nobody, which fails towards viewer, never towards more.
+ */
+export function iapRoles(email: string): string[] {
+  let map: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(process.env.IAP_ROLE_MAP || "{}") as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) map = parsed as Record<string, unknown>;
+  } catch {
+    /* names nobody */
+  }
+  const lower = Object.fromEntries(Object.entries(map).map(([k, v]) => [k.trim().toLowerCase(), v]));
+  const at = email.lastIndexOf("@");
+  const hit = lower[email] ?? (at >= 0 ? lower[email.slice(at)] : undefined);
+  const roles = Array.isArray(hit) ? hit.map(String) : typeof hit === "string" ? [hit] : [];
+  return roles.map((r) => r.trim()).filter(Boolean);
+}
 function secret(): string {
   return process.env.AUTH_SECRET ?? "";
 }
@@ -45,7 +117,7 @@ function secret(): string {
 export const INTERNAL_HEADER = "x-internal-auth";
 export function internalHeaders(): Record<string, string> {
   const key = process.env.RUNTIME_KEY;
-  return { ...(ssoEnabled() ? { [INTERNAL_HEADER]: secret() } : {}), ...(key ? { "x-runtime-key": key } : {}) };
+  return { ...(signInOn() ? { [INTERNAL_HEADER]: secret() } : {}), ...(key ? { "x-runtime-key": key } : {}) };
 }
 
 /* ── the identity provider, discovered once ── */
@@ -138,6 +210,8 @@ export interface Session {
   accessExpiresAt: string | null;
   expiresAt: string | null;
   reauth?: boolean;
+  /** Which way the person came in, for a signed-in session: the OpenID Connect provider, or Google IAP. */
+  via?: "oidc" | "iap";
 }
 
 function initialsOf(name: string, email: string): string {
@@ -155,8 +229,8 @@ function localSession(): Session {
     name: CURRENT_USER.name,
     email: "",
     initials: CURRENT_USER.initials,
-    orgType: "EY",
-    isEy: true,
+    orgType: "",
+    isEy: false,
     roles: [],
     appRoles: [role],
     groups: [],
@@ -218,6 +292,8 @@ function toSession(row: SessionRow, reauth = false): Session {
     accessExpiresAt: row.access_expires_at,
     expiresAt: row.expires_at,
     reauth,
+    // An IAP session holds no provider tokens: the assertion was checked at sign-in and is not kept.
+    via: row.id_token ? "oidc" : "iap",
   };
 }
 
@@ -286,7 +362,7 @@ async function refreshRow(row: SessionRow): Promise<SessionRow | null> {
 
 /** The person behind a request, refreshed if their access token is about to lapse. */
 export async function session(req: Request): Promise<Session | null> {
-  if (!ssoEnabled()) return localSession();
+  if (!signInOn()) return localSession();
   if (req.headers.get(INTERNAL_HEADER) === secret()) return internalSession();
   const cookie = await readSessionCookie(readCookie(req.headers.get("cookie"), SESSION_COOKIE), secret());
   if (!cookie) return null;
@@ -428,4 +504,26 @@ export async function createSession(
   );
   await query("UPDATE users SET last_app_roles = $2 WHERE sub = $1", [c.sub, JSON.stringify(appRoles)]);
   return { id, expiresAt, appRoles, jwt, groups, groupsClaim: claim, groupsOverage: overage };
+}
+
+/**
+ * A session for a person IAP has signed in. The user row is provisioned as
+ * for any sign-in; the session row holds no provider tokens and no refresh
+ * token, and its "access" lapses with the session itself, so when it ends
+ * the next request simply signs in again from the assertion IAP is still
+ * sending. Roles are read from the deployment's mapping at this moment.
+ */
+export async function createIapSession(who: IapIdentity): Promise<{ id: string; expiresAt: Date; appRoles: string[] }> {
+  const local = who.email.split("@")[0] ?? "";
+  const name = local.split(/[._-]+/).filter(Boolean).map((w) => w[0]!.toUpperCase() + w.slice(1)).join(" ");
+  await provision({ sub: who.sub, email: who.email, email_verified: Boolean(who.email), name, preferred_username: who.email, "autox:org_type": who.domain });
+  const id = randomBytes(32).toString("hex");
+  const expiresAt = new Date(Date.now() + SESSION_HOURS * 3600 * 1000);
+  const appRoles = iapRoles(who.email);
+  await query(
+    `INSERT INTO sessions (id, sub, id_token, access_token, access_expires_at, refresh_token, roles, app_roles, groups, expires_at) VALUES ($1,$2,'','',$3,NULL,'[]',$4,'[]',$3)`,
+    [id, who.sub, expiresAt.toISOString(), JSON.stringify(appRoles)],
+  );
+  await query("UPDATE users SET last_app_roles = $2 WHERE sub = $1", [who.sub, JSON.stringify(appRoles)]);
+  return { id, expiresAt, appRoles };
 }

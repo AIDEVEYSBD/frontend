@@ -1,5 +1,5 @@
 import { ensureAnnIndex, knowledgeReady, kq, listNamespaces, stampAdmission } from "@/lib/server/knowledge-db";
-import { permit, session as whoIs, signer, ssoEnabled } from "@/lib/server/auth";
+import { permit, session as whoIs, signer, signInOn } from "@/lib/server/auth";
 import { COLUMN_DIMENSIONS, config, embed, embeddingDimension } from "@/lib/server/embed";
 import { NAMESPACE_RULE, parseNamespace } from "@/lib/knowledge";
 
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
   if (!namespace) return Response.json({ error: NAMESPACE_RULE }, { status: 400 });
   const force = body.force === true;
   const me = await whoIs(req);
-  const by = (ssoEnabled() && me && me.mode === "sso" ? signer(me) : String(body.by ?? "").trim()) || (me ? signer(me) : "") || "console";
+  const by = (signInOn() && me && me.mode === "sso" ? signer(me) : String(body.by ?? "").trim()) || (me ? signer(me) : "") || "console";
   if (!(await knowledgeReady())) return Response.json({ error: "the knowledge index is unreachable" }, { status: 503 });
 
   const provider = await config();

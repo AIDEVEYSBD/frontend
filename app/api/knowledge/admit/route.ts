@@ -1,5 +1,5 @@
 import { ensureAnnIndex, knowledgeReady, kq, stampAdmission } from "@/lib/server/knowledge-db";
-import { permit, session as whoIs, signer, ssoEnabled } from "@/lib/server/auth";
+import { permit, session as whoIs, signer, signInOn } from "@/lib/server/auth";
 import { embed, embeddingDimension, embeddingModel } from "@/lib/server/embed";
 import { NAMESPACE_RULE, parseNamespace } from "@/lib/knowledge";
 
@@ -30,7 +30,7 @@ export async function POST(req: Request) {
 
   const documentId = String(body.document ?? "");
   const me = await whoIs(req);
-  const by = ssoEnabled() && me && me.mode === "sso" ? signer(me) : String(body.by ?? "").trim();
+  const by = signInOn() && me && me.mode === "sso" ? signer(me) : String(body.by ?? "").trim();
   const note = String(body.note ?? "").slice(0, 2000);
   if (!documentId) return Response.json({ error: "which document?" }, { status: 400 });
   const namespace = parseNamespace(body.namespace ?? new URL(req.url).searchParams.get("namespace"));

@@ -61,3 +61,18 @@ The knowledge index holds one corpus per engagement, in one store. Every row (so
 - **The default.** A request that names no namespace reads and writes `default`, which is where an index built before namespaces keeps everything it had. The console assistant's `search_knowledge` tool and the platform MCP server search `default` unless the call passes `namespace`.
 - **Picking one.** The Knowledge page has a corpus picker in its header, fed by `GET /api/knowledge?namespaces=1` (the namespaces that exist, the default always among them) plus "new…", which takes a name and opens it. The choice is remembered per browser and sent on every call the page makes: status, fetch, document, admit, search and answer.
 - **What a new namespace starts with.** The curated catalogue, seeded on first read, with every source enabled; nothing fetched, nothing admitted. Curation (enabling a source, admitting a document, superseding an older version) acts on that namespace alone.
+
+## Sign-in through Google Identity-Aware Proxy
+
+For a deployment that sits behind IAP, the console reads who the person is from the header IAP signs (`x-goog-iap-jwt-assertion`), verifies it, and keeps its usual server-side session. The backend trusts that session as it does any other, so nothing behind the console changes.
+
+| Variable | Meaning |
+|---|---|
+| `IAP_AUDIENCE` | Switches IAP sign-in on. The audience IAP's assertions carry: `/projects/NUMBER/global/backendServices/ID` for GKE or Compute Engine, `/projects/NUMBER/locations/REGION/services/NAME` for Cloud Run, `/projects/NUMBER/apps/ID` for App Engine. |
+| `AUTH_SECRET` | The key the session cookie is signed with. Needed, and the same value the backend holds. |
+| `IAP_ROLE_MAP` | JSON giving people their role, since IAP names a person and never a role: `{"alice@example.com": "administrator", "@example.com": ["operator"]}`. A key is an address or `@domain`; the address wins. Roles are those in `lib/permissions.ts`. |
+| `AUTH_DEMO_DEFAULT_ROLE` | The role of someone the map does not name. Unset, it is `viewer`. |
+| `IAP_SIGNOUT_URL` | Where IAP's own sign-out is. Without it the console shows no sign-out button, because ending only the console's session signs the person straight back in. |
+| `IAP_JWKS_URL` | A mirror of Google's IAP keys, for a network that cannot reach `www.gstatic.com`. |
+
+A page opened without a console session goes to `/api/auth/login`, which verifies the assertion, provisions the person, creates the session and sends them on. A request with no assertion did not come through IAP and is told so. `tests/iap.test.ts` holds the verification and the role mapping.

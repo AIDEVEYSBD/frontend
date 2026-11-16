@@ -59,6 +59,8 @@ const KEY = process.env.RUNTIME_KEY ?? "";
 const HEADER = "x-runtime-key";
 const AUTH_SECRET = process.env.AUTH_SECRET ?? "";
 const INTERNAL_HEADER = "x-internal-auth";
+// Behind Google IAP the person is already signed in when the request arrives: a page without a console session goes straight to the door that reads IAP's header, not to a sign-in page.
+const IAP = Boolean(process.env.IAP_AUDIENCE);
 const PUBLIC_ORIGIN = (process.env.NEXT_PUBLIC_ORIGIN ?? process.env.PUBLIC_ORIGIN ?? "https://agentfactory.autogrc.cloud").replace(/\/+$/, "");
 
 // The doors a machine opens with an API key (or, for a webhook, the spec's
@@ -85,7 +87,7 @@ export async function proxy(request: NextRequest) {
       const cookie = await readSessionCookie(request.cookies.get(SESSION_COOKIE)?.value, AUTH_SECRET);
       if (!cookie) {
         if (isApi) return NextResponse.json({ error: "sign in to continue", reauth: true }, { status: 401 });
-        const to = new URL("/login", request.url);
+        const to = new URL(IAP ? "/api/auth/login" : "/login", request.url);
         to.searchParams.set("next", `${pathname}${search}`);
         return NextResponse.redirect(to);
       }

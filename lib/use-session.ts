@@ -16,6 +16,10 @@ export interface SessionInfo {
   signedIn: boolean;
   sso: boolean;
   mode: "sso" | "local" | "internal";
+  /** Which way a signed-in person came in. */
+  via?: "oidc" | "iap" | null;
+  /** Whether a sign-out button means anything (behind IAP it needs IAP's own sign-out address). */
+  canSignOut?: boolean;
   sub: string;
   name: string;
   email: string;

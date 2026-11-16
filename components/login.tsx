@@ -97,8 +97,10 @@ export function Login({ next, error }: { next: string; error: string }) {
 }
 
 const REASONS: Record<string, { title: string; body: string }> = {
-  unassigned: { title: "A role is required to access Agent Factory", body: "Your AutoX account was authenticated, but it has not been assigned an Agent Factory role. Contact your single sign-on administrator, then sign in again after the role has been assigned." },
+  unassigned: { title: "A role is required to access Agent Factory", body: "Your account was authenticated, but it has not been assigned an Agent Factory role. Contact the administrator who assigns roles, then sign in again after the role has been assigned." },
   provisioning: { title: "Agent Factory could not complete account provisioning", body: "Your identity was authenticated, but Agent Factory could not create or update the corresponding user record. Contact the platform team; diagnostic information is available in the identity and access audit trail." },
+  "iap-missing": { title: "This console is reached through Google sign-in", body: "The request arrived without the header Identity-Aware Proxy adds, so it did not come through the proxy. Open the console at its published address. If you did, the proxy in front of this deployment is not switched on; contact the platform team." },
+  "iap-invalid": { title: "Your Google sign-in could not be verified", body: "Identity-Aware Proxy named you, but its assertion did not verify for this deployment: it was signed for a different service, has expired, or the keys could not be read. Try again; if it continues, contact the platform team." },
   disabled: { title: "Your access to Agent Factory has been disabled", body: "Your identity remains valid, but an Agent Factory administrator has disabled your access to this deployment. Contact an administrator to request reinstatement." },
 };
 

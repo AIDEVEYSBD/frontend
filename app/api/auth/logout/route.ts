@@ -1,5 +1,5 @@
 import * as oidc from "openid-client";
-import { POST_LOGOUT_URL, authEvent, clearSessionCookie, provider, session, ssoEnabled } from "@/lib/server/auth";
+import { POST_LOGOUT_URL, authEvent, clearSessionCookie, iapEnabled, provider, session, signInOn } from "@/lib/server/auth";
 import { SESSION_COOKIE, readCookie, readSessionCookie } from "@/lib/auth-cookie";
 import { dbReady, query } from "@/lib/server/db";
 
@@ -14,14 +14,16 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
-  if (!ssoEnabled()) return Response.json({ redirect: "/", note: "sign-in is not configured; nothing to sign out of" });
+  if (!signInOn()) return Response.json({ redirect: "/", note: "sign-in is not configured; nothing to sign out of" });
   const s = await session(req);
   const cookie = await readSessionCookie(readCookie(req.headers.get("cookie"), SESSION_COOKIE), process.env.AUTH_SECRET ?? "");
   let endSession = POST_LOGOUT_URL;
   if (cookie && (await dbReady())) {
     const [row] = await query<{ id_token: string }>("SELECT id_token FROM sessions WHERE id = $1", [cookie.id]);
     await query("DELETE FROM sessions WHERE id = $1", [cookie.id]);
-    if (row?.id_token) {
+    // Behind IAP the console's session ends here; ending the Google session is IAP's, at the address the deployment names.
+    if (iapEnabled()) endSession = process.env.IAP_SIGNOUT_URL || "/";
+    else if (row?.id_token) {
       try {
         const cfg = await provider();
         endSession = oidc.buildEndSessionUrl(cfg, { id_token_hint: row.id_token, post_logout_redirect_uri: POST_LOGOUT_URL, state: oidc.randomState() }).href;
