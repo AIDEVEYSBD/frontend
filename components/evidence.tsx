@@ -49,8 +49,13 @@ function Rows({ head, children, min = 720 }: { head: string[]; children: React.R
   );
 }
 
-const Run = ({ run }: { run: string }) => (
-  <Link href={`/runs?id=${encodeURIComponent(run)}`} className="focusable rounded-sm font-mono text-[10.5px] text-dim hover:underline">
+/** A run, by id. With `entry`, the link opens the run on that journal entry, marked. */
+const Run = ({ run, entry }: { run: string; entry?: string }) => (
+  <Link
+    href={`/runs?id=${encodeURIComponent(run)}${entry ? `&entry=${encodeURIComponent(entry)}` : ""}`}
+    title={entry ? `Open the run at entry ${entry}` : undefined}
+    className="focusable rounded-sm font-mono text-[10.5px] text-dim hover:underline"
+  >
     {run}
   </Link>
 );
@@ -109,7 +114,7 @@ export function EvidencePackView({ pack }: { pack: EvidencePack }) {
                 <td className="px-3 py-1.5 whitespace-nowrap text-faint">{whenText(f.at)}</td>
                 <td className="px-3 py-1.5">
                   <span className="block text-fg">{f.agent}</span>
-                  <Run run={f.run} />
+                  <Run run={f.run} entry={f.entry} />
                 </td>
                 <td className="px-3 py-1.5">{f.control_ids.length ? f.control_ids.map((c) => <ControlRef key={c} control={c} />) : <ControlMark control={f.key} />}</td>
                 <td className="px-3 py-1.5 text-fg">
@@ -135,7 +140,8 @@ export function EvidencePackView({ pack }: { pack: EvidencePack }) {
               <tr key={d.digest || `${d.run}:${d.gate}`} className="border-b border-line align-top last:border-0">
                 <td className="px-3 py-1.5">
                   <span className="block text-fg">{d.agent}</span>
-                  <Run run={d.run} />
+                  {/* The signed answer's own entry when it is chained, else the gate it answers. */}
+                  <Run run={d.run} entry={d.entry || d.gate} />
                 </td>
                 <td className="max-w-[420px] px-3 py-1.5 leading-[1.5] text-dim">{decisionLine(d)}</td>
                 <td className="px-3 py-1.5">

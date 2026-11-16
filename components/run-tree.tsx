@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button, RUN_STATE, Status, Tag, type Tone } from "./ui";
 import { KillDialog } from "./kill-dialog";
 import { RunSourceTag } from "./run-source";
+import { RunAuthorityPanel } from "./run-authority";
 import { DoorError } from "@/lib/api/l5";
 import { getRunTree, killRefusalOf, killRun, type KillReceipt, type KillRefusal, type Reached, type RunTree, type TreeNode } from "@/lib/api/l7";
 import {
@@ -102,6 +103,11 @@ function NodeRow({ row }: { row: TreeRow }) {
   const n = row.node;
   const href = nodeHref(n);
   const title = n.kind === "peer" ? n.agent : n.agent || n.run;
+  // A run something else started ran under what its caller handed it: its
+  // row opens to that authority. The root started under nobody's, and a
+  // peer's task runs under the peer's own.
+  const inherits = n.parent !== null && n.kind !== "peer";
+  const [authority, setAuthority] = useState(false);
   return (
     <div className={`flex min-w-0 items-stretch gap-0 px-3 ${row.asked ? "bg-run-bg/50" : ""}`}>
       <Guides row={row} />
@@ -146,7 +152,17 @@ function NodeRow({ row }: { row: TreeRow }) {
             {peerCancelLine(n.peer)}
           </span>
         )}
+        {inherits && (
+          <Button size="sm" variant="outline" onClick={() => setAuthority(!authority)}>
+            {authority ? "Hide authority" : "Authority"}
+          </Button>
+        )}
         {n.error && <span className="w-full truncate pl-0.5 text-[10.5px] text-err" title={n.error}>{n.error}</span>}
+        {inherits && authority && (
+          <div className="w-full min-w-0 pt-1 pb-1.5" aria-label={`Authority ${n.run} ran under`}>
+            <RunAuthorityPanel run={n.run} />
+          </div>
+        )}
       </div>
     </div>
   );

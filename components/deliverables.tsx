@@ -219,7 +219,15 @@ export function DeliverableDetailView({ deliverable }: { deliverable: Deliverabl
             <li key={`${h.entry}-${i}`} className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-line px-3 py-1.5 text-[11.5px] last:border-b-0 ${h.applied ? "" : "bg-raise/40"}`}>
               <Status tone={h.applied ? TONE(h.state) : "neutral"}>{deliverableStateMeta(h.state).label}</Status>
               <span className={h.applied ? "text-dim" : "text-faint"}>{historyLine(h)}</span>
-              {h.entry && <Mono className="text-[9.5px] text-ghost">entry {h.entry}</Mono>}
+              {h.entry &&
+                (h.applied ? (
+                  // The step's journal entry, in the run that wrote the deliverable: the link opens the run on it.
+                  <Link href={`/runs?id=${encodeURIComponent(d.run)}&entry=${encodeURIComponent(h.entry)}`} title="Open the run at this journal entry" className="focusable rounded-sm font-mono text-[9.5px] text-dim hover:underline">
+                    entry {h.entry}
+                  </Link>
+                ) : (
+                  <Mono className="text-[9.5px] text-ghost">entry {h.entry}</Mono>
+                ))}
             </li>
           ))}
         </ol>
@@ -273,7 +281,7 @@ export function RegisterItemsView({ items }: { items: RegisterItems }) {
             <span className="flex flex-wrap gap-x-2 text-[10px] text-faint">
               written by:
               {i.history.map((h, k) => (
-                <Link key={`${h.entry}-${k}`} href={`/runs?id=${encodeURIComponent(h.run)}`} className="focusable rounded-sm font-mono hover:underline">
+                <Link key={`${h.entry}-${k}`} href={`/runs?id=${encodeURIComponent(h.run)}${h.entry ? `&entry=${encodeURIComponent(h.entry)}` : ""}`} title={h.entry ? `Open the run at entry ${h.entry}` : undefined} className="focusable rounded-sm font-mono hover:underline">
                   {h.run}
                 </Link>
               ))}

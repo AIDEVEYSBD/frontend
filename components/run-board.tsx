@@ -10,6 +10,8 @@ import { SandboxOutput } from "./sandbox-result";
 import { ControlRef } from "./control-ref";
 import { DrillModal } from "./drill";
 import { Icon } from "./builder/icons";
+import { RetrievalBody, retrievalOf } from "./run-retrieval";
+import { modelCallOf, routeLine } from "./run-model";
 import { foldRun, clock, fmtMs, summarise, prose, gist, type BoardEntry, type BoardNode, type BoardEdge, type NodeState, type Item, type Visit, type Rect } from "@/lib/run-fold";
 export { foldRun, type BoardEntry, type BoardNode, type BoardEdge } from "@/lib/run-fold";
 
@@ -729,8 +731,11 @@ function lineText(row: Row): { main: React.ReactNode; sub?: string; cls: string 
   switch (row.kind) {
     case "tool":
       return { main: <span className="font-mono">{row.title}{row.count > 1 ? <span className="text-faint"> ×{row.count}</span> : null}</span>, sub: row.result ? summarise(row.result.data?.value) : undefined, cls: "text-fg" };
-    case "reasoning":
-      return { main: "thought", sub: row.detail ? gist(row.detail) : undefined, cls: "text-run" };
+    case "reasoning": {
+      // The model that was called, on every model call.
+      const m = row.call ? modelCallOf(row.call) : null;
+      return { main: m?.model ? <span>thought <span className="font-mono text-dim">{m.model}</span>{m.provider ? <span className="text-faint"> on {m.provider}</span> : null}</span> : "thought", sub: row.detail ? gist(row.detail) : undefined, cls: "text-run" };
+    }
     case "refused":
       return { main: <span>refused <span className="font-mono text-fg">{row.title}</span></span>, sub: row.detail, cls: "text-err" };
     case "error":
@@ -814,12 +819,16 @@ function LedgerModal({ visit: v, live, maxT, initial, onClose }: { visit: Visit;
                   {r.kind === "tool" && r.members.map((m, i) => {
                     // An isolated `sandbox.execute` (phase L6): its facts above its output.
                     const sandbox = m.result && m.result.data?.tool === SANDBOX_TOOL ? sandboxRunOf(m.result.data?.value) : null;
+                    // A retrieval call: the sources consulted and the passages returned.
+                    const retrieval = m.result ? retrievalOf(String(m.result.data?.tool ?? ""), m.result.data?.value) : null;
                     return (
                       <div key={m.id} className="flex flex-col gap-1.5">
                         {r.count > 1 && <span className="font-mono text-[10px] text-faint">call {i + 1} of {r.count} · {m.done && m.ms !== undefined ? fmtMs(m.ms) : "no result"}</span>}
                         <Args args={m.call?.data?.args ?? {}} />
                         {sandbox ? (
                           <SandboxOutput run={sandbox} />
+                        ) : retrieval ? (
+                          <RetrievalBody r={retrieval} />
                         ) : (
                           m.result && (
                             <pre className="max-h-[320px] overflow-auto rounded-md border border-line bg-sunken/40 p-2.5 font-mono text-[10.5px] leading-[1.55] whitespace-pre-wrap text-mist">
@@ -830,6 +839,7 @@ function LedgerModal({ visit: v, live, maxT, initial, onClose }: { visit: Visit;
                       </div>
                     );
                   })}
+                  {r.kind === "reasoning" && r.call && routeLine(modelCallOf(r.call)) && <p className="font-mono text-[10.5px] leading-[1.5] break-words text-faint">{routeLine(modelCallOf(r.call))}</p>}
                   {r.kind === "reasoning" && <Thought text={r.detail ?? ""} />}
                   {(r.kind === "refused" || r.kind === "error") && (
                     <div className="flex flex-col gap-1">

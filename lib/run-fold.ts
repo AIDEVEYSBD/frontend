@@ -177,7 +177,8 @@ function addEvent(v: Visit, e: BoardEntry, pending: Map<string, Item[]>) {
       v.model = String(e.title ?? v.model);
       const tk = e.data?.tokens as { in?: number; out?: number } | undefined;
       v.items.push({
-        id: e.id, t: e.t, kind: "reasoning", title: String(e.title ?? "model"), detail: e.detail ?? "", done: true,
+        // `call` keeps the entry, so a reader can show the model and (through the gateway) the route it took.
+        id: e.id, t: e.t, kind: "reasoning", title: String(e.title ?? "model"), detail: e.detail ?? "", done: true, call: e,
         ms: typeof e.data?.ms === "number" ? (e.data.ms as number) : undefined,
         tokens: tk ? { in: Number(tk.in ?? 0), out: Number(tk.out ?? 0) } : undefined,
       });

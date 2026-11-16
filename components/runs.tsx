@@ -43,6 +43,11 @@ import { SteerPanel } from "./steer";
 import { followsLive, steerOffer } from "@/lib/steer";
 import { agentDocument, listAgents } from "@/lib/api/l2";
 import { Deadline, useNow } from "./gate-form";
+import { RunLimitsPanel, useRunSpec, type RunFacts } from "./run-limits";
+import { RunBoundaryPanel } from "./run-boundary";
+import { RetrievalCard, retrievalOf } from "./run-retrieval";
+import { ModelMark, modelCallOf, routeLine, titleIsModel } from "./run-model";
+import type { Owner, Scope } from "@/lib/api/pending";
 
 /**
  * The runs console: where a workflow actually runs.
@@ -172,6 +177,24 @@ const ago = (iso: string) => {
   return `${Math.round(s / 86400)} d ago`;
 };
 
+/** A row's owner, when the ledger carries one (it will; see lib/api/pending.ts). */
+const ownerOf = (r: unknown): Owner | null => {
+  const o = (r as { owner?: unknown } | null)?.owner;
+  return o && typeof o === "object" && typeof (o as Owner).name === "string" && (o as Owner).name ? (o as Owner) : null;
+};
+
+/** The agents that took part in a run beside the one it is listed under, when the row carries them. */
+const agentsOf = (r: unknown, system: string): string[] => {
+  const a = (r as { agents?: unknown } | null)?.agents;
+  return Array.isArray(a) ? [...new Set(a.filter((x): x is string => typeof x === "string" && x !== "" && x !== system))] : [];
+};
+
+const SCOPES: { id: Scope; label: string }[] = [
+  { id: "mine", label: "Mine" },
+  { id: "team", label: "My team" },
+  { id: "all", label: "All" },
+];
+
 function StateBadge({ state }: { state: string }) {
   const s = RUN_STATE[state];
   return <Status tone={s?.tone ?? "queue"}>{s?.label ?? (state || "Ready")}</Status>;
@@ -185,16 +208,34 @@ function Launcher() {
   const [hideShadows, setHideShadows] = useState(false);
   const shadows = (history ?? []).filter((r) => r.shadow === true).length;
   const router = useRouter();
+  /** Whose runs: sent as `scope` on the list call once chosen. Offered only when the ledger's rows carry owners. */
+  const [scope, setScope] = useState<Scope | "">("");
+  const [owned, setOwned] = useState(false);
 
   useEffect(() => {
     listAgents()
       .then((rows) => setAgents(rows.map((a) => ({ id: a.id, name: a.name, description: a.description ?? "", nodes: a.nodes, retired: retiredOf(a.retired) }))))
       .catch(() => setAgents([]));
-    api
-      .GET("/api/runs")
-      .then(({ data }) => setHistory(data?.runs ?? []))
-      .catch(() => setHistory([]));
   }, []);
+
+  useEffect(() => {
+    let live = true;
+    api
+      // `scope` is ahead of the generated types: the ledger takes it once rows carry owners.
+      .GET("/api/runs", scope ? { params: { query: { scope } as unknown as { agent?: string } } } : {})
+      .then(({ data }) => {
+        if (!live) return;
+        const rows = data?.runs ?? [];
+        setHistory(rows);
+        if (rows.some((r) => ownerOf(r))) setOwned(true);
+      })
+      .catch(() => {
+        if (live) setHistory([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [scope]);
 
   return (
     <div className="min-h-full" data-hue="blue">
@@ -271,6 +312,26 @@ function Launcher() {
               <Label>Previous runs</Label>
             </h2>
             <span className="grow" />
+            {/* Whose runs: only once the ledger says whose each is. */}
+            {(owned || scope) && (
+              <div role="radiogroup" aria-label="Whose runs" className="inline-flex items-center gap-px rounded-md border border-line bg-raise p-px">
+                {SCOPES.map((o) => {
+                  const on = (scope || "all") === o.id;
+                  return (
+                    <button
+                      key={o.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => setScope(o.id)}
+                      className={`focusable cursor-pointer rounded-sm px-2 py-0.5 text-[11px] transition-colors duration-100 ${on ? "bg-surface font-semibold text-fg shadow-[var(--shadow-1)]" : "font-medium text-faint hover:text-dim"}`}
+                    >
+                      {o.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             {/* Filter by outcome — the list grows without bound. */}
             <div className="flex items-center gap-1">
               {["", "done", "failed", "suspended", "killed"].map((s) => (
@@ -307,12 +368,15 @@ function Launcher() {
               </div>
             )}
             {history?.length === 0 && (
-              <p className="px-4 py-5 text-[12px] text-faint">No runs recorded yet.</p>
+              <p className="px-4 py-5 text-[12px] text-faint">{scope === "mine" ? "No run of yours is recorded." : scope === "team" ? "No run of your team is recorded." : "No runs recorded yet."}</p>
             )}
             {(history ?? [])
               .filter((r) => !stateFilter || r.state === stateFilter)
               .filter((r) => !hideShadows || r.shadow !== true)
-              .map((r, i) => (
+              .map((r, i) => {
+                const took = agentsOf(r, r.system);
+                const owner = ownerOf(r);
+                return (
                 <button
                   key={r.id}
                   onClick={() => router.push(`/runs?id=${encodeURIComponent(r.id)}`)}
@@ -330,12 +394,28 @@ function Launcher() {
                       {r.id} · {ago(r.at)} · {(r.ms / 1000).toFixed(1)}s
                       {r.waiting_on ? ` · waiting on ${r.waiting_on}` : ""}
                     </Mono>
+                    {took.length > 0 && (
+                      <span className="flex min-w-0 flex-wrap items-center gap-1 pt-0.5" title={`Agents that took part: ${took.join(", ")}`}>
+                        <span className="text-[10.5px] text-faint">with</span>
+                        {took.slice(0, 4).map((a) => (
+                          <Tag key={a}>{a}</Tag>
+                        ))}
+                        {took.length > 4 && <span className="tnum text-[10.5px] text-faint">and {took.length - 4} more</span>}
+                      </span>
+                    )}
                   </div>
+                  {owner && (
+                    <span className="hidden max-w-[180px] shrink-0 truncate text-[11px] text-dim sm:inline" title={[owner.name, owner.team, owner.email].filter(Boolean).join(" · ")}>
+                      {owner.name}
+                      {owner.team ? <span className="text-faint"> · {owner.team}</span> : null}
+                    </span>
+                  )}
                   {r.stuck && <Status tone="warn">stuck</Status>}
                   {r.denials > 0 && <Status tone="err">{r.denials} refused</Status>}
                   <StateBadge state={r.state} />
                 </button>
-              ))}
+                );
+              })}
           </div>
         </section>
       </div>
@@ -419,6 +499,11 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
   }, [phase]);
   // The journal's clock: the latest folded time on the transcript.
   const journalMs = useMemo(() => entries.reduce((m, e) => Math.max(m, e.t), 0), [entries]);
+  // The spec this run is started from is the one in hand: its limits are shown beside the run as it goes.
+  const liveFacts = useMemo<RunFacts | null>(
+    () => (system ? { spec: toDocument(system), specDigest: "", spent: {}, visits: {}, provider: "", model: "", dataClass: "", startedAt: "", finishedAt: "" } : null),
+    [system],
+  );
 
   /* The spec: from the registry, or handed over from the builder as a draft. */
   useEffect(() => {
@@ -694,6 +779,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
       suspension={suspension}
       onAnswered={answered}
       runLive={phase === "live" && !suspension}
+      limits={liveFacts && liveRunId ? { facts: liveFacts, system: system.id, error } : undefined}
       notice={
         receipt ? (
           <KillReceiptView receipt={receipt} onDismiss={() => setReceipt(null)} />
@@ -892,6 +978,22 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
 
 /* ═══════════════════ Replay theater ═══════════════════ */
 
+/** What a run record says beside its journal, each member empty when the record does not hold it. */
+function runFactsOf(data: Schemas["RunState"]): RunFacts {
+  const text = (v: unknown) => (typeof v === "string" ? v : "");
+  return {
+    spec: data.spec ?? null,
+    specDigest: text(data.spec_digest) || text(data.journal?.spec_digest),
+    spent: data.spent && typeof data.spent === "object" ? data.spent : {},
+    visits: data.visits ?? {},
+    provider: text(data.provider),
+    model: text(data.model),
+    dataClass: text(data.data_class),
+    startedAt: text(data.started_at),
+    finishedAt: text(data.finished_at),
+  };
+}
+
 function ReplayTheater({ id }: { id: string }) {
   // A run followed while in flight is read again once it settles, from a
   // fresh mount, so its replay opens at the outcome like any other.
@@ -925,6 +1027,10 @@ function RunRecord({ id, onReread }: { id: string; onReread: () => void }) {
   const [flags, setFlags] = useState<RunFlags | null>(null);
   /** L9: the signed answers on the record, stamped with the controls that opened each gate. */
   const [decisions, setDecisions] = useState<SignedDecision[]>([]);
+  /** What the record says beside its journal: its spec, what it spent, where it ran. Read by the limits and trust boundary panels. */
+  const [facts, setFacts] = useState<RunFacts | null>(null);
+  /** `?entry=`: the journal entry a link points at; the transcript opens on it, marked. */
+  const linked = params.get("entry") ?? "";
 
   useEffect(() => {
     api
@@ -933,6 +1039,7 @@ function RunRecord({ id, onReread }: { id: string; onReread: () => void }) {
         if (!data) throw new Error(errorText(error, response));
         setFlags(runFlagsOf(data));
         setDecisions(decisionsOf(data));
+        setFacts(runFactsOf(data));
         setRaw((data.journal?.entries ?? []) as unknown as Entry[]);
         setMeta({
           system: data.system ?? "",
@@ -971,17 +1078,18 @@ function RunRecord({ id, onReread }: { id: string; onReread: () => void }) {
   // Review opens at the outcome, paused — a reviewer starts from the verdict,
   // not from a screensaver. ?t= deep-links a moment.
   const openAt = params.get("t");
-  const playback = usePlayback(duration, Boolean(entries?.length), openAt ? Number(openAt) : duration);
+  // A linked entry opens the whole record, so the entry is there to be shown.
+  const playback = usePlayback(duration, Boolean(entries?.length), openAt && !linked ? Number(openAt) : duration);
   // Opened in the agents view, a replay is a film: it plays from the start.
   const [view] = useRunView();
   const rolled = useRef(false);
   useEffect(() => {
     // A run in flight is followed, not replayed (FollowTheater below).
-    if (rolled.current || !entries?.length || openAt || view !== "cards" || followsLive({ state: meta.state, source: meta.source, finished_at: meta.finishedAt })) return;
+    if (rolled.current || !entries?.length || openAt || linked || view !== "cards" || followsLive({ state: meta.state, source: meta.source, finished_at: meta.finishedAt })) return;
     rolled.current = true;
     playback.seek(0);
     playback.setPlaying(true);
-  }, [entries, openAt, view, playback, meta.state, meta.source, meta.finishedAt]);
+  }, [entries, openAt, linked, view, playback, meta.state, meta.source, meta.finishedAt]);
 
 
   const marks = useMemo(
@@ -1074,6 +1182,8 @@ function RunRecord({ id, onReread }: { id: string; onReread: () => void }) {
         edges={specEdges}
         onReplay={onReread}
         flags={flags}
+        facts={facts}
+        locate={linked}
       />
     );
   }
@@ -1113,6 +1223,8 @@ function RunRecord({ id, onReread }: { id: string; onReread: () => void }) {
       traceOf={id}
       source={meta.source}
       runLive={false}
+      limits={facts ? { facts, system: meta.system, error: meta.error } : undefined}
+      locate={linked}
       footer={
         <Scrubber
           t={playback.t}
@@ -1156,6 +1268,8 @@ function FollowTheater({
   edges,
   onReplay,
   flags = null,
+  facts = null,
+  locate = "",
 }: {
   id: string;
   system: string;
@@ -1173,6 +1287,10 @@ function FollowTheater({
   onReplay: () => void;
   /** What the record said beyond the journal when the page opened (L8). */
   flags?: RunFlags | null;
+  /** The record's spec and spend as they stood when the page opened, for the limits and trust boundary panels. */
+  facts?: RunFacts | null;
+  /** `?entry=`: the journal entry a link points at. */
+  locate?: string;
 }) {
   const [raw, setRaw] = useState<Entry[]>(initial);
   // The stream replays the whole journal on every (re)connection; entries are deduplicated by id.
@@ -1317,6 +1435,8 @@ function FollowTheater({
         suspension={suspension}
         onAnswered={answered}
         runLive={running}
+        limits={facts ? { facts, system, error } : undefined}
+        locate={locate}
         notice={receipt ? <KillReceiptView receipt={receipt} onDismiss={() => setReceipt(null)} /> : already ? <KillAlreadyView refusal={already} onDismiss={() => setAlready(null)} /> : null}
         steer={offer.show ? <SteerPanel runId={id} holdBlocked={offer.hold.allowed ? undefined : offer.hold.reason} /> : null}
         setup={
@@ -1641,6 +1761,8 @@ function Theater({
   source = "",
   runLive,
   notice,
+  limits,
+  locate = "",
 }: {
   title: string;
   subtitle: string;
@@ -1679,6 +1801,10 @@ function Theater({
   runLive?: boolean;
   /** Above the footer: what a kill reached. */
   notice?: React.ReactNode;
+  /** What the run's record says beside its journal (its spec, its spend), the agent it belongs to and its error: the limits and trust boundary panels read these. Absent before a run exists. */
+  limits?: { facts: RunFacts; system: string; error: string };
+  /** `?entry=`: the journal entry a link points at; the transcript opens on it, marked. */
+  locate?: string;
 }) {
   const draftId =
     result && typeof result.draft_id === "string" && /^[a-z][a-z0-9-]{0,62}$/.test(result.draft_id)
@@ -1691,7 +1817,35 @@ function Theater({
   const deliverablesWritten = useMemo(() => entries.filter((e) => e.kind === "deliverable.written").length, [entries]);
   // Theatre or agents: the same journal, read as one transcript or as a card
   // per agent. The choice is the reader's and it sticks across runs.
-  const [view, setView, fold, setFold] = useRunView();
+  const [chosenView, setChosenView, fold, setFold] = useRunView();
+  // A linked entry, or a jump to the refusals, lives in the transcript: it is
+  // shown then whatever view was chosen, until the reader picks a view again.
+  const [jump, setJump] = useState<Jump | null>(() => (locate ? { entry: locate, n: 0 } : null));
+  const [holdTranscript, setHoldTranscript] = useState(Boolean(locate));
+  const [locatedFor, setLocatedFor] = useState(locate);
+  if (locate !== locatedFor) {
+    setLocatedFor(locate);
+    if (locate) {
+      setJump({ entry: locate, n: (jump?.n ?? 0) + 1 });
+      setHoldTranscript(true);
+    }
+  }
+  const view = holdTranscript ? "theatre" : chosenView;
+  const setView = (v: typeof chosenView) => {
+    setHoldTranscript(false);
+    setChosenView(v);
+  };
+  // The limits and the trust boundary share the room under the transcript: one is open at a time. null: neither was touched, and the limits strip opens by itself when a limit ended the run.
+  const [strip, setStrip] = useState<"limits" | "boundary" | "" | null>(null);
+  const showRefusals = () => {
+    setHoldTranscript(true);
+    // The refusals are in the transcript: the strip gives the room back to it.
+    setStrip("");
+    setJump({ filter: "refused", n: (jump?.n ?? 0) + 1 });
+  };
+  // The whole journal, not the scrub position: a limit is a fact about the record.
+  const record = allEntries ?? entries;
+  const spec = useRunSpec(limits?.facts.spec, limits?.system ?? "", limits?.facts.specDigest ?? "");
 
   /* Node states from the journal: entered without exit = active. */
   const nodeState = useMemo(() => {
@@ -1834,7 +1988,7 @@ function Theater({
         </aside>
 
         {/* ── transcript ── */}
-        <TheaterTranscript entries={entries} live={live} runId={runId ?? traceOf ?? ""} />
+        <TheaterTranscript entries={entries} all={record} live={live} runId={runId ?? traceOf ?? ""} jump={jump} />
 
         {/* ── artifact rail ── */}
         <aside className="flex min-h-0 min-w-0 flex-col md:col-span-2 xl:col-span-1">
@@ -1914,7 +2068,14 @@ function Theater({
         </aside>
       </div>
 
-      <RunTreePanel key={runId ?? traceOf ?? ""} runId={runId ?? traceOf} live={runLive ?? live} />
+      {/* A replay is asked for by the id it was opened under (`traceOf`): an older record's own id can differ from it, and the doors know the run by the former. */}
+      <RunTreePanel key={traceOf ?? runId ?? ""} runId={traceOf ?? runId} live={runLive ?? live} />
+      {limits && (
+        <>
+          <RunLimitsPanel key={`limits:${traceOf ?? runId ?? ""}`} runId={traceOf ?? runId} spec={spec} facts={limits.facts} entries={record} error={limits.error} live={runLive ?? live} open={strip === null ? null : strip === "limits"} onToggle={(o) => setStrip(o ? "limits" : "")} />
+          <RunBoundaryPanel key={`boundary:${traceOf ?? runId ?? ""}`} spec={spec} facts={limits.facts} entries={record} source={source} onShowRefusals={showRefusals} open={strip === "boundary"} onToggle={(o) => setStrip(o ? "boundary" : "")} />
+        </>
+      )}
       {traceOf && <TracePanel runId={traceOf} />}
       {notice}
       {footer}
@@ -2179,11 +2340,36 @@ const FILTERS: { id: string; label: string; kinds: string[] }[] = [
   { id: "would", label: "Would call", kinds: ["would_call"] },
 ];
 
-function TheaterTranscript({ entries, live, runId = "" }: { entries: Entry[]; live: boolean; runId?: string }) {
+/** Where the transcript is asked to go: a journal entry to show marked, or a filter family to open. `n` tells one ask from the next. */
+interface Jump {
+  entry?: string;
+  filter?: string;
+  n: number;
+}
+
+function TheaterTranscript({ entries, all, live, runId = "", jump = null }: { entries: Entry[]; /** The whole journal, to tell a linked entry that is not in it from one the scrubber has not reached. */ all?: Entry[]; live: boolean; runId?: string; jump?: Jump | null }) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const [unseen, setUnseen] = useState(0);
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState(jump?.filter ?? "all");
+  // A new ask resets the filter: a linked entry is shown among everything, a jump to the refusals isolates them.
+  const [asked, setAsked] = useState(jump);
+  if (jump !== asked) {
+    setAsked(jump);
+    setFilter(jump?.filter ?? "all");
+  }
+  const linked = jump?.entry ?? "";
+  /** The row that shows the linked entry: itself, or for a tool's result the call whose card it is drawn in. */
+  const target = useMemo(() => {
+    if (!linked) return "";
+    const hit = entries.find((x) => x.id === linked);
+    if (!hit) return "";
+    if (hit.kind !== "tool.result") return hit.id;
+    const tool = hit.data?.tool;
+    const nth = entries.filter((x) => x.kind === "tool.result" && x.data?.tool === tool).indexOf(hit);
+    return entries.filter((x) => x.kind === "tool.call" && x.data?.tool === tool)[nth]?.id ?? "";
+  }, [entries, linked]);
+  const absent = linked !== "" && !(all ?? entries).some((x) => x.id === linked);
   /** The entry whose lineage is open: what it was derived from, what it fed. */
   const [lineage, setLineage] = useState<string | null>(null);
   /** The entry whose provenance is open: its chain, from the input and prompt to the result. */
@@ -2207,6 +2393,25 @@ function TheaterTranscript({ entries, live, runId = "" }: { entries: Entry[]; li
     pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
     if (pinned.current && !was) setUnseen(0);
   };
+
+  // An ask is answered once what it points at is on the page: the linked
+  // entry scrolled to the middle, or the refusals from their top. Declared
+  // after the pin-to-bottom effect, so on the first paint this one wins.
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || !jump) return;
+    if (jump.entry) {
+      if (!target) return;
+      const row = el.querySelector(`[data-entry="${CSS.escape(target)}"]`);
+      if (!row) return;
+      pinned.current = false;
+      row.scrollIntoView({ block: "center" });
+    } else if (jump.filter) {
+      pinned.current = false;
+      el.scrollTop = 0;
+      el.scrollIntoView({ block: "nearest" });
+    }
+  }, [jump, target]);
 
   const current = [...entries].reverse().find((e) => e.kind === "node.enter");
   const active = FILTERS.find((f) => f.id === filter) ?? FILTERS[0];
@@ -2245,9 +2450,27 @@ function TheaterTranscript({ entries, live, runId = "" }: { entries: Entry[]; li
       </div>
 
       <div ref={scroller} onScroll={onScroll} className="flex min-h-0 grow flex-col gap-3.5 overflow-y-auto px-4 py-4">
-        {shown.map((e, i) => (
-          <JournalRow key={e.id ?? i} e={e} entries={entries} onLineage={setLineage} onProvenance={setProvenance} />
-        ))}
+        {absent && (
+          <p role="status" className="rounded-md border border-warn-line bg-warn-bg px-3 py-2 text-[12px] leading-[1.5] text-fg">
+            The link points at entry <Mono className="text-[11px] text-fg">{linked}</Mono>, which is not in this run&rsquo;s journal{live ? " so far" : ""}.
+          </p>
+        )}
+        {shown.map((e, i) => {
+          // A tool's result is drawn inside its call's card, so it takes no row (and no gap) of its own.
+          if (e.kind === "tool.result") return null;
+          const marked = target !== "" && e.id === target;
+          return (
+            <div key={e.id ?? i} data-entry={e.id} className={marked ? "af-located flex flex-col gap-1.5 py-1" : undefined}>
+              {marked && (
+                <span className="flex items-center gap-2 pl-12">
+                  <Tag tone="warn">linked entry</Tag>
+                  <Mono className="text-[10px] text-faint">{linked}</Mono>
+                </span>
+              )}
+              <JournalRow e={e} entries={entries} located={marked} onLineage={setLineage} onProvenance={setProvenance} />
+            </div>
+          );
+        })}
         {shown.length === 0 && (
           <p className="text-[12px] text-faint">Nothing of this kind in the journal{live ? " yet" : ""}.</p>
         )}
@@ -2356,8 +2579,8 @@ function parseJsonText(text: string): [string, string][] | null {
   return out.length ? out : null;
 }
 
-function JournalRow({ e, entries, onLineage, onProvenance }: { e: Entry; entries: Entry[]; onLineage?: (id: string) => void; onProvenance?: (id: string) => void }) {
-  const [open, setOpen] = useState(false);
+function JournalRow({ e, entries, located = false, onLineage, onProvenance }: { e: Entry; entries: Entry[]; /** A link points at this row: a tool card opens on what it holds. */ located?: boolean; onLineage?: (id: string) => void; onProvenance?: (id: string) => void }) {
+  const [open, setOpen] = useState(located && e.kind === "tool.call");
   const lineageButton = onLineage && e.id ? (
     <Button size="sm" variant="quiet" onClick={() => onLineage(e.id)}>Lineage</Button>
   ) : null;
@@ -2369,19 +2592,30 @@ function JournalRow({ e, entries, onLineage, onProvenance }: { e: Entry; entries
   /* Reasoning: the model's own words, as prose — the landing's signature row.
      Never silently cut: long thoughts get a labelled expander. */
   if (e.kind === "model.call") {
-    const text = e.detail || e.title || "";
+    // The runtime titles the entry with the model it called: that is the row's label, not the model's words.
+    const called = modelCallOf(e);
+    const route = routeLine(called);
+    const text = e.detail || (titleIsModel(e) ? "" : e.title) || "";
+    const intents = Array.isArray(e.data?.intents) ? e.data.intents.length : 0;
     const asJson = parseJsonText(text);
     const long = !asJson && text.length > 700;
     return (
       <div className="flex gap-3">
         <Mono className="w-9 shrink-0 pt-0.5 text-[10.5px] text-ghost">{clock(e.t)}</Mono>
         <div className="flex min-w-0 flex-col gap-1">
-          <span className="flex items-center gap-2">
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="text-[10.5px] font-medium text-run">reasoning</span>
+            <ModelMark m={called} />
             {e.tainted && <Tag tone="warn">tainted input</Tag>}
             {e.tainted && lineageButton}
             {provenanceButton}
           </span>
+          {route && <span className="font-mono text-[10.5px] leading-[1.5] break-words text-faint">{route}</span>}
+          {!text && (
+            <span className="text-[12px] text-faint">
+              {intents ? `No text: the model asked for ${intents} tool call${intents === 1 ? "" : "s"}.` : "The journal holds no text for this call."}
+            </span>
+          )}
           {e.tainted && (
             <span className="text-[11px] text-faint">
               Worked over content authored outside the system — untrusted input, tracked by the taint rules.
@@ -2397,12 +2631,12 @@ function JournalRow({ e, entries, onLineage, onProvenance }: { e: Entry; entries
                 </p>
               ))}
             </div>
-          ) : (
+          ) : text ? (
             <p className="max-w-[62ch] text-[13px] leading-[1.6] whitespace-pre-wrap text-mist">
               {long && !open ? text.slice(0, 700) : text}
               {long && !open && "…"}
             </p>
-          )}
+          ) : null}
           {(long || asJson) && (
             <Button size="sm" variant="quiet" className="self-start" onClick={() => setOpen(!open)}>
               {open ? (asJson ? "show as prose" : "show less") : asJson ? "view raw" : `show all (${(text.length / 1000).toFixed(1)}k chars)`}
@@ -2426,6 +2660,27 @@ function JournalRow({ e, entries, onLineage, onProvenance }: { e: Entry; entries
     // `sandbox.execute` under an isolator (phase L6): the isolator, the exit,
     // the time, the truncation and the manifest digest come before the output.
     const sandbox = response && e.data?.tool === SANDBOX_TOOL ? sandboxRunOf(response.data?.value) : null;
+    // A retrieval call: the sources consulted and the passages returned, not the generic card.
+    const retrieval = response ? retrievalOf(String(e.data?.tool ?? ""), response.data?.value) : null;
+    if (retrieval && response) {
+      return (
+        <div className="flex gap-3">
+          <Mono className="w-9 shrink-0 pt-2 text-[10.5px] text-ghost">{clock(e.t)}</Mono>
+          <RetrievalCard
+            tool={String(e.data?.tool ?? e.title)}
+            r={retrieval}
+            tainted={response.tainted === true}
+            actions={provenanceButton}
+            raw={
+              <>
+                <CurlBlock tool={String(e.data?.tool ?? "")} args={e.data?.args ?? {}} />
+                <ResponseBlock value={response.data?.value} />
+              </>
+            }
+          />
+        </div>
+      );
+    }
     return (
       <div className="flex gap-3">
         <Mono className="w-9 shrink-0 pt-2 text-[10.5px] text-ghost">{clock(e.t)}</Mono>
