@@ -9,7 +9,8 @@ import { Button } from "./ui";
 import { Material } from "./material";
 import { BrandLockup, ABBWordmark } from "./brand";
 import { NavIcon, type NavIconName } from "./nav-icons";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useDismiss } from "./dismiss";
 import { Assistant } from "./assistant";
 import { applyAccent } from "./appearance";
 import { isOpenPage } from "@/lib/route-policy";
@@ -18,11 +19,20 @@ import { consolePath } from "@/lib/api/client";
 /**
  * The navigation, grouped. Five groups by what a person came to do: watch
  * and run the estate, build what runs in it, see what it is made of, govern
- * it, administer the platform. The sidebar draws the groups; each opens and
- * shuts, and the whole bar collapses to a rail of icons.
+ * it, administer the platform. The sidebar draws each group as a row that
+ * opens into a sub-menu of its pages; collapsed, it is a rail of the group
+ * icons, each opening its sub-menu as a fly-out. The pattern is the DLP
+ * Agent console's.
  */
 type Group = "Operations" | "Build" | "Estate" | "Governance" | "Platform";
 const GROUPS: Group[] = ["Operations", "Build", "Estate", "Governance", "Platform"];
+const GROUP_ICON: Record<Group, NavIconName> = {
+  Operations: "layout-dashboard",
+  Build: "pencil-ruler",
+  Estate: "network",
+  Governance: "shield",
+  Platform: "sliders-horizontal",
+};
 
 const NAV: { href: string; label: string; group: Group; icon: NavIconName }[] = [
   { href: "/control", label: "Control", group: "Operations", icon: "layout-dashboard" },
@@ -60,10 +70,11 @@ const NAV: { href: string; label: string; group: Group; icon: NavIconName }[] = 
 ];
 type NavItem = (typeof NAV)[number];
 
-/* What the sidebar remembers, per browser: collapsed or not, and which groups are shut. */
+/* What the sidebar remembers, per browser: collapsed or not, and which groups are shut.
+   Every group starts shut; the one holding the page a person is on opens by itself. */
 interface Prefs { rail: boolean; closed: string[] }
 const PREF_KEY = "af.sidebar";
-const DEFAULT_PREFS: Prefs = { rail: false, closed: [] };
+const DEFAULT_PREFS: Prefs = { rail: false, closed: [...GROUPS] };
 let prefs: Prefs | null = null;
 const watchers = new Set<() => void>();
 
@@ -96,60 +107,64 @@ function watch(w: () => void) {
 /** Server and first client render agree on the open sidebar; the stored choice takes over after. */
 const usePrefs = () => useSyncExternalStore(watch, readPrefs, () => DEFAULT_PREFS);
 
-/* The sidebar is dark in both themes, so its focus ring is light, not the page's ink. */
-const SIDE_FOCUS = "outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70";
-const ITEM_ON = "bg-white/10 font-semibold text-white before:absolute before:inset-y-2 before:-left-2.5 before:w-[3px] before:rounded-r-[2px] before:bg-brand";
-const ITEM_OFF = "font-medium text-white/65 hover:bg-white/8 hover:text-white";
+/* ── The groups a person reaches ── */
 
-function CollapseButton({ rail }: { rail: boolean }) {
-  const label = rail ? "Expand the sidebar" : "Collapse the sidebar";
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      aria-pressed={rail}
-      onClick={() => remember({ ...readPrefs(), rail: !rail })}
-      className={`${SIDE_FOCUS} flex cursor-pointer items-center gap-2.5 rounded-md text-[12.5px] font-medium text-white/60 transition-colors duration-100 hover:bg-white/8 hover:text-white ${rail ? "size-9 justify-center" : "w-full px-2.5 py-1.5"}`}
-    >
-      <NavIcon name="panel-left" size={16} />
-      {!rail && "Collapse"}
-    </button>
-  );
+interface NavGroup {
+  label: Group;
+  items: NavItem[];
+  /** The page of this group the person is on, if any. */
+  here: NavItem | undefined;
 }
 
-/** The navigation as groups that open and shut; the sidebar and the narrow-screen drawer both draw it. */
-function NavGroups({ items, pathname, onNavigate }: { items: NavItem[]; pathname: string; onNavigate?: () => void }) {
-  const { closed } = usePrefs();
+function groupsOf(items: NavItem[], pathname: string): NavGroup[] {
+  // The longest matching href wins, so a nested route lights its own entry only.
+  const best = items.filter((n) => pathname.startsWith(n.href)).sort((x, y) => y.href.length - x.href.length)[0];
+  return GROUPS.map((label) => {
+    const mine = items.filter((n) => n.group === label);
+    return { label, items: mine, here: mine.find((n) => n.href === best?.href) };
+  }).filter((g) => g.items.length);
+}
+
+const SUB = "focusable relative flex items-center rounded-md px-2.5 py-1.5 text-[13px] whitespace-nowrap transition-colors duration-100";
+const subLook = (active: boolean) => (active ? "bg-raise font-semibold text-fg" : "font-medium text-dim hover:bg-raise/60 hover:text-fg");
+
+/**
+ * The navigation as groups that open into sub-menus: the sidebar at full
+ * width, and the drawer. `auto` is the group opened because the person
+ * arrived on one of its pages; shutting it by hand lets it go.
+ */
+function NavGroups({ groups, auto, onAuto, onNavigate }: { groups: NavGroup[]; auto: Group | null; onAuto: (g: Group | null) => void; onNavigate?: () => void }) {
+  const { rail, closed } = usePrefs();
   return (
-    <nav aria-label="Main" className="flex min-h-0 grow flex-col gap-1 overflow-y-auto px-2.5 py-3 [scrollbar-color:rgba(255,255,255,0.18)_transparent] [scrollbar-width:thin]">
-      {GROUPS.filter((g) => items.some((n) => n.group === g)).map((g) => {
-        const open = !closed.includes(g);
+    <nav aria-label="Main" className="flex min-h-0 grow flex-col gap-1 overflow-y-auto px-2.5 py-3 [scrollbar-width:thin]">
+      {groups.map((g) => {
+        const open = !closed.includes(g.label) || auto === g.label;
+        const toggle = () => {
+          if (open) {
+            if (auto === g.label) onAuto(null);
+            remember({ rail, closed: closed.includes(g.label) ? closed : [...closed, g.label] });
+          } else remember({ rail, closed: closed.filter((c) => c !== g.label) });
+        };
         return (
-          <div key={g} className="flex flex-col">
+          <div key={g.label} className="flex flex-col">
             <button
               type="button"
               aria-expanded={open}
-              onClick={() => remember({ ...readPrefs(), closed: open ? [...closed, g] : closed.filter((c) => c !== g) })}
-              className={`${SIDE_FOCUS} flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[11px] font-medium tracking-[0.08em] text-white/40 uppercase transition-colors hover:text-white/70`}
+              onClick={toggle}
+              className={`focusable flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] font-semibold transition-colors duration-100 hover:bg-raise/60 ${g.here && !open ? "text-fg" : "text-mist hover:text-fg"}`}
             >
-              <span className="grow">{g}</span>
-              <NavIcon name="chevron-right" size={11} className={`transition-transform duration-150 ${open ? "rotate-90" : ""}`} />
+              <NavIcon name={GROUP_ICON[g.label]} />
+              <span className="grow truncate">{g.label}</span>
+              <NavIcon name="chevron-right" size={11} className={`text-faint transition-transform duration-150 ${open ? "rotate-90" : ""}`} />
             </button>
             {open && (
-              <div className="mb-1.5 flex flex-col gap-0.5">
-                {items.filter((n) => n.group === g).map((n) => {
-                  const active = pathname.startsWith(n.href);
+              <div className="mt-0.5 mb-1 ml-[17px] flex flex-col gap-0.5 border-l border-line pl-2">
+                {g.items.map((item) => {
+                  const active = g.here?.href === item.href;
                   return (
-                    <Link
-                      key={n.href}
-                      href={n.href}
-                      onClick={onNavigate}
-                      aria-current={active ? "page" : undefined}
-                      className={`${SIDE_FOCUS} relative flex h-8 shrink-0 items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-colors duration-100 ${active ? ITEM_ON : ITEM_OFF}`}
-                    >
-                      <NavIcon name={n.icon} />
-                      <span className="grow truncate">{n.label}</span>
+                    <Link key={item.href} href={item.href} onClick={onNavigate} aria-current={active ? "page" : undefined} className={`${SUB} ${subLook(active)}`}>
+                      {active && <span aria-hidden className="absolute inset-y-1.5 -left-[9px] w-[2px] rounded-full bg-brand" />}
+                      {item.label}
                     </Link>
                   );
                 })}
@@ -162,48 +177,83 @@ function NavGroups({ items, pathname, onNavigate }: { items: NavItem[]; pathname
   );
 }
 
-function Sidebar({ items, pathname }: { items: NavItem[]; pathname: string }) {
+/** One group on the collapsed rail: its icon, and its sub-menu as a fly-out beside it. */
+function RailGroup({ g }: { g: NavGroup }) {
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  const ref = useDismiss<HTMLDivElement>(open, close);
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        title={g.label}
+        aria-label={g.label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className={`focusable relative grid size-9 cursor-pointer place-items-center rounded-md transition-colors duration-100 ${g.here || open ? "bg-raise text-fg" : "text-dim hover:bg-raise/60 hover:text-fg"}`}
+      >
+        {g.here && <span aria-hidden className="absolute inset-y-2 -left-[9px] w-[3px] rounded-full bg-brand" />}
+        <NavIcon name={GROUP_ICON[g.label]} size={17} />
+      </button>
+      {open && (
+        <div role="menu" aria-label={g.label} className="af-fade-up absolute top-0 left-full z-40 ml-3 flex w-[208px] flex-col gap-0.5 rounded-lg border border-line bg-surface p-1.5 elev-3">
+          <span className="px-2.5 pt-1 pb-1.5 text-[10px] font-medium tracking-[0.09em] text-faint uppercase">{g.label}</span>
+          {g.items.map((item) => {
+            const active = g.here?.href === item.href;
+            return (
+              <Link key={item.href} role="menuitem" href={item.href} onClick={close} aria-current={active ? "page" : undefined} className={`${SUB} gap-2.5 ${subLook(active)}`}>
+                <NavIcon name={item.icon} />
+                {item.label}
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The switch at the foot of the sidebar: collapse it to its rail, or open it again. */
+function CollapseButton({ rail }: { rail: boolean }) {
+  const label = rail ? "Expand the sidebar" : "Collapse the sidebar";
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      aria-pressed={rail}
+      onClick={() => remember({ ...readPrefs(), rail: !rail })}
+      className={`focusable flex cursor-pointer items-center gap-2.5 rounded-md text-[12.5px] font-medium text-dim transition-colors duration-100 hover:bg-raise/60 hover:text-fg ${rail ? "size-9 justify-center" : "w-full px-2.5 py-1.5"}`}
+    >
+      <NavIcon name="panel-left" size={16} />
+      {!rail && "Collapse"}
+    </button>
+  );
+}
+
+function Sidebar({ groups, auto, onAuto }: { groups: NavGroup[]; auto: Group | null; onAuto: (g: Group | null) => void }) {
   const { rail } = usePrefs();
-  const shell = "relative z-30 hidden shrink-0 flex-col border-r border-[var(--t-side-line)] bg-[var(--t-side)] text-white lg:flex";
   if (rail) {
     return (
-      <aside className={`${shell} w-14 items-center`} data-sidebar="rail">
-        <Link href="/" aria-label="Agent Factory, home" className={`${SIDE_FOCUS} flex h-12 w-full shrink-0 items-center justify-center border-b border-white/10`}>
+      <aside className="relative z-30 hidden w-14 shrink-0 flex-col items-center border-r border-line bg-surface lg:flex" data-sidebar="rail">
+        <Link href="/" aria-label="Agent Factory, home" className="focusable flex h-12 w-full shrink-0 items-center justify-center border-b border-line">
           <ABBWordmark height={11} />
         </Link>
-        <nav aria-label="Main" className="flex min-h-0 grow flex-col items-center gap-1 overflow-y-auto py-3 [scrollbar-width:none]">
-          {GROUPS.filter((g) => items.some((n) => n.group === g)).map((g, i) => (
-            <span key={g} className="flex flex-col items-center gap-1">
-              {i > 0 && <span aria-hidden className="my-1 h-px w-6 bg-white/10" />}
-              {items.filter((n) => n.group === g).map((n) => {
-                const active = pathname.startsWith(n.href);
-                return (
-                  <Link
-                    key={n.href}
-                    href={n.href}
-                    aria-label={n.label}
-                    title={n.label}
-                    aria-current={active ? "page" : undefined}
-                    className={`${SIDE_FOCUS} relative grid size-9 shrink-0 place-items-center rounded-md transition-colors duration-100 ${active ? ITEM_ON : ITEM_OFF}`}
-                  >
-                    <NavIcon name={n.icon} size={17} />
-                  </Link>
-                );
-              })}
-            </span>
-          ))}
+        <nav aria-label="Main" className="flex grow flex-col items-center gap-1.5 py-3">
+          {groups.map((g) => <RailGroup key={g.label} g={g} />)}
         </nav>
-        <div className="flex w-full shrink-0 justify-center border-t border-white/10 py-2"><CollapseButton rail /></div>
+        <div className="flex w-full shrink-0 justify-center border-t border-line py-2"><CollapseButton rail /></div>
       </aside>
     );
   }
   return (
-    <aside className={`${shell} w-[232px]`} data-sidebar="full">
-      <Link href="/" aria-label="Agent Factory, home" className={`${SIDE_FOCUS} flex h-12 shrink-0 items-center border-b border-white/10 px-4`}>
-        <BrandLockup onDark />
+    <aside className="relative z-30 hidden w-[224px] shrink-0 flex-col border-r border-line bg-surface lg:flex" data-sidebar="full">
+      <Link href="/" aria-label="Agent Factory, home" className="focusable flex h-12 shrink-0 items-center border-b border-line px-4">
+        <BrandLockup />
       </Link>
-      <NavGroups items={items} pathname={pathname} />
-      <div className="flex shrink-0 flex-col border-t border-white/10 px-2.5 py-2">
+      <NavGroups groups={groups} auto={auto} onAuto={onAuto} />
+      <div className="flex shrink-0 flex-col border-t border-line px-2.5 py-2">
         <CollapseButton rail={false} />
       </div>
     </aside>
@@ -253,19 +303,29 @@ export function Chrome({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("af:denied", onDenied);
   }, []);
 
+  const nav = NAV.filter((item) => item.href !== "/iam" || !loaded || can("iam"));
+  const groups = groupsOf(nav, pathname);
+  const hereGroup = groups.find((g) => g.here);
+  const here = hereGroup?.here;
+  // The group a person arrives in opens by itself, and again each time they arrive in another.
+  const at = hereGroup?.label ?? null;
+  const [seen, setSeen] = useState<Group | null>(at);
+  const [auto, setAuto] = useState<Group | null>(at);
+  if (seen !== at) {
+    setSeen(at);
+    setAuto(at);
+  }
+
   // The landing page carries its own header and footer; sign-in pages stand
   // alone; so does the external answer page, which an outside participant
   // opens with a signed link and no session (lib/route-policy.ts OPEN_PAGES).
   if (isOpenPage(pathname)) return <>{children}</>;
   const who = session ?? { name: CURRENT_USER.name, initials: CURRENT_USER.initials, appRoles: [] as string[], sso: false, demoDefaultApplied: false, email: "" };
   const roleLabel = who.sso ? (who.appRoles.length ? who.appRoles.join(", ") : who.demoDefaultApplied ? "default role (no assignment)" : "no role") : CURRENT_USER.role;
-  const nav = NAV.filter((item) => item.href !== "/iam" || !loaded || can("iam"));
-  const here = nav.find((item) => pathname.startsWith(item.href));
-
   return (
     <div className="flex h-screen bg-canvas">
       <Material />
-      <Sidebar items={nav} pathname={pathname} />
+      <Sidebar groups={groups} auto={auto} onAuto={setAuto} />
 
       <div className="flex min-w-0 grow flex-col">
         <header className="relative z-20 flex h-12 shrink-0 items-center gap-3 border-b border-line bg-surface px-4">
@@ -275,11 +335,12 @@ export function Chrome({ children }: { children: React.ReactNode }) {
             aria-label="Open the navigation"
             aria-expanded={drawer}
             onClick={() => setDrawer(true)}
-            className="focusable grid size-8 shrink-0 cursor-pointer place-items-center rounded-md border border-line bg-raise text-fg lg:hidden"
+            className="focusable grid size-7 shrink-0 cursor-pointer place-items-center rounded-md bg-raise text-fg lg:hidden"
           >
-            <NavIcon name="menu" size={16} />
+            <NavIcon name="menu" size={15} />
           </button>
-          <Link href="/" className="focusable flex min-w-0 shrink-0 lg:hidden"><BrandLockup line={false} /></Link>
+          <Link href="/" aria-label="Agent Factory, home" className="focusable flex shrink-0 lg:hidden"><ABBWordmark height={13} /></Link>
+          <span className="truncate text-[13px] font-semibold text-fg lg:hidden">{here?.label}</span>
 
           {here && (
             <span className="hidden min-w-0 items-center gap-1.5 text-[12px] whitespace-nowrap text-faint lg:flex">
@@ -311,17 +372,17 @@ export function Chrome({ children }: { children: React.ReactNode }) {
       </div>
 
       {drawer && (
-        <div className="fixed inset-0 z-40 flex lg:hidden">
-          <button type="button" aria-label="Close the navigation" onClick={() => setDrawer(false)} className="af-fade-in absolute inset-0 cursor-default bg-black/45" />
-          <aside className="af-pop relative flex w-[264px] max-w-[84vw] flex-col border-r border-[var(--t-side-line)] bg-[var(--t-side)] text-white elev-3" data-sidebar="drawer">
-            <div className="flex h-12 shrink-0 items-center border-b border-white/10 pr-2 pl-4">
-              <span className="min-w-0 grow"><BrandLockup onDark /></span>
-              <button type="button" aria-label="Close the navigation" onClick={() => setDrawer(false)} className={`${SIDE_FOCUS} grid size-8 shrink-0 cursor-pointer place-items-center rounded-md text-white/60 hover:bg-white/8 hover:text-white`}>
-                <NavIcon name="x" size={16} />
+        <div className="fixed inset-0 z-50 flex lg:hidden">
+          <button type="button" aria-label="Close the navigation" onClick={() => setDrawer(false)} className="absolute inset-0 cursor-default bg-canvas/75" />
+          <div role="dialog" aria-modal="true" aria-label="Navigation" className="relative flex h-full w-[248px] max-w-[85vw] flex-col border-r border-line bg-surface elev-3" data-sidebar="drawer">
+            <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-line pr-2.5 pl-4">
+              <BrandLockup />
+              <button type="button" aria-label="Close the navigation" onClick={() => setDrawer(false)} className="focusable grid size-7 shrink-0 cursor-pointer place-items-center rounded-md bg-raise text-fg">
+                <NavIcon name="x" size={14} />
               </button>
             </div>
-            <NavGroups items={nav} pathname={pathname} onNavigate={() => setDrawer(false)} />
-          </aside>
+            <NavGroups groups={groups} auto={auto} onAuto={setAuto} onNavigate={() => setDrawer(false)} />
+          </div>
         </div>
       )}
 
