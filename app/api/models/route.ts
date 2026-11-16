@@ -42,7 +42,7 @@ export async function GET(req: Request) {
       headers: { "api-key": key },
       signal: AbortSignal.timeout(20_000),
     });
-    if (!res.ok) throw new Error(`Foundry returned ${res.status}`);
+    if (!res.ok) throw new Error(`the model provider answered ${res.status}`);
     const data = await res.json();
     const rows = (data.data ?? [])
       .filter((d: Record<string, unknown>) => d.id && (d.status === "succeeded" || !d.status))
@@ -56,6 +56,6 @@ export async function GET(req: Request) {
     cache = { at: Date.now(), rows };
     return Response.json({ models: rows, source: "foundry deployments" });
   } catch (e) {
-    return Response.json({ error: `could not list the Foundry deployments — ${(e as Error).message}`, models: [] }, { status: 502 });
+    return Response.json({ error: `could not list the provider's models: ${(e as Error).message}`, models: [] }, { status: 502 });
   }
 }

@@ -1216,7 +1216,7 @@ function RunRecord({ id, onReread }: { id: string; onReread: () => void }) {
       setup={
         <>
           {flags ? <RunFlagsBanner flags={flags} agent={meta.system} /> : null}
-          <RunAssurance run={meta.runId || id} decisions={decisions} entries={entries} />
+          <RunAssurance run={id || meta.runId} decisions={decisions} entries={entries} />
         </>
       }
       segments={segments}

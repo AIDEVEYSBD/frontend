@@ -25,7 +25,7 @@ export async function POST(req: Request) {
   try {
     body = await req.json();
   } catch {
-    return Response.json({ error: 'expected {"document": "<id>", "admit": true, "by": "you@ey.com"}' }, { status: 400 });
+    return Response.json({ error: 'expected {"document": "<id>", "admit": true, "by": "<your name>"}' }, { status: 400 });
   }
 
   const documentId = String(body.document ?? "");

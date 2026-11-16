@@ -87,7 +87,7 @@ export async function POST(req: Request) {
         capabilities: { tools: { listChanged: false } },
         serverInfo: SERVER,
         instructions:
-          "Agent Factory, EY's platform for building, securing and operating AI agents. Read the deployment with the status, controls, knowledge, gates and run tools; start a workflow with trigger_workflow. Every call runs under the platform's policy engine and is journalled.",
+          "Agent Factory, a control plane that runs, governs and records AI agents doing security work. Read the deployment with the status, controls, knowledge, gates and run tools; start a workflow with trigger_workflow. Every call runs under the platform's policy engine and is journalled.",
       });
     case "ping":
       return ok(id, {});

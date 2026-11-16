@@ -275,7 +275,7 @@ export async function GET(req: Request) {
   return Response.json({
     deployment: {
       registry: (await dbReady()) ? "postgres" : "files",
-      gateway: process.env.FOUNDRY_ENDPOINT ? "Azure AI Foundry" : "not configured",
+      gateway: process.env.FOUNDRY_ENDPOINT ? "configured" : "not configured",
       endpoint: (process.env.FOUNDRY_ENDPOINT ?? "").split("/openai/")[0],
       runs,
       workflows: specs.length,

@@ -1,7 +1,7 @@
 import { Settings } from "@/components/settings";
 
 export const metadata = {
-  title: "Configuration — Agent Factory",
+  title: "Settings — Agent Factory",
   description: "Manage the models and protected credentials available to Agent Factory.",
 };
 
