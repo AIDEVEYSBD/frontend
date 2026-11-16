@@ -116,6 +116,11 @@ export interface SnippetContext {
 
 const KEY = (c: SnippetContext) => c.key || "<api key>";
 
+/*
+ * The names in angle brackets are placeholders for the agent's own: its
+ * input, its tools, the model it calls, the role that answers its gate.
+ * Nothing in a snippet names a product, an agent or a record.
+ */
 export const SNIPPETS: Record<Language, (c: SnippetContext) => string> = {
   python: (c) => `from agentfactory import AgentFactory, Denied
 from openai import OpenAI
@@ -129,20 +134,20 @@ af = AgentFactory(
 # Every completion through this client is journalled: model, tokens, latency, cost.
 llm = af.instrument(OpenAI())
 
-@af.tool("records.query", risk="read")            # asked of the policy engine before it runs
-def lookup_vendor(vendor_id: str) -> dict:
-    return vendors.get(vendor_id)
+@af.tool("<read-tool-name>", risk="read")              # asked of the policy engine before it runs
+def look_up(record_id: str) -> dict:
+    ...                                                # your own code
 
-@af.tool("notify.send", risk="write", sink=True)   # tainted input can never reach this
-def email_owner(to: str, body: str) -> None:
-    mail.send(to, body)
+@af.tool("<sink-tool-name>", risk="write", sink=True)  # tainted input can never reach this
+def send(to: str, body: str) -> None:
+    ...                                                # your own code
 
-with af.run(input={"vendor_id": "V-1042"}) as run:
-    profile = lookup_vendor("V-1042")                                  # tool.call → tool.result
-    reply = llm.chat.completions.create(model="gpt-4o", messages=msgs)  # model.call
-    if run.gate("Close the review", approvers=["ciso"]):                # suspends; answered in the console
-        email_owner(profile["owner"], reply.choices[0].message.content)
-    run.result({"disposition": "closed"})`,
+with af.run(input={"<input-field>": "<value>"}) as run:
+    record = look_up("<record-id>")                                         # tool.call → tool.result
+    reply = llm.chat.completions.create(model="<model-id>", messages=msgs)  # model.call
+    if run.gate("<what is being approved>", approvers=["<approver-role>"]):  # suspends; answered in the console
+        send("<recipient>", reply.choices[0].message.content)
+    run.result({"<result-field>": "<value>"})`,
 
   typescript: (c) => `import { AgentFactory } from "@agentfactory/sdk";
 import OpenAI from "openai";
@@ -156,16 +161,16 @@ const af = new AgentFactory({
 // Every completion through this client is journalled: model, tokens, latency, cost.
 const llm = af.instrument(new OpenAI());
 
-const lookupVendor = af.tool("records.query", { risk: "read" }, async (id: string) => vendors.get(id));
-const emailOwner = af.tool("notify.send", { risk: "write", sink: true }, async (to: string, body: string) => mail.send(to, body));
+const lookUp = af.tool("<read-tool-name>", { risk: "read" }, async (id: string) => readRecord(id));               // your own code
+const send = af.tool("<sink-tool-name>", { risk: "write", sink: true }, async (to: string, body: string) => deliver(to, body));
 
-await af.run({ vendor_id: "V-1042" }, async (run) => {
-  const profile = await lookupVendor("V-1042");                                      // tool.call → tool.result
-  const reply = await llm.chat.completions.create({ model: "gpt-4o", messages });     // model.call
-  if (await run.gate("Close the review", { approvers: ["ciso"] })) {                 // suspends; answered in the console
-    await emailOwner(profile.owner, reply.choices[0].message.content);
+await af.run({ "<input-field>": "<value>" }, async (run) => {
+  const record = await lookUp("<record-id>");                                              // tool.call → tool.result
+  const reply = await llm.chat.completions.create({ model: "<model-id>", messages });      // model.call
+  if (await run.gate("<what is being approved>", { approvers: ["<approver-role>"] })) {    // suspends; answered in the console
+    await send("<recipient>", reply.choices[0].message.content);
   }
-  run.result({ disposition: "closed" });
+  run.result({ "<result-field>": "<value>" });
 });`,
 
   java: (c) => `import com.ey.agentfactory.AgentFactory;
@@ -177,21 +182,21 @@ AgentFactory af = AgentFactory.builder()
     .agent("${c.agent}")
     .build();
 
-try (Run run = af.run(Map.of("vendor_id", "V-1042"))) {
+try (Run run = af.run(Map.of("<input-field>", "<value>"))) {
     // Every tool call journalled at its declared risk; TAINTS marks the result untrusted.
-    Vendor profile = run.tool("records.query", Risk.READ, Run.TAINTS, "V-1042", () -> vendors.get("V-1042"));
+    var record = run.tool("<read-tool-name>", Risk.READ, Run.TAINTS, "<record-id>", () -> readRecord("<record-id>"));
 
     // Every model call journalled: model, tokens in and out, latency → cost.
-    ModelReply reply = run.model("gpt-4o", () -> {
+    ModelReply reply = run.model("<model-id>", () -> {
         var r = llm.call(prompt);
-        return new ModelReply(r.text(), "gpt-4o", r.promptTokens(), r.completionTokens());
+        return new ModelReply(r.text(), "<model-id>", r.promptTokens(), r.completionTokens());
     });
 
-    if (run.gate("Close the review", List.of("ciso"))) {               // suspends; answered in the console
+    if (run.gate("<what is being approved>", List.of("<approver-role>"))) {   // suspends; answered in the console
         // SINK: a tainted argument is refused before the call; this one is clean.
-        run.tool("notify.send", Risk.WRITE, Run.SINK, List.of(owners, reply.text), () -> mail.send(owners, reply.text));
+        run.tool("<sink-tool-name>", Risk.WRITE, Run.SINK, List.of("<recipient>", reply.text), () -> deliver("<recipient>", reply.text));
     }
-    run.result(Map.of("disposition", "closed"));
+    run.result(Map.of("<result-field>", "<value>"));
 }`,
 
   csharp: (c) => `using AgentFactory.Sdk;
@@ -203,23 +208,23 @@ var af = new AgentFactoryClient(new AgentFactoryOptions
     Agent    = "${c.agent}",
 });
 
-await using var run = af.StartRun(new { vendor_id = "V-1042" });
+await using var run = af.StartRun(new Dictionary<string, object> { ["<input-field>"] = "<value>" });
 
 // Every tool call journalled at its declared risk; Taints marks the result untrusted.
-var profile = await run.ToolAsync("records.query", Risk.Read, ToolFlags.Taints, "V-1042", () => vendors.GetAsync("V-1042"));
+var record = await run.ToolAsync("<read-tool-name>", Risk.Read, ToolFlags.Taints, "<record-id>", () => ReadRecordAsync("<record-id>"));
 
 // Every model call journalled: model, tokens in and out, latency → cost.
-var reply = await run.ModelAsync("gpt-4o", async () =>
+var reply = await run.ModelAsync("<model-id>", async () =>
 {
     var r = await kernel.InvokePromptAsync(prompt);
-    return new ModelReply(r.ToString(), "gpt-4o", r.PromptTokens, r.CompletionTokens);
+    return new ModelReply(r.ToString(), "<model-id>", r.PromptTokens, r.CompletionTokens);
 });
 
-if (await run.GateAsync("Close the review", new[] { "ciso" }))         // suspends; answered in the console
+if (await run.GateAsync("<what is being approved>", new[] { "<approver-role>" }))   // suspends; answered in the console
     // Sink: a tainted argument is refused before the call; this one is clean.
-    await run.ToolAsync("notify.send", Risk.Write, ToolFlags.Sink, new object[] { owners, reply.Text }, () => mail.SendAsync(owners, reply.Text));
+    await run.ToolAsync("<sink-tool-name>", Risk.Write, ToolFlags.Sink, new object[] { "<recipient>", reply.Text }, () => DeliverAsync("<recipient>", reply.Text));
 
-run.Result(new { disposition = "closed" });`,
+run.Result(new Dictionary<string, object> { ["<result-field>"] = "<value>" });`,
 
   go: (c) => `import af "github.com/ey/agentfactory-go"
 
@@ -229,23 +234,23 @@ client := af.New(af.Options{
     Agent:    "${c.agent}",
 })
 
-run := client.Run(ctx, map[string]any{"vendor_id": "V-1042"})
+run := client.Run(ctx, map[string]any{"<input-field>": "<value>"})
 defer run.Close()
 
 // Every model call goes through run.Model: model, tokens, latency → cost.
-reply, err := run.Model(ctx, "gpt-4o", func() (af.ModelReply, error) {
+reply, err := run.Model(ctx, "<model-id>", func() (af.ModelReply, error) {
     r, err := llm.Chat(ctx, prompt)
     return af.ModelReply{Text: r.Text, TokensIn: r.Usage.Prompt, TokensOut: r.Usage.Completion}, err
 })
 
-lookupVendor := af.Tool(client, "records.query", af.Read, af.Taints, vendors.Get)   // result marked untrusted
-emailOwner := af.Tool(client, "notify.send", af.Write, af.Sink, mail.Send)          // refuses a tainted argument
+lookUp := af.Tool(client, "<read-tool-name>", af.Read, af.Taints, readRecord)   // result marked untrusted
+send := af.Tool(client, "<sink-tool-name>", af.Write, af.Sink, deliver)         // refuses a tainted argument
 
-profile, _ := lookupVendor(run, "V-1042")                                          // tool.call → tool.result
-if ok, _ := run.Gate(ctx, "Close the review", []string{"ciso"}); ok {              // suspends; answered in the console
-    emailOwner(run, "tprm-owners@example.com", reply.Text)
+record, _ := lookUp(run, "<record-id>")                                          // tool.call → tool.result
+if ok, _ := run.Gate(ctx, "<what is being approved>", []string{"<approver-role>"}); ok {   // suspends; answered in the console
+    send(run, "<recipient>", reply.Text)
 }
-run.Result(map[string]any{"disposition": "closed"})`,
+run.Result(map[string]any{"<result-field>": "<value>"})`,
 };
 
 /* ═══════════════════ A2A setup ═══════════════════ */
@@ -263,7 +268,7 @@ export const A2A_STEPS: A2AStep[] = [
     body: "Name it, say who owns it, and give the factory its agent card URL. A key scoped to this agent is minted at the same time; every door below checks it. Then propose its tools and its gate in the registry's policy editor, which someone other than you approves (an agent starts with nothing), and name the vault secret it signs its A2A requests with.",
     snippet: (c) => `POST ${ENDPOINTS.origin}/api/attached      { "name": "…", "mode": "a2a", "card_url": "…" }
 →    { "agent": "${c.agent}", "key": "${KEY(c)}" }
-POST ${ENDPOINTS.origin}/api/policy/changes  { "target": { "kind": "attached", "id": "${c.agent}" }, "proposed": { "grants": ["aegis-registry.get_warden_rules"], "gate_at": "write" }, "reason": "…" }
+POST ${ENDPOINTS.origin}/api/policy/changes  { "target": { "kind": "attached", "id": "${c.agent}" }, "proposed": { "grants": ["<tool-name>"], "gate_at": "write" }, "reason": "…" }
 PATCH ${ENDPOINTS.origin}/api/attached     { "id": "${c.agent}", "secret_name": "${c.agent}-a2a" }`,
     lang: "http",
   },
@@ -301,7 +306,7 @@ x-af-timestamp: <unix seconds>      x-af-nonce: <16 random bytes, hex>
 x-af-signature: <base64url HMAC-SHA256, under the shared secret, of
                  POST\\n/api/a2a\\ntimestamp\\nnonce\\nsha256hex(body)\\nx-af-delegation>
 { "jsonrpc": "2.0", "id": 1, "method": "tasks/send",
-  "params": { "id": "${c.agent}-task-1", "metadata": { "workflow": "aegis-dlp-triage" },
+  "params": { "id": "${c.agent}-task-1", "metadata": { "workflow": "<workflow-id>" },
               "message": { "role": "user", "parts": [{ "type": "data", "data": { "…": "the workflow's input" } }] } } }
 → { "result": { "id": "…", "status": { "state": "submitted" } } }      then tasks/get until completed
   x-af-signature on the answer: status\\nyour nonce\\nsha256hex(body), verified before it is read
@@ -343,27 +348,13 @@ export interface AttachedAgent {
   fallbacks?: string[];
   /** requests_per_minute, tokens_per_day, cost_per_day_usd; empty for none. */
   limits?: AgentLimits;
-  /** Measured from the run record for a live agent; demonstration figures for a seeded one. */
+  /** Measured from the run record, as the door answers them. */
   runs30d: number;
   cost30d: number | null;
   denials30d: number;
   gates30d: number | null;
   p50ms: number | null;
 }
-
-/**
- * Agents shown on a fresh deployment, so the panel reads as an estate that is
- * already attached rather than a form waiting for its first entry. Seeded
- * once into the registry and deletable like any other row; their activity is
- * demonstration data from lib/demo-activity and never measured.
- */
-export const SEED_AGENTS: Pick<AttachedAgent, "id" | "name" | "mode" | "framework" | "language" | "owner" | "card_url">[] = [
-  { id: "vendor-risk-copilot", name: "Vendor Risk Copilot", mode: "sdk", framework: "langgraph", language: "python", owner: "Third-Party Risk", card_url: "" },
-  { id: "now-assist-incident-agent", name: "Now Assist Incident Agent", mode: "a2a", framework: "now-assist", language: "", owner: "Service Management", card_url: "https://grc-dev.service-now.com/api/now/a2a/.well-known/agent.json" },
-  { id: "policy-qa-assistant", name: "Policy Q&A Assistant", mode: "sdk", framework: "semantic-kernel", language: "csharp", owner: "Risk and Compliance", card_url: "" },
-  { id: "access-review-agent", name: "Access Review Agent", mode: "a2a", framework: "copilot-studio", language: "", owner: "Identity and Access", card_url: "https://copilotstudio.microsoft.com/environments/grc-prod/bots/access-review/.well-known/agent.json" },
-  { id: "threat-intel-summariser", name: "Threat Intel Summariser", mode: "sdk", framework: "crewai", language: "python", owner: "Security Operations", card_url: "" },
-];
 
 export function slugOf(name: string): string {
   return name

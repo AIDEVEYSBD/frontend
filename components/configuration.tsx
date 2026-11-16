@@ -2,14 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Mono, Status, Tag } from "./ui";
-import { BrandMark } from "./brand";
-import { SURFACE_LABEL, VENDORS, VENDOR_GROUPS, type Surface } from "@/lib/vendors";
-import { activityFor, compact, type Activity } from "@/lib/demo-activity";
 import { usePageFacts } from "./assistant";
 import { MCP_ENDPOINT } from "@/lib/site";
 import { hueFor } from "@/lib/hue";
 import { CONNECTOR_DEFS } from "@/lib/connections";
-import { TOOL_BY_ID } from "@/lib/catalogue";
 import { AttachedAgents } from "./attached-agents";
 import { ToolServers } from "./tool-servers";
 import { useMcp } from "@/lib/use-mcp";
@@ -20,18 +16,20 @@ import type { AttachedAgent } from "@/lib/attached";
 import { JOB_STATUS_META, queueTotals } from "@/lib/queue";
 
 /**
- * Configuration: everything this factory is set up with, in one place.
+ * Configuration: everything this deployment is set up with, in one place.
  *
- * The shape follows the question a reviewer actually asks — not "what settings
- * exist" but "what is wired, what does it reach, and who signs". So the page
- * leads with the connected sources table: every backend configured across every
- * deployed workflow, which agent holds it, whether it returns untrusted content
- * or acts outside the system, and whether anything has ever called it.
+ * The page answers "what is wired, what does it reach, and who signs". It
+ * shows only what exists on this deployment: the connections the saved
+ * workflows configure (read from their documents by /api/configuration,
+ * with usage counted from the run journals), the registered tool servers,
+ * the attached agents, the models offered, the vault's names and the
+ * ingress keys. Nothing here comes from a catalogue: a deployment with no
+ * workflow shows no connection, and a read that fails shows an error and
+ * no rows.
  *
- * A control appears here only when it changes something, and a figure appears
- * only when it was measured. A source that is configured but never called says
- * "never" rather than being quietly omitted, because a source nobody reads is
- * the most common kind of wrong configuration.
+ * A figure appears only when it was measured. A connection that is
+ * configured and never called says "never called"; there is no health or
+ * last-sync figure, because nothing measures one.
  */
 
 interface Source {
@@ -88,6 +86,7 @@ interface Data {
 
 const SECTIONS = [
   { id: "deployment", label: "Deployment" },
+  { id: "egress", label: "Egress allowlist" },
   { id: "agents", label: "Third-party agents" },
   { id: "mcp", label: "MCP server" },
   { id: "registry", label: "Tool servers" },
@@ -99,31 +98,22 @@ const SECTIONS = [
   { id: "ingress", label: "Ingress" },
 ];
 
-const KIND_SURFACE: Record<string, Surface> = { rest: "api", http: "api", documents: "files", webhook: "webhook", events: "events", sql: "db", db: "db" };
-
-/** The wire between a product and an agent, in three words. */
-function Interface({ surface, nativeMcp, note }: { surface: Surface; nativeMcp: boolean; note?: string }) {
-  if (nativeMcp) {
-    return (
-      <span className="flex flex-col gap-1" title={note}>
-        <span className="flex items-center gap-1.5">
-          <Tag tone="run" solid>Native MCP</Tag>
-        </span>
-        <span className="max-w-[220px] truncate text-[10px] text-ghost">{note || "vendor's MCP server"} · security layer in between</span>
-      </span>
-    );
-  }
-  return (
-    <span className="flex flex-col gap-1">
-      <span className="flex items-center gap-1.5">
-        <Tag>{SURFACE_LABEL[surface]}</Tag>
-        <span className="text-[10px] text-ghost">→</span>
-        <Tag tone="ok" solid>Served as MCP</Tag>
-      </span>
-      <span className="text-[10px] text-ghost">Agent Factory hosts the MCP; security layer in between</span>
-    </span>
-  );
+/**
+ * Whether a source is offline or live, from its kind (7.4): a file or a
+ * folder handed over is offline; a connection read when the run asks is
+ * live. A kind this table does not know is read from what it configures
+ * (a path or a root against a URL or a DSN), and is not stated otherwise.
+ */
+const OFFLINE_KINDS = new Set(["file", "folder", "documents", "images"]);
+const LIVE_KINDS = new Set(["vector", "tavily", "tool", "postgres", "rest", "sql", "db", "http", "git", "a2a", "slack", "smtp", "webhook", "events"]);
+function modeOf(s: { kind: string; settings: string[] }): "offline" | "live" | null {
+  if (OFFLINE_KINDS.has(s.kind)) return "offline";
+  if (LIVE_KINDS.has(s.kind)) return "live";
+  if (s.settings.some((k) => ["url", "dsn", "endpoint", "api_key"].includes(k))) return "live";
+  if (s.settings.some((k) => ["path", "root"].includes(k))) return "offline";
+  return null;
 }
+const MODE_MEANS = { offline: "A file or folder handed over: read from disk, not from a system.", live: "A connection read when the run asks." };
 
 const RISK_TONE: Record<string, "ok" | "warn" | "err" | "neutral"> = {
   read: "ok",
@@ -146,8 +136,6 @@ export function Configuration() {
   const [failed, setFailed] = useState(false);
   const [agent, setAgent] = useState<string>("");
   const [q, setQ] = useState("");
-  const [group, setGroup] = useState("");
-  const [wiring, setWiring] = useState<"all" | "wired" | "available">("all");
   const [mcp, setMcp] = useState<{ endpoint: string; transport: string; auth: string; tools: { name: string; description: string; action: boolean }[]; client: Record<string, unknown> } | null>(null);
   const [folded, setFolded] = useState<Record<string, boolean>>({});
   const [attached, setAttached] = useState<AttachedAgent[]>([]);
@@ -184,8 +172,13 @@ export function Configuration() {
   useEffect(() => {
     let stop = false;
     fetch("/api/configuration")
-      .then((r) => r.json())
-      .then((d) => !stop && setData(d))
+      .then(async (r) => {
+        const d = await r.json().catch(() => null);
+        if (stop) return;
+        // A refusal or a fault answers without the record: say so, and show no rows.
+        if (!r.ok || !d || !Array.isArray(d.sources)) setFailed(true);
+        else setData(d);
+      })
       .catch(() => !stop && setFailed(true));
     return () => {
       stop = true;
@@ -200,99 +193,46 @@ export function Configuration() {
   const tools = useMemo(() => (data?.tools ?? []).filter((t) => !agent || t.agent === agent), [data, agent]);
   const used = sources.filter((s) => s.calls > 0).length;
 
-  /* Every connector this factory offers, in one table: the ones actually wired
-     into a workflow first, carrying their real usage from the journals, then the
-     rest of the advertised catalogue as connected estate-wide, carrying the
-     estate activity from lib/demo-activity. The two are never mixed: a wired
-     row's counts are measured, an estate row's are demonstration. */
-  const rows = useMemo(() => {
-    const defOf = (tool: string, kind: string) =>
-      CONNECTOR_DEFS.find((c) => c.tool === tool && c.kind === kind);
-    const grantsOf = (tool: string) => TOOL_BY_ID.get(tool)?.capabilities ?? [];
+  /* The connections the saved workflows configure, as the record lists them:
+     a named instance of a backend on a tool binding, with the calls the run
+     journals hold for that tool. Nothing is added to this list. */
+  const rows = useMemo(
+    () =>
+      sources.map((s) => {
+        const def = CONNECTOR_DEFS.find((c) => c.server === s.server && c.kind === s.kind);
+        return {
+          key: `${s.agent}:${s.server}:${s.slot}:${s.name}`,
+          name: s.name,
+          kindLabel: def?.label ?? s.kind,
+          what: def?.blurb ?? "",
+          wiring: `${s.server}.${s.slot} · ${s.kind}${s.usesVault ? " · vault credential" : ""}`,
+          mode: modeOf(s),
+          tool: s.tool,
+          risk: s.risk,
+          heldBy: s.agentName,
+          agent: s.agent,
+          node: s.node,
+          calls: s.calls,
+          lastUsed: s.lastUsed,
+          taints: s.taints,
+          sink: s.sink,
+        };
+      }),
+    [sources],
+  );
 
-    const wiredRows = sources.map((s) => {
-      const vendor = VENDORS.find((v) => v.slug === s.name);
-      const def = defOf(s.tool, s.kind);
-      return {
-        key: `w:${s.agent}:${s.server}:${s.name}`,
-        wired: true,
-        brand: vendor?.name ?? s.name,
-        product: vendor?.name ?? s.name,
-        group: vendor?.group ?? "Configured in this estate",
-        kindLabel: vendor?.group ?? def?.label ?? s.kind,
-        contributes: def?.blurb ?? `${s.tool} backend`,
-        ingest: `${s.server}.${s.slot} · ${s.kind}${s.usesVault ? " · vault credential" : ""}`,
-        grants: grantsOf(s.tool),
-        heldBy: s.agentName,
-        node: s.node,
-        calls: s.calls,
-        lastUsed: s.lastUsed,
-        taints: s.taints,
-        sink: s.sink,
-        activity: null as Activity | null,
-        surface: (vendor?.surface ?? KIND_SURFACE[s.kind] ?? "api") as Surface,
-        nativeMcp: vendor?.nativeMcp ?? false,
-        nativeMcpNote: vendor?.nativeMcpNote ?? "",
-      };
-    });
-
-    const claimed = new Set(wiredRows.map((r) => r.product.toLowerCase()));
-    const availableRows = VENDORS.filter((v) => !claimed.has(v.name.toLowerCase())).map((v) => {
-      const def = defOf(v.tool, v.kind);
-      const card = TOOL_BY_ID.get(v.tool);
-      return {
-        key: `a:${v.slug}`,
-        wired: false,
-        brand: v.name,
-        product: v.name,
-        group: v.group,
-        kindLabel: v.group,
-        contributes: def?.blurb ?? card?.blurb ?? "",
-        ingest: `${v.tool}.${v.kind} · attaches as ${def?.label ?? v.kind}`,
-        grants: grantsOf(v.tool),
-        heldBy: "",
-        node: "",
-        calls: 0,
-        lastUsed: null as string | null,
-        taints: Boolean(card && ["retrieval", "events", "peer", "code"].includes(v.tool)),
-        sink: Boolean(card && ["notify", "records", "peer"].includes(v.tool)),
-        activity: activityFor(v.slug, v.group) as Activity | null,
-        surface: v.surface,
-        nativeMcp: v.nativeMcp,
-        nativeMcpNote: v.nativeMcpNote,
-      };
-    });
-
-    /* The catalogue reads first — it is what someone came to this page to see.
-       Connectors that belong to no advertised product are this deployment's own
-       plumbing, so they sit at the end where they belong rather than pushing
-       the catalogue down. A wired row that IS a catalogue product keeps its
-       place in the catalogue, because that is the point of wiring one. */
-    const order = new Map(VENDOR_GROUPS.map((g, i) => [g.name, i]));
-    const catalogued = [...wiredRows, ...availableRows].filter((r) => order.has(r.group));
-    const own = wiredRows.filter((r) => !order.has(r.group));
-    catalogued.sort(
-      (a, b) =>
-        (order.get(a.group) ?? 99) - (order.get(b.group) ?? 99) ||
-        Number(b.wired) - Number(a.wired) ||
-        a.product.localeCompare(b.product),
-    );
-    return [...catalogued, ...own];
-  }, [sources]);
-
-  const wired = rows.filter((r) => r.wired);
+  // What the in-console assistant is told about this page: the record as read, and nothing derived from a catalogue.
   usePageFacts(
     data
       ? {
           deployment: data.deployment,
-          connectors: { total: rows.length, wiredIntoWorkflows: wired.length, calledAtLeastOnce: used },
-          wired: wired.map((r) => ({ product: r.product, heldBy: r.heldBy, calls: r.calls })),
-          degraded: rows.filter((r) => r.activity && r.activity.health !== "healthy").map((r) => ({ product: r.product, health: r.activity!.health })),
+          egressAllowlist: data.deployment.egress,
+          connections: { total: rows.length, calledAtLeastOnce: used, offline: rows.filter((r) => r.mode === "offline").length, live: rows.filter((r) => r.mode === "live").length },
+          connectionList: rows.map((r) => ({ name: r.name, kind: r.kindLabel, mode: r.mode ?? "not stated", heldBy: r.heldBy, calls: r.calls })),
           tools: data.tools.length,
           gates: data.gates,
           models: data.models.map((m) => m.id),
           defaultModel: data.defaultModel,
-          interfaces: { servedAsMcp: rows.filter((r) => !r.nativeMcp).length, nativeMcpBrokered: rows.filter((r) => r.nativeMcp).length },
           agentFactoryMcp: { endpoint: MCP_ENDPOINT, tools: mcp ? mcp.tools.map((t) => t.name) : "described at the endpoint" },
           toolServers: registry.servers
             ? {
@@ -300,6 +240,7 @@ export function Configuration() {
                 servers: registry.servers.map((s) => ({ id: s.id, label: s.label, status: STATUS_META[s.status].label, tools: s.pin?.tools.length ?? 0, pin: s.pin?.digest ?? null, lastScan: s.last_scan?.at ?? null, hits: s.last_scan?.hits.length ?? 0 })),
               }
             : "reading the registry",
+          // As the attached-agents door answers: the figures are the backend's, measured from the run record.
           thirdPartyAgents: {
             total: attached.length,
             overSdk: attached.filter((a) => a.mode === "sdk").length,
@@ -311,16 +252,8 @@ export function Configuration() {
   );
   const shown = useMemo(() => {
     const term = q.trim().toLowerCase();
-    return rows.filter(
-      (r) =>
-        (wiring === "all" || (wiring === "wired") === r.wired) &&
-        (!group || r.group === group) &&
-        (!term ||
-          r.product.toLowerCase().includes(term) ||
-          r.kindLabel.toLowerCase().includes(term) ||
-          r.grants.some((g) => g.toLowerCase().includes(term))),
-    );
-  }, [rows, q, group, wiring]);
+    return rows.filter((r) => !term || r.name.toLowerCase().includes(term) || r.kindLabel.toLowerCase().includes(term) || r.heldBy.toLowerCase().includes(term) || r.tool.toLowerCase().includes(term));
+  }, [rows, q]);
 
   return (
     <div className="min-h-full">
@@ -329,9 +262,9 @@ export function Configuration() {
         <header className="flex flex-col gap-1.5">
           <h1 className="text-[22px] font-semibold tracking-[-0.02em]">Configuration</h1>
           <p className="max-w-[80ch] text-[12.5px] leading-[1.6] text-faint">
-            Review the systems, tools and services available to deployed workflows, including
-            their scope, risk and observed use. This view is derived from current workflow and run
-            records; protected credential values are never displayed.
+            The systems, tools and services this deployment&rsquo;s workflows are set up with: what each
+            reaches, at what risk, and whether it has been called. Everything here is read from the saved
+            workflows, the run records and the registries; credential values are never displayed.
           </p>
         </header>
 
@@ -339,7 +272,7 @@ export function Configuration() {
         <section className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-3 lg:grid-cols-6">
           {[
             { label: "Workflows", value: data ? String(data.deployment.workflows) : "—", sub: data ? `${data.deployment.deployed} deployed` : "" },
-            { label: "Connectors", value: data ? String(rows.length) : "—", sub: data ? `${wired.length} wired into workflows · ${rows.length - wired.length} connected estate-wide` : "" },
+            { label: "Connections", value: data ? String(rows.length) : "—", sub: data ? `${used} called at least once` : "" },
             { label: "Tools granted", value: data ? String(data.tools.length) : "—", sub: "across all workflows" },
             { label: "Models offered", value: data ? String(data.models.length) : "—", sub: data?.defaultModel ?? "" },
             { label: "Credentials", value: data ? String(data.vaultKeys.length) : "—", sub: "in the vault" },
@@ -377,17 +310,19 @@ export function Configuration() {
         </nav>
 
         {failed && (
-          <p className="text-[12px] text-err">The configuration could not be read from the runtime.</p>
+          <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">
+            The configuration could not be read, so the deployment, connections, tools, gates, models, credentials and ingress below show nothing.
+          </p>
         )}
 
         {/* ── deployment ── */}
-        <Panel id="deployment" folded={Boolean(folded["deployment"])} onToggle={() => toggle("deployment")} title="Deployment" caption="Where this factory runs and what it talks to.">
+        <Panel id="deployment" folded={Boolean(folded["deployment"])} onToggle={() => toggle("deployment")} title="Deployment" caption="Where this deployment keeps its records and what it sends model calls to.">
           <div className="grid gap-px bg-line sm:grid-cols-2 lg:grid-cols-4">
             {[
-              { k: "Registry", v: data?.deployment.registry === "postgres" ? "Postgres" : "Workspace files" },
-              { k: "Model gateway", v: data?.deployment.gateway ?? "—" },
-              { k: "Resource", v: data?.deployment.endpoint?.replace(/^https:\/\//, "") ?? "—", mono: true },
-              { k: "Billing feed", v: data?.deployment.billing ? "Azure Cost Management" : "not connected" },
+              { k: "Registry", v: !data ? "—" : data.deployment.registry === "postgres" ? "Postgres" : "Workspace files" },
+              { k: "Model gateway", v: !data ? "—" : data.deployment.gateway === "not configured" ? "Not configured" : data.deployment.gateway },
+              { k: "Gateway resource", v: !data ? "—" : data.deployment.endpoint?.replace(/^https:\/\//, "") || "None set", mono: Boolean(data?.deployment.endpoint) },
+              { k: "Billing feed", v: !data ? "—" : data.deployment.billing ? "Connected" : "Not connected" },
             ].map((f) => (
               <div key={f.k} className="flex flex-col gap-0.5 bg-surface px-4 py-2.5">
                 <span className="text-[10.5px] text-ghost">{f.k}</span>
@@ -397,13 +332,47 @@ export function Configuration() {
           </div>
         </Panel>
 
+        {/* ── egress: the hosts outbound requests may reach (9.6) ── */}
+        <Panel
+          id="egress"
+          folded={Boolean(folded["egress"])}
+          onToggle={() => toggle("egress")}
+          title="Egress allowlist"
+          caption="The hosts an outbound request from a run may reach: a web fetch, a webhook output, a notify transport that calls a URL, an A2A peer, a tool server spoken to over HTTP. A listed host also covers its subdomains. A request to any other host is refused and the refusal is recorded against the egress control, naming the host."
+          meta={data ? <span className="tnum text-[10.5px] font-normal text-faint">{data.deployment.egress.length === 1 ? "1 host" : `${data.deployment.egress.length} hosts`}</span> : undefined}
+        >
+          <div className="flex flex-col gap-2 px-4 py-3">
+            {!data && !failed && <span className="text-[11.5px] text-faint">Reading the deployment&hellip;</span>}
+            {failed && <span className="text-[11.5px] text-faint">The allowlist could not be read.</span>}
+            {data && data.deployment.egress.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {data.deployment.egress.map((h) => (
+                  <span key={h} className="rounded-sm border border-line bg-raise px-2 py-1 font-mono text-[11px] text-fg">
+                    {h}
+                  </span>
+                ))}
+              </div>
+            )}
+            {data && data.deployment.egress.length === 0 && (
+              <span className="text-[12px] text-dim">No host is listed for this deployment.</span>
+            )}
+            {data && (
+              <span className="max-w-[92ch] text-[11px] leading-[1.55] text-faint">
+                Beside this list, a request reaches only the host registered for its own path: an approved tool server&rsquo;s URL, a configured peer&rsquo;s, a configured notify
+                transport&rsquo;s. {data.deployment.egress.length === 0 ? "With no host listed, a web fetch or a webhook output reaches nothing. " : ""}The list is the deployment&rsquo;s own setting
+                and is not edited here.
+              </span>
+            )}
+          </div>
+        </Panel>
+
         {/* ── third-party agents: attached over the SDK or A2A ── */}
         <Panel
           id="agents"
           folded={Boolean(folded["agents"])}
           onToggle={() => toggle("agents")}
           title="Third-party agents"
-          caption="Agents built elsewhere — a client's own, a vendor's, another team's — attached to this control plane so they run under the same journal, cost accounting, guardrails and theater as the factory's own. Two ways in: the Agent Factory SDK for an agent whose code you own, and A2A for one whose code cannot change, where the factory stands between the agent and everything it reaches."
+          caption="Agents built elsewhere (a client's own, a vendor's, another team's), attached to this control plane so they run under the same journal, cost accounting and guardrails as the deployment's own. Two ways in: the Agent Factory SDK for an agent whose code you own, and A2A for one whose code cannot change, where the factory stands between the agent and everything it reaches."
           meta={
             <>
               <Tag tone="run" solid>SDK</Tag>
@@ -487,203 +456,110 @@ export function Configuration() {
           title="Connected sources"
           caption={
             data
-              ? `${rows.length} connectors across the estate, ${wired.length} of them wired into workflows on this deployment and ${used} called at least once · ${data.deployment.runs} runs on record. A connector is a named instance of a backend: the agent holding it knows the verb, never the product, which is why the same workflow moves between clients unchanged. Interface says what the product itself exposes and how an agent reaches it: the platform serves every REST API, database, file store, event stream and webhook to agents as an MCP server, and where a vendor publishes its own MCP server the platform brokers it, with the security layer in between either way. Grants are the capabilities the connector brings with it. Reaches says whether it returns untrusted content, acts outside the system, or both. Credentials live in the vault and never in the workflow.`
-              : "reading the registry…"
+              ? `${rows.length === 1 ? "1 connection" : `${rows.length} connections`} configured in the workflows saved on this deployment, ${used} called at least once · ${data.deployment.runs} runs on record. A connection is a named instance of a backend on a tool: the agent holding it knows the verb, never the product. Mode says whether it is offline (a file or folder handed over) or live (read from a system when the run asks). Reaches says whether it returns untrusted content, acts outside the system, or both. Calls and last used are counted from the run journals; there is no health figure, because nothing measures one. Credentials are named in the vault and never held in the workflow.`
+              : failed
+                ? "not read"
+                : "reading the workflows…"
           }
         >
-          {/* how a connector reaches an agent */}
-          <div className="grid gap-px border-b border-line bg-line md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)]">
-            {[
-              { k: "Existing APIs", v: "Served as MCP", n: rows.filter((r) => r.surface === "api" && !r.nativeMcp).length, d: "REST and webhook interfaces wrapped as MCP servers by the platform; the agent sees tools, never endpoints." },
-              { k: "Databases and stores", v: "Served as MCP", n: rows.filter((r) => (r.surface === "db" || r.surface === "files" || r.surface === "events") && !r.nativeMcp).length, d: "SQL engines, file stores and event streams exposed as MCP tools with read-only roles and scoped queries." },
-              { k: "Vendor MCP servers", v: "Brokered", n: rows.filter((r) => r.nativeMcp).length, d: "Where the vendor publishes an MCP server the platform connects to it directly, still through the security layer." },
-              { k: "The security layer", v: "Always in between", n: null, d: "Policy engine (capability, scope, taint, gate), egress allowlist, credentials from the vault at call time, every call journalled." },
-            ].map((x) => (
-              <div key={x.k} className="flex flex-col gap-0.5 bg-surface px-4 py-2.5">
-                <span className="flex items-baseline gap-2">
-                  <span className="text-[11.5px] font-semibold text-fg">{x.k}</span>
-                  <Tag tone={x.n === null ? "warn" : x.v === "Brokered" ? "run" : "ok"} solid>{x.v}</Tag>
-                  {x.n !== null && <span className="tnum text-[10.5px] text-faint">{x.n}</span>}
-                </span>
-                <span className="text-[10.5px] leading-[1.45] text-faint">{x.d}</span>
-              </div>
-            ))}
-          </div>
+          {data && rows.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2">
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search by name, kind, tool or workflow"
+                aria-label="Search connections"
+                className="focusable h-7 w-64 max-w-full rounded-sm border border-line bg-canvas px-2 text-[11.5px] text-fg placeholder:text-ghost"
+              />
+              <span className="grow" />
+              <span className="tnum text-[10.5px] text-faint">{shown.length === rows.length ? `${rows.length} listed` : `showing ${shown.length} of ${rows.length}`}</span>
+            </div>
+          )}
 
-          {/* filters */}
-          <div className="flex flex-wrap items-center gap-1.5 border-b border-line px-4 py-2">
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search connectors"
-              className="focusable h-6 w-44 rounded-sm border border-line bg-canvas px-2 text-[11px] text-fg placeholder:text-ghost"
-            />
-            {(["all", "wired", "available"] as const).map((f) => (
-              <button
-                key={f}
-                type="button"
-                onClick={() => setWiring(f)}
-                className={`focusable rounded-sm px-1.5 py-0.5 text-[10.5px] transition-colors ${
-                  wiring === f ? "bg-raise text-fg" : "text-faint hover:text-fg"
-                }`}
-              >
-                {f === "available" ? "estate" : f === "wired" ? "in workflows" : f}
-              </button>
-            ))}
-            <span className="mx-1 h-3 w-px bg-line" />
-            <button
-              type="button"
-              onClick={() => setGroup("")}
-              className={`focusable rounded-sm px-1.5 py-0.5 text-[10.5px] transition-colors ${
-                group === "" ? "bg-raise text-fg" : "text-faint hover:text-fg"
-              }`}
-            >
-              every kind
-            </button>
-            {VENDOR_GROUPS.map((g) => (
-              <button
-                key={g.name}
-                type="button"
-                onClick={() => setGroup(group === g.name ? "" : g.name)}
-                className={`focusable flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10.5px] transition-colors ${
-                  group === g.name ? "bg-raise text-fg" : "text-faint hover:text-fg"
-                }`}
-              >
-                <span className="size-1.5 rounded-[2px]" style={{ background: `var(--t-c${g.c})` }} />
-                {g.name}
-              </button>
-            ))}
-          </div>
+          {!data && !failed && <p className="px-4 py-3 text-[11.5px] text-faint">Reading the workflows&hellip;</p>}
+          {failed && <p className="px-4 py-3 text-[11.5px] text-faint">The connections could not be read.</p>}
+          {data && rows.length === 0 && (
+            <p className="px-4 py-6 text-[12px] leading-[1.55] text-dim">
+              No workflow on this deployment configures a connection yet. A connection appears here once a saved workflow names one.
+            </p>
+          )}
 
-          <div className="max-h-[560px] overflow-x-auto overflow-y-auto">
-            <table className="w-full min-w-[960px] border-collapse text-left">
-              <thead className="sticky top-0 z-10 bg-surface">
-                <tr className="border-b border-line text-[10.5px] text-faint">
-                  <th className="px-4 py-2.5 font-medium">Source</th>
-                  <th className="px-4 py-2.5 font-medium">Interface</th>
-                  <th className="px-4 py-2.5 font-medium">Grants</th>
-                  <th className="px-4 py-2.5 font-medium">Held by</th>
-                  <th className="px-4 py-2.5 font-medium">Calls</th>
-                  <th className="px-4 py-2.5 font-medium">Last used</th>
-                  <th className="px-4 py-2.5 font-medium">Reaches</th>
-                  <th className="px-4 py-2.5 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shown.map((r) => (
-                  <tr key={r.key} className="border-b border-line transition-colors last:border-0 hover:bg-raise">
-                    <td className="max-w-[420px] px-4 py-3">
-                      <span className="flex items-start gap-3">
-                        <BrandMark name={r.brand} size={22} />
+          {data && rows.length > 0 && (
+            <div className="max-h-[560px] overflow-x-auto overflow-y-auto">
+              <table className="w-full min-w-[980px] border-collapse text-left">
+                <thead className="sticky top-0 z-10 bg-surface">
+                  <tr className="border-b border-line text-[10.5px] text-faint">
+                    <th className="px-4 py-2.5 font-medium">Source</th>
+                    <th className="px-3 py-2.5 font-medium">Mode</th>
+                    <th className="px-3 py-2.5 font-medium">Tool</th>
+                    <th className="px-3 py-2.5 font-medium">Held by</th>
+                    <th className="px-3 py-2.5 text-right font-medium">Calls</th>
+                    <th className="px-3 py-2.5 font-medium">Last used</th>
+                    <th className="px-3 py-2.5 font-medium">Reaches</th>
+                    <th className="px-3 py-2.5 font-medium">Use</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shown.map((r) => (
+                    <tr key={r.key} className="border-b border-line align-top transition-colors last:border-0 hover:bg-raise/50">
+                      <td className="max-w-[420px] px-4 py-2.5">
                         <span className="flex min-w-0 flex-col">
-                          <span className="flex items-center gap-2 text-[13px] font-medium">
-                            {r.product}
-                            {r.wired && <Tag tone="ok">wired</Tag>}
-                            <span className="text-[10px] font-normal text-ghost">{r.kindLabel}</span>
+                          <span className="flex flex-wrap items-baseline gap-2">
+                            <span className="font-mono text-[12px] font-medium text-fg">{r.name}</span>
+                            <span className="text-[11px] text-dim">{r.kindLabel}</span>
                           </span>
-                          <span className="break-words text-[11px] text-faint">{r.contributes}</span>
-                          <span className="mt-0.5 max-w-[380px] break-words font-mono text-[10.5px] leading-[1.5] text-ghost">
-                            {r.ingest}
-                          </span>
+                          {r.what && <span className="break-words text-[11px] text-faint">{r.what}</span>}
+                          <span className="mt-0.5 break-words font-mono text-[10.5px] leading-[1.5] text-ghost">{r.wiring}</span>
                         </span>
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <Interface surface={r.surface} nativeMcp={r.nativeMcp} note={r.nativeMcpNote} />
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="flex flex-col gap-0.5">
-                        {r.grants.map((g) => (
-                          <span key={g} className="font-mono text-[10.5px] text-dim">
-                            {g}
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        {r.mode ? (
+                          <span title={MODE_MEANS[r.mode]}>
+                            <Tag tone={r.mode === "live" ? "run" : "neutral"}>{r.mode === "live" ? "Live" : "Offline"}</Tag>
                           </span>
-                        ))}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-[11.5px]">
-                      {r.heldBy ? (
+                        ) : (
+                          <span className="text-[11px] text-ghost" title="The kind of this source does not say whether it is a file handed over or a connection.">
+                            not stated
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <span className="flex flex-col gap-0.5">
+                          <span className="font-mono text-[11px] text-dim">{r.tool}</span>
+                          <Status tone={RISK_TONE[r.risk] ?? "neutral"}>{r.risk}</Status>
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-[11.5px]">
                         <span className="flex flex-col">
                           <span className="text-dim">{r.heldBy}</span>
-                          {r.node && <span className="font-mono text-[10px] text-ghost">{r.node}</span>}
+                          <span className="font-mono text-[10px] text-ghost">{r.node ? `${r.agent} · ${r.node}` : r.agent}</span>
                         </span>
-                      ) : r.activity ? (
-                        <span className="flex flex-col">
-                          <span className="text-dim">{r.activity.owner}</span>
-                          <span className="font-mono text-[10px] text-ghost">{r.activity.instance} · every {r.activity.cadence >= 60 ? `${r.activity.cadence / 60} h` : `${r.activity.cadence} min`}</span>
+                      </td>
+                      <td className="tnum px-3 py-2.5 text-right font-mono text-[11.5px] text-dim">{r.calls.toLocaleString("en-GB")}</td>
+                      <td className="tnum px-3 py-2.5 whitespace-nowrap text-[11.5px] text-dim">{ago(r.lastUsed)}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <span className="flex gap-1">
+                          {r.taints && <Tag tone="warn">untrusted content</Tag>}
+                          {r.sink && <Tag tone="err">acts outside</Tag>}
+                          {!r.taints && !r.sink && <span className="text-[11px] text-ghost">inside only</span>}
                         </span>
-                      ) : (
-                        <span className="text-ghost">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {r.wired ? (
-                        <span className="tnum font-mono text-[11.5px] text-dim">
-                          {r.calls} <span className="font-sans text-faint">calls</span>
-                        </span>
-                      ) : r.activity ? (
-                        <span className="flex flex-col">
-                          <span className="tnum font-mono text-[11.5px] text-dim">
-                            {compact(r.activity.calls30d)} <span className="font-sans text-faint">calls · 30 d</span>
-                          </span>
-                          <span className="tnum font-mono text-[10px] text-ghost">{compact(r.activity.records24h)} records · 24 h</span>
-                        </span>
-                      ) : (
-                        <span className="text-ghost">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {r.wired ? (
-                        <span className="tnum text-[12px] text-dim">{ago(r.lastUsed)}</span>
-                      ) : r.activity ? (
-                        <span className="flex flex-col">
-                          <span className={`tnum text-[12px] ${r.activity.health === "healthy" ? "text-dim" : r.activity.health === "degraded" ? "text-warn" : "text-err"}`}>{ago(r.activity.lastSync)}</span>
-                          <span className="text-[10px] text-ghost">connected {r.activity.ageDays} d</span>
-                        </span>
-                      ) : (
-                        <span className="text-ghost">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="flex gap-1">
-                        {r.taints && <Tag tone="warn">taints</Tag>}
-                        {r.sink && <Tag tone="err">acts outside</Tag>}
-                        {!r.taints && !r.sink && <span className="text-[11px] text-ghost">inside only</span>}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {r.wired ? (
-                        <Status tone={r.calls > 0 ? "ok" : "warn"}>{r.calls > 0 ? "In use" : "Never called"}</Status>
-                      ) : r.activity ? (
-                        <Status tone={r.activity.health === "healthy" ? "ok" : r.activity.health === "degraded" ? "warn" : "err"}>
-                          {r.activity.health === "healthy" ? "Connected" : r.activity.health === "degraded" ? "Degraded" : "Reauthorise"}
-                        </Status>
-                      ) : (
-                        <Status tone="neutral" dot={false}>
-                          Available
-                        </Status>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-                {data && shown.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="px-4 py-3 text-[11.5px] text-faint">
-                      Nothing matches that filter.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          <div className="flex items-center gap-2 border-t border-line px-4 py-2 text-[10.5px] text-ghost">
-            <span>
-              {shown.length === rows.length
-                ? `${rows.length} connectors`
-                : `showing ${shown.length} of ${rows.length}`}
-            </span>
-            <span className="grow" />
-            <span>this estate&rsquo;s own connectors are listed last</span>
-          </div>
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <Status tone={r.calls > 0 ? "ok" : "neutral"}>{r.calls > 0 ? "Called" : "Never called"}</Status>
+                      </td>
+                    </tr>
+                  ))}
+                  {shown.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="px-4 py-3 text-[11.5px] text-faint">
+                        Nothing matches that search.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Panel>
 
         {/* ── tools ── */}
@@ -692,7 +568,7 @@ export function Configuration() {
           folded={Boolean(folded["tools"])}
           onToggle={() => toggle("tools")}
           title="Tool registry"
-          caption="Every tool granted to a workflow, with the risk it was registered at. Risk is declared here and read as a lookup at call time — never inferred while a run is in flight."
+          caption="Every tool granted to a workflow, with the risk it was registered at. Risk is declared on the tool and read as a lookup at call time, never inferred while a run is in flight."
         >
           <div className="max-h-[420px] overflow-x-auto overflow-y-auto">
             <table className="w-full min-w-[820px] border-collapse text-[11.5px]">
@@ -701,7 +577,6 @@ export function Configuration() {
                   <th className="px-4 py-2 font-medium">Tool</th>
                   <th className="px-3 py-2 font-medium">Workflow</th>
                   <th className="px-3 py-2 font-medium">Risk</th>
-                  <th className="px-3 py-2 font-medium">Interface</th>
                   <th className="px-3 py-2 font-medium">Properties</th>
                   <th className="px-3 py-2 font-medium">Calls</th>
                   <th className="px-3 py-2 font-medium">Last used</th>
@@ -718,17 +593,6 @@ export function Configuration() {
                       <td className="px-3 py-2.5 whitespace-nowrap">
                         <Status tone={RISK_TONE[t.risk] ?? "neutral"}>{t.risk}</Status>
                       </td>
-                      <td className="px-3 py-2.5 whitespace-nowrap">
-                        {(() => {
-                          const kinds = [...new Set(sources.filter((x) => x.agent === t.agent && x.tool === t.tool).map((x) => SURFACE_LABEL[(VENDORS.find((v) => v.slug === x.name)?.surface ?? KIND_SURFACE[x.kind] ?? "api") as Surface]))];
-                          return (
-                            <span className="flex items-center gap-1.5">
-                              <Tag tone="ok" solid>MCP</Tag>
-                              <span className="text-[10.5px] text-faint">{kinds.length ? `over ${kinds.join(", ")}` : "in-process tool"}</span>
-                            </span>
-                          );
-                        })()}
-                      </td>
                       <td className="px-3 py-2.5">
                         <span className="flex flex-wrap gap-1">
                           {t.taints && <Tag tone="warn">taints</Tag>}
@@ -741,6 +605,13 @@ export function Configuration() {
                       <td className="px-3 py-2.5 whitespace-nowrap text-faint">{ago(t.lastUsed)}</td>
                     </tr>
                   ))}
+                {data && tools.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-3 text-faint">
+                      No workflow on this deployment holds a tool yet.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -818,6 +689,13 @@ export function Configuration() {
                     </tr>
                   );
                 })}
+              {data && data.models.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-3 text-faint">
+                      No model is offered on this deployment yet. Models are offered on Settings.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

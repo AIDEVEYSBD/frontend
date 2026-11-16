@@ -1,7 +1,8 @@
 "use client";
 
 import { Appearance } from "./appearance";
-import { Providers, useConfigChanges } from "./providers";
+import { DATA_CLASS_STORED, PermittedClass, PermittedClassNote, Providers, useConfigChanges } from "./providers";
+import type { DataClass } from "@/lib/api/pending";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Status } from "./ui";
@@ -14,13 +15,14 @@ import { Cross, Row, Text } from "./builder/controls";
 import { listVault, removeVaultKey, setVaultKey } from "@/lib/api/l2";
 
 /**
- * The factory's configuration: which models it offers, and the keys its
- * connectors read.
+ * The deployment's settings: the providers it can reach, which models it
+ * offers, and the keys its connectors read.
  *
- * Models: the Foundry resource's deployments, and a dropdown with
- * hundreds of entries is a way of choosing nothing. Whoever runs this factory
- * picks the short list here; every model picker in the builder shows exactly
- * that list and nothing else.
+ * Models: what the configured providers serve, and a dropdown with
+ * hundreds of entries is a way of choosing nothing. Whoever runs this
+ * deployment picks the short list here; every model picker in the console
+ * shows exactly that list and nothing else. A deployment starts with no
+ * provider and no model, and each card says so rather than naming one.
  *
  * Keys: named credentials, referenced from specs as ${secret:name}. Values
  * arrive here and leave masked — the only consumer of a live key is the
@@ -33,7 +35,7 @@ interface CatalogueModel {
   context: number;
   price: number;
   price_out?: number;
-  /** Provider id for models offered from an added provider; absent for Foundry deployments. */
+  /** Provider id for models offered from an added provider; absent for a model the catalogue door lists. */
   provider?: string;
 }
 
@@ -41,7 +43,8 @@ type ModelClass = "small" | "medium" | "large";
 const MODEL_CLASSES: ModelClass[] = ["small", "medium", "large"];
 
 interface Config {
-  models: { id: string; label: string; class?: ModelClass; price_in?: number; price_out?: number; provider?: string }[];
+  /** `max_data_class` (5.3) is read when the door answers one; it does not store it yet (components/providers.tsx). */
+  models: { id: string; label: string; class?: ModelClass; price_in?: number; price_out?: number; provider?: string; max_data_class?: DataClass }[];
   default_model: string;
   class_defaults?: Partial<Record<ModelClass, string>>;
   providers?: { id: string; label: string; local?: boolean }[];
@@ -61,10 +64,10 @@ export function Settings() {
     <div className="min-h-full" data-hue="green">
       <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-8 px-5 py-7">
         <header className="flex flex-col gap-1.5">
-          <h1 className="text-[24px] font-semibold tracking-[-0.02em]">Configuration</h1>
+          <h1 className="text-[24px] font-semibold tracking-[-0.02em]">Settings</h1>
           <p className="max-w-[620px] text-[13.5px] leading-relaxed text-dim">
-            Manage the providers this factory can reach, the approved models available to workflows, and the
-            protected credentials that connectors resolve at runtime.
+            The providers this deployment can send model calls to, the models it offers to workflows, and the
+            protected credentials that connectors resolve at run time.
           </p>
         </header>
 
@@ -117,11 +120,13 @@ function Models() {
   }, [reloadConfig]);
 
   const chosen = useMemo(() => new Set((config?.models ?? []).map((m) => m.id)), [config]);
+  // A deployment with no catalogue to list is not a fault: the door says its endpoint is not set, and the card says there is nothing to browse.
+  const noCatalogue = /not set/i.test(catalogueError);
   const providerLabel = useCallback((id?: string) => (config?.providers ?? []).find((p) => p.id === id), [config]);
 
   const shown = useMemo(() => {
     if (!catalogue) return [];
-    // Models offered from added providers are not Foundry deployments; they
+    // Models offered from added providers are not in the catalogue the door lists; they
     // join the list from the configuration so their tier and price are editable here.
     const ids = new Set(catalogue.map((m) => m.id));
     const extra: CatalogueModel[] = (config?.models ?? [])
@@ -220,11 +225,12 @@ function Models() {
 
       <div className="flex flex-col gap-2.5 border-b border-line px-4 py-3">
         <p className="text-[11.5px] leading-[1.55] text-faint">
-          The deployments on the Foundry resource. Tick
+          The models this deployment can offer: what its catalogue lists, and what was offered from a provider above. Tick
           what this deployment offers; every model choice in the console shows exactly this list, and
-          a spec names a deployment, never a provider. Record the price per million tokens beside
+          a workflow names a model, never a provider. Record the price per million tokens beside
           each offered model: it is what cost figures and model comparisons are computed from.
         </p>
+        <PermittedClassNote short />
         <Text value={query} onChange={setQuery} placeholder="Search the catalogue" aria-label="Search the catalogue" />
         {/* Segmented is uncontrolled by design — the wrapper reads the choice
             off the bubbling click so this page can hold the sort itself. */}
@@ -238,9 +244,9 @@ function Models() {
           <span className="text-[11px] text-faint">Sort</span>
           <Segmented options={["Name", "Price", "Context"]} defaultValue="Name" />
         </div>
-        {catalogueError && (
+        {catalogueError && !noCatalogue && (
           <Banner tone="warn" title="The catalogue could not be read">
-            {catalogueError} — the selected list still works; only browsing is unavailable.
+            {catalogueError}. The offered list still works; only browsing is unavailable.
           </Banner>
         )}
       </div>
@@ -275,8 +281,11 @@ function Models() {
                   <span className="flex items-center gap-1.5 truncate text-[12.5px] font-medium text-fg" title={m.label}>
                     {m.label}
                     {m.provider && (
-                      <span className={`shrink-0 rounded-[3px] border px-1 py-px font-mono text-[9px] font-semibold ${providerLabel(m.provider)?.local ? "border-ok/40 text-ok" : "border-line-strong text-dim"}`} title="Served by this provider">
-                        {providerLabel(m.provider)?.label ?? m.provider}
+                      <span
+                        className={`shrink-0 rounded-[3px] border px-1 py-px font-mono text-[9px] font-semibold ${providerLabel(m.provider)?.local ? "border-ok/40 text-ok" : "border-line-strong text-dim"}`}
+                        title={providerLabel(m.provider) ? "Served by this provider" : m.provider === "other" ? "Offered, and neither the catalogue nor a configured provider lists it" : "The provider this model names is not configured"}
+                      >
+                        {providerLabel(m.provider)?.label ?? (m.provider === "other" ? "no provider" : m.provider)}
                       </span>
                     )}
                   </span>
@@ -336,8 +345,8 @@ function Models() {
                         tier default
                       </Button>
                     ))}
-                  {/* Cost per million tokens, recorded by the operator: Foundry
-                      publishes no sheet, and a blank means unknown, never free. */}
+                  {/* Cost per million tokens, recorded by the operator: no provider
+                      publishes a sheet the console reads, and a blank means unknown, never free. */}
                   {providerLabel(config?.models.find((x) => x.id === m.id)?.provider)?.local && (
                     <span className="text-[10px] text-ok">$0 per token · priced by the hour</span>
                   )}
@@ -363,6 +372,14 @@ function Models() {
                       />
                     </label>
                   ))}
+                  <PermittedClass
+                    value={config?.models.find((x) => x.id === m.id)?.max_data_class}
+                    label={`Permitted data class of ${m.label}`}
+                    onChange={(v) =>
+                      // Written only once the door keeps the field; the control is disabled until then.
+                      config && DATA_CLASS_STORED && save({ ...config, models: config.models.map((x) => (x.id === m.id ? { ...x, max_data_class: v || undefined } : x)) })
+                    }
+                  />
                   <span className="grow" />
                   {isDefault ? (
                     <span className="shrink-0 rounded-[3px] border border-line-strong px-1 py-px font-mono text-[9px] font-semibold text-dim">
@@ -378,9 +395,19 @@ function Models() {
             </div>
           );
         })}
+        {catalogue !== null && config && shown.length === 0 && (
+          <div className="flex flex-col gap-1 px-4 py-6">
+            <span className="text-[13px] font-medium text-fg">{query.trim() ? "Nothing matches that search" : "No model is offered"}</span>
+            {!query.trim() && (
+              <span className="max-w-[64ch] text-[12.5px] leading-[1.55] text-dim">
+                {noCatalogue || catalogue.length === 0 ? "This deployment lists no catalogue to pick from. Add a provider above and offer the models it serves; they appear here." : "Tick a model to offer it."}
+              </span>
+            )}
+          </div>
+        )}
         {catalogue !== null && shown.length > 80 && (
           <p className="px-4 py-2.5 text-[11px] text-faint">
-            {shown.length - 80} more — narrow the search.
+            {shown.length - 80} more: narrow the search.
           </p>
         )}
       </div>
@@ -466,7 +493,7 @@ function Keys() {
               <span className="truncate text-[10.5px] text-faint">
                 {[
                   k.label,
-                  k.label.startsWith("from $") ? "supplied by the environment — manage it there" : "",
+                  k.label.startsWith("from $") ? "supplied by the environment: manage it there" : "",
                   k.last_used ? `last used ${k.last_used.slice(0, 10)}` : "",
                   k.used_by?.length
                     ? `read by ${k.used_by.length} workflow${k.used_by.length === 1 ? "" : "s"}`
@@ -513,10 +540,10 @@ function Keys() {
       <footer className="flex flex-col gap-2.5 border-t border-line bg-raise px-4 py-4">
         <div className="grid grid-cols-2 gap-2">
           <Row label="Name" tight hint="What specs will reference.">
-            <Text mono value={name} placeholder="tavily" onChange={setName} />
+            <Text mono value={name} placeholder="key-name" onChange={setName} />
           </Row>
           <Row label="Label" tight hint="What this credential is for.">
-            <Text value={label} placeholder="Tavily search, GRC sandbox" onChange={setLabel} />
+            <Text value={label} placeholder="The system it opens" onChange={setLabel} />
           </Row>
         </div>
         <Row label="Value" tight>
@@ -532,7 +559,7 @@ function Keys() {
         </Row>
         <div className="flex items-center gap-2">
           <span className="text-[11px] text-faint">
-            Any connector — including ones that do not exist yet — reads it as{" "}
+            Any connector, including ones that do not exist yet, reads it as{" "}
             <code className="font-mono">{`\${secret:${name.trim() || "name"}}`}</code>
           </span>
           <span className="grow" />

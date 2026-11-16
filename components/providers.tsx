@@ -9,21 +9,66 @@ import { Text } from "./builder/controls";
 import { Checkbox } from "./forms";
 import { FOUNDRY_ID, KINDS, kindOf, type Provider, type ProviderKind } from "@/lib/providers";
 import { listVault } from "@/lib/api/l2";
+import { DATA_CLASSES, type DataClass } from "@/lib/api/pending";
 
 /**
  * The endpoint router: every place this deployment can send a model call.
  *
  * A provider is an endpoint plus a credential name plus whether it is
  * local. Adding one and discovering its models puts those models on the
- * offered list beside the Foundry deployments, and the runtime then routes
- * each call to the provider its model names. Credentials never appear here:
- * a provider records the name of a vault key, and only the runtime reads
- * the value, at the moment of the call.
+ * offered list, and the runtime then routes each call to the provider its
+ * model names. Credentials never appear here: a provider records the name
+ * of a vault key, and only the runtime reads the value, at the moment of
+ * the call. A deployment starts with no provider, and the card says so.
  */
 
-interface Offered { id: string; label: string; class?: "small" | "medium" | "large"; price_in?: number; price_out?: number; provider?: string; served_as?: string }
-interface Config { models: Offered[]; default_model: string; class_defaults?: Record<string, string>; providers: Provider[]; node_routes?: Record<string, string> }
+/** The permitted data class a provider or a model will carry (5.3): read when the door answers one. */
+interface Classed { max_data_class?: DataClass }
+interface Offered extends Classed { id: string; label: string; class?: "small" | "medium" | "large"; price_in?: number; price_out?: number; provider?: string; served_as?: string }
+interface Config { models: Offered[]; default_model: string; class_defaults?: Record<string, string>; providers: (Provider & Classed)[]; node_routes?: Record<string, string> }
 interface Found { id: string; label: string; meta?: string }
+
+/* ═══════════════════ permitted data class (5.3) ═══════════════════
+   The highest class of data a provider or a model may be sent. The screen is
+   ahead of its backend: the configuration door (app/api/config/route.ts)
+   rebuilds each provider and model from the fields it knows, so a
+   `max_data_class` sent to it is dropped, and nothing in the runtime reads
+   one. Until the door keeps the field the control is shown disabled, with
+   whatever value the door answers (none today), and never writes. The day it
+   does, DATA_CLASS_STORED turns true and the controls below save through the
+   same partial write as every other field here. */
+export const DATA_CLASS_STORED = false;
+
+export function PermittedClass({ value, onChange, label }: { value?: string; onChange?: (v: DataClass | "") => void; label: string }) {
+  const options = [{ value: "", label: "not set" }, ...DATA_CLASSES.map((c) => ({ value: c as string, label: c }))];
+  if (value && !options.some((o) => o.value === value)) options.push({ value, label: value });
+  return (
+    <span className="flex items-center gap-1.5 text-[10.5px] text-faint">
+      permitted data class
+      <span className="block w-[132px]">
+        <Pick value={value ?? ""} onChange={(v) => onChange?.(v as DataClass | "")} options={options} disabled={!DATA_CLASS_STORED || !onChange} aria-label={label} />
+      </span>
+    </span>
+  );
+}
+
+/** One line under a card that shows the field: what it is, and that nothing keeps or enforces it yet. */
+export function PermittedClassNote({ short = false }: { short?: boolean }) {
+  if (short && !DATA_CLASS_STORED) {
+    return (
+      <span className="text-[11.5px] leading-[1.5] text-faint" data-pending="/api/config">
+        Permitted data class is the highest class of data a model may be sent. It is not stored or enforced on this deployment yet (see Providers), so it cannot be set here.
+      </span>
+    );
+  }
+  if (DATA_CLASS_STORED) return <span className="text-[11.5px] leading-[1.5] text-faint">Permitted data class is the highest class of data a provider or a model may be sent.</span>;
+  return (
+    <span className="text-[11.5px] leading-[1.5] text-faint" data-pending="/api/config">
+      Permitted data class is the highest class of data a provider or a model may be sent. Not connected on this deployment: the configuration door{" "}
+      <span className="font-mono text-[11px] text-dim">POST /api/config</span> does not store the field and nothing enforces it yet, so it cannot be set here.
+    </span>
+  );
+}
 
 /** Tell the other settings cards the configuration changed under them. */
 const CONFIG_EVENT = "af:config";
@@ -89,6 +134,12 @@ export function Providers() {
     await write({ providers: config.providers.map((x) => (x.id === p.id ? { ...x, hourly_usd: v === "" ? undefined : Number(v) } : x)) });
   };
 
+  /** Written only once the door keeps the field (DATA_CLASS_STORED); the control is disabled until then. */
+  const setDataClass = async (p: Provider, v: DataClass | "") => {
+    if (!config || !DATA_CLASS_STORED) return;
+    await write({ providers: config.providers.map((x) => (x.id === p.id ? { ...x, max_data_class: v || undefined } : x)) });
+  };
+
   return (
     <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
       <header className="flex items-center gap-2.5 border-b border-line px-4 py-3">
@@ -104,13 +155,14 @@ export function Providers() {
         )}
       </header>
 
-      <div className="border-b border-line px-4 py-3">
+      <div className="flex flex-col gap-2 border-b border-line px-4 py-3">
         <p className="text-[11.5px] leading-[1.55] text-faint">
-          Where model calls can go. The Foundry gateway comes from the environment; add a Vertex or Bedrock endpoint, an OpenAI-compatible service, or a
-          vLLM, Ollama or LM Studio server on your own hardware. Discover what each serves and offer the models you want; the runtime routes every call to the
-          provider its model names, with that provider&rsquo;s credential from the vault. Local providers are priced by the hardware hour, not per token, and
-          the FinOps page uses that rate.
+          Where model calls can go. A provider is a chat-completions endpoint, the name of the vault key that authenticates to it, and whether it is served
+          on your own hardware. Discover what each serves and offer the models you want; the runtime routes every call to the provider its model names, with
+          that provider&rsquo;s credential from the vault. Local providers are priced by the hardware hour, not per token, and the FinOps page uses that
+          rate.
         </p>
+        <PermittedClassNote />
       </div>
 
       {error && (
@@ -125,6 +177,7 @@ export function Providers() {
         <AddProvider
           keys={keys}
           existing={config.providers.map((p) => p.id)}
+          needsModel={config.models.length === 0}
           onCancel={() => setAdding(false)}
           onSave={async (p, models) => {
             const ok = await write({
@@ -137,6 +190,15 @@ export function Providers() {
       )}
 
       <div className="flex flex-col">
+        {!config && !error && <p className="px-4 py-4 text-[12px] text-faint">Reading the configuration&hellip;</p>}
+        {config && config.providers.length === 0 && !adding && (
+          <div className="flex flex-col gap-1 px-4 py-6">
+            <span className="text-[13px] font-medium text-fg">No provider is configured</span>
+            <span className="max-w-[64ch] text-[12.5px] leading-[1.55] text-dim">
+              This deployment has no endpoint to send model calls to yet. Add a provider, then offer the models it serves.
+            </span>
+          </div>
+        )}
         {(config?.providers ?? []).map((p) => {
           const models = modelsOf(p.id);
           const builtin = p.id === FOUNDRY_ID;
@@ -159,7 +221,7 @@ export function Providers() {
                 )}
               </div>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10.5px] text-faint">
-                <span className="truncate font-mono" title={p.endpoint}>{p.endpoint || "FOUNDRY_ENDPOINT"}</span>
+                <span className="truncate font-mono" title={p.endpoint}>{p.endpoint || "endpoint not set"}</span>
                 <span>key: <code className="font-mono">{p.key_ref || "none"}</code></span>
                 {p.local && (
                   <label className="flex items-center gap-1">
@@ -175,6 +237,7 @@ export function Providers() {
                     />
                   </label>
                 )}
+                <PermittedClass value={p.max_data_class} onChange={(v) => setDataClass(p, v)} label={`Permitted data class of ${p.label}`} />
               </div>
               {models.length > 0 && (
                 <div className="flex flex-wrap gap-1">
@@ -182,6 +245,7 @@ export function Providers() {
                     <span key={m.id} className="rounded-sm border border-line px-1.5 py-px font-mono text-[9.5px] text-dim" title={m.label}>
                       {m.id}
                       {m.class && <span className="ml-1 text-ghost">{m.class}</span>}
+                      {m.max_data_class && <span className="ml-1 text-ghost">up to {m.max_data_class}</span>}
                     </span>
                   ))}
                 </div>
@@ -277,7 +341,7 @@ function Discover({ provider, already, onOffer }: { provider: Pick<Provider, "ki
   );
 }
 
-function AddProvider({ keys, existing, onCancel, onSave }: { keys: string[]; existing: string[]; onCancel: () => void; onSave: (p: Provider, models: Found[]) => Promise<void> }) {
+function AddProvider({ keys, existing, needsModel, onCancel, onSave }: { keys: string[]; existing: string[]; /** Nothing is offered yet, and the configuration door keeps at least one offered model: the first provider is saved with one. */ needsModel: boolean; onCancel: () => void; onSave: (p: Provider, models: Found[]) => Promise<void> }) {
   const [kind, setKind] = useState<ProviderKind>("vllm");
   const [label, setLabel] = useState("");
   const [endpoint, setEndpoint] = useState("");
@@ -347,22 +411,25 @@ function AddProvider({ keys, existing, onCancel, onSave }: { keys: string[]; exi
         </label>
         <label className="flex flex-col gap-1 text-[11px] text-faint">
           Credential (vault key)
-          <Pick value={keyRef} onChange={setKeyRef} options={[{ value: "", label: local ? "none — open local endpoint" : "none" }, ...keys.map((k) => ({ value: k, label: k }))]} />
+          <Pick value={keyRef} onChange={setKeyRef} options={[{ value: "", label: local ? "none: open local endpoint" : "none" }, ...keys.map((k) => ({ value: k, label: k }))]} />
           <span className="text-[10px] text-ghost">Add the key under Keys first; only its name is stored here.</span>
         </label>
         <div className="flex flex-col gap-1 text-[11px] text-faint">
           Pricing
           <label className="flex h-7 items-center gap-2 text-[11.5px] text-dim">
             <Checkbox checked={local} onChange={() => setLocal(!local)} aria-label="Served locally" />
-            Local hardware — $0 per token
+            Local hardware: $0 per token
           </label>
           {local && (
             <label className="flex items-center gap-2 text-[11px] text-dim">
               fully loaded $/hour
-              <input type="number" min={0} step="0.05" value={hourly} onChange={(e) => setHourly(e.target.value)} placeholder="e.g. 2.50" className="focusable h-7 w-24 rounded-md border border-line-strong bg-field px-1.5 font-mono text-[11px] text-fg placeholder:text-ghost" />
+              <input type="number" min={0} step="0.05" value={hourly} onChange={(e) => setHourly(e.target.value)} placeholder="$ per hour" className="focusable h-7 w-24 rounded-md border border-line-strong bg-field px-1.5 font-mono text-[11px] text-fg placeholder:text-ghost" />
             </label>
           )}
           {!local && <span className="text-[10px] text-ghost">Record $/M tokens beside each offered model in the Models card.</span>}
+        </div>
+        <div className="flex flex-col gap-1 text-[11px] text-faint md:col-span-2">
+          <PermittedClass label="Permitted data class of the new provider" />
         </div>
       </div>
 
@@ -373,8 +440,9 @@ function AddProvider({ keys, existing, onCancel, onSave }: { keys: string[]; exi
         {found && !testError && <span className="text-[11px] text-ok">{found.length} model{found.length === 1 ? "" : "s"} served</span>}
         {testError && <span className="text-[11px] text-err">{testError}</span>}
         <span className="grow" />
-        <Button size="sm" variant="quiet" onClick={onCancel}>Cancel</Button>
-        <Button size="sm" variant="solid" permission="configure" loading={saving} disabled={!endpoint.trim() || !id || taken} onClick={save}>
+        <Button size="sm" variant="solid" tone="err" onClick={onCancel}>Cancel</Button>
+        {needsModel && picked.size === 0 && <span className="text-[11px] text-faint">Discover its models and pick at least one to offer: nothing is offered yet.</span>}
+        <Button size="sm" variant="solid" permission="configure" loading={saving} disabled={!endpoint.trim() || !id || taken || (needsModel && picked.size === 0)} onClick={save}>
           Save provider{picked.size ? ` and offer ${picked.size}` : ""}
         </Button>
       </div>

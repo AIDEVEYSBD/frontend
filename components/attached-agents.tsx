@@ -22,16 +22,9 @@ import {
   type AttachedAgent,
   type Language,
 } from "@/lib/attached";
-import { agentActivityFor } from "@/lib/demo-activity";
 import { attachAgent, attachableTools, detachAgent, listAttached, setAttachedPolicy, type AttachedList, type PolicyPatch } from "@/lib/api/l2";
 import { proposePolicyChange, type PolicyChange } from "@/lib/api/l9";
 import { attachedSplit, effectiveAt, effectiveProblem, proposedLine } from "@/lib/policy";
-
-/** A seeded agent's row with its demonstration activity (lib/demo-activity.ts), never applied to one whose runs are on record. */
-function withDemoActivity(a: AttachedAgent): AttachedAgent {
-  const x = agentActivityFor(a.id, a.mode);
-  return { ...a, last_seen: x.lastSeen, runs30d: x.runs30d, cost30d: x.cost30d, denials30d: x.denials30d, gates30d: x.gates30d, p50ms: x.p50ms };
-}
 
 /**
  * Third-party agents: how one attaches, and which ones have.
@@ -208,9 +201,8 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
   const [proposals, setProposals] = useState(0);
 
   const shown = (d: Pick<AttachedList, "agents" | "store">) => {
-    // The backend measures activity from the run record; the seeded
-    // agents' figures are demonstration data and the console's own.
-    const list = (d.agents as AttachedAgent[]).map((a) => (a.demo ? withDemoActivity(a) : a));
+    // Every row is as the door answers it: its activity is what the backend measured from the run record.
+    const list = d.agents as AttachedAgent[];
     setAgents(list);
     setStore(d.store);
     onLoaded?.(list, d.store);
@@ -459,7 +451,7 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
       >
         <label className="flex flex-col gap-1">
           <span className="text-[10.5px] text-ghost">Agent</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Vendor Risk Copilot" className={`${control} w-[190px]`} />
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Agent name" className={`${control} w-[190px]`} />
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-[10.5px] text-ghost">Attach over</span>
@@ -488,7 +480,7 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
         )}
         <label className="flex flex-col gap-1">
           <span className="text-[10.5px] text-ghost">Owner</span>
-          <input value={owner} onChange={(e) => setOwner(e.target.value)} placeholder="Third-Party Risk" className={`${control} w-[160px]`} />
+          <input value={owner} onChange={(e) => setOwner(e.target.value)} placeholder="Owning team" className={`${control} w-[160px]`} />
         </label>
         <Button type="submit" variant="solid" tone="ink" size="sm" permission="configure" disabled={!name.trim() || store === "db unreachable"} loading={busy}>
           Attach
