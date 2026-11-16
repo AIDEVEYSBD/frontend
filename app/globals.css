@@ -705,9 +705,9 @@ header nav a[aria-current="page"] {
 /* ── ABB brand start (branch abb-brand: delete this block to restore) ──
    The console drawn as ABB's own consoles are (the ABB Usecases repository):
    the warm neutral base stays as it is, ABB red (#ff000f) is kept for the
-   wordmark and the active navigation item, the navigation is a grouped
-   sidebar (the DLP Agent console's), surfaces are flat with no grain or
-   cast, and kickers are neutral.
+   wordmark and the active navigation item, the navigation is a black
+   grouped sidebar (the DLP Agent console's layout in the ABB consoles'
+   colour), surfaces are flat with no grain or cast, and kickers are neutral.
    The type is Inter with JetBrains Mono and the corners are a step crisper;
    those two are set in the @theme block at the top of this file. */
 :root,
@@ -716,12 +716,17 @@ header nav a[aria-current="page"] {
   --t-on-brand: #ffffff;
   --t-accent: #ff000f;
   --t-accent-text: #6b665f;
+  /* The sidebar: the ink in light mode, a surface step with a hairline in dark. */
+  --t-side: #171614;
+  --t-side-line: #171614;
   --material-grain: 0;
   --material-grain-chrome: 0;
   --material-cast: none;
 }
 [data-theme="dark"] {
   --t-accent-text: #a29d96;
+  --t-side: #121211;
+  --t-side-line: #232120;
   --material-grain: 0;
   --material-grain-chrome: 0;
   --material-cast: none;
@@ -729,6 +734,8 @@ header nav a[aria-current="page"] {
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --t-accent-text: #a29d96;
+    --t-side: #121211;
+    --t-side-line: #232120;
     --material-grain: 0;
     --material-grain-chrome: 0;
     --material-cast: none;
