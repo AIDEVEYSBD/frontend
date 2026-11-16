@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "./ui";
-import { AFMark } from "./brand";
+import { BrandLockup } from "./brand";
 
 /**
  * The sign-in page: warm the identity provider, then go.
@@ -68,10 +68,7 @@ export function Login({ next, error }: { next: string; error: string }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-canvas px-6">
       <div className="flex w-[min(440px,100%)] flex-col gap-5 rounded-lg border border-line bg-surface p-7 elev-2">
-        <span className="flex items-center gap-2">
-          <span className="grid size-7 place-items-center rounded-md bg-brand text-on-brand"><AFMark size={16} /></span>
-          <span className="text-[14px] font-bold tracking-tight">Agent Factory</span>
-        </span>
+        <BrandLockup />
         <span className="flex flex-col gap-1">
           <span className="text-[20px] leading-tight font-semibold tracking-[-0.01em]">Sign in</span>
           <span className="text-[12.5px] leading-[1.55] text-faint">Continue to AutoX single sign-on to access Agent Factory.</span>
@@ -110,10 +107,7 @@ export function NoAccess({ reason }: { reason: string }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-canvas px-6">
       <div className="flex w-[min(480px,100%)] flex-col gap-4 rounded-lg border border-line bg-surface p-7 elev-2">
-        <span className="flex items-center gap-2">
-          <span className="grid size-7 place-items-center rounded-md bg-brand text-on-brand"><AFMark size={16} /></span>
-          <span className="text-[14px] font-bold tracking-tight">Agent Factory</span>
-        </span>
+        <BrandLockup />
         <span className="text-[18px] leading-tight font-semibold tracking-[-0.01em]">{r.title}</span>
         <p className="text-[12.5px] leading-[1.6] text-faint">{r.body}</p>
         <span className="flex items-center gap-2">

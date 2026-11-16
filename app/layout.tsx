@@ -1,19 +1,17 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Chrome } from "@/components/chrome";
 import { InlineScript } from "@/components/inline-script";
 import { themeScript } from "@/components/theme";
 
-const plex = IBM_Plex_Sans({
-  variable: "--font-plex",
-  weight: ["400", "500", "600"],
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
 });
 
-const plexMono = IBM_Plex_Mono({
-  variable: "--font-plex-mono",
-  weight: ["400", "500"],
+const jetbrains = JetBrains_Mono({
+  variable: "--font-jetbrains",
   subsets: ["latin"],
 });
 
@@ -27,7 +25,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${plex.variable} ${plexMono.variable} h-full antialiased`}
+      className={`${inter.variable} ${jetbrains.variable} h-full antialiased`}
+      data-accent="off"
     >
       <head>
         <InlineScript html={themeScript} />

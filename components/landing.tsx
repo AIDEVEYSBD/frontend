@@ -11,7 +11,7 @@ import {
 } from "./landing-interactive";
 import { DeployPanel } from "./deploy";
 import { DemoFlow } from "./demo-flow";
-import { AFMark } from "./brand";
+import { ABBWordmark, BrandLockup } from "./brand";
 import { ThemeToggle } from "./theme";
 import { SurfaceGrain } from "./material";
 
@@ -23,12 +23,7 @@ export function LandingHeader() {
     <header className="sticky top-0 z-40 border-b border-line bg-surface">
       <SurfaceGrain id="af-grain-landing" />
       <div className="relative flex h-14 w-full items-center gap-3 px-5 sm:px-8 lg:px-12 2xl:px-20">
-        <span className="flex items-center gap-2.5">
-          <span className="grid size-6 place-items-center rounded-md bg-brand text-on-brand">
-            <AFMark size={15} />
-          </span>
-          <span className="text-[14px] font-semibold tracking-[-0.01em] text-fg">Agent Factory</span>
-        </span>
+        <BrandLockup />
         <div className="grow" />
         <ThemeToggle />
         <Button tone="ink" variant="solid" size="sm" href="/control">
@@ -91,9 +86,7 @@ export function LandingFooter() {
         </div>
 
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-6">
-          <span className="grid size-6 place-items-center rounded-md bg-brand text-on-brand">
-            <AFMark size={15} />
-          </span>
+          <ABBWordmark height={13} />
           <span className="text-[12px] text-faint">
             Agent Factory | EY
           </span>

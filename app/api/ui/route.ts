@@ -12,7 +12,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export interface UiSettings { accent: boolean }
-const DEFAULT: UiSettings = { accent: true };
+/* This console starts on the monochrome base, as ABB's own consoles are; subject colours are a switch on the Settings page. */
+const DEFAULT: UiSettings = { accent: false };
 
 async function read(): Promise<UiSettings> {
   if (!(await dbReady())) return DEFAULT;

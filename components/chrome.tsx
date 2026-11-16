@@ -6,49 +6,215 @@ import { ThemeToggle } from "./theme";
 import { CURRENT_USER } from "@/lib/user";
 import { useSession } from "@/lib/use-session";
 import { Button } from "./ui";
-import { Material, SurfaceGrain } from "./material";
-import { AFMark } from "./brand";
-import { useEffect, useState } from "react";
+import { Material } from "./material";
+import { BrandLockup, ABBWordmark } from "./brand";
+import { NavIcon, type NavIconName } from "./nav-icons";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { Assistant } from "./assistant";
 import { applyAccent } from "./appearance";
 import { isOpenPage } from "@/lib/route-policy";
 import { consolePath } from "@/lib/api/client";
 
-const NAV = [
-  { href: "/control", label: "Control" },
-  { href: "/finops", label: "FinOps" },
-  { href: "/builder", label: "Builder" },
-  { href: "/workflows", label: "Workflows" },
-  { href: "/lifecycle", label: "Lifecycle" },
-  { href: "/templates", label: "Templates" },
-  { href: "/applications", label: "Applications" },
-  { href: "/roster", label: "Roster" },
-  { href: "/runs", label: "Runs" },
-  { href: "/deliverables", label: "Deliverables" },
-  { href: "/dependencies", label: "Dependencies" },
-  { href: "/drift", label: "Drift" },
-  { href: "/guardian", label: "Guardian" },
-  { href: "/peers", label: "Peers" },
-  { href: "/breakers", label: "Breakers" },
-  { href: "/evals", label: "Evals" },
-  { href: "/knowledge", label: "Knowledge" },
-  { href: "/guardrails", label: "Controls" },
-  { href: "/policy", label: "Policy" },
-  { href: "/evidence", label: "Evidence" },
-  { href: "/attestations", label: "Attestations" },
-  { href: "/frameworks", label: "Frameworks" },
-  { href: "/ledger", label: "Ledger" },
-  { href: "/bom", label: "AI-BOM" },
-  { href: "/iam", label: "IAM" },
-  { href: "/configuration", label: "Configuration" },
-  { href: "/settings", label: "Settings" },
+/**
+ * The navigation, grouped. Five groups by what a person came to do: watch
+ * and run the estate, build what runs in it, see what it is made of, govern
+ * it, administer the platform. The sidebar draws the groups; each opens and
+ * shuts, and the whole bar collapses to a rail of icons.
+ */
+type Group = "Operations" | "Build" | "Estate" | "Governance" | "Platform";
+const GROUPS: Group[] = ["Operations", "Build", "Estate", "Governance", "Platform"];
+
+const NAV: { href: string; label: string; group: Group; icon: NavIconName }[] = [
+  { href: "/control", label: "Control", group: "Operations", icon: "layout-dashboard" },
+  { href: "/runs", label: "Runs", group: "Operations", icon: "list-checks" },
+  { href: "/deliverables", label: "Deliverables", group: "Operations", icon: "file-check" },
+  { href: "/finops", label: "FinOps", group: "Operations", icon: "wallet" },
+
+  { href: "/builder", label: "Builder", group: "Build", icon: "pencil-ruler" },
+  { href: "/workflows", label: "Workflows", group: "Build", icon: "workflow" },
+  { href: "/templates", label: "Templates", group: "Build", icon: "layout-template" },
+  { href: "/applications", label: "Applications", group: "Build", icon: "app-window" },
+  { href: "/lifecycle", label: "Lifecycle", group: "Build", icon: "milestone" },
+  { href: "/evals", label: "Evals", group: "Build", icon: "flask-conical" },
+  { href: "/knowledge", label: "Knowledge", group: "Build", icon: "book-open" },
+
+  { href: "/roster", label: "Roster", group: "Estate", icon: "bot" },
+  { href: "/dependencies", label: "Dependencies", group: "Estate", icon: "network" },
+  { href: "/drift", label: "Drift", group: "Estate", icon: "git-compare" },
+  { href: "/guardian", label: "Guardian", group: "Estate", icon: "shield-check" },
+  { href: "/peers", label: "Peers", group: "Estate", icon: "waypoints" },
+  { href: "/breakers", label: "Breakers", group: "Estate", icon: "zap-off" },
+
+  { href: "/guardrails", label: "Controls", group: "Governance", icon: "shield" },
+  { href: "/policy", label: "Policy", group: "Governance", icon: "book-open-check" },
+  { href: "/evidence", label: "Evidence", group: "Governance", icon: "folder-check" },
+  { href: "/attestations", label: "Attestations", group: "Governance", icon: "badge-check" },
+  { href: "/frameworks", label: "Frameworks", group: "Governance", icon: "layers" },
+  { href: "/ledger", label: "Ledger", group: "Governance", icon: "scroll-text" },
+  { href: "/bom", label: "AI-BOM", group: "Governance", icon: "package" },
+
+  { href: "/iam", label: "IAM", group: "Platform", icon: "key-round" },
+  { href: "/configuration", label: "Configuration", group: "Platform", icon: "sliders-horizontal" },
+  { href: "/settings", label: "Settings", group: "Platform", icon: "settings" },
   // The design page (/design) is a workbench for this codebase, reached by URL, never from the nav.
 ];
+type NavItem = (typeof NAV)[number];
+
+/* What the sidebar remembers, per browser: collapsed or not, and which groups are shut. */
+interface Prefs { rail: boolean; closed: string[] }
+const PREF_KEY = "af.sidebar";
+const DEFAULT_PREFS: Prefs = { rail: false, closed: [] };
+let prefs: Prefs | null = null;
+const watchers = new Set<() => void>();
+
+function readPrefs(): Prefs {
+  if (prefs === null) {
+    try {
+      prefs = { ...DEFAULT_PREFS, ...(JSON.parse(localStorage.getItem(PREF_KEY) ?? "{}") as Partial<Prefs>) };
+    } catch {
+      prefs = DEFAULT_PREFS;
+    }
+  }
+  return prefs;
+}
+
+function remember(next: Prefs) {
+  prefs = next;
+  try {
+    localStorage.setItem(PREF_KEY, JSON.stringify(next));
+  } catch {
+    /* storage unavailable: the choice holds for this page */
+  }
+  watchers.forEach((w) => w());
+}
+
+function watch(w: () => void) {
+  watchers.add(w);
+  return () => watchers.delete(w);
+}
+
+/** Server and first client render agree on the open sidebar; the stored choice takes over after. */
+const usePrefs = () => useSyncExternalStore(watch, readPrefs, () => DEFAULT_PREFS);
+
+/* The sidebar is dark in both themes, so its focus ring is light, not the page's ink. */
+const SIDE_FOCUS = "outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70";
+const ITEM_ON = "bg-white/10 font-semibold text-white before:absolute before:inset-y-2 before:-left-2.5 before:w-[3px] before:rounded-r-[2px] before:bg-brand";
+const ITEM_OFF = "font-medium text-white/65 hover:bg-white/8 hover:text-white";
+
+function CollapseButton({ rail }: { rail: boolean }) {
+  const label = rail ? "Expand the sidebar" : "Collapse the sidebar";
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      aria-pressed={rail}
+      onClick={() => remember({ ...readPrefs(), rail: !rail })}
+      className={`${SIDE_FOCUS} flex cursor-pointer items-center gap-2.5 rounded-md text-[12.5px] font-medium text-white/60 transition-colors duration-100 hover:bg-white/8 hover:text-white ${rail ? "size-9 justify-center" : "w-full px-2.5 py-1.5"}`}
+    >
+      <NavIcon name="panel-left" size={16} />
+      {!rail && "Collapse"}
+    </button>
+  );
+}
+
+/** The navigation as groups that open and shut; the sidebar and the narrow-screen drawer both draw it. */
+function NavGroups({ items, pathname, onNavigate }: { items: NavItem[]; pathname: string; onNavigate?: () => void }) {
+  const { closed } = usePrefs();
+  return (
+    <nav aria-label="Main" className="flex min-h-0 grow flex-col gap-1 overflow-y-auto px-2.5 py-3 [scrollbar-color:rgba(255,255,255,0.18)_transparent] [scrollbar-width:thin]">
+      {GROUPS.filter((g) => items.some((n) => n.group === g)).map((g) => {
+        const open = !closed.includes(g);
+        return (
+          <div key={g} className="flex flex-col">
+            <button
+              type="button"
+              aria-expanded={open}
+              onClick={() => remember({ ...readPrefs(), closed: open ? [...closed, g] : closed.filter((c) => c !== g) })}
+              className={`${SIDE_FOCUS} flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[11px] font-medium tracking-[0.08em] text-white/40 uppercase transition-colors hover:text-white/70`}
+            >
+              <span className="grow">{g}</span>
+              <NavIcon name="chevron-right" size={11} className={`transition-transform duration-150 ${open ? "rotate-90" : ""}`} />
+            </button>
+            {open && (
+              <div className="mb-1.5 flex flex-col gap-0.5">
+                {items.filter((n) => n.group === g).map((n) => {
+                  const active = pathname.startsWith(n.href);
+                  return (
+                    <Link
+                      key={n.href}
+                      href={n.href}
+                      onClick={onNavigate}
+                      aria-current={active ? "page" : undefined}
+                      className={`${SIDE_FOCUS} relative flex h-8 shrink-0 items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-colors duration-100 ${active ? ITEM_ON : ITEM_OFF}`}
+                    >
+                      <NavIcon name={n.icon} />
+                      <span className="grow truncate">{n.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </nav>
+  );
+}
+
+function Sidebar({ items, pathname }: { items: NavItem[]; pathname: string }) {
+  const { rail } = usePrefs();
+  const shell = "relative z-30 hidden shrink-0 flex-col border-r border-[var(--t-side-line)] bg-[var(--t-side)] text-white lg:flex";
+  if (rail) {
+    return (
+      <aside className={`${shell} w-14 items-center`} data-sidebar="rail">
+        <Link href="/" aria-label="Agent Factory, home" className={`${SIDE_FOCUS} flex h-12 w-full shrink-0 items-center justify-center border-b border-white/10`}>
+          <ABBWordmark height={11} />
+        </Link>
+        <nav aria-label="Main" className="flex min-h-0 grow flex-col items-center gap-1 overflow-y-auto py-3 [scrollbar-width:none]">
+          {GROUPS.filter((g) => items.some((n) => n.group === g)).map((g, i) => (
+            <span key={g} className="flex flex-col items-center gap-1">
+              {i > 0 && <span aria-hidden className="my-1 h-px w-6 bg-white/10" />}
+              {items.filter((n) => n.group === g).map((n) => {
+                const active = pathname.startsWith(n.href);
+                return (
+                  <Link
+                    key={n.href}
+                    href={n.href}
+                    aria-label={n.label}
+                    title={n.label}
+                    aria-current={active ? "page" : undefined}
+                    className={`${SIDE_FOCUS} relative grid size-9 shrink-0 place-items-center rounded-md transition-colors duration-100 ${active ? ITEM_ON : ITEM_OFF}`}
+                  >
+                    <NavIcon name={n.icon} size={17} />
+                  </Link>
+                );
+              })}
+            </span>
+          ))}
+        </nav>
+        <div className="flex w-full shrink-0 justify-center border-t border-white/10 py-2"><CollapseButton rail /></div>
+      </aside>
+    );
+  }
+  return (
+    <aside className={`${shell} w-[232px]`} data-sidebar="full">
+      <Link href="/" aria-label="Agent Factory, home" className={`${SIDE_FOCUS} flex h-12 shrink-0 items-center border-b border-white/10 px-4`}>
+        <BrandLockup onDark />
+      </Link>
+      <NavGroups items={items} pathname={pathname} />
+      <div className="flex shrink-0 flex-col border-t border-white/10 px-2.5 py-2">
+        <CollapseButton rail={false} />
+      </div>
+    </aside>
+  );
+}
 
 export function Chrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { session, loaded, can, signOut } = useSession();
   const [denied, setDenied] = useState<string | null>(null);
+  const [drawer, setDrawer] = useState(false);
 
   // Appearance is a server-side setting; apply it once the page is up.
   useEffect(() => {
@@ -94,65 +260,71 @@ export function Chrome({ children }: { children: React.ReactNode }) {
   const who = session ?? { name: CURRENT_USER.name, initials: CURRENT_USER.initials, appRoles: [] as string[], sso: false, demoDefaultApplied: false, email: "" };
   const roleLabel = who.sso ? (who.appRoles.length ? who.appRoles.join(", ") : who.demoDefaultApplied ? "default role (no assignment)" : "no role") : CURRENT_USER.role;
   const nav = NAV.filter((item) => item.href !== "/iam" || !loaded || can("iam"));
+  const here = nav.find((item) => pathname.startsWith(item.href));
 
   return (
-    <div className="flex h-screen flex-col bg-canvas">
+    <div className="flex h-screen bg-canvas">
       <Material />
-      <header className="relative z-20 flex h-12 shrink-0 items-center gap-6 border-b border-line bg-surface px-4">
-        <SurfaceGrain />
-        <Link href="/" className="focusable relative flex shrink-0 items-center gap-2">
-          <span className="grid size-6 place-items-center rounded-md bg-brand text-on-brand">
-            <AFMark size={15} />
-          </span>
-          <span className="hidden whitespace-nowrap text-[13px] font-bold tracking-tight text-on-grain sm:inline">Agent Factory</span>
-        </Link>
+      <Sidebar items={nav} pathname={pathname} />
 
-        <div className="relative min-w-0">
-          <nav className="flex items-center gap-0.5 overflow-x-auto [scrollbar-width:none]">
-            {nav.map((item) => {
-              const active = pathname.startsWith(item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  aria-current={active ? "page" : undefined}
-                  className={`focusable shrink-0 rounded-sm px-2.5 py-1 text-[13px] whitespace-nowrap transition-colors duration-100 ${
-                    active
-                      ? "bg-raise font-bold text-on-grain"
-                      : "font-semibold text-dim hover:text-on-grain"
-                  }`}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
-          {/* On narrow screens the nav scrolls; the fade says there is more. */}
-          <span
-            aria-hidden
-            className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-r from-transparent to-surface sm:hidden"
-          />
-        </div>
+      <div className="flex min-w-0 grow flex-col">
+        <header className="relative z-20 flex h-12 shrink-0 items-center gap-3 border-b border-line bg-surface px-4">
+          {/* Below the sidebar's width the navigation is a drawer, opened from here. */}
+          <button
+            type="button"
+            aria-label="Open the navigation"
+            aria-expanded={drawer}
+            onClick={() => setDrawer(true)}
+            className="focusable grid size-8 shrink-0 cursor-pointer place-items-center rounded-md border border-line bg-raise text-fg lg:hidden"
+          >
+            <NavIcon name="menu" size={16} />
+          </button>
+          <Link href="/" className="focusable flex min-w-0 shrink-0 lg:hidden"><BrandLockup line={false} /></Link>
 
-        <div className="grow" />
-        <span className="mr-2 hidden items-center gap-2 sm:flex" title={`${who.name}${who.email ? ` · ${who.email}` : ""} · ${roleLabel}`}>
-          <span className="grid size-6 place-items-center rounded-full bg-ink text-[9.5px] font-semibold text-on-ink">{who.initials}</span>
-          <span className="flex flex-col leading-tight">
-            <span className="text-[11.5px] font-medium text-fg">{who.name}</span>
-            <span className="text-[9.5px] text-faint">{roleLabel}</span>
-          </span>
-          {who.sso && (
-            <Button size="sm" variant="solid" tone="err" onClick={signOut}>Sign out</Button>
+          {here && (
+            <span className="hidden min-w-0 items-center gap-1.5 text-[12px] whitespace-nowrap text-faint lg:flex">
+              {here.group}
+              <NavIcon name="chevron-right" size={11} className="text-ghost" />
+              <span className="truncate font-medium text-fg">{here.label}</span>
+            </span>
           )}
-        </span>
 
-        <div className="relative"><ThemeToggle /></div>
-      </header>
-      <Assistant />
+          <div className="grow" />
+          <span className="mr-2 hidden items-center gap-2 sm:flex" title={`${who.name}${who.email ? ` · ${who.email}` : ""} · ${roleLabel}`}>
+            <span className="grid size-6 place-items-center rounded-full bg-ink text-[9.5px] font-semibold text-on-ink">{who.initials}</span>
+            <span className="flex flex-col leading-tight">
+              <span className="text-[11.5px] font-medium text-fg">{who.name}</span>
+              <span className="text-[9.5px] text-faint">{roleLabel}</span>
+            </span>
+            {who.sso && (
+              <Button size="sm" variant="solid" tone="err" onClick={signOut}>Sign out</Button>
+            )}
+          </span>
 
-      {/* The app never scrolls the document — pages scroll inside main.
-          A canvas page fills it exactly; a prose page scrolls within it. */}
-      <main className="min-h-0 grow overflow-y-auto overscroll-contain">{children}</main>
+          <div className="relative"><ThemeToggle /></div>
+        </header>
+        <Assistant />
+
+        {/* The app never scrolls the document — pages scroll inside main.
+            A canvas page fills it exactly; a prose page scrolls within it. */}
+        <main className="min-h-0 grow overflow-y-auto overscroll-contain">{children}</main>
+      </div>
+
+      {drawer && (
+        <div className="fixed inset-0 z-40 flex lg:hidden">
+          <button type="button" aria-label="Close the navigation" onClick={() => setDrawer(false)} className="af-fade-in absolute inset-0 cursor-default bg-black/45" />
+          <aside className="af-pop relative flex w-[264px] max-w-[84vw] flex-col border-r border-[var(--t-side-line)] bg-[var(--t-side)] text-white elev-3" data-sidebar="drawer">
+            <div className="flex h-12 shrink-0 items-center border-b border-white/10 pr-2 pl-4">
+              <span className="min-w-0 grow"><BrandLockup onDark /></span>
+              <button type="button" aria-label="Close the navigation" onClick={() => setDrawer(false)} className={`${SIDE_FOCUS} grid size-8 shrink-0 cursor-pointer place-items-center rounded-md text-white/60 hover:bg-white/8 hover:text-white`}>
+                <NavIcon name="x" size={16} />
+              </button>
+            </div>
+            <NavGroups items={nav} pathname={pathname} onNavigate={() => setDrawer(false)} />
+          </aside>
+        </div>
+      )}
+
       {denied && (
         <div role="alert" className="fixed bottom-5 left-1/2 z-50 flex max-w-[560px] -translate-x-1/2 items-center gap-2 rounded-md border border-err/50 bg-surface px-3 py-2 text-[12px] text-err elev-3">
           <span className="size-1.5 shrink-0 rounded-full bg-err" />

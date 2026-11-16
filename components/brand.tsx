@@ -168,3 +168,62 @@ export function AFMark({ size = 20, className = "" }: { size?: number; className
     </svg>
   );
 }
+
+/**
+ * The ABB wordmark, the vector as ABB publishes it, in ABB red. It is ABB's
+ * trademark and is shown here to say whose console this is, nothing more.
+ */
+export function ABBWordmark({ height = 15, className = "" }: { height?: number; className?: string }) {
+  return (
+    <svg
+      role="img"
+      aria-label="ABB"
+      viewBox="-1 -1 88.2 35"
+      height={height}
+      width={(height * 88.2) / 35}
+      fill="#ff000f"
+      className={`shrink-0 ${className}`}
+    >
+      <path d="M47 33h2c6-.3 10.2-5 10.2-10.6 0-1.9-.4-3.8-1.3-5.3H47V33z" />
+      <rect width="10" height="16" x="36" y="17" />
+      <path d="M57.3 16c-1-1.4-2.4-2.5-3.9-3.3 1.8-1.3 3-3.4 3-5.7 0-3.9-3.1-7-7-7H47v16h10.3z" />
+      <rect width="10" height="16" x="36" />
+      <path d="M74 33h2c6-.3 10.2-5 10.2-10.6 0-1.9-.4-3.8-1.3-5.3H74V33z" />
+      <rect width="10" height="16" x="63" y="17" />
+      <path d="M84.3 16c-1-1.4-2.4-2.5-3.9-3.3 1.8-1.3 3-3.4 3-5.7 0-3.9-3.1-7-7-7H74v16h10.3z" />
+      <rect width="10" height="16" x="63" />
+      <polygon points="5.7,17 0,33 8.3,33 10.7,26 16,26 16,17" />
+      <polygon points="16,0 11.7,0 6,16 16,16" />
+      <polygon points="17,26 22.3,26 24.7,33 33,33 27.3,17 17,17" />
+      <polygon points="27,16 21.3,0 17,0 17,16" />
+    </svg>
+  );
+}
+
+/** What the console calls itself beside the wordmark, in one place. */
+export const PRODUCT = { name: "Agent Factory", line: "AI SecOps Platform" };
+
+/**
+ * The lockup: whose console this is, a rule, then what it is. `onDark` is the
+ * sidebar, where the type is white; elsewhere it takes the page's ink.
+ */
+export function BrandLockup({
+  onDark = false,
+  line = true,
+  height = 15,
+}: {
+  onDark?: boolean;
+  /** The second line under the product's name. */
+  line?: boolean;
+  height?: number;
+}) {
+  return (
+    <span className="flex min-w-0 items-center gap-2.5">
+      <ABBWordmark height={height} />
+      <span className={`min-w-0 border-l pl-2.5 leading-tight ${onDark ? "border-white/15" : "border-line-strong"}`}>
+        <span className={`block truncate text-[12.5px] font-semibold tracking-[-0.01em] ${onDark ? "text-white" : "text-fg"}`}>{PRODUCT.name}</span>
+        {line && <span className={`block truncate text-[10.5px] ${onDark ? "text-white/50" : "text-faint"}`}>{PRODUCT.line}</span>}
+      </span>
+    </span>
+  );
+}

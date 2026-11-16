@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Button, Mono, Status } from "./ui";
 import { Field, Textarea } from "./forms";
 import { Banner } from "./overlays";
-import { AFMark } from "./brand";
+import { BrandLockup } from "./brand";
 import { Material } from "./material";
 import { ThemeToggle } from "./theme";
 import { DoorError, readExternalGate, submitExternalAnswer, type Answer, type AnswerResult, type ExternalGate } from "@/lib/api/l5";
@@ -107,10 +107,7 @@ export function AnswerPage({ token }: { token: string }) {
     <div className="flex min-h-screen flex-col bg-canvas">
       <Material />
       <header className="relative z-20 flex h-12 shrink-0 items-center gap-3 border-b border-line bg-surface px-4">
-        <span className="grid size-6 place-items-center rounded-md bg-brand text-on-brand">
-          <AFMark size={15} />
-        </span>
-        <span className="whitespace-nowrap text-[13px] font-bold tracking-tight text-on-grain">Agent Factory</span>
+        <BrandLockup line={false} />
         <span className="text-[11.5px] text-faint">· a question for you</span>
         <span className="grow" />
         <ThemeToggle />
