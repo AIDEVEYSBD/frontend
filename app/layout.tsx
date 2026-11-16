@@ -16,7 +16,7 @@ const jetbrains = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "Agent Factory",
-  description: "Design, deploy and oversee governed AI-enabled workflows for cyber and risk operations.",
+  description: "The console for security workloads carried out by agents: approvals by named roles, limits enforced outside the model, and a record of every decision.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

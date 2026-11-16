@@ -1,25 +1,21 @@
-import {
-  Deployment,
-  Harnesses,
-  Hero,
-  Integrations,
-  LandingFooter,
-  LandingHeader,
-  Security,
-} from "@/components/landing";
-import { ArchitectureStory } from "@/components/landing-architecture";
+import { Closing, Controls, Hero, LandingFooter, LandingHeader, Passage, Workloads } from "@/components/landing";
+
+export const metadata = {
+  title: "Agent Factory — ABB AI SecOps Platform",
+  description:
+    "The console for four security workloads carried out by agents: static code analysis, penetration testing, firewall rule review and threat hunting, each behind the same approvals, limits and journal.",
+};
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-canvas">
+    <div className="min-h-screen bg-surface">
       <LandingHeader />
       <main>
         <Hero />
-        <ArchitectureStory />
-        <Harnesses />
-        <Integrations />
-        <Deployment />
-        <Security />
+        <Workloads />
+        <Controls />
+        <Passage />
+        <Closing />
       </main>
       <LandingFooter />
     </div>

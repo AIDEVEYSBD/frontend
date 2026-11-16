@@ -1,639 +1,374 @@
-import Image from "next/image";
-import { Button, Mono, Status, Tag } from "./ui";
-import { CAT } from "./charts";
-import {
-  CountUp,
-  HeroCarousel,
-  IntegrationExplorer,
-  Pin,
-  Rise,
-  Stagger,
-} from "./landing-interactive";
-import { DeployPanel } from "./deploy";
-import { DemoFlow } from "./demo-flow";
-import { ABBWordmark, BrandLockup } from "./brand";
-import { SurfaceGrain } from "./material";
+import Link from "next/link";
+import type { ReactNode } from "react";
+import { BrandLockup } from "./brand";
+import { NavIcon, type NavIconName } from "./nav-icons";
+import { WorkFlow } from "./landing-flow";
 
-/* ═══════════════════ Header ═══════════════════
-   Deliberately linkless: the mark, the mode, and one door into the product. */
+/**
+ * The page in front of the console.
+ *
+ * It says what the console is for and how work in it is controlled, and
+ * nothing about what has happened in it: no figures, no results, no cases.
+ * Every link goes to a page of the console. Drawn the way ABB draws a page:
+ * white ground, black type, space, and red only for the wordmark, the rule
+ * above a headline and the one action.
+ */
+
+const CONSOLE = "/overview";
+
+/* ═══════════════════ Pieces ═══════════════════ */
+
+const WRAP = "mx-auto w-full max-w-[1240px] px-6 sm:px-10";
+
+/** The short red rule that sits above a headline. */
+function Rule() {
+  return <span aria-hidden className="block h-[3px] w-10 bg-brand" />;
+}
+
+/** The page's one action. `primary` is the red one; the header carries the ink one. */
+function OpenConsole({ primary = false, size = "lg" }: { primary?: boolean; size?: "sm" | "lg" }) {
+  return (
+    <Link
+      href={CONSOLE}
+      className={`focusable inline-flex w-fit items-center justify-center rounded-sm font-medium whitespace-nowrap transition-[filter] duration-100 hover:brightness-[1.08] active:brightness-95 ${
+        size === "lg" ? "h-12 gap-2.5 px-6 text-[15px]" : "h-9 gap-2 px-4 text-[13px]"
+      } ${primary ? "bg-brand text-on-brand" : "bg-ink text-on-ink"}`}
+    >
+      Open console
+      <NavIcon name="arrow-right" size={size === "lg" ? 16 : 14} />
+    </Link>
+  );
+}
+
+/** A section's headline on the left and what it introduces on the right. */
+function Head({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="grid gap-x-10 gap-y-5 lg:grid-cols-12 lg:items-end">
+      <div className="flex flex-col gap-6 lg:col-span-6">
+        <Rule />
+        <h2 className="max-w-[18ch] text-[30px] leading-[1.08] font-semibold tracking-[-0.028em] text-fg sm:text-[38px]">{title}</h2>
+      </div>
+      <p className="max-w-[58ch] text-[15.5px] leading-[1.6] text-dim lg:col-span-6">{children}</p>
+    </div>
+  );
+}
+
+/* ═══════════════════ Header ═══════════════════ */
 
 export function LandingHeader() {
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-surface">
-      <SurfaceGrain id="af-grain-landing" />
-      <div className="relative flex h-14 w-full items-center gap-3 px-5 sm:px-8 lg:px-12 2xl:px-20">
-        <BrandLockup />
-        <div className="grow" />
-        <Button tone="ink" variant="solid" size="sm" href="/control">
-          Open console
-        </Button>
+      <div className={`${WRAP} flex h-16 items-center gap-4`}>
+        <Link href="/" aria-label="Agent Factory" className="focusable rounded-sm">
+          <BrandLockup height={17} />
+        </Link>
+        <span className="grow" />
+        <OpenConsole size="sm" />
       </div>
     </header>
   );
 }
 
-export function LandingFooter() {
-  return (
-    <footer className="border-t border-line bg-raise/40">
-      <div className="flex w-full flex-col items-start gap-3 border-b border-line px-5 py-10 sm:px-8 lg:flex-row lg:items-center lg:px-12 2xl:px-20">
-        <div className="flex flex-col gap-1">
-          <span className="text-[16px] font-semibold tracking-[-0.01em]">
-            Explore Agent Factory with your team
-          </span>
-          <span className="text-[12.5px] text-dim">
-            See how a priority cyber or risk process can move from design to governed operation.
-          </span>
-        </div>
-        <div className="grow" />
-        <Button
-          tone="ink"
-          variant="solid"
-          size="md"
-          href="mailto:hello@autogrc.cloud?subject=Agent%20Factory%20walkthrough"
-        >
-          Request a walkthrough
-        </Button>
-      </div>
-      <div className="flex w-full flex-col gap-10 px-5 py-12 sm:px-8 lg:px-12 2xl:px-20">
-        <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
-          {(
-            [
-              ["Platform", [["Workflows", "/workflows"], ["Agents", "/roster"], ["Control plane", "/control"], ["Runtime", null]]],
-              ["Deploy", [["Terraform modules", "#deployment"], ["AWS", "#deployment"], ["Azure", "#deployment"], ["Google Cloud", "#deployment"]]],
-              ["Governance", [["Provenance", "/runs"], ["Approval gates", "/runs"], ["Audit trail", "/runs"], ["Evals", "/evals"]]],
-              ["Company", [["Case studies", null], ["Documentation", null], ["Status", null], ["Contact", "mailto:hello@autogrc.cloud"]]],
-            ] as [string, [string, string | null][]][]
-          ).map(([h, items]) => (
-            <div key={h} className="flex flex-col gap-2.5">
-              <span className="text-[12px] font-semibold">{h}</span>
-              {items.map(([label, href]) =>
-                href ? (
-                  <a key={label} className="focusable w-fit rounded-sm text-[12.5px] text-dim transition-colors hover:text-fg" href={href}>
-                    {label}
-                  </a>
-                ) : (
-                  // Unlinked on purpose, a label with nowhere real to go is
-                  // honest; a "#" is a dead end.
-                  <span key={label} className="w-fit text-[12.5px] text-faint">
-                    {label}
-                  </span>
-                ),
-              )}
-            </div>
-          ))}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-6">
-          <ABBWordmark height={13} />
-          <span className="text-[12px] text-faint">
-            Agent Factory | EY
-          </span>
-          <div className="grow" />
-          <Mono className="text-[11px] text-ghost">Governed workflows · Human oversight · Execution provenance</Mono>
-        </div>
-      </div>
-    </footer>
-  );
-}
-
-/* ═══════════════════ Section scaffolding ═══════════════════ */
-
-export function Band({
-  id,
-  children,
-  className = "",
-}: {
-  id?: string;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    // Every band owns the screen the way the scroll scene does: a full
-    // viewport minimum, growing past it only when the content genuinely
-    // needs more. Content is pinned to a constant top offset so section
-    // headers land at the same height on every screen.
-    <section id={id} className={`flex min-h-screen items-start border-b border-line ${className}`}>
-      <div className="w-full px-5 pt-14 pb-12 sm:px-8 lg:px-12 lg:pt-16 lg:pb-14 2xl:px-20">{children}</div>
-    </section>
-  );
-}
-
-
 /* ═══════════════════ Hero ═══════════════════ */
 
 export function Hero() {
   return (
-    <section className="relative flex min-h-screen items-center overflow-hidden border-b border-line">
-      <HeroCarousel />
-      {/* Scrim: canvas-tinted so the image recedes correctly in both themes. */}
-      <div className="absolute inset-0 bg-gradient-to-r from-canvas via-canvas/85 to-canvas/35" />
-      <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-canvas to-transparent" />
-
-      <div className="relative w-full px-5 py-16 sm:px-8 lg:px-12 lg:py-20 2xl:px-20">
-        <div className="flex max-w-[680px] flex-col justify-center gap-7">
-
-          <h1 className="max-w-[15ch] text-[clamp(36px,5.4vw,60px)] leading-[1.03] font-semibold tracking-[-0.035em]">
-            Transform cyber and risk operations with AI you can govern.
-          </h1>
-
-          <p className="max-w-[58ch] text-[16px] leading-[1.6] text-mist">
-            Agent Factory helps organizations turn established cyber and GRC procedures into
-            controlled, production-ready workflows. It brings together AI agents, enterprise
-            data, deterministic tools and human oversight to improve operational capacity while
-            maintaining accountability, traceability and control.
-          </p>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <Button tone="ink" variant="solid" size="lg" href="/control">
-              Explore Agent Factory
-            </Button>
-            <Button variant="outline" size="lg" href="/runs">
-              Review a workflow run
-            </Button>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-x-7 gap-y-3 border-t border-line pt-6">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[22px] leading-none font-semibold tracking-[-0.02em]">
-                <CountUp to={3} />
-              </span>
-              <span className="text-[11.5px] text-faint">execution patterns for controlled workflows</span>
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[22px] leading-none font-semibold tracking-[-0.02em]">
-                <CountUp to={6} />
-              </span>
-              <span className="text-[11.5px] text-faint">layers of runtime protection</span>
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[22px] leading-none font-semibold tracking-[-0.02em]">
-                <CountUp to={1} />
-              </span>
-              <span className="text-[11.5px] text-faint">reviewable record for every run</span>
-            </div>
-          </div>
+    <section className="bg-surface">
+      <div className={`${WRAP} flex flex-col pt-20 pb-20 sm:pt-28 sm:pb-24 lg:pt-36 lg:pb-32`}>
+        <Rule />
+        <h1 className="mt-9 text-[42px] leading-[1.02] font-semibold tracking-[-0.035em] text-fg sm:text-[58px] lg:text-[76px]">
+          <span className="block">Four security workloads.</span>
+          <span className="block">One set of controls.</span>
+        </h1>
+        <p className="mt-9 max-w-[60ch] text-[17px] leading-[1.6] text-dim lg:text-[19px]">
+          Agent Factory is the console for static code analysis, penetration testing, firewall rule review and threat hunting carried out by
+          agents, each on a dataset a person hands over. Every one of them works behind the same controls: approval by named roles, limits
+          enforced outside the model, and a journal of every decision that can be verified.
+        </p>
+        <div className="mt-11">
+          <OpenConsole primary />
         </div>
-
       </div>
     </section>
   );
 }
 
-/* ═══════════════════ Workflow canvas mock ═══════════════════ */
+/* ═══════════════════ The four workloads ═══════════════════ */
 
-const MOCK_NODES = [
-  { label: "Intake", kind: "extraction", c: 1, x: 0, y: 0 },
-  { label: "Enrich", kind: "extraction", c: 1, x: 1, y: 0 },
-  { label: "History", kind: "research", c: 2, x: 1, y: 1 },
-  { label: "Adjudicate", kind: "decision", c: 5, x: 2, y: 0 },
-  { label: "Disposition", kind: "drafting", c: 3, x: 3, y: 0 },
-  { label: "Approve", kind: "gate", c: 8, x: 3, y: 1 },
+interface Workload {
+  name: string;
+  icon: NavIconName;
+  /** What a person hands over. */
+  given: string;
+  /** What the agent does with it. */
+  does: string;
+  /** Where a person decides. */
+  decides: string;
+  /** What comes out. */
+  out: string;
+}
+
+const WORKLOADS: Workload[] = [
+  {
+    name: "Static code analysis",
+    icon: "file-code",
+    given: "The source code to be analysed.",
+    does: "Reads the code for vulnerabilities and traces the paths by which each could be reached.",
+    decides: "A reviewer confirms a finding or sets it aside as a false positive.",
+    out: "Findings in order of priority, each with remediation guidance, and a report.",
+  },
+  {
+    name: "Penetration testing",
+    icon: "crosshair",
+    given: "Signed rules of engagement, the permitted targets, the test window and an inventory of assets.",
+    does: "Tests the permitted targets one at a time and keeps the evidence for what it finds.",
+    decides: "Scope and methods are approved before testing starts. The report is signed off when it ends.",
+    out: "A report ranked by risk, with guidance on remediation, rollback and retest.",
+  },
+  {
+    name: "Firewall rule review",
+    icon: "brick-wall",
+    given: "Exports of the rules, objects, address translation and topology.",
+    does: "Works out the effective policy and marks the rules that carry risk, with the evidence for each.",
+    decides: "The owner of a rule and a security approver accept or refuse each proposed change.",
+    out: "Proposals to narrow a rule or limit it in time, each with rollback guidance.",
+  },
+  {
+    name: "Threat hunting",
+    icon: "radar",
+    given: "Security telemetry and threat intelligence, as an offline extract or from an approved live source.",
+    does: "Investigates suspicious activity in the telemetry and writes an assessment of what it found.",
+    decides: "A reviewer accepts or rejects each assessment before it is reported.",
+    out: "Assessments linked to the telemetry beneath them, and a report.",
+  },
 ];
 
-export function WorkflowMock() {
-  // Positions are proportional, so the canvas fits whatever column it is
-  // given instead of clipping at a fixed pixel width.
-  const COLS = 4;
-  const ROWS = 2;
-  const cw = 100 / COLS;
-  const rh = 100 / ROWS;
-  const cx = (n: { x: number }) => n.x * cw + cw / 2;
-  const cy = (n: { y: number }) => n.y * rh + rh / 2;
+const FACETS: { key: keyof Pick<Workload, "given" | "does" | "decides" | "out">; label: string }[] = [
+  { key: "given", label: "A person hands over" },
+  { key: "does", label: "The agent" },
+  { key: "decides", label: "A person decides" },
+  { key: "out", label: "What comes out" },
+];
 
+function WorkloadName({ w }: { w: Workload }) {
   return (
-    <div className="relative overflow-hidden rounded-lg border border-line bg-surface elev-2">
-      <div className="flex items-center gap-2 border-b border-line bg-raise/60 px-3 py-2">
-        <span className="text-[12px] font-medium">DLP Triage</span>
-        <Tag tone="ok" solid>
-          deployed
-        </Tag>
-        <div className="grow" />
-        <Status tone="run">2 running</Status>
-      </div>
-
-      <div className="relative aspect-[16/7] w-full bg-[radial-gradient(circle_at_1px_1px,var(--t-line-strong)_1px,transparent_0)] [background-size:16px_16px]">
-        <svg
-          className="absolute inset-0 size-full"
-          viewBox="0 0 100 100"
-          preserveAspectRatio="none"
-          aria-hidden
-        >
-          {[
-            [0, 1],
-            [1, 2],
-            [1, 3],
-            [2, 3],
-            [3, 4],
-            [4, 5],
-          ].map(([a, b]) => {
-            const A = MOCK_NODES[a];
-            const B = MOCK_NODES[b];
-            const x1 = cx(A) + cw * 0.34;
-            const y1 = cy(A);
-            const x2 = cx(B) - cw * 0.34;
-            const y2 = cy(B);
-            const m = x1 + (x2 - x1) / 2;
-            return (
-              <path
-                key={`${a}-${b}`}
-                d={`M ${x1} ${y1} C ${m} ${y1}, ${m} ${y2}, ${x2} ${y2}`}
-                fill="none"
-                stroke="var(--t-line-strong)"
-                strokeWidth="1.5"
-                vectorEffect="non-scaling-stroke"
-              />
-            );
-          })}
-        </svg>
-
-        {MOCK_NODES.map((n) => (
-          <div
-            key={n.label}
-            className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col justify-center gap-0.5 rounded-md border border-line bg-surface px-2 py-1.5 elev-1"
-            style={{
-              left: `${cx(n)}%`,
-              top: `${cy(n)}%`,
-              width: `${cw * 0.68}%`,
-            }}
-          >
-            <div className="flex items-center gap-1.5">
-              <span className="size-2 shrink-0 rounded-[2px]" style={{ background: CAT[n.c] }} />
-              <span className="truncate text-[11px] font-medium">{n.label}</span>
-            </div>
-            <span className="truncate text-[10.5px] text-faint">{n.kind}</span>
-          </div>
-        ))}
-      </div>
-    </div>
+    <Link href="/workloads" className="focusable group flex w-fit items-center gap-3 self-start rounded-sm text-fg">
+      <span className="grid size-9 shrink-0 place-items-center border border-line-strong bg-surface">
+        <NavIcon name={w.icon} size={17} />
+      </span>
+      <span className="text-[16px] leading-tight font-semibold tracking-[-0.01em] underline-offset-4 group-hover:underline">{w.name}</span>
+      <NavIcon name="arrow-right" size={14} className="text-faint transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-fg" />
+    </Link>
   );
 }
 
-/* ═══════════════════ Two builders ═══════════════════ */
-
-export function Builders() {
+export function Workloads() {
   return (
-    <section id="platform" className="border-b border-line">
-      <div className="w-full px-5 sm:px-8 lg:px-12 2xl:px-20">
-        {/* Pinned, not hijacked: the section holds its place for a fixed
-            distance while the reader works through the three phases, then
-            releases. Scroll direction and speed are untouched. */}
-        <Pin height="205vh">
-          <div className="flex flex-col gap-7">
-            <Rise className="flex flex-col gap-4">
-              <h2 className="max-w-[24ch] text-[clamp(24px,3.2vw,38px)] leading-[1.1] font-semibold tracking-[-0.03em]">
-                Turn established procedures into governed workflows.
-              </h2>
-              <p className="max-w-[62ch] text-[15px] leading-[1.6] text-mist">
-                Describe a process in plain language or configure it visually. Agent Factory
-                translates the procedure into a structured workflow with defined inputs,
-                outputs, permissions and review points, then records the evidence and decisions
-                produced during execution.
-              </p>
-            </Rise>
+    <section id="workloads" className="scroll-mt-16 border-t border-line bg-surface">
+      <div className={`${WRAP} flex flex-col gap-14 py-20 lg:py-28`}>
+        <Head title="The four workloads">
+          Each workload is an agent the console runs on a dataset a person hands over, with its own approvals, findings and report. Where a
+          workload is not yet connected on a deployment, its screens say so and show no records.
+        </Head>
 
-            <Rise delay={80}>
-              <DemoFlow />
-            </Rise>
+        {/* Wide: a table, one workload to a row. */}
+        <div className="hidden lg:block">
+          <div className="grid grid-cols-[1.15fr_1fr_1fr_1fr_1fr] gap-x-8 border-t-2 border-fg py-3.5 text-[12px] font-medium text-faint">
+            <span>Workload</span>
+            {FACETS.map((f) => (
+              <span key={f.key}>{f.label}</span>
+            ))}
           </div>
-        </Pin>
+          {WORKLOADS.map((w) => (
+            <div key={w.name} className="grid grid-cols-[1.15fr_1fr_1fr_1fr_1fr] gap-x-8 border-t border-line py-8">
+              <WorkloadName w={w} />
+              {FACETS.map((f) => (
+                <p key={f.key} className="pt-[7px] text-[14px] leading-[1.55] text-mist">
+                  {w[f.key]}
+                </p>
+              ))}
+            </div>
+          ))}
+          <div className="border-t border-line" />
+        </div>
+
+        {/* Narrow: the same four facts under each workload. */}
+        <div className="flex flex-col lg:hidden">
+          {WORKLOADS.map((w) => (
+            <div key={w.name} className="flex flex-col gap-6 border-t-2 border-fg py-8">
+              <WorkloadName w={w} />
+              <dl className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
+                {FACETS.map((f) => (
+                  <div key={f.key} className="flex flex-col gap-1.5">
+                    <dt className="text-[12px] font-medium text-faint">{f.label}</dt>
+                    <dd className="text-[14px] leading-[1.55] text-mist">{w[f.key]}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );
 }
 
-/* ═══════════════════ Harnesses ═══════════════════ */
+/* ═══════════════════ How work is controlled ═══════════════════
+   Grouped as the console's navigation is, each line a page of it. */
 
-const HARNESS_ROWS = [
-  ["Evidence extraction", "extraction", "Typed record + per-field citation", "Benchmark required", 1],
-  ["Control research", "research", "Findings with source and recency", "Benchmark required", 2],
-  ["Policy decision", "decision", "Disposition + governing clause", "Benchmark required", 5],
-  ["Report drafting", "drafting", "Draft + change log", "Benchmark required", 3],
-  ["Assessment review", "review", "Findings with severity", "Benchmark required", 4],
-  ["Control mapping", "decision", "Framework crosswalk + rationale", "Benchmark required", 6],
-  ["Vendor triage", "research", "Risk summary + evidence links", "Benchmark required", 7],
-  ["Access certification", "review", "Entitlement findings + owner", "Benchmark required", 9],
-  ["Incident summary", "drafting", "Timeline + affected assets", "Benchmark required", 0],
-  ["Data classification", "extraction", "Label + matched policy terms", "Benchmark required", 2],
-  ["Human approval", "gate", "Approval + reviewer identity", "Reviewer decision", 8],
-] as const;
+interface Area {
+  group: string;
+  /** What the group is for, in one line. */
+  line: string;
+  pages: { href: string; label: string; what: string }[];
+}
 
-export function Harnesses() {
+const AREAS: Area[] = [
+  {
+    group: "Operations",
+    line: "What is running, and what is waiting for a person.",
+    pages: [
+      { href: "/overview", label: "Overview", what: "Runs, spend and the items that need a person, over one period." },
+      { href: "/runs", label: "Runs", what: "Each run step by step, with its limits and the control that stops it." },
+      { href: "/approvals", label: "Approvals", what: "The gates where a named role decides before a consequential step." },
+    ],
+  },
+  {
+    group: "Agents",
+    line: "What each agent is permitted to do.",
+    pages: [
+      { href: "/workloads", label: "Workloads", what: "The four workloads, each with its set-up, findings and report." },
+      { href: "/workflows", label: "Workflows", what: "An agent's steps, its gates and their approvers, its step limit and its budget." },
+      { href: "/evals", label: "Evals", what: "Evaluation of an agent on recorded runs, before a version is released." },
+      { href: "/acceptance", label: "Acceptance", what: "The acceptance record of each workload: criteria, results and sign-off by role." },
+    ],
+  },
+  {
+    group: "Identity",
+    line: "Who may do what.",
+    pages: [{ href: "/iam", label: "People and agents", what: "Sign-in with roles. A role carries permissions, and an action a role lacks is refused." }],
+  },
+  {
+    group: "Connections",
+    line: "What an agent can reach.",
+    pages: [
+      { href: "/configuration", label: "Configuration", what: "The approved tool catalogue, the grants for each step and the routing to approved models." },
+      { href: "/knowledge", label: "Knowledge", what: "Curated sources, each admitted by a person before an agent can read it." },
+      { href: "/datasets", label: "Datasets", what: "What a person hands over to a workload: uploads and approved datasets." },
+    ],
+  },
+  {
+    group: "Security and Policy",
+    line: "The rules, and the record that they held.",
+    pages: [
+      { href: "/guardrails", label: "Controls", what: "The controls applied to every agent, enforced outside the model." },
+      { href: "/policy", label: "Policy", what: "Policy changed by review: proposed, approved by someone else, then applied." },
+      { href: "/findings", label: "Findings", what: "Each finding with the journal entries and evidence beneath it." },
+      { href: "/evidence", label: "Evidence", what: "The journal assembled for an assessor, with the verification of each run cited." },
+    ],
+  },
+  {
+    group: "Observability",
+    line: "What was used, and what it cost.",
+    pages: [
+      { href: "/finops", label: "FinOps", what: "Model spend by provider, agent and step, against the budgets set." },
+      { href: "/observability/tools", label: "Tool calls", what: "Every tool call: when, by which agent, at which step, and how it ended." },
+    ],
+  },
+];
+
+export function Controls() {
   return (
-    <Band id="harnesses" className="bg-raise/25">
-      <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:gap-16">
-        <Rise className="flex flex-col gap-5">
-          <h2 className="text-[clamp(24px,3vw,34px)] leading-[1.12] font-semibold tracking-[-0.03em]">
-            Combine reusable capabilities with controlled execution patterns.
-          </h2>
-          <p className="text-[15px] leading-[1.6] text-mist">
-            Reusable capabilities support activities such as evidence extraction, policy
-            analysis and assessment review. Three execution patterns determine whether the
-            next step is defined in advance, selected through inference or dependent on an
-            external decision.
-          </p>
-          <p className="text-[13px] leading-[1.6] text-dim">
-            Each capability has a declared contract for its inputs, outputs and permitted
-            tools, helping teams assemble workflows without rebuilding the underlying runtime.
-          </p>
-        </Rise>
+    <section id="controls" className="scroll-mt-16 border-t border-line bg-surface">
+      <div className={`${WRAP} flex flex-col gap-14 py-20 lg:py-28`}>
+        <Head title="How work is controlled">
+          The same controls stand around every workload. They are set out here as the console sets them out, and each line opens the page
+          that holds it.
+        </Head>
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[520px] border-collapse text-left">
-            <thead>
-              <tr className="border-b border-line-strong">
-                {["Capability", "Activity", "Returns", "Validation"].map((h) => (
-                  <th key={h} className="pb-2.5 text-[11px] font-medium text-faint">
-                    {h}
-                  </th>
+        {/* Columns, so the groups keep the navigation's order reading down and no group leaves a hole beside a longer one. */}
+        <div className="-mb-14 gap-x-10 sm:columns-2 lg:columns-3">
+          {AREAS.map((a) => (
+            <div key={a.group} className="mb-14 flex break-inside-avoid flex-col border-t-2 border-fg pt-5">
+              <h3 className="text-[17px] font-semibold tracking-[-0.015em] text-fg">{a.group}</h3>
+              <p className="mt-1.5 mb-5 text-[13.5px] text-faint">{a.line}</p>
+              <ul className="flex flex-col">
+                {a.pages.map((p) => (
+                  <li key={p.href} className="border-t border-line">
+                    <Link href={p.href} className="focusable group flex flex-col gap-1 rounded-sm py-4">
+                      <span className="flex items-center gap-2 text-[14.5px] font-medium text-fg">
+                        <span className="underline-offset-4 group-hover:underline">{p.label}</span>
+                        <NavIcon name="arrow-right" size={13} className="text-faint transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-fg" />
+                      </span>
+                      <span className="text-[13.5px] leading-[1.55] text-dim">{p.what}</span>
+                    </Link>
+                  </li>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {HARNESS_ROWS.map(([name, kind, ret, pass, c]) => (
-                <tr key={name} className="border-b border-line last:border-0">
-                  <td className="py-3 pr-4">
-                    <span className="flex items-center gap-2">
-                      <span className="size-2 shrink-0 rounded-[2px]" style={{ background: CAT[c] }} />
-                      <span className="text-[13px] font-medium">{name}</span>
-                    </span>
-                  </td>
-                  <td className="py-3 pr-4">
-                    <Tag>{kind}</Tag>
-                  </td>
-                  <td className="py-3 pr-4 text-[12.5px] text-dim">{ret}</td>
-                  <td className="tnum py-3 font-mono text-[12px] text-dim">{pass}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+              </ul>
+            </div>
+          ))}
         </div>
       </div>
-
-      <Rise delay={80} className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        {[
-          {
-            title: "Declared contract",
-            body: "Typed inputs and outputs, explicit tool permissions and defined exception paths establish what each capability can receive, use and return.",
-            tags: ["inputs", "outputs", "tools", "exceptions"],
-          },
-          {
-            title: "Evaluation before deployment",
-            body: "Representative cases help teams assess quality, cost and execution time before promoting a workflow into production.",
-            tags: ["representative cases", "deterministic grading"],
-          },
-          {
-            title: "Versioned releases",
-            body: "Version history and deployment records help teams understand what changed, what was tested and which specification produced an outcome.",
-            tags: ["spec digest", "deployment record", "change history"],
-          },
-        ].map((c) => (
-          <div key={c.title} className="flex flex-col gap-2.5 rounded-lg border border-line bg-surface p-4">
-            <span className="text-[13px] font-semibold">{c.title}</span>
-            <p className="text-[12.5px] leading-[1.6] text-dim">{c.body}</p>
-            <div className="mt-auto flex flex-wrap gap-1.5 pt-1">
-              {c.tags.map((t) => (
-                <Tag key={t}>{t}</Tag>
-              ))}
-            </div>
-          </div>
-        ))}
-      </Rise>
-    </Band>
+    </section>
   );
 }
 
-/* ═══════════════════ Integrations ═══════════════════ */
+/* ═══════════════════ How a piece of work moves ═══════════════════ */
 
-export function Integrations() {
+export function Passage() {
   return (
-    <Band id="integrations">
-      <div className="flex flex-col gap-10">
-        <Rise className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-          <div className="flex flex-col gap-5">
-            <h2 className="max-w-[20ch] text-[clamp(24px,3vw,36px)] leading-[1.12] font-semibold tracking-[-0.03em]">
-              Connect workflows to the systems your teams already use.
-            </h2>
-            <p className="max-w-[60ch] text-[15px] leading-[1.6] text-mist">
-              Declared connector contracts provide governed access to enterprise data, records,
-              tools and services. Each workflow receives only the capabilities and scope required
-              for its purpose, helping organizations extend automation without creating
-              unrestricted access to operational systems.
-            </p>
-          </div>
-
-          <div className="flex gap-8">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[26px] leading-none font-semibold tracking-[-0.02em]">
-                governed
-              </span>
-              <span className="text-[11.5px] text-faint">access through declared contracts</span>
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[26px] leading-none font-semibold tracking-[-0.02em]">
-                extensible
-              </span>
-              <span className="text-[11.5px] text-faint">for organization-specific systems</span>
-            </div>
-          </div>
-        </Rise>
-
-        <Rise delay={80}>
-          <IntegrationExplorer />
-        </Rise>
+    <section id="passage" className="scroll-mt-16 border-t border-line bg-canvas">
+      <div className={`${WRAP} flex flex-col gap-14 py-20 lg:py-28`}>
+        <Head title="How a piece of work moves through it">
+          The same passage for every workload: a request with its dataset, the agent&rsquo;s steps, a gate where a named role decides, then the
+          findings and the report. The journal runs beneath all of it.
+        </Head>
+        <WorkFlow />
       </div>
-    </Band>
+    </section>
   );
 }
 
-/* ═══════════════════ Deployment ═══════════════════ */
-export function Deployment() {
-  return (
-    <Band id="deployment" className="bg-raise/25">
-      <div className="grid grid-cols-1 items-stretch gap-10 lg:grid-cols-[minmax(0,460px)_minmax(0,1fr)] lg:gap-16">
-        <Rise className="flex h-full flex-col gap-5">
-          <h2 className="text-[clamp(24px,3vw,34px)] leading-[1.12] font-semibold tracking-[-0.03em]">
-            Operate within your technology and control environment.
-          </h2>
-          <p className="text-[15px] leading-[1.6] text-mist">
-            Agent Factory is designed for deployment within an organization&rsquo;s cloud
-            environment. Workflows can use approved model endpoints, private data sources and
-            existing operational systems while execution records remain within the
-            organization&rsquo;s defined boundary.
-          </p>
-
-          <div className="mt-auto flex flex-col gap-2.5 border-t border-line pt-5">
-            <Stagger className="flex flex-col gap-3.5">
-              {([
-              ["Controlled connectivity", "Connect workflows through approved network paths and interfaces"],
-              ["Approved model access", "Route tasks to models made available by the organization"],
-              ["Reviewable records", "Retain run activity, decisions and source references for oversight"],
-            ] as const).map(([h, d]) => (
-              <div key={h} className="flex gap-2.5">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 shrink-0 text-ok">
-                  <path d="M4 13l5 5 11-13" />
-                </svg>
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-[13.5px] font-medium">{h}</span>
-                  <span className="text-[12.5px] text-faint">{d}</span>
-                </div>
-              </div>
-            ))}
-            </Stagger>
-          </div>
-        </Rise>
-
-        <Rise delay={80} className="min-h-0 lg:h-full">
-          <DeployPanel />
-        </Rise>
-      </div>
-
-      {/* The planes that land in the tenancy, drawn from the reference
-          architecture: what is provisioned, what executes, what persists,
-          what governs, and how it connects outward. */}
-      <Rise delay={120} className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {[
-          {
-            title: "Build plane",
-            body: "Reusable workflow patterns, connector definitions and evaluation capabilities support consistent design and validation.",
-            tags: ["templates", "data adaptors", "IaC"],
-          },
-          {
-            title: "Agent runtime",
-            body: "Workers execute workflow specifications using approved models and tools under defined runtime limits and controls.",
-            tags: ["ephemeral workers", "orchestrator", "approved tools"],
-          },
-          {
-            title: "Work plane",
-            body: "A durable registry and execution journal retain workflow state, provenance and the evidence associated with each run.",
-            tags: ["execution ledger", "watchdog", "provenance"],
-          },
-          {
-            title: "Control plane",
-            body: "Identity, permissions, policy decisions, human review and operational intervention are applied across workflow execution.",
-            tags: ["least privilege", "guardrails", "FinOps", "kill switch"],
-          },
-          {
-            title: "Integration gateway",
-            body: "Standard interfaces connect enterprise platforms while controls govern the information and actions that cross each boundary.",
-            tags: ["MCP", "A2A", "REST", "webhooks"],
-          },
-          {
-            title: "Model consumption",
-            body: "Model routing can reflect task requirements, data sensitivity, organizational policy, performance and cost.",
-            tags: ["model garden", "self-hosted", "frontier endpoints"],
-          },
-        ].map((c) => (
-          <div key={c.title} className="flex flex-col gap-2.5 rounded-lg border border-line bg-surface p-4">
-            <span className="text-[13px] font-semibold">{c.title}</span>
-            <p className="text-[12.5px] leading-[1.6] text-dim">{c.body}</p>
-            <div className="mt-auto flex flex-wrap gap-1.5 pt-1">
-              {c.tags.map((t) => (
-                <Tag key={t}>{t}</Tag>
-              ))}
-            </div>
-          </div>
-        ))}
-      </Rise>
-    </Band>
-  );
-}
-
-/* ═══════════════════ Security ═══════════════════ */
-
-export function Security() {
-  return (
-    <Band id="security">
-      <div className="flex flex-col gap-12">
-        <Rise className="flex flex-col gap-5">
-          <h2 className="max-w-[24ch] text-[clamp(24px,3vw,34px)] leading-[1.12] font-semibold tracking-[-0.03em]">
-            Trace outcomes to the evidence and decisions behind them.
-          </h2>
-          <p className="max-w-[62ch] text-[15px] leading-[1.6] text-mist">
-            Agent Factory maintains a reviewable record of workflow execution. Teams can examine
-            which information was used, how it moved through the workflow, where controls were
-            applied and when human judgment affected the outcome.
-          </p>
-        </Rise>
-
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)] lg:gap-12">
-          <div className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
-            <div className="relative aspect-[16/9] w-full">
-              <Image
-                src="/media/teamwork.jpg"
-                alt="Reviewers examining alert evidence together"
-                fill
-                sizes="(max-width: 1024px) 100vw, 700px"
-                className="object-cover"
-              />
-              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(8,8,7,0.05)_40%,rgba(8,8,7,0.85)_100%)]" />
-              <div className="absolute inset-x-0 bottom-0 flex flex-col gap-1.5 p-5">
-                <span className="text-[15px] font-semibold tracking-[-0.01em] text-white">
-                  Review each run with end-to-end traceability
-                </span>
-                <span className="max-w-[46ch] text-[12.5px] leading-[1.5] text-white/75">
-                  Examine the execution timeline and trace an outcome to the relevant policy,
-                  business record, source material and reviewer decision.
-                </span>
-                <div className="pt-2">
-                  <Button size="sm" variant="solid" tone="media" href="/runs">
-                    Review a workflow run
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            {[
-              ["Least-privilege access", "Tools and data scope are assigned to individual workflow steps"],
-              ["Human oversight", "Defined decisions can pause for review by authorized people"],
-              ["Untrusted-content controls", "External content remains identified as it moves through a workflow"],
-              ["Execution provenance", "Sources, tool activity, decisions and outputs are retained in the run record"],
-              ["Operational intervention", "Authorized operators can stop active runs and record the intervention"],
-            ].map(([h, d]) => (
-              <div
-                key={h}
-                className="flex items-center gap-3 rounded-md border border-line bg-surface px-3.5 py-3"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-dim">
-                  <path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z" />
-                  <path d="M9 12l2 2 4-4" />
-                </svg>
-                <div className="flex min-w-0 grow flex-col">
-                  <span className="text-[13.5px] font-medium">{h}</span>
-                  <span className="truncate text-[11px] text-faint">{d}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </Band>
-  );
-}
-
-/* ═══════════════════ Closing CTA ═══════════════════ */
+/* ═══════════════════ Closing ═══════════════════ */
 
 export function Closing() {
   return (
-    <Band className="bg-raise/25">
-      <Rise className="flex flex-col items-start gap-7">
-        <h2 className="max-w-[18ch] text-[clamp(28px,4vw,44px)] leading-[1.06] font-semibold tracking-[-0.035em]">
-          Explore how Agent Factory can support a priority cyber or risk workflow.
-        </h2>
-        <p className="max-w-[58ch] text-[15px] leading-[1.6] text-mist">
-          Review a representative workflow from design through execution, including its
-          permissions, evaluation results, human review points and final evidence record.
-        </p>
-        <div className="flex flex-wrap items-center gap-3">
-          <Button tone="ink" variant="solid" size="lg" href="/control">
-            Explore Agent Factory
-          </Button>
-          <Button variant="outline" size="lg" href="#security">
-            Review security and governance
-          </Button>
+    <section className="border-t border-line bg-surface">
+      <div className={`${WRAP} flex flex-col gap-10 py-24 lg:flex-row lg:items-end lg:gap-16 lg:py-32`}>
+        <div className="flex flex-col gap-7">
+          <Rule />
+          <p className="text-[32px] leading-[1.08] font-semibold tracking-[-0.03em] text-fg sm:text-[44px]">The console starts empty.</p>
+          <p className="-mt-2 max-w-[44ch] text-[17px] leading-[1.6] text-dim lg:text-[19px]">It shows what was done in it, and nothing else.</p>
         </div>
-      </Rise>
-    </Band>
+        <span className="grow" />
+        <OpenConsole primary />
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════ Footer ═══════════════════ */
+
+export function LandingFooter() {
+  return (
+    <footer className="border-t border-line bg-canvas">
+      <div className={`${WRAP} flex flex-col gap-12 py-14 lg:flex-row lg:gap-16`}>
+        <div className="shrink-0 lg:w-[220px]">
+          <BrandLockup height={17} />
+        </div>
+        <nav aria-label="The console" className="grid grow grid-cols-2 gap-x-8 gap-y-10 sm:grid-cols-3 lg:grid-cols-6">
+          {AREAS.map((a) => (
+            <div key={a.group} className="flex flex-col gap-3">
+              <span className="text-[12px] font-semibold text-fg">{a.group}</span>
+              {a.pages.map((p) => (
+                <Link key={p.href} href={p.href} className="focusable w-fit rounded-sm text-[13px] text-dim underline-offset-4 hover:text-fg hover:underline">
+                  {p.label}
+                </Link>
+              ))}
+            </div>
+          ))}
+        </nav>
+      </div>
+    </footer>
   );
 }
