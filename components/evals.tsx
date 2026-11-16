@@ -12,7 +12,7 @@ import { Banner } from "./overlays";
 import { fromDocument, inputKeysOf, type Kind } from "@/lib/spec";
 import { derive, labeledTemplate, INVALID, type Labels, type Matrix, type Reducer } from "@/lib/metrics";
 import { TriangleGlyph, bestOf, logScore } from "./tradeoff";
-import { CAT } from "./charts";
+import { CAT, Legend } from "./charts";
 import { RateLimitNote } from "./rate-limit";
 import type { RateLimit } from "@/lib/api/l7";
 import { listAgents } from "@/lib/api/l2";
@@ -1493,6 +1493,7 @@ function SetCard({
                 <ConfusionPanel matrix={shownRun.matrix} positive={detail?.labels?.positive} />
               )}
               <CaseTable cases={shownRun?.results ?? []} />
+              <ScoreTrend runs={runs} modelLabel={(id) => modelLabel(id === "default" ? "" : id)} />
               <div className="flex flex-col gap-1">
                 <span className="text-[11px] font-semibold text-dim">History</span>
                 {runs.map((h) => (
@@ -1527,6 +1528,102 @@ function SetCard({
         </div>
       )}
     </section>
+  );
+}
+
+/** Finished runs the score chart draws, most recent last. */
+const TREND_RUNS = 24;
+
+const dayText = (iso: string) => (Number.isNaN(Date.parse(iso)) ? "" : new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }));
+
+/**
+ * Pass rate over time for one set: a point per finished eval run, oldest
+ * first, with the threshold as a line. LineChart's shape (components/charts.tsx:
+ * labels outside a stretched plot, hairline grid), on a fixed 0 to 100 axis
+ * with a point and its facts per run. One run is not a trend, so the chart
+ * starts at the second.
+ */
+function ScoreTrend({ runs, modelLabel }: { runs: HistoryRow[]; modelLabel: (id: string) => string }) {
+  const finished = runs.filter((r) => r.state === "done" && r.total > 0).sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || a.id.localeCompare(b.id));
+  if (finished.length === 0) return null;
+  if (finished.length === 1) {
+    return <p className="text-[11.5px] leading-[1.5] text-faint">One finished run is not a trend. The pass rate over time is drawn once this set has been run a second time.</p>;
+  }
+  const shown = finished.slice(-TREND_RUNS);
+  const pct = (r: HistoryRow) => (r.passed / r.total) * 100;
+  const asPct = (t: number) => (t <= 1 ? t * 100 : t);
+  const thresholds = shown.filter((r) => r.threshold !== null).map((r) => asPct(r.threshold as number));
+  const threshold = thresholds.length ? thresholds[thresholds.length - 1] : null;
+  const differing = new Set(thresholds.map((t) => t.toFixed(2))).size > 1;
+  const x = (i: number) => (i / (shown.length - 1)) * 100;
+  const color = CAT[1];
+  const ticks = [100, 75, 50, 25, 0];
+  const height = 150;
+  // Runs on one day are told apart by the time.
+  const oneDay = dayText(shown[0].at) === dayText(shown[shown.length - 1].at);
+  const endText = (iso: string) => (oneDay && !Number.isNaN(Date.parse(iso)) ? `${dayText(iso)}, ${new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}` : dayText(iso));
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-line px-3 py-2.5">
+      <span className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+        <span className="text-[11px] font-semibold text-dim">Pass rate over time</span>
+        <span className="text-[10.5px] text-faint">
+          {shown.length === finished.length ? `${shown.length} finished runs` : `the ${shown.length} most recent of ${finished.length} finished runs`}, oldest first
+        </span>
+      </span>
+      <div className="flex">
+        <div className="relative w-9 shrink-0" style={{ height }}>
+          {ticks.map((t) => (
+            <span key={t} className="tnum absolute left-0 -translate-y-1/2 font-mono text-[9.5px] leading-none text-faint" style={{ top: `${100 - t}%` }}>
+              {t}%
+            </span>
+          ))}
+        </div>
+        <div className="relative mr-2 ml-1 min-w-0 grow" style={{ height }}>
+          {ticks.map((t) => (
+            <span key={t} className="absolute inset-x-0 border-t" style={{ top: `${100 - t}%`, borderColor: t === 0 ? "var(--t-fg-4)" : "var(--t-line)" }} />
+          ))}
+          <svg className="absolute inset-0 block size-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
+            {threshold !== null && <line x1="0" x2="100" y1={100 - threshold} y2={100 - threshold} stroke="var(--t-fg-3)" strokeWidth="1.25" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />}
+            <polyline points={shown.map((r, i) => `${x(i)},${100 - pct(r)}`).join(" ")} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+          </svg>
+          {shown.map((r, i) => {
+            const v = pct(r);
+            const own = r.threshold === null ? null : asPct(r.threshold);
+            return (
+              <span key={r.id} tabIndex={0} className="group focusable absolute grid size-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full" style={{ left: `${x(i)}%`, top: `${100 - v}%` }} aria-label={`${dayText(r.at)}: ${Math.round(v)}% passed, ${r.passed} of ${r.total}`}>
+                <span className="size-2 rounded-full ring-2 ring-surface" style={{ background: color }} />
+                <span
+                  role="tooltip"
+                  className={`pointer-events-none absolute z-20 hidden w-max max-w-[240px] flex-col gap-0.5 rounded-md border border-line bg-surface px-2.5 py-2 text-left elev-3 group-hover:flex group-focus:flex ${v > 55 ? "top-full mt-1" : "bottom-full mb-1"} ${x(i) > 50 ? "right-0" : "left-0"}`}
+                >
+                  <span className="tnum text-[12px] font-semibold text-fg">
+                    {Math.round(v)}% passed <span className="font-normal text-faint">· {r.passed}/{r.total}</span>
+                  </span>
+                  <span className="text-[10.5px] text-dim">
+                    {new Date(r.at).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })} · {ago(r.at)}
+                  </span>
+                  <span className="text-[10.5px] text-faint">{own === null ? "no threshold applied to this run" : `${r.passed_threshold === true ? "met" : r.passed_threshold === false ? "under" : "against"} its threshold of ${Math.round(own)}%`}</span>
+                  <span className="font-mono text-[10px] text-faint">
+                    {modelLabel(r.model)} · spec {r.digest.slice(0, 8)}
+                  </span>
+                </span>
+              </span>
+            );
+          })}
+        </div>
+      </div>
+      <div className="mr-2 ml-10 flex justify-between font-mono text-[9.5px] text-faint">
+        <span>{endText(shown[0].at)}</span>
+        <span>{endText(shown[shown.length - 1].at)}</span>
+      </div>
+      <Legend
+        items={[
+          { label: "Pass rate per run", color },
+          ...(threshold !== null ? [{ label: `Threshold ${Math.round(threshold)}%${differing ? ", the latest: it differed between runs" : ""}`, color: "var(--t-fg-3)", dashed: true }] : []),
+        ]}
+      />
+      {threshold === null && <span className="text-[10.5px] text-ghost">No run in this history carried a threshold, so none is drawn.</span>}
+    </div>
   );
 }
 

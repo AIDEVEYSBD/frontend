@@ -78,6 +78,7 @@ const NAV: NavItem[] = [
 
   { href: "/guardrails", label: "Controls", group: "Security and Policy", icon: "shield" },
   { href: "/policy", label: "Policy", group: "Security and Policy", icon: "book-open-check" },
+  { href: "/observability/controls", label: "Controls in force", group: "Security and Policy", icon: "clipboard-check" },
   { href: "/guardian", label: "Guardian", group: "Security and Policy", icon: "shield-check", tag: "preview" },
   { href: "/evidence", label: "Evidence", group: "Security and Policy", icon: "folder-check" },
   { href: "/attestations", label: "Attestations", group: "Security and Policy", icon: "badge-check" },
@@ -86,6 +87,9 @@ const NAV: NavItem[] = [
   { href: "/bom", label: "AI-BOM", group: "Security and Policy", icon: "package" },
 
   { href: "/finops", label: "FinOps", group: "Observability", icon: "wallet" },
+  { href: "/observability/tools", label: "Tool calls", group: "Observability", icon: "list-tree" },
+  { href: "/observability/activity", label: "Agent activity", group: "Observability", icon: "activity" },
+  { href: "/observability/security", label: "Security events", group: "Observability", icon: "shield-alert" },
   { href: "/drift", label: "Drift", group: "Observability", icon: "git-compare" },
 
   { href: "/settings", label: "Settings", group: "Settings", icon: "settings" },

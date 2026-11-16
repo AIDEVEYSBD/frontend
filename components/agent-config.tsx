@@ -1,5 +1,6 @@
 "use client";
 
+import { ControlsInForce } from "./controls-in-force";
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -683,7 +684,9 @@ function AgentForm({ edit, saved, onSaved }: { edit: EditableDocument; saved: Ag
       )}
 
       {/* Mount point for the controls-in-force panel of this agent (another builder's). */}
-      <div data-slot="controls-in-force" data-agent={a.id} />
+      <div data-slot="controls-in-force" data-agent={a.id}>
+        <ControlsInForce agent={a.id} />
+      </div>
     </>
   );
 }
