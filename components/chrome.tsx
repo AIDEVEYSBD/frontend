@@ -57,6 +57,8 @@ const NAV: NavItem[] = [
   { href: "/control", label: "Control", group: "Operations", icon: "layout-dashboard" },
   { href: "/runs", label: "Runs", group: "Operations", icon: "list-checks" },
   { href: "/approvals", label: "Approvals", group: "Operations", icon: "inbox" },
+  { href: "/findings", label: "Findings", group: "Operations", icon: "search", tag: "preview" },
+  { href: "/outcomes", label: "Outcomes", group: "Operations", icon: "chart-column", tag: "preview" },
   { href: "/deliverables", label: "Deliverables", group: "Operations", icon: "file-check" },
   { href: "/chat", label: "Chat", group: "Operations", icon: "message-square" },
 
@@ -66,6 +68,7 @@ const NAV: NavItem[] = [
   { href: "/applications", label: "Applications", group: "Agents", icon: "app-window" },
   { href: "/lifecycle", label: "Lifecycle", group: "Agents", icon: "milestone" },
   { href: "/evals", label: "Evals", group: "Agents", icon: "flask-conical" },
+  { href: "/acceptance", label: "Acceptance", group: "Agents", icon: "clipboard-check", tag: "preview" },
 
   { href: "/iam", label: "People and agents", group: "Identity", icon: "users", needs: "iam" },
   { href: "/access", label: "Access log", group: "Identity", icon: "history", needs: "iam", tag: "preview" },

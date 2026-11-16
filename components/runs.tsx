@@ -43,7 +43,8 @@ import { SteerPanel } from "./steer";
 import { followsLive, steerOffer } from "@/lib/steer";
 import { agentDocument, listAgents } from "@/lib/api/l2";
 import { Deadline, useNow } from "./gate-form";
-import { RunLimitsPanel, useRunSpec, type RunFacts } from "./run-limits";
+import { RunLimitsPanel, RunStrip, useRunSpec, type RunFacts } from "./run-limits";
+import { RunFindings } from "./run-findings";
 import { RunBoundaryPanel } from "./run-boundary";
 import { RetrievalCard, retrievalOf } from "./run-retrieval";
 import { ModelMark, modelCallOf, routeLine, titleIsModel } from "./run-model";
@@ -1836,7 +1837,7 @@ function Theater({
     setChosenView(v);
   };
   // The limits and the trust boundary share the room under the transcript: one is open at a time. null: neither was touched, and the limits strip opens by itself when a limit ended the run.
-  const [strip, setStrip] = useState<"limits" | "boundary" | "" | null>(null);
+  const [strip, setStrip] = useState<"limits" | "boundary" | "findings" | "" | null>(null);
   const showRefusals = () => {
     setHoldTranscript(true);
     // The refusals are in the transcript: the strip gives the room back to it.
@@ -2075,6 +2076,14 @@ function Theater({
           <RunLimitsPanel key={`limits:${traceOf ?? runId ?? ""}`} runId={traceOf ?? runId} spec={spec} facts={limits.facts} entries={record} error={limits.error} live={runLive ?? live} open={strip === null ? null : strip === "limits"} onToggle={(o) => setStrip(o ? "limits" : "")} />
           <RunBoundaryPanel key={`boundary:${traceOf ?? runId ?? ""}`} spec={spec} facts={limits.facts} entries={record} source={source} onShowRefusals={showRefusals} open={strip === "boundary"} onToggle={(o) => setStrip(o ? "boundary" : "")} />
         </>
+      )}
+      {/* What the run found: its findings, once the control plane keeps them. */}
+      {(traceOf ?? runId) && (
+        <RunStrip title="Findings" summary="what this run found, by severity" open={strip === "findings"} onToggle={() => setStrip(strip === "findings" ? "" : "findings")}>
+          <div className="px-4 py-3">
+            <RunFindings run={(traceOf ?? runId)!} />
+          </div>
+        </RunStrip>
       )}
       {traceOf && <TracePanel runId={traceOf} />}
       {notice}

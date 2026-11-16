@@ -610,8 +610,8 @@ html:not([data-accent="off"]) {
 [data-hue="indigo"] { --hue: var(--hue-indigo); }
 [data-hue="slate"]  { --hue: var(--hue-slate); }
 /* a header that names its own hue */
-[data-hue][class*="bg-raise/55"],
-[data-hue][class*="bg-raise/40"],
+[data-hue][class~="bg-raise/55"],
+[data-hue][class~="bg-raise/40"],
 section[id] > button[data-hue][aria-expanded]:first-child {
   background-color: rgba(var(--hue), var(--hue-fill));
   border-bottom-color: rgba(var(--hue), var(--hue-line));
@@ -625,14 +625,14 @@ section[id] > button[data-hue][aria-expanded]:first-child {
   box-shadow: inset 3px 0 0 rgba(var(--hue), 0.9);
 }
 /* on a page with one hue, plain header bars take the page's colour */
-[data-hue]:not([class*="bg-raise"]) [class*="bg-raise/55"]:not([data-hue]),
-[data-hue]:not([class*="bg-raise"]) [class*="bg-raise/40"]:not([data-hue]) {
+[data-hue]:not([class*="bg-raise"]) [class~="bg-raise/55"]:not([data-hue]),
+[data-hue]:not([class*="bg-raise"]) [class~="bg-raise/40"]:not([data-hue]) {
   background-color: rgba(var(--hue), var(--hue-fill));
   border-bottom-color: rgba(var(--hue), var(--hue-line));
   box-shadow: inset 3px 0 0 rgba(var(--hue), 0.9);
 }
 /* headers with no subject yet: the default teal */
-[class*="bg-raise/55"]:not([data-hue]) {
+[class~="bg-raise/55"]:not([data-hue]) {
   background-color: rgba(var(--hue-teal), var(--hue-fill));
   border-bottom-color: rgba(var(--hue-teal), var(--hue-line));
 }

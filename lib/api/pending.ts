@@ -232,6 +232,12 @@ export interface FindingList {
   total: number;
 }
 
+/** POST /api/findings/{id}/status: a change of status always carries a note. */
+export interface FindingTriage {
+  status: FindingStatus;
+  note: string;
+}
+
 /** GET /api/findings/summary?window=7d */
 export interface FindingsSummary {
   window: string;
@@ -257,6 +263,13 @@ export interface Acceptance {
 }
 export interface AcceptanceList {
   use_cases: Acceptance[];
+}
+
+/** POST /api/acceptance/{use_case}/sign: the role signing (when the record names sign-off roles), the decision, a note. */
+export interface AcceptanceSign {
+  role?: string;
+  decision: "accepted" | "rejected";
+  note: string;
 }
 
 /** GET /api/workloads → { workloads } */
