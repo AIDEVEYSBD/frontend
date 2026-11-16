@@ -107,7 +107,7 @@ export function AnswerPage({ token }: { token: string }) {
     <div className="flex min-h-screen flex-col bg-canvas">
       <Material />
       <header className="relative z-20 flex h-12 shrink-0 items-center gap-3 border-b border-line bg-surface px-4">
-        <span className="grid size-6 place-items-center rounded-md bg-ink text-on-ink">
+        <span className="grid size-6 place-items-center rounded-md bg-brand text-on-brand">
           <AFMark size={15} />
         </span>
         <span className="whitespace-nowrap text-[13px] font-bold tracking-tight text-on-grain">Agent Factory</span>

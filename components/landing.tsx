@@ -24,7 +24,7 @@ export function LandingHeader() {
       <SurfaceGrain id="af-grain-landing" />
       <div className="relative flex h-14 w-full items-center gap-3 px-5 sm:px-8 lg:px-12 2xl:px-20">
         <span className="flex items-center gap-2.5">
-          <span className="grid size-6 place-items-center rounded-md bg-ink text-on-ink">
+          <span className="grid size-6 place-items-center rounded-md bg-brand text-on-brand">
             <AFMark size={15} />
           </span>
           <span className="text-[14px] font-semibold tracking-[-0.01em] text-fg">Agent Factory</span>
@@ -91,7 +91,7 @@ export function LandingFooter() {
         </div>
 
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-6">
-          <span className="grid size-6 place-items-center rounded-md bg-ink text-on-ink">
+          <span className="grid size-6 place-items-center rounded-md bg-brand text-on-brand">
             <AFMark size={15} />
           </span>
           <span className="text-[12px] text-faint">

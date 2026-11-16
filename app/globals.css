@@ -34,6 +34,10 @@
   --color-ink: var(--t-ink);
   --color-on-ink: var(--t-on-ink);
 
+  /* The mark's tile. The ink unless a brand block names a colour. */
+  --color-brand: var(--t-brand, var(--t-ink));
+  --color-on-brand: var(--t-on-brand, var(--t-on-ink));
+
   /* Text that sits on a solid semantic fill, in either theme. */
   --color-on-solid: var(--t-on-solid);
 
@@ -697,3 +701,178 @@ header nav a[aria-current="page"] {
   .af-fade-in { animation: af-fade-in 360ms var(--ease-out) both; }
   .af-fade-late { animation: af-fade-in 300ms var(--ease-out) 420ms both; }
 }
+
+/* ── ABB brand start (branch abb-brand: delete this block to restore) ──
+   The console in ABB's colours: white and neutral greys with no warm bias,
+   near-black ink, and ABB red (#ff000f) kept for the few places a brand
+   colour belongs: the mark, the active navigation item, the kickers and the
+   text selection. Red on a status still means a refusal or an error, so the
+   semantic red is a deeper tone than the brand red and the two never share
+   a role. Every text tone clears WCAG AA on the surface and on its own
+   tint. The subject hues on card headers are untouched. */
+:root,
+[data-theme="light"] {
+  --t-canvas: #fafafa;
+  --t-surface: #ffffff;
+  --t-raise: #ebebeb;
+  --t-sunken: #dbdbdb;
+
+  --t-fg: #0f0f0f;
+  --t-fg-2: #1f1f1f;
+  --t-fg-3: #333333;
+  --t-fg-4: #464646;
+  --t-fg-5: #686868;
+
+  --t-line: #dedede;
+  --t-line-strong: #bababa;
+
+  --t-ink: #0f0f0f;
+  --t-on-ink: #ffffff;
+  --t-on-solid: #ffffff;
+  --t-field: #ffffff;
+
+  --t-brand: #ff000f;
+  --t-on-brand: #ffffff;
+  --t-accent: #ff000f;
+  --t-accent-text: #d6000d;
+
+  --t-run: #8a5a00;
+  --t-run-bg: #fff6e0;
+  --t-run-line: #f0d9a0;
+
+  --t-ok: #0b7a1a;
+  --t-ok-bg: #e9f7ea;
+  --t-ok-line: #b5e0b9;
+
+  --t-warn: #a84a00;
+  --t-warn-bg: #fff0e3;
+  --t-warn-line: #f5cba6;
+
+  --t-err: #cc0a17;
+  --t-err-bg: #ffecee;
+  --t-err-line: #f5bcc1;
+
+  --t-queue: #2450d6;
+  --t-queue-bg: #edf2ff;
+  --t-queue-line: #c2d1ff;
+
+  --shadow-1:
+    0 1px 1px rgba(15, 15, 15, 0.04),
+    0 2px 3px rgba(15, 15, 15, 0.03);
+  --shadow-2:
+    0 1px 1px rgba(15, 15, 15, 0.04),
+    0 2px 4px rgba(15, 15, 15, 0.04),
+    0 6px 10px rgba(15, 15, 15, 0.04);
+  --shadow-3:
+    0 1px 2px rgba(15, 15, 15, 0.05),
+    0 4px 8px rgba(15, 15, 15, 0.05),
+    0 12px 22px rgba(15, 15, 15, 0.06);
+}
+[data-theme="dark"] {
+  --t-canvas: #0a0a0a;
+  --t-surface: #141414;
+  --t-raise: #1f1f1f;
+  --t-sunken: #050505;
+
+  --t-fg: #f5f5f5;
+  --t-fg-2: #cfcfcf;
+  --t-fg-3: #a3a3a3;
+  --t-fg-4: #7d7d7d;
+  --t-fg-5: #5c5c5c;
+
+  --t-line: #262626;
+  --t-line-strong: #383838;
+
+  --t-ink: #f5f5f5;
+  --t-on-ink: #0a0a0a;
+  --t-on-solid: #0a0a0a;
+  --t-field: #0d0d0d;
+
+  --t-brand: #ff000f;
+  --t-on-brand: #ffffff;
+  --t-accent: #ff000f;
+  --t-accent-text: #ff4d57;
+
+  --t-run: #f5b83d;
+  --t-run-bg: #1f1708;
+  --t-run-line: #403010;
+
+  --t-ok: #4fc75a;
+  --t-ok-bg: #0c1a0e;
+  --t-ok-line: #1c3a20;
+
+  --t-warn: #ff9a4d;
+  --t-warn-bg: #1f1409;
+  --t-warn-line: #40290f;
+
+  --t-err: #ff5c66;
+  --t-err-bg: #1f0d0e;
+  --t-err-line: #45191c;
+
+  --t-queue: #7a9bff;
+  --t-queue-bg: #0d1220;
+  --t-queue-line: #1f2b4d;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --t-canvas: #0a0a0a;
+    --t-surface: #141414;
+    --t-raise: #1f1f1f;
+    --t-sunken: #050505;
+
+    --t-fg: #f5f5f5;
+    --t-fg-2: #cfcfcf;
+    --t-fg-3: #a3a3a3;
+    --t-fg-4: #7d7d7d;
+    --t-fg-5: #5c5c5c;
+
+    --t-line: #262626;
+    --t-line-strong: #383838;
+
+    --t-ink: #f5f5f5;
+    --t-on-ink: #0a0a0a;
+    --t-on-solid: #0a0a0a;
+    --t-field: #0d0d0d;
+
+    --t-brand: #ff000f;
+    --t-on-brand: #ffffff;
+    --t-accent: #ff000f;
+    --t-accent-text: #ff4d57;
+
+    --t-run: #f5b83d;
+    --t-run-bg: #1f1708;
+    --t-run-line: #403010;
+
+    --t-ok: #4fc75a;
+    --t-ok-bg: #0c1a0e;
+    --t-ok-line: #1c3a20;
+
+    --t-warn: #ff9a4d;
+    --t-warn-bg: #1f1409;
+    --t-warn-line: #40290f;
+
+    --t-err: #ff5c66;
+    --t-err-bg: #1f0d0e;
+    --t-err-line: #45191c;
+
+    --t-queue: #7a9bff;
+    --t-queue-bg: #0d1220;
+    --t-queue-line: #1f2b4d;
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.45);
+    --shadow-3: 0 8px 24px rgba(0, 0, 0, 0.55);
+  }
+}
+/* A nested dark subtree keeps the dark shadows the light rule above would
+   otherwise hand it through :root. */
+[data-theme="dark"] {
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.45);
+  --shadow-3: 0 8px 24px rgba(0, 0, 0, 0.55);
+}
+::selection {
+  background: var(--t-brand);
+  color: var(--t-on-brand);
+}
+/* ── ABB brand end ── */

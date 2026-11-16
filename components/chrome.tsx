@@ -101,7 +101,7 @@ export function Chrome({ children }: { children: React.ReactNode }) {
       <header className="relative z-20 flex h-12 shrink-0 items-center gap-6 border-b border-line bg-surface px-4">
         <SurfaceGrain />
         <Link href="/" className="focusable relative flex shrink-0 items-center gap-2">
-          <span className="grid size-6 place-items-center rounded-md bg-ink text-on-ink">
+          <span className="grid size-6 place-items-center rounded-md bg-brand text-on-brand">
             <AFMark size={15} />
           </span>
           <span className="hidden whitespace-nowrap text-[13px] font-bold tracking-tight text-on-grain sm:inline">Agent Factory</span>
