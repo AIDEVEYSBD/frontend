@@ -299,8 +299,14 @@ export interface WorkloadOffer {
   /** The deployed agent that runs it; absent while none is deployed. */
   agent?: string;
   status: "available" | "not_deployed";
+  /**
+   * How each kind is sent in the run's input: `dataset` as a DatasetRef, `date_range` as
+   * `{from, to}` in UTC ISO time, `list` as an array of strings, `choice` and `text` as a
+   * string, `bool` as true or false.
+   */
   inputs: { name: string; label: string; kind: "dataset" | "text" | "date_range" | "list" | "choice" | "bool"; dataset_kind?: DatasetKind; choices?: string[]; required?: boolean; help?: string }[];
-  gates: { name: string; role: string; when: string }[];
+  /** `shows` is what the approver is asked to look at before deciding (for a penetration test, the scope and the methods). */
+  gates: { name: string; role: string; when: string; shows?: string }[];
 }
 export interface WorkloadList {
   workloads: WorkloadOffer[];

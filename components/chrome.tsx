@@ -54,6 +54,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { href: "/overview", label: "Overview", group: "Overview", icon: "house" },
 
+  { href: "/workloads", label: "Workloads", group: "Operations", icon: "target", tag: "preview" },
   { href: "/control", label: "Control", group: "Operations", icon: "layout-dashboard" },
   { href: "/runs", label: "Runs", group: "Operations", icon: "list-checks" },
   { href: "/approvals", label: "Approvals", group: "Operations", icon: "inbox" },
