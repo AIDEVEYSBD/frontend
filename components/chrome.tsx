@@ -57,6 +57,7 @@ const NAV: NavItem[] = [
   { href: "/control", label: "Control", group: "Operations", icon: "layout-dashboard" },
   { href: "/runs", label: "Runs", group: "Operations", icon: "list-checks" },
   { href: "/deliverables", label: "Deliverables", group: "Operations", icon: "file-check" },
+  { href: "/chat", label: "Chat", group: "Operations", icon: "message-square" },
 
   { href: "/workflows", label: "Workflows", group: "Agents", icon: "workflow" },
   { href: "/roster", label: "Roster", group: "Agents", icon: "bot" },

@@ -273,6 +273,21 @@ export interface WorkloadList {
   workloads: WorkloadOffer[];
 }
 
+/** POST /api/chat/requests: a request to a workload, made in words. */
+export interface ChatRequest {
+  workload: Workload | string;
+  message: string;
+}
+/** What comes back: the run it started, or what it still needs before it can start one. */
+export interface ChatRequestAnswer {
+  id?: string;
+  state?: "started" | "needs_input" | "refused";
+  run?: string;
+  reply?: string;
+  /** Inputs the workload takes that the message did not give. */
+  missing?: string[];
+}
+
 /* ═══════════════════ asking ═══════════════════ */
 
 export type Answer<T> = { state: "ok"; data: T } | { state: "pending"; door: Door } | { state: "error"; message: string; status?: number };

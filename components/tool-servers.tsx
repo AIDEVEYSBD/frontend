@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, Mono, Status, Tag } from "./ui";
 import { ControlRef } from "./control-ref";
 import { DigestChip } from "./digest-chip";
+import { AddServerDialog } from "./add-server-dialog";
 import { useSession } from "@/lib/use-session";
 import { controlLabel } from "@/lib/guardrails";
 import {
@@ -38,7 +39,9 @@ import { adoptedLine, approveAccess, changeLine, formProblem, isolationLine, pin
  * Environment and header values never reach the console; their names are
  * listed so a reviewer knows what the server is handed. Every action needs
  * the configure permission, so a viewer reads all of this and changes none
- * of it.
+ * of it. A server is added in a dialog (components/add-server-dialog.tsx),
+ * which posts what the inline form below posts; the row it adds is marked
+ * and brought into view.
  */
 
 function ago(iso: string): string {
@@ -133,7 +136,9 @@ const INPUT = "focusable h-8 w-full rounded-md border border-line-strong bg-fiel
 const AREA = "focusable w-full resize-y rounded-md border border-line-strong bg-field px-2.5 py-1.5 font-mono text-[11.5px] leading-[1.5] text-fg placeholder:text-ghost";
 
 /**
- * The add form, here and in the builder's tool rail. It posts the
+ * The add form in one piece, for a narrow rail; the list on Configuration
+ * adds through the dialog instead (components/add-server-dialog.tsx), which
+ * sends the same body. It posts the
  * contract's body (lib/api/l6.ts addBody): a stdio server by its command
  * line and KEY=VALUE environment, an HTTP server by its URL and headers.
  * Values are typed here and sent once; the registry never hands them back.
@@ -302,7 +307,11 @@ function Names({ names, none }: { names: string[]; none: string }) {
   );
 }
 
-function ServerRow({ server: s, twoPerson, me, onChanged }: { server: McpServer; twoPerson: boolean; me: Me | null; onChanged: () => void }) {
+function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { server: McpServer; twoPerson: boolean; me: Me | null; onChanged: () => void; /** Added a moment ago, in this window: marked, and scrolled to once. */ fresh?: boolean }) {
+  const row = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (fresh) row.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [fresh]);
   const [busy, setBusy] = useState<"approve" | "rescan" | "delete" | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<RegistryError | Error | null>(null);
@@ -353,13 +362,14 @@ function ServerRow({ server: s, twoPerson, me, onChanged }: { server: McpServer;
   };
 
   return (
-    <div className={`relative flex flex-col gap-2.5 border-b border-line px-4 py-3 last:border-0 ${meta.alarming ? "bg-err-bg/40" : ""}`}>
-      {meta.alarming && <span className="absolute inset-y-0 left-0 w-[3px] bg-err" aria-hidden />}
+    <div ref={row} className={`relative flex scroll-mt-4 flex-col gap-2.5 border-b border-line px-4 py-3 last:border-0 ${meta.alarming ? "bg-err-bg/40" : fresh ? "bg-raise/50" : ""}`}>
+      {meta.alarming ? <span className="absolute inset-y-0 left-0 w-[3px] bg-err" aria-hidden /> : fresh ? <span className="absolute inset-y-0 left-0 w-[3px] bg-warn" aria-hidden /> : null}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
         <span className="text-[12.5px] font-semibold text-fg">{s.label}</span>
         <Mono className="text-[10.5px] text-faint">{s.id}</Mono>
         <ServerStatusTag status={s.status} />
         <Tag>{s.transport === "http" ? "HTTP" : "stdio"}</Tag>
+        {fresh && <Tag tone="warn">Just added</Tag>}
         {isolated && (
           <span title={isolated} className="inline-flex">
             <Tag tone="ok">Isolated</Tag>
@@ -541,10 +551,13 @@ export function ToolServers({
   const me = meOf(session);
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState<McpServer | null>(null);
-  const count = (st: McpServer["status"]) => (servers ?? []).filter((s) => s.status === st).length;
   // Alarms first, then what waits for a person, then what is in service.
   const order: McpServer["status"][] = ["changed", "refused", "pending", "approved"];
-  const shown = [...(servers ?? [])].sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || a.label.localeCompare(b.label));
+  // The row just added shows at once, from the door's own answer, until the list read after it carries it.
+  const listed = servers ?? [];
+  const rows = added && servers !== null && !listed.some((s) => s.id === added.id) ? [...listed, added] : listed;
+  const count = (st: McpServer["status"]) => rows.filter((s) => s.status === st).length;
+  const shown = [...rows].sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || a.label.localeCompare(b.label));
 
   return (
     <div className="flex flex-col">
@@ -565,22 +578,21 @@ export function ToolServers({
             : "One approval admits a server; two-person approval is off on this deployment."}
         </span>
         <span className="grow" />
-        {!adding && (
-          <Button size="sm" variant="solid" tone="ink" permission="configure" onClick={() => setAdding(true)}>
-            Register a server
-          </Button>
-        )}
+        <Button size="sm" variant="solid" tone="ink" permission="configure" onClick={() => setAdding(true)}>
+          Add a server
+        </Button>
       </div>
 
       {adding && (
-        <AddServerForm
-          onCancel={() => setAdding(false)}
+        <AddServerDialog
+          twoPerson={twoPerson}
+          onClose={() => setAdding(false)}
           onAdded={(s) => {
             setAdded(s);
-            setAdding(false);
             refresh();
           }}
           onRefused={refresh}
+          renderRefusal={(e) => <Refusal error={e} />}
         />
       )}
       {added && (
@@ -600,9 +612,20 @@ export function ToolServers({
 
       {error && <p className="border-b border-line px-4 py-2.5 text-[11.5px] text-err">{error}</p>}
       {shown.map((s) => (
-        <ServerRow key={s.id} server={s} twoPerson={twoPerson} me={me} onChanged={refresh} />
+        <ServerRow
+          key={s.id}
+          server={s}
+          twoPerson={twoPerson}
+          me={me}
+          fresh={!adding && added?.id === s.id}
+          onChanged={() => {
+            // A row removed must not come back from the answer that added it.
+            setAdded((a) => (a?.id === s.id ? null : a));
+            refresh();
+          }}
+        />
       ))}
-      {servers?.length === 0 && !error && (
+      {servers !== null && shown.length === 0 && !error && (
         <p className="px-4 py-3 text-[11.5px] text-faint">
           No tool server is registered. A team&rsquo;s own tools reach agents by registering the MCP server that serves them; its tools become available to agents once the pin is approved.
         </p>
