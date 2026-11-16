@@ -206,7 +206,7 @@ export function AskCorpus({
           onKeyDown={(e) => {
             if (e.key === "Enter") (e.shiftKey ? search : ask)();
           }}
-          placeholder="What is prompt injection, and how should an agent be protected from it?"
+          placeholder="Ask a question the admitted sources can answer"
           className="focusable h-9 min-w-0 grow rounded-md border border-line bg-canvas px-3 text-[12.5px] text-fg placeholder:text-ghost"
         />
         <Button size="md" variant="solid" tone="ink" loading={busy && mode === "answer"} disabled={busy} onClick={ask}>Answer</Button>

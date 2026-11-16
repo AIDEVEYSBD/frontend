@@ -1,6 +1,6 @@
 import { CLIENT_RESPONSIBILITIES, CONTROLS, FAMILIES, RESIDUAL_RISK, STANDARDS } from "@/lib/guardrails";
 import { CORE_PRINCIPLE, DOMAINS, EXECUTIVE_TAKEAWAY, GUARDRAILS, SCOPE } from "@/lib/data-guardrails";
-import { FEATURES, KNOWLEDGE_LANE, RETRIEVAL_STAGES, TELEMETRY_LANE } from "@/lib/pipeline";
+import { KNOWLEDGE_LANE, RETRIEVAL_STAGES } from "@/lib/pipeline";
 import { TOOL_CARDS } from "@/lib/catalogue";
 import { PAGES } from "@/lib/assistant";
 import { MCP_ENDPOINT, PUBLIC_ORIGIN } from "@/lib/site";
@@ -75,10 +75,8 @@ function pipelineText(): string {
   const lane = (name: string, stages: { id: string; label: string; detail: string }[]) =>
     `${name}:\n` + stages.map((s) => `  - ${s.label}: ${s.detail}`).join("\n");
   return [
-    lane(TELEMETRY_LANE.name, TELEMETRY_LANE.stages),
     lane(KNOWLEDGE_LANE.name, KNOWLEDGE_LANE.stages),
     lane("Agentic retrieval", RETRIEVAL_STAGES),
-    "Salient features: " + FEATURES.map((f) => `${f.n}. ${f.text}`).join(" "),
   ].join("\n");
 }
 

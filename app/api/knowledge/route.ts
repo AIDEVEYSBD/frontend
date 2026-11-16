@@ -8,11 +8,14 @@ import { permit } from "@/lib/server/auth";
 /**
  * The knowledge base, as it actually stands, for one namespace.
  *
- * The curated list is seeded from the catalogue on the first read of a
- * namespace, so a fresh deployment (or a fresh engagement) has the corpus a
- * GRC team would expect without anybody typing it in. Everything after that
- * — what has been fetched, what is waiting for a person, what is indexed —
- * is read from the index itself, for that namespace only.
+ * `sources` is the namespace's register: the sources a person there has
+ * enabled. `catalogue` is everything else the namespace knows of, switched
+ * off: the public catalogue (lib/knowledge.ts), offered on the first read of
+ * a namespace and joined to the register one source at a time, by a person
+ * (the POST below). A new deployment, or a new engagement, has an empty
+ * register. Everything after that (what has been fetched, what is waiting
+ * for a person, what is indexed) is read from the index itself, for that
+ * namespace only.
  *
  * `?namespaces=1` answers with the namespaces that exist instead, for the
  * picker. Retrieval activity comes from the run journals rather than a
@@ -90,8 +93,12 @@ export async function GET(req: Request) {
       namespace,
       namespaces: [DEFAULT_NAMESPACE],
       error:
-        "The vector store is not reachable, so nothing is indexed. Start it with `docker compose up -d vectors`, or set KNOWLEDGE_DB_HOST to reach it.",
-      sources: SOURCES.map((s) => ({
+        "The vector store is not reachable, so nothing is indexed. KNOWLEDGE_DB_HOST names where it is.",
+      // Which sources this namespace enabled is in the store, so the register
+      // is unknown here and nothing stands in for it: the catalogue is only
+      // ever an offer.
+      sources: [],
+      catalogue: SOURCES.map((s) => ({
         id: s.id,
         name: s.name,
         publisher: s.publisher,
@@ -100,7 +107,7 @@ export async function GET(req: Request) {
         use_for: s.use,
         url: s.url,
         cadence: s.cadence,
-        enabled: true,
+        enabled: false,
         documents: "0",
         staged: "0",
         chunks: "0",
@@ -108,16 +115,16 @@ export async function GET(req: Request) {
       })),
       staged: [],
       admissions: [],
-      totals: { chunks: 0, documents: 0, admitted: 0, tokens: 0, sources: SOURCES.length },
+      totals: { chunks: 0, documents: 0, admitted: 0, tokens: 0, sources: 0 },
       index: { ...index, integrity: null },
       retrieval: { calls: 0, byAgent: {}, lastAt: null },
-      basis: "the curated catalogue this deployment seeds on first connection; nothing is indexed yet",
+      basis: "the store is unreachable, so the register, the documents and the index could not be read; the catalogue is the public list a source can be added from",
     });
   }
   await seedNamespace(namespace);
   await ensureAnnIndex();
 
-  const sources = await kq(
+  const rows = await kq<{ enabled: boolean }>(
     `SELECT s.*,
             (SELECT count(*) FROM documents d WHERE d.namespace = s.namespace AND d.source_id = s.id AND d.status = 'admitted') AS documents,
             (SELECT count(*) FROM documents d WHERE d.namespace = s.namespace AND d.source_id = s.id AND d.status = 'staged')   AS staged,
@@ -126,6 +133,9 @@ export async function GET(req: Request) {
        FROM sources s WHERE s.namespace = $1 ORDER BY s.family, s.name`,
     [namespace],
   );
+  // The register is what a person enabled; the rest is offered, not held.
+  const sources = rows.filter((s) => s.enabled);
+  const catalogue = rows.filter((s) => !s.enabled);
 
   const staged = await kq(
     `SELECT id, source_id, title, url, bytes, chunks, digest, fetched_at, excerpt
@@ -155,6 +165,7 @@ export async function GET(req: Request) {
     namespace,
     namespaces: await listNamespaces(),
     sources,
+    catalogue,
     staged,
     admissions,
     totals: {
@@ -167,7 +178,7 @@ export async function GET(req: Request) {
     index: { ...index, integrity },
     retrieval: await retrievalActivity(),
     basis:
-      `sources are the curated list for the "${namespace}" namespace; document, chunk and admission counts are read from that namespace of the index; retrieval activity is counted from run journals; the integrity digest is recomputed on this read and compared with the latest admission's`,
+      `sources are those a person enabled for the "${namespace}" namespace, and the catalogue is what is offered and not enabled; document, chunk and admission counts are read from that namespace of the index; retrieval activity is counted from run journals; the integrity digest is recomputed on this read and compared with the latest admission's`,
   });
 }
 

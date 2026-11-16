@@ -1,24 +1,22 @@
 /**
- * The curated corpus.
+ * The catalogue of public sources, and the vocabulary a source is described in.
  *
- * What agents built here are allowed to retrieve from, chosen rather than
- * crawled. Curation is the point: an agent that can reach the open web will
- * eventually cite something it should not, and a GRC answer is only as good as
- * the authority under it.
+ * The catalogue is a fixed list of public standards, frameworks, regulation
+ * and research that a deployment can add to a corpus. It is an offer, not a
+ * register: a source is part of a deployment only once a person there has
+ * added it (the `enabled` flag on its row, per namespace), and nothing of it
+ * is retrievable until a person has also admitted a fetched copy. A
+ * deployment starts with none added.
  *
- * Every entry carries its licence, because that governs what we may actually
- * hold. Three states, and the distinction is not cosmetic:
+ * Every entry carries its licence, because that governs what may be held:
  *
- *   open         redistributable — the text can be chunked, embedded and cited
- *   registration free but behind an account — held only where the client's own
- *                licence covers it, so it ships listed and not ingested
- *   licensed     paid or restricted — cited by reference, never stored. ISO,
- *                Gartner and Forrester sit here. An agent can say "ISO/IEC
- *                42001 A.9 applies" without us holding a word of the standard.
- *
- * Nothing here is ingested by being listed. A source becomes retrievable only
- * after a person admits it, which is the whole shape of the page over this.
+ *   open         redistributable: the text can be chunked, embedded and cited
+ *   registration free but behind an account: held only where the client's own
+ *                licence covers it
+ *   licensed     paid or restricted: cited by reference, never stored
  */
+
+import type { DataClass } from "./api/pending";
 
 export type Licence = "open" | "registration" | "licensed";
 
@@ -36,22 +34,7 @@ export interface Source {
   cadence: string;
 }
 
-/**
- * Internal sources are the client's own corpus, not ours. They are listed as
- * placeholders because the names differ per engagement, and because a register
- * that pretends to have ingested a client's intranet before the engagement
- * starts is the first thing they will test.
- */
-export const INTERNAL_PLACEHOLDERS: Source[] = [
-  { id: "int-policies", name: "Corporate policies and procedures", publisher: "Client", family: "internal", licence: "registration", use: "The client's own standards, which outrank an external framework where they conflict", url: "", cadence: "On revision" },
-  { id: "int-intranet", name: "Intranet and knowledge portal", publisher: "Client", family: "internal", licence: "registration", use: "Operating procedures and internal guidance", url: "", cadence: "Continuous" },
-  { id: "int-product", name: "Product and service library", publisher: "Client", family: "internal", licence: "registration", use: "What the organisation builds, for context on its own exposure", url: "", cadence: "On release" },
-  { id: "int-site", name: "Public website", publisher: "Client", family: "internal", licence: "open", use: "External claims the organisation has made, for consistency checks", url: "", cadence: "Continuous" },
-  { id: "int-registers", name: "Risk and exception registers", publisher: "Client", family: "internal", licence: "registration", use: "Accepted risks and live exceptions, which change a disposition", url: "", cadence: "Continuous" },
-];
-
 export const FAMILIES = [
-  { id: "internal", name: "Internal sources", note: "The client's own corpus. Named per engagement and connected on deployment." },
   { id: "ai", name: "AI and agentic security", note: "The standards written for systems that reason and act." },
   { id: "frameworks", name: "Security frameworks and controls", note: "The control catalogues an assessment is written against." },
   { id: "threat", name: "Threat and vulnerability intelligence", note: "What is being exploited, and how badly it scores." },
@@ -119,15 +102,46 @@ export const EXTERNAL: Source[] = [
   { id: "idc", name: "IDC research", publisher: "IDC", family: "market", licence: "licensed", use: "Market sizing and spending forecasts, cited by reference", url: "https://www.idc.com", cadence: "Continuous" },
 ];
 
-export const SOURCES: Source[] = [...INTERNAL_PLACEHOLDERS, ...EXTERNAL];
+/** The catalogue: public sources a deployment can add. */
+export const SOURCES: Source[] = EXTERNAL;
 
 export const LICENCE_NOTE: Record<Licence, string> = {
   open: "Redistributable. Held in the index and quoted in full.",
-  registration: "Free but account-bound. Held only where the client's licence covers it.",
+  registration: "Free but account-bound. Held only where your organisation's licence covers it.",
   licensed: "Paid or restricted. Cited by reference; no text is stored.",
 };
 
 export const SOURCE_BY_ID = new Map(SOURCES.map((s) => [s.id, s]));
+
+/* ── doors the page is ahead of (lib/api/pending.ts) ── */
+
+/** What `POST /api/knowledge/sources` (door `knowledgeSourceAdd`) is sent: a source of the deployment's own, added to one corpus. */
+export interface SourceAddBody {
+  namespace: string;
+  name: string;
+  /** Where it is fetched from. */
+  url: string;
+  publisher: string;
+  licence: Licence;
+  data_class: DataClass;
+}
+
+/** What `PATCH /api/knowledge/sources/{id}` (door `knowledgeSourceClass`) is sent. */
+export interface SourceClassBody {
+  namespace: string;
+  data_class: DataClass;
+  /** Who may retrieve from it: group or role names, as the identity provider names them. Empty means nobody is named. */
+  entitled: string[];
+}
+
+/** The fields a source row gains once the deployment classifies sources; both optional, shown when present. */
+export interface SourceClassFields {
+  data_class?: DataClass | null;
+  entitled?: string[] | null;
+}
+
+/** The multipart field names `POST /api/knowledge/documents` (door `knowledgeUpload`) is sent. */
+export const UPLOAD_FIELDS = { file: "file", namespace: "namespace", title: "title" } as const;
 
 /* ── namespaces: one corpus per engagement ── */
 

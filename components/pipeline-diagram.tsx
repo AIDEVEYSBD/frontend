@@ -1,37 +1,25 @@
 "use client";
 
 import type { ReactNode } from "react";
-import type { Stage } from "@/lib/pipeline";
+import type { Lane, Stage } from "@/lib/pipeline";
 
 /**
- * The pipeline, as a drawing.
+ * The stages, as a drawing.
  *
- * Two lanes run left to right and converge on retrieval, which is the one
- * place an agent touches either. A drawing earns its place over a list here
- * because the argument is topological: what feeds what, and where the human
- * sits. A live stage is solid and tinted; a specified stage is dashed. Both
- * are labelled in the legend, and both are clickable.
+ * One lane runs left to right (what happens to a source) and meets
+ * retrieval, which is the one place an agent reads from it. A drawing earns
+ * its place over a list because the point is the order: what comes before
+ * what, and where the person sits. Every stage is drawn the same way and is
+ * clickable for its explanation. The drawing explains the stages; it carries
+ * no figure and no state, and says nothing about what is running.
  *
- * It is laid out in HTML rather than a fixed SVG so that labels size their own
- * boxes and nothing ever clips; the only drawn geometry is the two converging
- * connectors, which scale with the lanes beside them.
+ * It is laid out in HTML, not a fixed SVG, so labels size their own boxes
+ * and nothing clips.
  */
-
-export interface DiagramLane {
-  id: string;
-  name: string;
-  purpose: string;
-  stages: Stage[];
-}
 
 /* ── icons: a small stroke set, one glyph per stage ── */
 
 const ICONS: Record<string, ReactNode> = {
-  connectors: <><path d="M9 2v6M15 2v6" /><path d="M5 8h14l-1 5a6 6 0 0 1-12 0z" /><path d="M12 19v3" /></>,
-  parsers: <><path d="M8 3H6a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2 2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2" /><path d="M16 3h2a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2 2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2" /></>,
-  bronze: <><ellipse cx="12" cy="6" rx="8" ry="3" /><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6" /></>,
-  silver: <><ellipse cx="12" cy="6" rx="8" ry="3" /><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6" /><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" /></>,
-  gold: <><ellipse cx="12" cy="5" rx="8" ry="3" /><path d="M4 5v4c0 1.7 3.6 3 8 3s8-1.3 8-3V5" /><path d="M4 9v4c0 1.7 3.6 3 8 3s8-1.3 8-3V9" /><path d="M4 13v4c0 1.7 3.6 3 8 3s8-1.3 8-3v-4" /></>,
   curated: <><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /><path d="M9 7h7M9 11h5" /></>,
   fetch: <><path d="M21 12a9 9 0 1 1-2.6-6.4" /><path d="M21 3v6h-6" /></>,
   sections: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="M8 13h8M8 17h8M8 9h2" /></>,
@@ -46,7 +34,6 @@ const ICONS: Record<string, ReactNode> = {
   rerank: <><path d="M4 6h10M4 12h7M4 18h4" /><path d="m17 8 3-3 3 3M20 5v14" /></>,
   guardrails: <><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z" /><path d="m9 12 2 2 4-4" /></>,
   agent: <><rect x="4" y="8" width="16" height="12" rx="3" /><path d="M12 4v4M8 2h8" /><circle cx="9" cy="14" r="1.2" fill="currentColor" stroke="none" /><circle cx="15" cy="14" r="1.2" fill="currentColor" stroke="none" /></>,
-  telemetry: <><path d="M3 12h4l3-8 4 16 3-8h4" /></>,
   knowledge: <><path d="M2 4h6a4 4 0 0 1 4 4v12a3 3 0 0 0-3-3H2z" /><path d="M22 4h-6a4 4 0 0 0-4 4v12a3 3 0 0 1 3-3h7z" /></>,
 };
 
@@ -60,42 +47,27 @@ export function StageIcon({ id, size = 14, className = "" }: { id: string; size?
 
 /* ── a step node ── */
 
-function Node({ s, count, active, onPick }: { s: Stage; count?: string; active: boolean; onPick: (s: Stage) => void }) {
-  const live = s.state === "live";
+function Node({ s, active, onPick }: { s: Stage; active: boolean; onPick: (s: Stage) => void }) {
   return (
     <button
       type="button"
       onClick={() => onPick(s)}
       aria-pressed={active}
-      className={[
-        "focusable group flex min-w-0 items-center gap-2 rounded-md border px-2.5 py-1.5 text-left transition-[background-color,border-color,box-shadow]",
-        live
-          ? active
-            ? "border-ok bg-ok-bg elev-2"
-            : "border-ok-line bg-surface hover:border-ok hover:bg-ok-bg"
-          : active
-            ? "border-dim border-dashed bg-raise"
-            : "border-line-strong border-dashed bg-canvas hover:bg-raise",
-      ].join(" ")}
+      className={`focusable group flex min-w-0 cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1.5 text-left transition-[background-color,border-color] ${
+        active ? "border-fg bg-raise" : "border-line bg-surface hover:border-line-strong hover:bg-raise/60"
+      }`}
     >
-      <span className={`grid size-6 shrink-0 place-items-center rounded-[5px] ${live ? "bg-ok/12 text-ok" : "bg-raise text-faint"}`}>
+      <span className={`grid size-6 shrink-0 place-items-center rounded-[5px] ${active ? "bg-ink text-on-ink" : "bg-raise text-dim"}`}>
         <StageIcon id={s.id} size={13} />
       </span>
-      <span className="flex min-w-0 flex-col leading-tight">
-        <span className={`truncate text-[11px] font-semibold ${live ? "text-fg" : "text-dim"}`}>{s.label}</span>
-        {count ? (
-          <span className="tnum truncate font-mono text-[9px] text-faint">{count}</span>
-        ) : (
-          <span className="text-[9px] text-ghost">{live ? "running" : "specified"}</span>
-        )}
-      </span>
+      <span className="truncate text-[11.5px] font-semibold text-fg">{s.label}</span>
     </button>
   );
 }
 
-function Arrow() {
+function Arrow({ className = "" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 16 12" width="14" height="10" className="shrink-0 text-line-strong" aria-hidden>
+    <svg viewBox="0 0 16 12" width="14" height="10" className={`shrink-0 text-line-strong ${className}`} aria-hidden>
       <path d="M1 6h12" stroke="currentColor" strokeWidth="1.4" fill="none" />
       <path d="M9 2l5 4-5 4" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
@@ -104,82 +76,60 @@ function Arrow() {
 
 /* ── the drawing ── */
 
-export function PipelineDiagram({
-  lanes,
-  retrieval,
-  counts,
-  onPick,
-  picked,
-}: {
-  lanes: [DiagramLane, DiagramLane];
-  retrieval: Stage[];
-  counts?: Record<string, string>;
-  onPick: (s: Stage) => void;
-  picked?: string;
-}) {
+export function PipelineDiagram({ lane, retrieval, onPick, picked }: { lane: Lane; retrieval: Stage[]; onPick: (s: Stage) => void; picked?: string }) {
   return (
-    <div className="grid items-stretch gap-0 lg:grid-cols-[minmax(0,1fr)_44px_240px_72px]">
-      {/* the two lanes */}
-      <div className="grid gap-3 lg:grid-rows-2">
-        {lanes.map((lane) => (
-          <section key={lane.id} className="flex min-w-0 gap-3 rounded-lg border border-line bg-sunken/40 p-3">
-            <span className="flex w-[104px] shrink-0 flex-col gap-1 border-r border-line pr-3">
-              <span className="grid size-7 place-items-center rounded-md bg-ink text-on-ink">
-                <StageIcon id={lane.id} size={15} />
-              </span>
-              <span className="text-[11.5px] leading-tight font-semibold text-fg">{lane.name}</span>
-              <span className="text-[9.5px] leading-[1.35] text-faint">{lane.stages.length} stages</span>
+    <div className="grid items-stretch gap-3 lg:grid-cols-[minmax(0,1fr)_auto_260px_auto] lg:gap-2">
+      {/* what happens to a source */}
+      <section className="flex min-w-0 flex-col gap-3 rounded-lg border border-line bg-canvas p-3 sm:flex-row">
+        <span className="flex shrink-0 items-center gap-2 border-line sm:w-[112px] sm:flex-col sm:items-start sm:gap-1 sm:border-r sm:pr-3">
+          <span className="grid size-7 place-items-center rounded-md bg-ink text-on-ink">
+            <StageIcon id={lane.id} size={15} />
+          </span>
+          <span className="flex flex-col">
+            <span className="text-[11.5px] leading-tight font-semibold text-fg">{lane.name}</span>
+            <span className="text-[10px] leading-[1.35] text-faint">what happens to a source</span>
+          </span>
+        </span>
+        <span className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-2">
+          {lane.stages.map((s, i) => (
+            <span key={s.id} className="flex min-w-0 items-center gap-1">
+              {i > 0 && <Arrow />}
+              <Node s={s} active={picked === s.id} onPick={onPick} />
             </span>
-            <span className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-2">
-              {lane.stages.map((s, i) => (
-                <span key={s.id} className="flex items-center gap-1">
-                  {i > 0 && <Arrow />}
-                  <Node s={s} count={counts?.[s.id]} active={picked === s.id} onPick={onPick} />
-                </span>
-              ))}
-            </span>
-          </section>
-        ))}
-      </div>
+          ))}
+        </span>
+      </section>
 
-      {/* the convergence, drawn */}
-      <div className="relative hidden lg:block">
-        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 size-full text-line-strong" aria-hidden>
-          <path d="M0 26 C 55 26, 45 50, 100 50" fill="none" stroke="currentColor" strokeWidth="1.4" vectorEffect="non-scaling-stroke" />
-          <path d="M0 74 C 55 74, 45 50, 100 50" fill="none" stroke="currentColor" strokeWidth="1.4" vectorEffect="non-scaling-stroke" />
-        </svg>
-        <span className="absolute top-1/2 right-0 size-1.5 -translate-y-1/2 translate-x-1/2 rounded-full bg-line-strong" />
-      </div>
+      <span className="hidden items-center lg:flex">
+        <Arrow />
+      </span>
 
-      {/* retrieval */}
-      <section className="mt-3 flex flex-col gap-2 rounded-lg border border-line bg-sunken/40 p-3 lg:mt-0">
+      {/* what happens to a question */}
+      <section className="flex flex-col gap-2 rounded-lg border border-line bg-canvas p-3">
         <span className="flex items-center gap-2">
           <span className="grid size-7 place-items-center rounded-md bg-ink text-on-ink">
             <StageIcon id="hybrid" size={15} />
           </span>
           <span className="flex flex-col leading-tight">
-            <span className="text-[11.5px] font-semibold text-fg">Agentic retrieval</span>
-            <span className="text-[9.5px] text-faint">where an agent reads</span>
+            <span className="text-[11.5px] font-semibold text-fg">Retrieval</span>
+            <span className="text-[10px] text-faint">what happens to a question</span>
           </span>
         </span>
         <span className="flex flex-col gap-1.5">
           {retrieval.map((s) => (
-            <Node key={s.id} s={s} count={counts?.[s.id]} active={picked === s.id} onPick={onPick} />
+            <Node key={s.id} s={s} active={picked === s.id} onPick={onPick} />
           ))}
         </span>
       </section>
 
       {/* the agent */}
-      <div className="hidden items-center lg:flex">
-        <svg viewBox="0 0 24 12" width="22" height="11" className="shrink-0 text-line-strong" aria-hidden>
-          <path d="M0 6h19" stroke="currentColor" strokeWidth="1.4" fill="none" />
-          <path d="M16 2l5 4-5 4" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+      <div className="hidden items-center gap-1 lg:flex">
+        <Arrow />
         <span className="flex flex-col items-center gap-1">
-          <span className="grid size-10 place-items-center rounded-full bg-ink text-on-ink elev-2">
-            <StageIcon id="agent" size={20} />
+          <span className="grid size-9 place-items-center rounded-full bg-ink text-on-ink">
+            <StageIcon id="agent" size={18} />
           </span>
-          <span className="text-[9.5px] font-medium text-faint">agent</span>
+          <span className="text-[10px] font-medium text-faint">agent</span>
         </span>
       </div>
     </div>

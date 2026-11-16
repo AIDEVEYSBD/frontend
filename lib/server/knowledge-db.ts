@@ -50,7 +50,7 @@ const pool = new Pool({
 export const SCHEMA = `
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- A curated source, per namespace. Seeded from the catalogue, editable by a curator.
+-- A source, per namespace. Catalogue entries are seeded switched off; a curator enables them.
 CREATE TABLE IF NOT EXISTS sources (
   namespace   text NOT NULL DEFAULT 'default',
   id          text NOT NULL,
@@ -253,24 +253,27 @@ export async function knowledgeClose(): Promise<void> {
 }
 
 /**
- * Fill gaps in a namespace's register from the catalogue.
+ * Offer the catalogue to a namespace.
  *
- * Idempotent: the catalogue in lib/knowledge.ts is the register's source of
- * truth for what a source is and where it is fetched from, so a change there
+ * Idempotent: the catalogue in lib/knowledge.ts is the source of truth for
+ * what a public source is and where it is fetched from, so a change there
  * (a better URL, a corrected licence) reaches every deployment on the next
- * read. A namespace's own curation (which sources it enabled), its fetched
- * documents and its admissions are never touched by the seed. A namespace
- * comes into being the first time it is seeded.
+ * read. A catalogue entry a namespace has not seen is written switched off:
+ * it is offered, and joins the namespace's register only when a person
+ * enables it. A row that is already there keeps the `enabled` it has, so a
+ * namespace's own curation, its fetched documents and its admissions are
+ * never touched by the seed. A namespace comes into being the first time it
+ * is seeded.
  */
 export async function seedNamespace(namespace: string): Promise<void> {
   const params: unknown[] = [namespace];
   const rows = SOURCES.map((s) => {
     const b = params.length;
     params.push(s.id, s.name, s.publisher, s.family, s.licence, s.use, s.url, s.cadence);
-    return `($1,$${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8})`;
+    return `($1,$${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},false)`;
   });
   await kq(
-    `INSERT INTO sources (namespace, id, name, publisher, family, licence, use_for, url, cadence)
+    `INSERT INTO sources (namespace, id, name, publisher, family, licence, use_for, url, cadence, enabled)
      VALUES ${rows.join(",")}
      ON CONFLICT (namespace, id) DO UPDATE SET name = EXCLUDED.name, publisher = EXCLUDED.publisher, family = EXCLUDED.family,
        licence = EXCLUDED.licence, use_for = EXCLUDED.use_for, url = EXCLUDED.url, cadence = EXCLUDED.cadence`,

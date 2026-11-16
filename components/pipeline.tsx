@@ -1,138 +1,63 @@
 "use client";
 
 import { useState } from "react";
-import { Mono, Status } from "./ui";
-import { BrandMark } from "./brand";
 import { PipelineDiagram } from "./pipeline-diagram";
-import {
-  FEATURES,
-  KNOWLEDGE_LANE,
-  RETRIEVAL_STAGES,
-  TELEMETRY_LANE,
-  TELEMETRY_SOURCES,
-  type Stage,
-} from "@/lib/pipeline";
+import { KNOWLEDGE_LANE, RETRIEVAL_STAGES, type Stage } from "@/lib/pipeline";
 
 /**
- * The architecture, drawn, with its explanation beside it.
+ * The stages, drawn, with the explanation of the one picked beside them.
  *
- * Two lanes feed an agent's context — security tooling parsed into structured
- * facts, and authority documents made retrievable — and they converge at
- * retrieval, the only place an agent touches either. Every stage says whether
- * it runs here or is specified, which is what lets the drawing be shown to a
- * client without a caveat.
+ * What happens to a source between its address and an agent's question, so
+ * the words the page uses (fetched, staged, admitted, indexed) have a
+ * meaning a reader can check. It explains the stages and only that: no
+ * count, no state, nothing about what this deployment is running. Folded
+ * until asked for, because it is reference, not the page's work.
  */
-
-export function PipelineView({ counts }: { counts?: Record<string, string> }) {
+export function PipelineView() {
+  const [shown, setShown] = useState(false);
   const [open, setOpen] = useState<Stage | null>(null);
-  const all = [...TELEMETRY_LANE.stages, ...KNOWLEDGE_LANE.stages, ...RETRIEVAL_STAGES];
-  const live = all.filter((s) => s.state === "live").length;
 
   return (
     <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-4 py-3">
-        <span className="text-[13px] font-semibold tracking-[-0.005em]">Context and RAG engineering</span>
-        <span className="text-[11.5px] text-faint">how context reaches an agent · click any stage</span>
+      <button
+        type="button"
+        onClick={() => setShown((v) => !v)}
+        aria-expanded={shown}
+        aria-controls="knowledge-stages"
+        className={`focusable flex w-full cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 bg-raise/55 px-4 py-2.5 text-left ${shown ? "border-b border-line" : ""}`}
+      >
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className={`shrink-0 text-faint transition-transform ${shown ? "" : "-rotate-90"}`}>
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+        <span className="text-[12.5px] font-semibold tracking-[-0.005em]">How a source becomes retrievable</span>
+        <span className="text-[11px] leading-[1.55] text-faint">the stages, explained; this drawing does not report what is running</span>
         <span className="grow" />
-        <span className="flex items-center gap-3 text-[10.5px]">
-          <span className="flex items-center gap-1.5">
-            <span className="size-2 rounded-[2px] bg-ok" />
-            <span className="text-faint">
-              running here <span className="tnum text-fg">{live}</span> of {all.length}
-            </span>
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="size-2 rounded-[2px] border border-dashed border-line-strong" />
-            <span className="text-faint">specified</span>
-          </span>
-        </span>
-      </div>
+        <span className="text-[10.5px] text-ghost">{shown ? "hide" : "show"}</span>
+      </button>
 
-      <div className="px-2 pt-3 pb-1">
-        <PipelineDiagram
-          lanes={[TELEMETRY_LANE, KNOWLEDGE_LANE]}
-          retrieval={RETRIEVAL_STAGES}
-          counts={counts}
-          onPick={(s) => setOpen(open?.id === s.id ? null : s)}
-          picked={open?.id}
-        />
-      </div>
-
-      <div className="grid gap-px border-t border-line bg-line lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-        {/* what the picked stage does */}
-        <div className="flex min-h-[96px] flex-col gap-1.5 bg-surface px-4 py-3">
-          {open ? (
-            <>
-              <span className="flex flex-wrap items-baseline gap-2">
-                <span className="text-[13px] font-semibold">{open.label}</span>
-                <Status tone={open.state === "live" ? "ok" : "neutral"}>
-                  {open.state === "live" ? "running here" : "specified"}
-                </Status>
-                {(open.features ?? []).map((n) => (
-                  <Mono key={n} className="text-[10px] text-ghost">
-                    feature {n}
-                  </Mono>
-                ))}
-              </span>
-              <span className="max-w-[80ch] text-[12px] leading-[1.6] text-faint">{open.detail}</span>
-            </>
-          ) : (
-            <>
-              <span className="text-[13px] font-semibold">Two lanes, one meeting point</span>
-              <span className="max-w-[80ch] text-[12px] leading-[1.6] text-faint">
-                Telemetry lands as facts an agent can query. Knowledge lands as passages it can cite.
-                Both pass through a person before an agent can reach them, and both reach the agent
-                only through retrieval, which is where the guardrails sit.
-              </span>
-            </>
-          )}
-        </div>
-
-        {/* the salient features, numbered as the architecture numbers them */}
-        <div className="grid grid-cols-1 gap-px bg-line sm:grid-cols-2">
-          {FEATURES.map((f) => (
-            <div key={f.n} className="flex items-start gap-2 bg-surface px-3 py-2">
-              <span className={`mt-1.5 size-1.5 shrink-0 rounded-[2px] ${f.state === "live" ? "bg-ok" : "bg-line-strong"}`} />
-              <span className="flex min-w-0 flex-col">
-                <span className="text-[10.5px] leading-[1.45] text-fg">{f.text}</span>
-                <span className="text-[9px] text-ghost">
-                  {f.n} · {f.state === "live" ? "running here" : "specified"}
-                </span>
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/** The tooling the telemetry lane is designed around, with its parser state. */
-export function TelemetryRegister() {
-  return (
-    <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
-      <div className="flex items-center gap-2 border-b border-line px-4 py-3">
-        <span className="text-[13px] font-semibold tracking-[-0.005em]">Tools and telemetry sources</span>
-        <span className="truncate text-[11.5px] text-faint">the estate an agent asks about</span>
-        <span className="grow" />
-        <Status tone="neutral" dot={false}>
-          {TELEMETRY_SOURCES.length} specified
-        </Status>
-      </div>
-      <div className="grid grid-cols-2 gap-px bg-line sm:grid-cols-3 lg:grid-cols-4">
-        {TELEMETRY_SOURCES.map((t) => (
-          <div key={t.name} className="flex items-start gap-2.5 bg-surface px-3 py-2.5">
-            <span className="grid size-7 shrink-0 place-items-center rounded-md bg-raise">
-              <BrandMark name={t.name} size={16} />
-            </span>
-            <span className="flex min-w-0 flex-col">
-              <span className="truncate text-[12px] font-medium text-fg">{t.name}</span>
-              <span className="truncate text-[10px] text-faint">{t.kind}</span>
-              <span className="mt-0.5 text-[10px] leading-[1.4] text-ghost">{t.contributes}</span>
-            </span>
+      {shown && (
+        <div id="knowledge-stages" className="flex flex-col">
+          <div className="p-3">
+            <PipelineDiagram lane={KNOWLEDGE_LANE} retrieval={RETRIEVAL_STAGES} onPick={(s) => setOpen(open?.id === s.id ? null : s)} picked={open?.id} />
           </div>
-        ))}
-      </div>
+          <div className="flex min-h-[72px] flex-col gap-1 border-t border-line px-4 py-3">
+            {open ? (
+              <>
+                <span className="text-[13px] font-semibold">{open.label}</span>
+                <span className="max-w-[90ch] text-[12px] leading-[1.6] text-dim">{open.detail}</span>
+              </>
+            ) : (
+              <>
+                <span className="text-[13px] font-semibold">Pick a stage to read what it does</span>
+                <span className="max-w-[90ch] text-[12px] leading-[1.6] text-dim">
+                  A source is added to the register, fetched, split and indexed by its words, and then waits for a person. Only an admitted document is embedded and can be
+                  retrieved. An agent reaches any of it through retrieval alone.
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </section>
   );
 }

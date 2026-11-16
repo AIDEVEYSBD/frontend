@@ -75,6 +75,7 @@ const NAV: NavItem[] = [
 
   { href: "/configuration", label: "Configuration", group: "Connections", icon: "sliders-horizontal" },
   { href: "/knowledge", label: "Knowledge", group: "Connections", icon: "book-open" },
+  { href: "/datasets", label: "Datasets", group: "Connections", icon: "database", tag: "preview" },
   { href: "/peers", label: "Peers", group: "Connections", icon: "waypoints" },
   { href: "/dependencies", label: "Dependencies", group: "Connections", icon: "network" },
   { href: "/breakers", label: "Breakers", group: "Connections", icon: "zap-off" },

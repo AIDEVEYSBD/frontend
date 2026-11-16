@@ -147,6 +147,26 @@ export interface DatasetRef {
   $dataset: string;
 }
 
+/** POST /api/datasets answers the new dataset, bare or as `{dataset}`. */
+export type DatasetCreated = Dataset | { dataset: Dataset };
+
+/** POST /api/knowledge/sources */
+export interface KnowledgeSourceAdd {
+  name: string;
+  url: string;
+  publisher?: string;
+  licence?: string;
+  namespace: string;
+  data_class?: DataClass;
+}
+/** PATCH /api/knowledge/sources/{id}; a source row then carries the same two optional fields. */
+export interface KnowledgeSourceClass {
+  data_class?: DataClass;
+  /** Roles entitled to retrieve from the source; empty means everyone who may read the namespace. */
+  entitled?: string[];
+}
+/** POST /api/knowledge/documents is multipart: `file`, `namespace`, `title`. */
+
 export type Workload = "sast" | "pentest" | "firewall" | "threat_hunt";
 export const WORKLOADS: { id: Workload; name: string; line: string }[] = [
   { id: "sast", name: "Static code analysis", line: "Find and validate vulnerabilities in a code snapshot" },
