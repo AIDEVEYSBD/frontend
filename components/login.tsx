@@ -114,7 +114,7 @@ export function NoAccess({ reason }: { reason: string }) {
         <p className="text-[12.5px] leading-[1.6] text-faint">{r.body}</p>
         <span className="flex items-center gap-2">
           {/* A fresh authorization, never a reload of the session that was refused. */}
-          <Button size="md" variant="solid" tone="ink" onClick={() => { window.location.href = "/api/auth/login?next=%2Fcontrol"; }}>Sign in again</Button>
+          <Button size="md" variant="solid" tone="ink" onClick={() => { window.location.href = "/api/auth/login?next=%2Foverview"; }}>Sign in again</Button>
           {reason === "disabled" && (
             <Button size="md" variant="solid" tone="err" onClick={async () => { const j = await fetch("/api/auth/logout", { method: "POST" }).then((x) => x.json()).catch(() => ({})); window.location.href = j.redirect || "/"; }}>Sign out</Button>
           )}

@@ -27,9 +27,10 @@ import { PERMISSION_META, type Permission } from "@/lib/permissions";
  * There is no Builder here: this console runs and configures the agents it
  * is given, and does not design them.
  */
-type Group = "Operations" | "Agents" | "Identity" | "Connections" | "Security and Policy" | "Observability" | "Settings";
-const GROUPS: Group[] = ["Operations", "Agents", "Identity", "Connections", "Security and Policy", "Observability", "Settings"];
+type Group = "Overview" | "Operations" | "Agents" | "Identity" | "Connections" | "Security and Policy" | "Observability" | "Settings";
+const GROUPS: Group[] = ["Overview", "Operations", "Agents", "Identity", "Connections", "Security and Policy", "Observability", "Settings"];
 const GROUP_ICON: Record<Group, NavIconName> = {
+  Overview: "house",
   Operations: "list-checks",
   Agents: "bot",
   Identity: "key-round",
@@ -51,6 +52,8 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
+  { href: "/overview", label: "Overview", group: "Overview", icon: "house" },
+
   { href: "/control", label: "Control", group: "Operations", icon: "layout-dashboard" },
   { href: "/runs", label: "Runs", group: "Operations", icon: "list-checks" },
   { href: "/deliverables", label: "Deliverables", group: "Operations", icon: "file-check" },
@@ -460,7 +463,7 @@ export function Chrome({ children }: { children: React.ReactNode }) {
   if (isOpenPage(pathname)) return <>{children}</>;
   const who = session ?? { name: CURRENT_USER.name, initials: CURRENT_USER.initials, appRoles: [] as string[], sso: false, demoDefaultApplied: false, email: "" };
   const roleLabel = who.sso ? (who.appRoles.length ? who.appRoles.join(", ") : who.demoDefaultApplied ? "default role (no assignment)" : "no role") : CURRENT_USER.role;
-  const me: Who = { name: who.name, initials: who.initials, email: who.email, role: roleLabel, sso: who.sso, signOut };
+  const me: Who = { name: who.name, initials: who.initials, email: who.email, role: roleLabel, sso: who.sso && session?.canSignOut !== false, signOut };
   return (
     <div className="flex h-screen bg-canvas">
       <Material />

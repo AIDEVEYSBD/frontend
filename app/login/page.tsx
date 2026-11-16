@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const q = await searchParams;
-  const next = typeof q.next === "string" && q.next.startsWith("/") ? q.next : "/control";
+  const next = typeof q.next === "string" && q.next.startsWith("/") ? q.next : "/overview";
   const error = typeof q.error === "string" ? q.error : "";
   return (
     <>

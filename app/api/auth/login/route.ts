@@ -53,8 +53,8 @@ async function iapSignIn(req: Request, next: string): Promise<Response> {
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const next = url.searchParams.get("next") ?? "/control";
-  const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/control";
+  const next = url.searchParams.get("next") ?? "/overview";
+  const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/overview";
   if (iapEnabled()) return iapSignIn(req, safeNext);
   if (!ssoEnabled()) {
     return Response.json({ error: "Sign-in is not configured on this deployment: set IAP_AUDIENCE (Google IAP) or AUTOX_CLIENT_ID and AUTOX_CLIENT_SECRET, with AUTH_SECRET." }, { status: 503 });
