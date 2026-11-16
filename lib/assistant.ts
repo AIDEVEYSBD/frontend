@@ -131,7 +131,7 @@ export const PAGES: Record<string, PageInfo> = {
   "/evals": {
     title: "Evals",
     shows: "Evaluation suites that execute labelled cases through the production runtime, score outcomes deterministically and compare candidate models using quality, cost and execution time.",
-    suggested: ["How does Compare models choose a recommendation?", "How were the Aegis benchmark results produced?"],
+    suggested: ["How does Compare models choose a recommendation?", "What does the threshold on an eval set decide?"],
   },
   "/knowledge": {
     title: "Knowledge base",

@@ -56,7 +56,7 @@ const DEFAULTS: DeployConfig = {
   node_routes: {},
 };
 
-/** The Foundry gateway from the environment, always listed so the estate view is complete. */
+/** The Foundry gateway, when the environment configures one. */
 function builtin(): Provider {
   return {
     id: FOUNDRY_ID,
@@ -69,7 +69,8 @@ function builtin(): Provider {
 }
 
 function withBuiltin(cfg: DeployConfig): DeployConfig {
-  const providers = cfg.providers.some((p) => p.id === FOUNDRY_ID) ? cfg.providers : [builtin(), ...cfg.providers];
+  // Listed only when the environment really names an endpoint: a deployment with no provider shows none.
+  const providers = cfg.providers.some((p) => p.id === FOUNDRY_ID) || !process.env.FOUNDRY_ENDPOINT ? cfg.providers : [builtin(), ...cfg.providers];
   return { ...DEFAULTS, ...cfg, providers };
 }
 
