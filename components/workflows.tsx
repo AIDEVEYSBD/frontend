@@ -1,5 +1,6 @@
 "use client";
 
+import { agentHref } from "@/lib/agent-link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "./builder/icons";
@@ -157,10 +158,10 @@ export function Workflows() {
 
         {agents?.length === 0 && (
           <div className="flex flex-col items-start gap-2 rounded-lg border border-dashed border-line-strong px-6 py-10">
-            <p className="text-[14px] font-medium text-fg">No workflows have been saved.</p>
+            <p className="text-[14px] font-medium text-fg">No workflow is on this deployment yet.</p>
             <p className="max-w-[480px] text-[12.5px] leading-relaxed text-faint">
-              Create and save a workflow in the builder. It will appear here and become available
-              for direct execution or use by other workflows.
+              Workflows are delivered to this console rather than designed in it. Once one is
+              deployed it appears here, ready to run or to be used by other workflows.
             </p>
           </div>
         )}
@@ -176,7 +177,7 @@ export function Workflows() {
               <div key={a.id} className="relative">
                 <button
                   type="button"
-                  onClick={() => router.push(`/builder?load=${encodeURIComponent(a.id)}`)}
+                  onClick={() => router.push(agentHref(a.id))}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     openMenu(a, e.clientX, e.clientY);
@@ -261,7 +262,7 @@ export function Workflows() {
             setMenu(null);
             setConfirming(null);
           }}
-          onOpen={() => router.push(`/builder?load=${encodeURIComponent(menu.agent.id)}`)}
+          onOpen={() => router.push(agentHref(menu.agent.id))}
           onRun={() => router.push(`/runs?agent=${encodeURIComponent(menu.agent.id)}`)}
           onBenchmark={() => router.push(`/evals?agent=${encodeURIComponent(menu.agent.id)}`)}
           onLifecycle={() => router.push(`/lifecycle?agent=${encodeURIComponent(menu.agent.id)}`)}
@@ -377,7 +378,7 @@ function ContextMenu({
       <div className="truncate px-2 pt-1 pb-1.5">
         <Label>{at.agent.name}</Label>
       </div>
-      <MenuItem icon="bot" label="Open in Builder" hint="The graph, rebuilt from its cards" onClick={onOpen} />
+      <MenuItem icon="bot" label="Open" hint="Its configuration, versions and deploy gate" onClick={onOpen} />
       <MenuItem icon="pulse" label="Run" hint={retiredOf(at.agent.retired) ? "Retired: it takes no new runs" : "Straight into the theater"} disabled={Boolean(retiredOf(at.agent.retired))} onClick={onRun} />
       <MenuItem icon="chip" label="Benchmark" hint="Upload and run an eval set against it" onClick={onBenchmark} />
       <MenuItem icon="gavel" label="Lifecycle" hint="Reviews, the gate, deployments, rollback, retirement" onClick={onLifecycle} />

@@ -1,5 +1,6 @@
 "use client";
 
+import { agentHref } from "@/lib/agent-link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -508,11 +509,11 @@ export function Control() {
   }, [agentIds, spineTick]);
 
   /* Each lifecycle stage is a control, not a caption: the design opens the
-     builder, an undeployed agent's deploy opens the gate's dialog, every
+     agent's own page, an undeployed agent's deploy opens the gate's dialog, every
      other stage opens the agent's lifecycle page at that record. */
   const stageAction = useCallback(
     (a: AgentRow, stage: string, lit: boolean, retired: boolean) => {
-      if (stage === "designed") return router.push(`/builder?load=${encodeURIComponent(a.id)}`);
+      if (stage === "designed") return router.push(agentHref(a.id));
       if (stage === "deployed" && !lit && !retired) return setDeployAsk(a.id);
       router.push(`/lifecycle?agent=${encodeURIComponent(a.id)}${STAGE_ANCHOR[stage] ?? ""}`);
     },
@@ -2136,8 +2137,8 @@ function renderDrill(
             <Button size="sm" variant="solid" tone="ink" href={`/runs?agent=${encodeURIComponent(a.id)}`}>
               Run
             </Button>
-            <Button size="sm" variant="outline" href={`/builder?load=${encodeURIComponent(a.id)}`}>
-              Open in Builder
+            <Button size="sm" variant="outline" href={agentHref(a.id)}>
+              Open
             </Button>
             <Button size="sm" variant="outline" href={`/evals?agent=${encodeURIComponent(a.id)}`}>
               Benchmark

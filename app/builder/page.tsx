@@ -1,15 +1,10 @@
-import { Suspense } from "react";
-import { Builder } from "@/components/builder";
+import { notFound } from "next/navigation";
 
-export const metadata = {
-  title: "Builder — Agent Factory",
-  description: "Design and validate governed AI-enabled workflows using controlled execution patterns.",
-};
-
+/**
+ * This console has no Builder: it runs and configures the agents it is
+ * given, and does not design them. The address answers "not found" so the
+ * canvas cannot be reached by typing it either.
+ */
 export default function BuilderPage() {
-  return (
-    <Suspense>
-      <Builder />
-    </Suspense>
-  );
+  notFound();
 }

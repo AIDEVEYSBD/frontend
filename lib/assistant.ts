@@ -28,12 +28,6 @@ export const PAGES: Record<string, PageInfo> = {
       "Model spend by provider, workflow and step, computed from every journalled model call at the configured price, over a selectable window with per-card overrides. It shows hand-off candidates (steps whose call profile and eval evidence suit a smaller or local model), a calculator that replays the workload on any model, per-step model routing that outranks the spec, the providers the deployment can reach (Foundry, Vertex, Bedrock, vLLM, Ollama, LM Studio) and billing against budget.",
     suggested: ["Which steps could move to a local model?", "What would this month cost on a smaller model?", "How does routing precedence work?"],
   },
-  "/builder": {
-    title: "Builder",
-    shows:
-      "The visual workspace for designing governed workflows. Each step uses one of three execution patterns—sequence, delegate or await—and declares its model requirements, permitted tools, data contracts and approval points.",
-    suggested: ["How do I add a human approval step?", "What does a delegate node do?", "Which connectors can a step use?"],
-  },
   "/workflows": {
     title: "Workflows",
     shows: "The registry of saved workflow specifications, including their versions, digests, model requirements and permitted tools.",

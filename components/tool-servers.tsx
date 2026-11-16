@@ -604,7 +604,7 @@ export function ToolServers({
       ))}
       {servers?.length === 0 && !error && (
         <p className="px-4 py-3 text-[11.5px] text-faint">
-          No tool server is registered. A team&rsquo;s own tools reach agents by registering the MCP server that serves them; its tools become cards in the builder once the pin is approved.
+          No tool server is registered. A team&rsquo;s own tools reach agents by registering the MCP server that serves them; its tools become available to agents once the pin is approved.
         </p>
       )}
     </div>

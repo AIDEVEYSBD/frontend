@@ -1,5 +1,6 @@
 "use client";
 
+import { agentHref } from "@/lib/agent-link";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { HARNESS } from "@/lib/spec";
@@ -153,7 +154,7 @@ export function Roster() {
       {!groups && !error && <p className="mt-6 text-[12.5px] text-faint">Reading the registry…</p>}
       {groups && groups.length === 0 && (
         <p className="mt-6 text-[13px] text-faint">
-          No agents are registered. Save a workflow in the builder to add its agents to this view.
+          No agents are registered. A workflow deployed to this console adds its agents to this view.
         </p>
       )}
 
@@ -171,7 +172,7 @@ export function Roster() {
                   {String(gi + 1).padStart(2, "0")}
                 </span>
                 <Link
-                  href={`/builder?load=${encodeURIComponent(g.id)}`}
+                  href={agentHref(g.id)}
                   className="focusable rounded-sm text-[13.5px] font-semibold text-fg hover:underline"
                 >
                   {g.name}

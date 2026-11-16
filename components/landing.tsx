@@ -60,7 +60,7 @@ export function LandingFooter() {
         <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
           {(
             [
-              ["Platform", [["Workflow builder", "/builder"], ["Agent builder", "/builder"], ["Control plane", "/control"], ["Runtime", null]]],
+              ["Platform", [["Workflows", "/workflows"], ["Agents", "/roster"], ["Control plane", "/control"], ["Runtime", null]]],
               ["Deploy", [["Terraform modules", "#deployment"], ["AWS", "#deployment"], ["Azure", "#deployment"], ["Google Cloud", "#deployment"]]],
               ["Governance", [["Provenance", "/runs"], ["Approval gates", "/runs"], ["Audit trail", "/runs"], ["Evals", "/evals"]]],
               ["Company", [["Case studies", null], ["Documentation", null], ["Status", null], ["Contact", "mailto:hello@autogrc.cloud"]]],
@@ -146,7 +146,7 @@ export function Hero() {
           </p>
 
           <div className="flex flex-wrap items-center gap-3">
-            <Button tone="ink" variant="solid" size="lg" href="/builder">
+            <Button tone="ink" variant="solid" size="lg" href="/control">
               Explore Agent Factory
             </Button>
             <Button variant="outline" size="lg" href="/runs">
@@ -628,7 +628,7 @@ export function Closing() {
           permissions, evaluation results, human review points and final evidence record.
         </p>
         <div className="flex flex-wrap items-center gap-3">
-          <Button tone="ink" variant="solid" size="lg" href="/builder">
+          <Button tone="ink" variant="solid" size="lg" href="/control">
             Explore Agent Factory
           </Button>
           <Button variant="outline" size="lg" href="#security">

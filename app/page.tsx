@@ -1,5 +1,4 @@
 import {
-  Builders,
   Deployment,
   Harnesses,
   Hero,
@@ -17,7 +16,6 @@ export default function LandingPage() {
       <main>
         <Hero />
         <ArchitectureStory />
-        <Builders />
         <Harnesses />
         <Integrations />
         <Deployment />

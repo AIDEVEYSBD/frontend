@@ -1,5 +1,6 @@
 "use client";
 
+import { agentHref } from "@/lib/agent-link";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Button, Mono, Status, Tag, type Tone } from "./ui";
@@ -355,7 +356,11 @@ export function Iam() {
       case "disconnect_server": return disconnectServer(i);
       case "remove_secret": return removeSecret(i);
       case "assign_owner": return openOwner(i);
-      case "open_builder": return window.location.assign(i.href ?? "/builder");
+      case "open_builder": {
+        // The finding names the agent by its old Builder address; the agent's own page is where it opens now.
+        const id = new URLSearchParams((i.href ?? "").split("?")[1] ?? "").get("load");
+        return window.location.assign(id ? agentHref(id) : "/workflows");
+      }
     }
   };
 

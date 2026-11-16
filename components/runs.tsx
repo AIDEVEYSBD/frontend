@@ -225,7 +225,7 @@ function Launcher() {
               ))}
             {agents?.length === 0 && (
               <p className="col-span-full rounded-lg border border-dashed border-line-strong px-5 py-8 text-[12.5px] text-faint">
-                Nothing saved yet — build something and press Save.
+                No workflow is on this deployment yet. Once one is deployed it can be run from here.
               </p>
             )}
             {(agents ?? []).map((a) => (
@@ -426,7 +426,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
       return soon(() => {
         try {
           const raw = sessionStorage.getItem("af-run-draft");
-          if (!raw) throw new Error("no draft was handed over — go back to the builder");
+          if (!raw) throw new Error("no draft was handed over");
           setSystem(fromDocument(JSON.parse(raw)));
         } catch (e) {
           setLoadError((e as Error).message);
@@ -1873,18 +1873,9 @@ function Theater({
                 <span className="text-[12px] font-semibold text-fg">A draft was authored</span>
                 <p className="text-[12px] leading-[1.55] text-mist">
                   The agent designed <code className="font-mono text-[11px]">{draftId}</code> and it
-                  passed the deployment parser. It is a draft, not a deployed agent — open it,
-                  review every grant and gate, then Save if it holds up.
+                  passed the deployment parser. It is a draft, not a deployed agent: nothing runs
+                  it until it has been reviewed and deployed.
                 </p>
-                <Button
-                  tone="ink"
-                  variant="solid"
-                  size="sm"
-                  href={`/builder?draftId=${encodeURIComponent(draftId)}`}
-                  className="self-start"
-                >
-                  Open in Builder
-                </Button>
               </div>
             )}
 

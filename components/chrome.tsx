@@ -15,60 +15,78 @@ import { Assistant } from "./assistant";
 import { applyAccent } from "./appearance";
 import { isOpenPage } from "@/lib/route-policy";
 import { consolePath } from "@/lib/api/client";
+import { PERMISSION_META, type Permission } from "@/lib/permissions";
 
 /**
- * The navigation, grouped. Five groups by what a person came to do: watch
- * and run the estate, build what runs in it, see what it is made of, govern
- * it, administer the platform. The sidebar draws each group as a row that
- * opens into a sub-menu of its pages; collapsed, it is a rail of the group
- * icons, each opening its sub-menu as a fly-out. The pattern is the DLP
- * Agent console's; the black bar is the ABB consoles'.
+ * The navigation, grouped by what a person came for: what is running, the
+ * agents themselves, who is who, what the agents can reach, the rules, and
+ * what happened. The sidebar draws each group as a row that opens into a
+ * sub-menu of its pages; a group of one page is that page. Collapsed, it is
+ * a rail of the group icons, each opening its sub-menu as a fly-out. The
+ * layout is the DLP Agent console's; the black bar is the ABB consoles'.
+ *
+ * There is no Builder here: this console runs and configures the agents it
+ * is given, and does not design them.
  */
-type Group = "Operations" | "Build" | "Estate" | "Governance" | "Platform";
-const GROUPS: Group[] = ["Operations", "Build", "Estate", "Governance", "Platform"];
+type Group = "Operations" | "Agents" | "Identity" | "Connections" | "Security and Policy" | "Observability" | "Settings";
+const GROUPS: Group[] = ["Operations", "Agents", "Identity", "Connections", "Security and Policy", "Observability", "Settings"];
 const GROUP_ICON: Record<Group, NavIconName> = {
-  Operations: "layout-dashboard",
-  Build: "pencil-ruler",
-  Estate: "network",
-  Governance: "shield",
-  Platform: "sliders-horizontal",
+  Operations: "list-checks",
+  Agents: "bot",
+  Identity: "key-round",
+  "Connections": "plug",
+  "Security and Policy": "shield",
+  Observability: "activity",
+  Settings: "settings",
 };
 
-const NAV: { href: string; label: string; group: Group; icon: NavIconName }[] = [
+interface NavItem {
+  href: string;
+  label: string;
+  group: Group;
+  icon: NavIconName;
+  /** The permission the page needs beyond reading; without it the page leaves the navigation and says so when opened. */
+  needs?: Permission;
+  /** A page that is thin, or ahead of the door it reads. */
+  tag?: "preview";
+}
+
+const NAV: NavItem[] = [
   { href: "/control", label: "Control", group: "Operations", icon: "layout-dashboard" },
   { href: "/runs", label: "Runs", group: "Operations", icon: "list-checks" },
   { href: "/deliverables", label: "Deliverables", group: "Operations", icon: "file-check" },
-  { href: "/finops", label: "FinOps", group: "Operations", icon: "wallet" },
 
-  { href: "/builder", label: "Builder", group: "Build", icon: "pencil-ruler" },
-  { href: "/workflows", label: "Workflows", group: "Build", icon: "workflow" },
-  { href: "/templates", label: "Templates", group: "Build", icon: "layout-template" },
-  { href: "/applications", label: "Applications", group: "Build", icon: "app-window" },
-  { href: "/lifecycle", label: "Lifecycle", group: "Build", icon: "milestone" },
-  { href: "/evals", label: "Evals", group: "Build", icon: "flask-conical" },
-  { href: "/knowledge", label: "Knowledge", group: "Build", icon: "book-open" },
+  { href: "/workflows", label: "Workflows", group: "Agents", icon: "workflow" },
+  { href: "/roster", label: "Roster", group: "Agents", icon: "bot" },
+  { href: "/templates", label: "Templates", group: "Agents", icon: "layout-template" },
+  { href: "/applications", label: "Applications", group: "Agents", icon: "app-window" },
+  { href: "/lifecycle", label: "Lifecycle", group: "Agents", icon: "milestone" },
+  { href: "/evals", label: "Evals", group: "Agents", icon: "flask-conical" },
 
-  { href: "/roster", label: "Roster", group: "Estate", icon: "bot" },
-  { href: "/dependencies", label: "Dependencies", group: "Estate", icon: "network" },
-  { href: "/drift", label: "Drift", group: "Estate", icon: "git-compare" },
-  { href: "/guardian", label: "Guardian", group: "Estate", icon: "shield-check" },
-  { href: "/peers", label: "Peers", group: "Estate", icon: "waypoints" },
-  { href: "/breakers", label: "Breakers", group: "Estate", icon: "zap-off" },
+  { href: "/iam", label: "People and agents", group: "Identity", icon: "users", needs: "iam" },
 
-  { href: "/guardrails", label: "Controls", group: "Governance", icon: "shield" },
-  { href: "/policy", label: "Policy", group: "Governance", icon: "book-open-check" },
-  { href: "/evidence", label: "Evidence", group: "Governance", icon: "folder-check" },
-  { href: "/attestations", label: "Attestations", group: "Governance", icon: "badge-check" },
-  { href: "/frameworks", label: "Frameworks", group: "Governance", icon: "layers" },
-  { href: "/ledger", label: "Ledger", group: "Governance", icon: "scroll-text" },
-  { href: "/bom", label: "AI-BOM", group: "Governance", icon: "package" },
+  { href: "/configuration", label: "Configuration", group: "Connections", icon: "sliders-horizontal" },
+  { href: "/knowledge", label: "Knowledge", group: "Connections", icon: "book-open" },
+  { href: "/peers", label: "Peers", group: "Connections", icon: "waypoints" },
+  { href: "/dependencies", label: "Dependencies", group: "Connections", icon: "network" },
+  { href: "/breakers", label: "Breakers", group: "Connections", icon: "zap-off" },
 
-  { href: "/iam", label: "IAM", group: "Platform", icon: "key-round" },
-  { href: "/configuration", label: "Configuration", group: "Platform", icon: "sliders-horizontal" },
-  { href: "/settings", label: "Settings", group: "Platform", icon: "settings" },
+  { href: "/guardrails", label: "Controls", group: "Security and Policy", icon: "shield" },
+  { href: "/policy", label: "Policy", group: "Security and Policy", icon: "book-open-check" },
+  { href: "/guardian", label: "Guardian", group: "Security and Policy", icon: "shield-check", tag: "preview" },
+  { href: "/evidence", label: "Evidence", group: "Security and Policy", icon: "folder-check" },
+  { href: "/attestations", label: "Attestations", group: "Security and Policy", icon: "badge-check" },
+  { href: "/frameworks", label: "Frameworks", group: "Security and Policy", icon: "layers", tag: "preview" },
+  { href: "/ledger", label: "Ledger", group: "Security and Policy", icon: "scroll-text" },
+  { href: "/bom", label: "AI-BOM", group: "Security and Policy", icon: "package" },
+
+  { href: "/finops", label: "FinOps", group: "Observability", icon: "wallet" },
+  { href: "/drift", label: "Drift", group: "Observability", icon: "git-compare" },
+
+  { href: "/settings", label: "Settings", group: "Settings", icon: "settings" },
   // The design page (/design) is a workbench for this codebase, reached by URL, never from the nav.
 ];
-type NavItem = (typeof NAV)[number];
+
 
 /* What the sidebar remembers, per browser: collapsed or not, and which groups are shut.
    Every group starts shut; the one holding the page a person is on opens by itself. */
@@ -132,6 +150,16 @@ const SIDE_FOCUS = "outline-none focus-visible:outline-2 focus-visible:outline-o
 const SUB = "relative flex items-center rounded-md px-2.5 py-1.5 text-[13px] whitespace-nowrap transition-colors duration-100";
 const subOnSide = (active: boolean) => (active ? "bg-white/10 font-semibold text-white" : "font-medium text-white/65 hover:bg-white/8 hover:text-white");
 const subOnSurface = (active: boolean) => (active ? "bg-raise font-semibold text-fg" : "font-medium text-dim hover:bg-raise/60 hover:text-fg");
+const ROW = "flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] font-semibold transition-colors duration-100";
+
+/** The small mark beside a page that is thin or ahead of its door. */
+function Preview({ onSide }: { onSide: boolean }) {
+  return (
+    <span className={`ml-auto shrink-0 rounded-[3px] border px-1 py-px text-[9px] leading-none font-medium tracking-[0.06em] uppercase ${onSide ? "border-white/20 text-white/55" : "border-line-strong text-faint"}`}>
+      Preview
+    </span>
+  );
+}
 
 /**
  * The navigation as groups that open into sub-menus: the sidebar at full
@@ -143,6 +171,25 @@ function NavGroups({ groups, auto, onAuto, onNavigate }: { groups: NavGroup[]; a
   return (
     <nav aria-label="Main" className="flex min-h-0 grow flex-col gap-1 overflow-y-auto px-2.5 py-3 [scrollbar-color:rgba(255,255,255,0.18)_transparent] [scrollbar-width:thin]">
       {groups.map((g) => {
+        // A group of one page is that page: no sub-menu to open.
+        if (g.items.length === 1) {
+          const only = g.items[0]!;
+          const active = Boolean(g.here);
+          return (
+            <Link
+              key={g.label}
+              href={only.href}
+              onClick={onNavigate}
+              aria-current={active ? "page" : undefined}
+              className={`${SIDE_FOCUS} ${ROW} relative ${active ? "bg-white/10 text-white" : "text-white/80 hover:bg-white/8 hover:text-white"}`}
+            >
+              {active && <span aria-hidden className="absolute inset-y-2 -left-2.5 w-[3px] rounded-r-[2px] bg-brand" />}
+              <NavIcon name={GROUP_ICON[g.label]} />
+              <span className="grow truncate">{g.label}</span>
+              {only.tag && <Preview onSide />}
+            </Link>
+          );
+        }
         const open = !closed.includes(g.label) || auto === g.label;
         const toggle = () => {
           if (open) {
@@ -156,7 +203,7 @@ function NavGroups({ groups, auto, onAuto, onNavigate }: { groups: NavGroup[]; a
               type="button"
               aria-expanded={open}
               onClick={toggle}
-              className={`${SIDE_FOCUS} flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] font-semibold transition-colors duration-100 hover:bg-white/8 ${g.here && !open ? "text-white" : "text-white/80 hover:text-white"}`}
+              className={`${SIDE_FOCUS} ${ROW} hover:bg-white/8 ${g.here && !open ? "text-white" : "text-white/80 hover:text-white"}`}
             >
               <NavIcon name={GROUP_ICON[g.label]} />
               <span className="grow truncate">{g.label}</span>
@@ -169,7 +216,8 @@ function NavGroups({ groups, auto, onAuto, onNavigate }: { groups: NavGroup[]; a
                   return (
                     <Link key={item.href} href={item.href} onClick={onNavigate} aria-current={active ? "page" : undefined} className={`${SIDE_FOCUS} ${SUB} ${subOnSide(active)}`}>
                       {active && <span aria-hidden className="absolute inset-y-1.5 -left-[9px] w-[2px] rounded-full bg-brand" />}
-                      {item.label}
+                      <span className="truncate">{item.label}</span>
+                      {item.tag && <Preview onSide />}
                     </Link>
                   );
                 })}
@@ -187,6 +235,18 @@ function RailGroup({ g }: { g: NavGroup }) {
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
   const ref = useDismiss<HTMLDivElement>(open, close);
+  const look = `${SIDE_FOCUS} relative grid size-9 cursor-pointer place-items-center rounded-md transition-colors duration-100 ${g.here || open ? "bg-white/10 text-white" : "text-white/65 hover:bg-white/8 hover:text-white"}`;
+  const mark = g.here && <span aria-hidden className="absolute inset-y-2 -left-[9px] w-[3px] rounded-full bg-brand" />;
+  // A group of one page needs no fly-out: its icon is the page.
+  if (g.items.length === 1) {
+    const only = g.items[0]!;
+    return (
+      <Link href={only.href} title={g.label} aria-label={g.label} aria-current={g.here ? "page" : undefined} className={look}>
+        {mark}
+        <NavIcon name={GROUP_ICON[g.label]} size={17} />
+      </Link>
+    );
+  }
   return (
     <div className="relative" ref={ref}>
       <button
@@ -196,9 +256,9 @@ function RailGroup({ g }: { g: NavGroup }) {
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className={`${SIDE_FOCUS} relative grid size-9 cursor-pointer place-items-center rounded-md transition-colors duration-100 ${g.here || open ? "bg-white/10 text-white" : "text-white/65 hover:bg-white/8 hover:text-white"}`}
+        className={look}
       >
-        {g.here && <span aria-hidden className="absolute inset-y-2 -left-[9px] w-[3px] rounded-full bg-brand" />}
+        {mark}
         <NavIcon name={GROUP_ICON[g.label]} size={17} />
       </button>
       {open && (
@@ -209,7 +269,8 @@ function RailGroup({ g }: { g: NavGroup }) {
             return (
               <Link key={item.href} role="menuitem" href={item.href} onClick={close} aria-current={active ? "page" : undefined} className={`focusable ${SUB} gap-2.5 ${subOnSurface(active)}`}>
                 <NavIcon name={item.icon} />
-                {item.label}
+                <span className="truncate">{item.label}</span>
+                {item.tag && <Preview onSide={false} />}
               </Link>
             );
           })}
@@ -265,6 +326,20 @@ function Sidebar({ groups, auto, onAuto }: { groups: NavGroup[]; auto: Group | n
   );
 }
 
+/** A page a person may not open: which permission it needs, what that permission is, and what they hold. */
+function NoPermission({ page, needs, roles }: { page: string; needs: Permission; roles: string[] }) {
+  return (
+    <div className="mx-auto flex max-w-[560px] flex-col gap-3 px-6 py-16">
+      <span className="text-[11px] font-medium tracking-[0.08em] text-faint uppercase">Not available to you</span>
+      <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.01em] text-fg">{page} needs the &ldquo;{needs}&rdquo; permission.</h1>
+      <p className="text-[13px] leading-[1.6] text-dim">{PERMISSION_META[needs]}</p>
+      <p className="text-[12.5px] leading-[1.6] text-faint">
+        Your roles: {roles.length ? roles.join(", ") : "none assigned"}. An administrator assigns roles; the change applies the next time you sign in.
+      </p>
+    </div>
+  );
+}
+
 export function Chrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { session, loaded, can, signOut } = useSession();
@@ -308,7 +383,9 @@ export function Chrome({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("af:denied", onDenied);
   }, []);
 
-  const nav = NAV.filter((item) => item.href !== "/iam" || !loaded || can("iam"));
+  // A page whose permission a person lacks leaves their navigation; opened by its address, it says which permission it needs.
+  const nav = NAV.filter((item) => !item.needs || !loaded || can(item.needs));
+  const barred = loaded ? NAV.find((item) => item.needs && !can(item.needs) && pathname.startsWith(item.href)) : undefined;
   const groups = groupsOf(nav, pathname);
   const hereGroup = groups.find((g) => g.here);
   const here = hereGroup?.here;
@@ -345,13 +422,18 @@ export function Chrome({ children }: { children: React.ReactNode }) {
             <NavIcon name="menu" size={15} />
           </button>
           <Link href="/" aria-label="Agent Factory, home" className="focusable flex shrink-0 lg:hidden"><ABBWordmark height={13} /></Link>
-          <span className="truncate text-[13px] font-semibold text-fg lg:hidden">{here?.label}</span>
+          <span className="truncate text-[13px] font-semibold text-fg lg:hidden">{hereGroup && hereGroup.items.length === 1 ? here?.group : here?.label}</span>
 
-          {here && (
+          {here && hereGroup && (
             <span className="hidden min-w-0 items-center gap-1.5 text-[12px] whitespace-nowrap text-faint lg:flex">
-              {here.group}
-              <NavIcon name="chevron-right" size={11} className="text-ghost" />
-              <span className="truncate font-medium text-fg">{here.label}</span>
+              {hereGroup.items.length > 1 && (
+                <>
+                  {here.group}
+                  <NavIcon name="chevron-right" size={11} className="text-ghost" />
+                </>
+              )}
+              <span className="truncate font-medium text-fg">{hereGroup.items.length > 1 ? here.label : here.group}</span>
+              {here.tag && <Preview onSide={false} />}
             </span>
           )}
 
@@ -373,7 +455,9 @@ export function Chrome({ children }: { children: React.ReactNode }) {
 
         {/* The app never scrolls the document — pages scroll inside main.
             A canvas page fills it exactly; a prose page scrolls within it. */}
-        <main className="min-h-0 grow overflow-y-auto overscroll-contain">{children}</main>
+        <main className="min-h-0 grow overflow-y-auto overscroll-contain">
+          {barred?.needs ? <NoPermission page={barred.label} needs={barred.needs} roles={who.appRoles} /> : children}
+        </main>
       </div>
 
       {drawer && (

@@ -604,9 +604,6 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
           )}
         </div>
         <span className="grow" />
-        <Button size="sm" variant="solid" tone="neutral" href={`/builder?load=${encodeURIComponent(agent)}`}>
-          Open in Builder
-        </Button>
         <Button size="sm" variant="solid" tone="neutral" href={`/evals?agent=${encodeURIComponent(agent)}`}>
           Evals
         </Button>

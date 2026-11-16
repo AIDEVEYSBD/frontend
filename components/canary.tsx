@@ -377,7 +377,7 @@ export function CanaryPanel({ agent, versions, production, retired, onChanged }:
           {production === null ? (
             <p className="text-[12px] text-faint">Nothing of {agent} is deployed to production yet: a canary runs beside production.</p>
           ) : !choices.length ? (
-            <p className="text-[12px] text-faint">No saved version other than the one production runs. Save a draft in the Builder first.</p>
+            <p className="text-[12px] text-faint">No saved version other than the one production runs. A canary needs a second version to run beside it.</p>
           ) : (
             <>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">

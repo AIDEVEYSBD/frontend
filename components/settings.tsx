@@ -221,7 +221,7 @@ function Models() {
       <div className="flex flex-col gap-2.5 border-b border-line px-4 py-3">
         <p className="text-[11.5px] leading-[1.55] text-faint">
           The deployments on the Foundry resource. Tick
-          what this factory offers; every model dropdown in the builder shows exactly this list, and
+          what this deployment offers; every model choice in the console shows exactly this list, and
           a spec names a deployment, never a provider. Record the price per million tokens beside
           each offered model: it is what cost figures and model comparisons are computed from.
         </p>

@@ -75,7 +75,7 @@ export function VersionHistory({ agent }: { agent: string }) {
     );
   }
   if (rows.length === 0) {
-    return <p className="px-4 py-4 text-[12px] leading-[1.55] text-faint">No version is on record yet. Saving the workflow in the builder, or deploying it, writes the first.</p>;
+    return <p className="px-4 py-4 text-[12px] leading-[1.55] text-faint">No version is on record yet. Deploying the workflow writes the first.</p>;
   }
 
   return (
@@ -172,7 +172,7 @@ export function SpecDiffView({
   toDigestLabel,
   shown,
   sections,
-  quietNote = "The digests differ, but nothing the comparison names moved; read the two documents side by side in the builder.",
+  quietNote = "The digests differ, but nothing the comparison names moved; export the two versions to read them side by side.",
 }: {
   fromLabel: string;
   toLabel: string;
