@@ -177,27 +177,41 @@ export function Guardrails() {
             : `The framework used to assess data security. ${CORE_PRINCIPLE}`}
       </GroupHeader>
 
+      {/* Quiet (lib/quiet.ts), no record behind the register: said once, under the header. */}
+      {noRecord && view !== "framework" && <QuietNote />}
+
       {view === "register" && (
         <>
           {/* ── posture band ── */}
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-            <section className={`grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line elev-1 ${bare ? "" : "sm:grid-cols-3"}`}>
+            <section className={`grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line elev-1 ${bare && !noRecord ? "" : "sm:grid-cols-3"}`}>
               {[
                 { label: "Controls", value: String(CONTROLS.length), sub: `${FAMILIES.length} families` },
                 { label: "Standards cited", value: String(STANDARDS.length), sub: "sources, not examiners" },
-                { label: "Workflows covered", value: data ? String(data.posture.agents) : "—", sub: "every one deployed" },
-                { label: "Tools registered", value: data ? String(data.posture.tools) : "—", sub: data ? `${data.posture.sinks} act outside` : "" },
-                { label: "Runs on record", value: data ? String(data.runs) : "—", sub: "the evidence base" },
-                { label: "Control firings", value: data ? String(totalFired) : "—", sub: "refusals, marks, gates" },
-              ].slice(0, bare ? 2 : 6).map((k) => (
+                { label: "Workflows covered", value: noRecord ? "" : data ? String(data.posture.agents) : "—", sub: "every one deployed" },
+                { label: "Tools registered", value: noRecord ? "" : data ? String(data.posture.tools) : "—", sub: data && !noRecord ? `${data.posture.sinks} act outside` : "" },
+                { label: "Runs on record", value: noRecord ? "" : data ? String(data.runs) : "—", sub: "the evidence base" },
+                { label: "Control firings", value: noRecord ? "" : data ? String(totalFired) : "—", sub: "refusals, marks, gates" },
+              ].slice(0, bare && !noRecord ? 2 : 6).map((k) => (
                 <div key={k.label} className="flex flex-col justify-center gap-0.5 bg-surface px-4 py-3">
-                  <span className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]">{k.value}</span>
+                  {k.value ? <span className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]">{k.value}</span> : <span className="flex h-[22px] items-center text-[12px] text-faint">Not connected</span>}
                   <span className="text-[11px] text-faint">{k.label}</span>
                   {k.sub && <span className="truncate text-[9.5px] text-ghost">{k.sub}</span>}
                 </div>
               ))}
             </section>
-            {noRecord ? <QuietNote /> : bare ? null : <section className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4 elev-1">
+            {noRecord ? (
+              <section className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4 elev-1">
+                <span className="text-[11px] font-medium tracking-[0.06em] text-faint uppercase">Firings by family</span>
+                <p className="text-[11.5px] leading-[1.55] text-faint">Firings are counted here for each family of controls, from the run journals.</p>
+                {FAMILIES.map((f) => (
+                  <span key={f.id} className="flex items-center gap-1.5 text-[11px] text-fg">
+                    <span className="size-1.5 rounded-[2px]" style={{ background: FAMILY_COLOR[f.id] }} />
+                    {f.name}
+                  </span>
+                ))}
+              </section>
+            ) : bare ? null : <section className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4 elev-1">
               <span className="text-[11px] font-medium tracking-[0.06em] text-faint uppercase">Firings by family</span>
               {FAMILIES.map((f) => {
                 const n = CONTROLS.filter((c) => c.family === f.id).reduce((s, c) => s + (fired(c) ?? 0), 0);
@@ -422,7 +436,7 @@ export function Guardrails() {
         </>
       )}
 
-      {view === "watch" && (noRecord ? <QuietNote /> : <GuardrailsWatch events={data ? data.events ?? [] : null} />)}
+      {view === "watch" && (noRecord ? <GuardrailsWatch events={null} quiet /> : <GuardrailsWatch events={data ? data.events ?? [] : null} />)}
 
       {/* ── the open control, as a dialog rather than a card that grows ── */}
       {openControl && (
@@ -518,12 +532,13 @@ export function Guardrails() {
       </section>
 
       {/* ── evidence ── */}
-      {!bare && <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
+      {(!bare || noRecord) && <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
         <div className="flex items-center gap-2 border-b border-line px-4 py-3">
           <span className="text-[13px] font-semibold tracking-[-0.005em]">Latest control firings</span>
-          <span className="text-[11.5px] text-faint">{data ? "from the run journals · click through to the run" : "reading the record…"}</span>
+          <span className="text-[11.5px] text-faint">{data || noRecord ? "from the run journals · click through to the run" : "reading the record…"}</span>
         </div>
-        {data?.recent.length === 0 && <p className="px-4 py-3 text-[11.5px] text-faint">No control has fired on this deployment yet.</p>}
+        {noRecord && <p className="px-4 py-3 text-[11.5px] text-faint">The latest firings are listed here, each with the control, the agent and a link to its run.</p>}
+        {!noRecord && data?.recent.length === 0 && <p className="px-4 py-3 text-[11.5px] text-faint">No control has fired on this deployment yet.</p>}
         {(data?.recent ?? []).slice(0, 10).map((e, i) => (
           <a key={`${e.run}-${i}`} href={`/runs?id=${encodeURIComponent(e.run)}`} className="focusable flex items-baseline gap-3 border-b border-line px-4 py-2 last:border-0 hover:bg-raise/40">
             <Status tone={e.control === "taint" ? "warn" : e.control === "gate" ? "run" : "err"}>{e.control}</Status>

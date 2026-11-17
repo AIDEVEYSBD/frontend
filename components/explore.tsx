@@ -7,8 +7,8 @@ import { QUIET } from "@/lib/quiet";
 import { WINDOWS, type Win } from "./window-pick";
 import { Card, ErrorLine, WindowBar, narrowestWindow, useLedger } from "./observability-shared";
 import { VIEWS, ViewSwitch, useAddress, type Address, type ViewId } from "./explore-parts";
-import { ToolCallsView } from "./explore-tools";
-import { AgentActivityView } from "./explore-activity";
+import { ToolCallsQuiet, ToolCallsView } from "./explore-tools";
+import { AgentActivityQuiet, AgentActivityView } from "./explore-activity";
 import { SecurityEventsView } from "./explore-security";
 
 /**
@@ -76,6 +76,9 @@ function Explore() {
         </Card>
       )}
 
+      {/* A quiet console whose ledger did not answer has said so once: under the note, the view in its empty form. */}
+      {QUIET && down && view === "tools" && <ToolCallsQuiet win={win} />}
+      {QUIET && down && view === "activity" && <AgentActivityQuiet win={win} />}
       {view === "tools" && ledger.rows && <ToolCallsView key="tools" {...props} rows={ledger.rows} />}
       {/* A quiet console whose ledger did not answer has said so once; with the ledger's reason shown, the agents on the registry are still worth listing. */}
       {view === "activity" && (ledger.rows || (down && !QUIET)) && <AgentActivityView key="activity" {...props} />}

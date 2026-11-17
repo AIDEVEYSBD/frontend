@@ -143,7 +143,7 @@ function DependenciesInner() {
         </div>
       )}
 
-      {!quiet && <section className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-4">
+      <section className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-4">
         {[
           { k: "Nodes", v: map?.counts.nodes },
           { k: "Edges", v: map?.counts.edges },
@@ -151,20 +151,20 @@ function DependenciesInner() {
           { k: "Declared, never seen", v: map?.counts.declared_only },
         ].map((x) => (
           <div key={x.k} className="flex flex-col gap-0.5 bg-surface px-3 py-2.5">
-            <span className="tnum text-[17px] leading-none font-semibold">{x.v ?? "…"}</span>
+            {quiet ? <span className="flex h-[17px] items-center text-[12px] text-faint">Not connected</span> : <span className="tnum text-[17px] leading-none font-semibold">{x.v ?? "…"}</span>}
             <span className="text-[10.5px] text-faint">{x.k}</span>
           </div>
         ))}
-      </section>}
+      </section>
 
-      {!quiet && <Legend />}
+      <Legend />
 
       {error && !QUIET && <p className="mt-4 text-[12.5px] text-err">{error}</p>}
 
-      {!quiet && <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <MapView map={map} picked={picked} lit={lit && lit.node === picked ? lit.ids : null} onPick={pick} />
-        <SidePanel map={map} node={node} picked={picked} window={win} byId={byId} onPick={pick} onLit={(ids) => setLit(ids ? { node: picked, ids } : null)} />
-      </div>}
+      <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+        <MapView map={map} picked={picked} lit={lit && lit.node === picked ? lit.ids : null} onPick={pick} quiet={quiet} />
+        <SidePanel quiet={quiet} map={map} node={node} picked={picked} window={win} byId={byId} onPick={pick} onLit={(ids) => setLit(ids ? { node: picked, ids } : null)} />
+      </div>
     </div>
   );
 }
@@ -198,7 +198,7 @@ interface Rect {
   h: number;
 }
 
-export function MapView({ map, picked, lit, onPick }: { map: DepMap | null; picked: string; lit: Set<string> | null; onPick: (id: string) => void }) {
+export function MapView({ map, picked, lit, onPick, quiet = false }: { map: DepMap | null; picked: string; lit: Set<string> | null; onPick: (id: string) => void; quiet?: boolean }) {
   const columns = useMemo(() => (map ? groupByLayer(map) : []), [map]);
   const host = useRef<HTMLDivElement>(null);
   const [geom, setGeom] = useState<{ w: number; h: number; rects: Map<string, Rect> }>({ w: 0, h: 0, rects: new Map() });
@@ -229,6 +229,15 @@ export function MapView({ map, picked, lit, onPick }: { map: DepMap | null; pick
     return ids;
   }, [map, picked]);
 
+  // Quiet (lib/quiet.ts): the map's card is drawn with the line saying what it holds.
+  if (!map && quiet) {
+    return (
+      <div className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">
+        <span className="border-b border-line bg-raise/55 px-4 py-2.5 text-[12px] font-semibold">Dependency map</span>
+        <p className="px-4 py-6 text-[12px] text-faint">Agents, the tools and servers they call, their models and the applications built on them are mapped here, with a line for every dependency.</p>
+      </div>
+    );
+  }
   if (!map) return <div className="rounded-md border border-line bg-surface px-4 py-6 text-[12px] text-faint">Reading the map…</div>;
   if (!map.nodes.length) {
     return <div className="rounded-md border border-line bg-surface px-4 py-6 text-[12px] text-faint">Nothing is deployed or seen in this window: no agent, tool, model or application to map.</div>;
@@ -365,7 +374,9 @@ function SidePanel({
   byId,
   onPick,
   onLit,
+  quiet = false,
 }: {
+  quiet?: boolean;
   map: DepMap | null;
   node: DepNode | null;
   picked: string;
@@ -374,8 +385,8 @@ function SidePanel({
   onPick: (id: string) => void;
   onLit: (ids: Set<string> | null) => void;
 }) {
-  if (!map) return null;
-  if (!picked) {
+  if (!map && !quiet) return null;
+  if (!map || !picked) {
     return (
       <aside className="flex flex-col gap-2 rounded-md border border-line bg-surface px-4 py-3.5">
         <span className="text-[12px] font-semibold text-fg">Pick a node</span>
@@ -383,7 +394,7 @@ function SidePanel({
           Its neighbourhood (what it depends on, what depends on it, with how often each edge was used, what it cost, what failed) and its blast radius:
           every agent that fails if it does, directly or through another agent, the runs in flight, the applications.
         </span>
-        {map.how && <span className="text-[10.5px] leading-[1.55] text-ghost">{map.how}.</span>}
+        {map?.how && <span className="text-[10.5px] leading-[1.55] text-ghost">{map.how}.</span>}
       </aside>
     );
   }

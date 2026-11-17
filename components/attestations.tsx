@@ -229,7 +229,7 @@ function AttestationsPage() {
   }, []);
   const rows = (standings?.agents ?? []).filter((r) => !overdueOnly || r.overdue);
   const never = (standings?.agents ?? []).filter((r) => !r.last).length;
-  // A quiet console (lib/quiet.ts) whose attestations door did not answer says so once, with no table left reading.
+  // A quiet console (lib/quiet.ts) whose attestations door did not answer says so once, with the figures and the table drawn empty beneath it.
   const quietDown = QUIET && Boolean(error) && !standings;
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
@@ -241,8 +241,8 @@ function AttestationsPage() {
           {error}
         </Banner>
       )}
-      {!quietDown && (
       <>
+      {quietDown && <Figures items={["deployed agents", "overdue", "never attested"].map((k) => ({ k, v: <span className="flex h-[15px] items-center text-[12px] font-normal text-faint">Not connected</span> }))} />}
       {standings && (
         <Figures
           items={[
@@ -258,7 +258,28 @@ function AttestationsPage() {
         meta="every deployed agent, overdue first"
         action={<Switch label="Overdue only" checked={overdueOnly} onChange={setOverdueOnly} />}
       >
-        {standings ? <StandingsTable rows={[...rows].sort((a, b) => Number(b.overdue) - Number(a.overdue))} selected={agent} /> : <p className="text-[12px] text-faint">Reading…</p>}
+        {standings ? (
+          <StandingsTable rows={[...rows].sort((a, b) => Number(b.overdue) - Number(a.overdue))} selected={agent} />
+        ) : quietDown ? (
+          <>
+            <div className="overflow-x-auto rounded-md border border-line">
+              <table className="w-full min-w-[760px] border-collapse text-[11.5px]">
+                <thead>
+                  <tr className="bg-raise/40 text-left text-[10.5px] text-faint">
+                    {["Agent", "Standing", "Owner", "Last attested", "Due"].map((h) => (
+                      <th key={h} className="px-3 py-1.5 font-medium">
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+              </table>
+            </div>
+            <p className="text-[12px] text-faint">Every deployed agent is listed here with its owner, when it was last attested and when the next is due.</p>
+          </>
+        ) : (
+          <p className="text-[12px] text-faint">Reading…</p>
+        )}
       </Section>
       <div className="w-full max-w-sm">
         <Field label="An agent" hint="any saved agent, deployed or not">
@@ -267,7 +288,6 @@ function AttestationsPage() {
       </div>
       {agent && <AgentAttestations key={agent} agent={agent} onChanged={load} />}
       </>
-      )}
     </div>
   );
 }

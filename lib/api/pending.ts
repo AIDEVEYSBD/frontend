@@ -91,6 +91,14 @@ export const DOORS = {
   compliance: { method: "GET", path: "/api/compliance", purpose: "The ABB ICL as loaded, which of its controls each catalogue control answers, and what this deployment has changed about a control", rows: ["GUI 1.18"] },
   complianceSave: { method: "PUT", path: "/api/compliance", purpose: "Saving the ICL mapping and the changes to controls", rows: ["GUI 1.18"] },
   iclLoad: { method: "POST", path: "/api/compliance/icl", purpose: "Loading ABB's control list (multipart: one field, `file`, a CSV of id, title, domain; the list takes its name from the file's)", rows: ["GUI 1.18"] },
+
+  /* ── use-case onboarding and gate set-up (GUI access matrix 1.14) ── */
+  useCases: { method: "GET", path: "/api/use-cases", purpose: "The registered use cases: who owns each, the data classes it handles, its autonomy level, the workload it uses and the gates where a person decides", rows: ["GUI 1.14"] },
+  useCaseRegister: { method: "POST", path: "/api/use-cases", purpose: "Registering a use case with its owner, data classes, autonomy level, workload and gates", rows: ["GUI 1.14"] },
+  useCase: { method: "PATCH", path: "/api/use-cases/{id}", purpose: "Changing a registered use case, or moving it on: sending a draft for approval, approving it", rows: ["GUI 1.14"] },
+
+  /* ── cloud security findings (GUI access matrix 1.16) ── */
+  cloudFindings: { method: "GET", path: "/api/security/findings", purpose: "The findings the cloud provider's security centre holds for this deployment's resources", rows: ["GUI 1.16"] },
 } as const satisfies Record<string, Door>;
 
 /* ═══════════════════ shapes ═══════════════════ */
@@ -626,6 +634,86 @@ export interface Compliance {
 export interface ComplianceSave {
   mapping?: Record<string, string[]>;
   custom?: Record<string, ControlCustom>;
+}
+
+/* ═══════════════════ use cases (GUI access matrix 1.14) ═══════════════════ */
+
+export type UseCaseState = "draft" | "awaiting_approval" | "approved";
+
+/** A point where a run of the use case waits for a person. When nobody answers in time it escalates or stops; it never proceeds. */
+export interface UseCaseGate {
+  name: string;
+  /** The role whose holders may answer the gate. */
+  approver_role: string;
+  /** What sends a run to this gate, in plain words. */
+  threshold: string;
+  /** How long the gate waits for an answer. */
+  timeout_minutes: number;
+  on_timeout: "escalate" | "stop";
+  /** The role it goes to when it escalates. */
+  escalate_to?: string;
+}
+
+export interface UseCase {
+  id: string;
+  name: string;
+  owner: Owner;
+  data_classes: DataClass[];
+  /** An autonomy tier of the platform, `L0` to `L5` (lib/api/l9.ts TIERS). */
+  autonomy: string;
+  /** The workload it uses (a `Workload` id, or another the workloads door lists). */
+  workload: string;
+  gates: UseCaseGate[];
+  state: UseCaseState;
+  registered_at?: string;
+  registered_by?: Owner;
+  approved_at?: string;
+  approved_by?: Owner;
+}
+
+/** GET /api/use-cases */
+export interface UseCaseList {
+  use_cases: UseCase[];
+}
+
+/** POST /api/use-cases. It is registered as a draft; `owner` is the email or name of the person who answers for it. */
+export interface UseCaseRegistration {
+  name: string;
+  owner: string;
+  data_classes: DataClass[];
+  autonomy: string;
+  workload: string;
+  gates: UseCaseGate[];
+}
+
+/** PATCH /api/use-cases/{id}: only the parts sent change. `state` moves it on: a draft to awaiting approval, awaiting approval to approved. */
+export type UseCaseChange = Partial<UseCaseRegistration> & { state?: UseCaseState };
+
+/* ═══════════════════ cloud security findings (GUI access matrix 1.16) ═══════════════════ */
+
+export interface CloudFinding {
+  id: string;
+  /** What it is about, in the security centre's words. */
+  title: string;
+  /** The security centre's own category for it. */
+  category?: string;
+  severity: Severity;
+  /** The resource it was found on, as the provider names it. */
+  resource: string;
+  resource_type?: string;
+  found_at: string;
+  state: "active" | "muted" | "fixed";
+  /** The finding in the provider's own console. */
+  url?: string;
+}
+
+/** GET /api/security/findings?state=&severity=&limit= */
+export interface CloudFindingList {
+  /** The security centre the findings come from, as the deployment names it. */
+  source?: string;
+  /** When the security centre was last read. */
+  read_at?: string;
+  findings: CloudFinding[];
 }
 
 /* ═══════════════════ asking ═══════════════════ */

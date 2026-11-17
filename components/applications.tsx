@@ -163,7 +163,7 @@ export function Applications() {
         {error && QUIET && (unread ? <QuietNote /> : <QuietNote inline />)}
 
         {/* ── the band ── */}
-        {!unread && <div className="grid grid-cols-2 overflow-hidden rounded-md border border-line bg-surface sm:grid-cols-4 xl:grid-cols-7">
+        <div className="grid grid-cols-2 overflow-hidden rounded-md border border-line bg-surface sm:grid-cols-4 xl:grid-cols-7">
           {tiles.map((t) => {
             const isClass = t.id === "chatbot" || t.id === "rag" || t.id === "agent" || t.id === "multi_agent";
             const active = isClass && cls === t.id;
@@ -187,19 +187,23 @@ export function Applications() {
                 className={`focusable -mr-px -mb-px flex cursor-pointer flex-col gap-1 border-r border-b border-line px-3 py-2.5 text-left transition-colors ${active ? "bg-raise/80" : "hover:bg-raise/50"}`}
               >
                 <span className="truncate text-[10.5px] text-faint">{t.label}</span>
-                <span className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]" style={t.tone ? { color: `var(--color-${t.tone})` } : undefined}>{t.value}</span>
+                {unread ? (
+                  <span className="flex h-[22px] items-center text-[12px] text-faint">Not connected</span>
+                ) : (
+                  <span className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]" style={t.tone ? { color: `var(--color-${t.tone})` } : undefined}>{t.value}</span>
+                )}
                 <span className="truncate text-[10px] text-ghost">{t.sub}</span>
               </div>
             );
           })}
-        </div>}
+        </div>
 
         {/* ── the register ── */}
-        {!unread && <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
+        <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
           <div className="flex w-full flex-wrap items-center gap-3 border-b border-line bg-raise/55 px-4 py-2.5">
             <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Register</span>
             <span className="max-w-[110ch] text-[11px] leading-[1.55] text-faint">
-              {apps ? `${shown.length} of ${apps.length}` : "reading the register…"} · last seen, cost and firings are read from each row&rsquo;s journalled completions over the last 30 days
+              {unread ? "" : apps ? `${shown.length} of ${apps.length} · ` : "reading the register… · "}last seen, cost and firings are read from each row&rsquo;s journalled completions over the last 30 days
             </span>
             <span className="grow" />
             <SearchBox value={q} onChange={setQ} placeholder="Name, id or owner" width="w-[220px]" />
@@ -279,14 +283,14 @@ export function Applications() {
                 {apps && shown.length === 0 && (
                   <tr>
                     <td colSpan={11} className="px-4 py-8 text-center text-[11.5px] text-faint">
-                      {apps.length ? "Nothing matches." : "Nothing is registered yet. Connect a chatbot or RAG app above; agents appear from the Agents tab once deployed."}
+                      {unread ? "Applications are listed here: class, owner, identity, policy, last seen, cost and controls fired." : apps.length ? "Nothing matches." : "Nothing is registered yet. Connect a chatbot or RAG app above; agents appear from the Agents tab once deployed."}
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
-        </section>}
+        </section>
 
         {/* ── the agent classes come from elsewhere ── */}
         <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">

@@ -433,9 +433,9 @@ function TemplatesPage() {
           {error}
         </Banner>
       )}
-      {/* A quiet console (lib/quiet.ts): the note above is the whole page; an unread list is not shown as "0 on record". */}
-      {!(QUIET && error) && <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-        <Section title="Templates" meta={list ? `${list.count} on record · a certifier holds the "${list.role}" role` : undefined}>
+      {/* A quiet console (lib/quiet.ts): the note above is said once and the layout is drawn empty; an unread list is not shown as "0 on record". */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+        <Section title="Templates" meta={QUIET && error ? undefined : list ? `${list.count} on record · a certifier holds the "${list.role}" role` : undefined}>
           <div className="flex items-center gap-1">
             {STATE_FILTERS.map((f) => (
               <button
@@ -449,7 +449,7 @@ function TemplatesPage() {
               </button>
             ))}
           </div>
-          {list ? <TemplatesListView list={list} selected={selected} onSelect={(id) => router.push(`/templates?id=${encodeURIComponent(id)}`)} /> : <p className="text-[12px] text-faint">Reading the templates…</p>}
+          {QUIET && error ? <p className="text-[12px] text-faint">Templates are listed here with their state, the version each was made from, its params and who certified it.</p> : list ? <TemplatesListView list={list} selected={selected} onSelect={(id) => router.push(`/templates?id=${encodeURIComponent(id)}`)} /> : <p className="text-[12px] text-faint">Reading the templates…</p>}
           <MakeTemplateForm
             agents={agents}
             onMade={(t) => {
@@ -498,7 +498,7 @@ function TemplatesPage() {
             </>
           )}
         </Section>
-      </div>}
+      </div>
     </div>
   );
 }

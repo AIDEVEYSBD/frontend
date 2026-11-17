@@ -434,7 +434,25 @@ export function Evals() {
       <div className="mt-6 flex flex-col gap-3">
         {sets === null && <p className="text-[12.5px] text-faint">Reading the benchmarks…</p>}
         {/* A quiet console (lib/quiet.ts) does not call an unread list empty. */}
-        {sets?.length === 0 && !building && QUIET && unread && <QuietNote />}
+        {sets?.length === 0 && !building && QUIET && unread && (
+          <>
+            <QuietNote />
+            {[
+              { title: "Benchmarks", meta: "one per agent and set of cases", line: "Benchmarks are listed here, each with the agent it measures, its cases, the model it runs on and its latest score." },
+              { title: "Score over time", meta: "pass rate per finished run", line: "The pass rate of each finished run is drawn here against the threshold the benchmark sets." },
+              { title: "Cases", meta: "expected against predicted", line: "The cases of the latest run are listed here: what was expected, what the agent answered, how long it took, pass or fail." },
+              { title: "Model comparison", meta: "every call pinned, same cases", line: "Models run on the same cases are compared here on accuracy, cost per case and time, with a recommendation." },
+            ].map((c) => (
+              <section key={c.title} className="overflow-hidden rounded-md border border-line bg-surface">
+                <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2">
+                  <span className="text-[12.5px] font-semibold text-fg">{c.title}</span>
+                  <span className="text-[11px] text-faint">{c.meta}</span>
+                </div>
+                <p className="px-4 py-5 text-[12px] leading-[1.55] text-faint">{c.line}</p>
+              </section>
+            ))}
+          </>
+        )}
         {sets?.length === 0 && !building && !(QUIET && unread) && (
           <div className="flex flex-col items-start gap-3 rounded-md border border-dashed border-line-strong bg-surface px-5 py-6">
             <p className="text-[13px] font-medium text-fg">No evaluations have been created.</p>

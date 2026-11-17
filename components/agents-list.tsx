@@ -425,17 +425,19 @@ function AgentsPage() {
 
   // A quiet console (lib/quiet.ts): the list could not be read, so the page says it is not connected and lists nothing.
   const unread = Boolean(error) && (agents?.length ?? 0) === 0;
+  // Quiet and unread: the note is said once and the list is drawn empty beneath it.
+  const blank = QUIET && unread;
   const activity = runs !== null || roster !== null;
   const partDown = [runs, roster, apps, fleet].some((x) => x === null);
   const stateChips: Chip[] = STATE_ORDER.map((id) => ({ id, n: rows.filter((r) => r.state === id).length }))
     .filter((x) => x.n > 0 || x.id === "deployed" || x.id === "not_deployed" || x.id === state)
-    .map((x) => ({ value: x.id, label: STATE[x.id].label, count: x.n, active: state === x.id }));
+    .map((x) => ({ value: x.id, label: STATE[x.id].label, count: blank ? undefined : x.n, active: state === x.id }));
   const kinds = [...new Set(rows.map((r) => r.app?.class).filter((c): c is ApplicationClass => Boolean(c)))];
   const kindChips: Chip[] = kinds.map((c) => ({ value: c, label: CLASS_LABEL[c], count: rows.filter((r) => r.app?.class === c).length, active: kind === c }));
   const filters = (state ? 1 : 0) + (kind ? 1 : 0) + (q.trim() ? 1 : 0);
   // The owner column stays while either door that names one may still answer.
-  const owners = apps !== null || rows.some((r) => r.owner);
-  const cols = 5 + (owners ? 1 : 0) + (activity ? 1 : 0);
+  const owners = blank || apps !== null || rows.some((r) => r.owner);
+  const cols = 5 + (owners ? 1 : 0) + (activity || blank ? 1 : 0);
 
   usePageFacts({
     agents: unread ? "not connected" : agents ? agents.length : "loading",
@@ -488,7 +490,7 @@ function AgentsPage() {
           </div>
         )}
 
-        {(agents?.length ?? 0) > 0 && (
+        {((agents?.length ?? 0) > 0 || blank) && (
           <>
             <FilterBar
               count={filters}
@@ -505,11 +507,13 @@ function AgentsPage() {
             <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
               <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-raise/55 px-4 py-2.5">
                 <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Agents</span>
-                <span className="tnum text-[11px] text-faint">
-                  {shown.length} of {rows.length}
-                </span>
-                {error && (QUIET ? <QuietNote inline /> : <span className="text-[11px] text-err">{error}</span>)}
-                {!error && partDown && (QUIET ? <QuietNote inline /> : <span className="text-[11px] text-err">Not read: {Object.entries(reasons).map(([door, why]) => `${door} (${why})`).join("; ")}</span>)}
+                {!blank && (
+                  <span className="tnum text-[11px] text-faint">
+                    {shown.length} of {rows.length}
+                  </span>
+                )}
+                {error && !blank && (QUIET ? <QuietNote inline /> : <span className="text-[11px] text-err">{error}</span>)}
+                {!error && !blank && partDown && (QUIET ? <QuietNote inline /> : <span className="text-[11px] text-err">Not read: {Object.entries(reasons).map(([door, why]) => `${door} (${why})`).join("; ")}</span>)}
                 <span className="grow" />
                 <SearchBox value={q} onChange={setQ} placeholder="Name, id, owner or step" width="w-[240px]" />
               </div>
@@ -525,7 +529,7 @@ function AgentsPage() {
                       <th className="px-3 py-2 font-medium">Kind</th>
                       {owners && <th className="px-3 py-2 font-medium">Owner</th>}
                       <th className="px-3 py-2 font-medium whitespace-nowrap">State and version</th>
-                      {activity && <th className="px-3 py-2 font-medium">Last run</th>}
+                      {(activity || blank) && <th className="px-3 py-2 font-medium">Last run</th>}
                       <th className="px-3 py-2 font-medium">
                         <span className="sr-only">Actions</span>
                       </th>
@@ -666,7 +670,7 @@ function AgentsPage() {
                     {shown.length === 0 && (
                       <tr>
                         <td colSpan={cols} className="px-4 py-8 text-center text-[11.5px] text-faint">
-                          No agent matches.
+                          {blank ? "Agents are listed here: what each does, who owns it, whether production runs it and when it last ran." : "No agent matches."}
                         </td>
                       </tr>
                     )}

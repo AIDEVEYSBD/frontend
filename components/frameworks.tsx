@@ -170,7 +170,7 @@ function FrameworksPage() {
       { title: "Frameworks", rows: all.filter((f) => f.kind !== "regulation") },
     ];
   }, [frameworks]);
-  // A quiet console (lib/quiet.ts) whose framework catalogue did not answer says so once, with no panel left reading.
+  // A quiet console (lib/quiet.ts) whose framework catalogue did not answer says so once, with both panels drawn empty beneath it.
   const quietDown = QUIET && Boolean(error) && !frameworks;
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
@@ -182,9 +182,9 @@ function FrameworksPage() {
           {error}
         </Banner>
       )}
-      {!quietDown && <div className="grid items-start gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
+      <div className="grid items-start gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
         <Section title="Frameworks and regulations" hue="control">
-          {frameworks === null && <p className="text-[12px] text-faint">Reading the catalogue…</p>}
+          {frameworks === null && <p className="text-[12px] text-faint">{quietDown ? "Regulations and frameworks are listed here. Pick one to read the estate through it." : "Reading the catalogue…"}</p>}
           {frameworks?.length === 0 && <p className="text-[12px] text-faint">No framework or regulation is in the catalogue.</p>}
           {groups.map((g) =>
             g.rows.length ? (
@@ -217,6 +217,10 @@ function FrameworksPage() {
               <Button size="sm" variant="solid" tone="neutral" disabled={!view || isUnmapped(view.framework)} href={`/evidence?framework=${encodeURIComponent(name)}`}>
                 Evidence pack
               </Button>
+            ) : quietDown ? (
+              <Button size="sm" variant="solid" tone="neutral" disabled>
+                Evidence pack
+              </Button>
             ) : undefined
           }
         >
@@ -231,9 +235,9 @@ function FrameworksPage() {
               <Input type="datetime-local" value={to} onChange={setTo} />
             </Field>
           </div>
-          {view ? <FrameworkViewPanel view={view} /> : busy ? <p className="text-[12px] text-faint">Reading…</p> : null}
+          {view ? <FrameworkViewPanel view={view} /> : busy ? <p className="text-[12px] text-faint">Reading…</p> : quietDown ? <p className="text-[12px] text-faint">Each agent is listed here against the obligations of the framework, with the evidence that meets each.</p> : null}
         </Section>
-      </div>}
+      </div>
     </div>
   );
 }

@@ -97,7 +97,7 @@ function DriftInner() {
           <QuietNote />
         </div>
       )}
-      {!quietDown && <section className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-4">
+      <section className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-4">
         {[
           { k: "Drifted", v: report ? String(drifted) : "…", tone: drifted ? "text-err" : "" },
           { k: "Within thresholds", v: report ? String(compared) : "…", tone: "" },
@@ -105,11 +105,11 @@ function DriftInner() {
           { k: "Thresholds", v: `JS ${mix} · z ±${z}`, tone: "" },
         ].map((x) => (
           <div key={x.k} className="flex flex-col gap-0.5 bg-surface px-3 py-2.5">
-            <span className={`tnum text-[17px] leading-none font-semibold ${x.tone}`}>{x.v}</span>
+            {quietDown ? <span className="flex h-[17px] items-center text-[12px] text-faint">Not connected</span> : <span className={`tnum text-[17px] leading-none font-semibold ${x.tone}`}>{x.v}</span>}
             <span className="text-[10.5px] text-faint">{x.k}</span>
           </div>
         ))}
-      </section>}
+      </section>
       {report && (
         <p className="mt-2 text-[11px] text-faint">
           Each window needs {report.min_runs.recent ?? 5} finished runs in the last {report.windows.recent_h ?? 24} h and {report.min_runs.baseline ?? 20} in the{" "}
@@ -124,6 +124,36 @@ function DriftInner() {
       )}
 
       <div className="mt-4 flex flex-col gap-4">
+        {quietDown && (
+          <section className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-raise/55 px-4 py-2.5">
+              <span className="text-[13px] font-semibold text-fg">Agents</span>
+              <span className="text-[11.5px] text-faint">one card each, drifted first</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[980px] border-collapse text-[11.5px]">
+                <thead>
+                  <tr className="border-b border-line bg-raise/40 text-left text-[10.5px] text-faint">
+                    <th className="px-4 py-1.5 font-medium">Measure</th>
+                    <th className="px-3 py-1.5 font-medium">Statistic</th>
+                    <th className="px-3 py-1.5 text-right font-medium">Value</th>
+                    <th className="px-3 py-1.5 font-medium">Threshold</th>
+                    <th className="px-3 py-1.5 font-medium">Recent</th>
+                    <th className="px-3 py-1.5 font-medium">Baseline</th>
+                    <th className="px-4 py-1.5 font-medium">Verdict</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td colSpan={7} className="px-4 py-5 text-[12px] leading-[1.55] text-faint">
+                      Each agent with finished runs is shown here: its verdict, and every measure in the recent window beside its baseline.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
         {shown.map((a) => (
           <AgentCard key={a.agent} drift={a} windows={report?.windows ?? {}} single={Boolean(agent)} />
         ))}

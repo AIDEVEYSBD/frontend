@@ -18,7 +18,7 @@ import { soon } from "@/lib/soon";
 import { QUIET } from "@/lib/quiet";
 import { winMs } from "./window-pick";
 import { Card, ErrorLine, MoreRow, RUN_BATCH, ROW_BATCH, RunLink, Tiles, agentOf, ago, clockText, count, lastActive, runHref, useDigests, windowWords, type RunDigest, type RunEvent } from "./observability-shared";
-import { ExploreFrame, Timeline, domainOf, fill, narrow, pageChips, type FacetDef } from "./explore-parts";
+import { ExploreFrame, QuietFrame, QuietTable, QuietTiles, Timeline, domainOf, fill, narrow, pageChips, type FacetDef } from "./explore-parts";
 import type { ViewProps } from "./explore";
 
 /**
@@ -377,8 +377,29 @@ export function SecurityEventsView({ ledger, win, now, address, tick, onBusy }: 
     </>
   );
 
-  // Nothing could be read on a quiet console: the note has said so, and there is nothing true to draw under it.
-  if (quietDown) return notes;
+  // Nothing could be read on a quiet console: the note has said so once, and under it the view is drawn in its empty form.
+  if (quietDown) {
+    return (
+      <>
+        {notes}
+        <QuietFrame title={`Security events, ${windowWords(win)}`} line="Security events are counted here over time, with the ones that stopped something marked." sections={[{ labels: FACETS.map((f) => f.label) }]} placeholder="Search control, run, step or text">
+          <QuietTiles
+            tiles={[
+              { label: "Events listed", sub: "across the runs on record" },
+              { label: "Refusals", sub: "calls a control stopped" },
+              { label: "Screening", sub: "prompts and responses blocked or flagged" },
+              { label: "Gate events", sub: "opened and answered" },
+              { label: "Operator kills", sub: "runs stopped by a person" },
+              { label: "Lockdown", sub: "on or off, and who switched it" },
+            ]}
+          />
+          <Card title="Events" hue="control" meta="newest first · text is redacted of secrets">
+            <QuietTable columns={["When", "Event", "What fired", "Agent or application", "What it said", "Run"]} line="What the controls did is listed here, newest first, each opening its run at that entry." />
+          </Card>
+        </QuietFrame>
+      </>
+    );
+  }
 
   if (!ready) {
     return (

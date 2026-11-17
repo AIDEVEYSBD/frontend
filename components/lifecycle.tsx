@@ -641,8 +641,24 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
       {retired && <RetiredView retired={retired} cancelled={retirement?.cancelled_jobs ?? []} />}
       {deployed && !deployAsk && <DeployedReceipt d={deployed} />}
 
-      {/* A quiet console (lib/quiet.ts): with the agent unread, the note above is the whole page; no panel calls an unread record empty. */}
-      {!(QUIET && data?.error && !data.detail && !data.lifecycle) && <>
+      {/* A quiet console (lib/quiet.ts): with the agent unread, the note above is said once and every section is drawn empty; no panel calls an unread record empty. */}
+      {QUIET && data?.error && !data.detail && !data.lifecycle ? <>
+        {[
+          { title: "Spine", meta: "each stage lit only by its own record", line: "The stages from designed to retired are drawn here, each lit by its own record." },
+          { title: "Autonomy tier", meta: "what its metadata.autonomy declares, and the controls it lacks", line: "The tier the agent declares is shown here beside the controls that tier requires." },
+          { title: "Benchmark", meta: "the latest eval of what production runs, on the spec's own suite", line: "The latest evaluation of the version production runs is shown here with its score and threshold." },
+          { title: "Policy reviews", meta: "a reviewer never reviews a version they saved", line: "Reviews are listed here with the version reviewed, the reviewer and the decision." },
+          { title: "Deployments", meta: "per environment; production is gated, and is what runs", line: "Deployments are listed here per environment, newest first, with the rollback to an earlier version." },
+          { title: "Canary and shadow", meta: "a version beside production: a share of starts, or a mirror in shadow mode", line: "A version running beside production is shown here with its share of starts and how it compares." },
+        ].map((x) => (
+          <Section key={x.title} title={x.title} meta={x.meta}>
+            <p className="text-[12px] text-faint">{x.line}</p>
+          </Section>
+        ))}
+        <Section title="Retirement" meta="refuses new work everywhere; its records stay">
+          <RetireForm agent={agent} others={others} onDone={() => load()} />
+        </Section>
+      </> : <>
       <Section title="Spine" meta="each stage lit only by its own record">
         {versionOptions.length > 1 && (
           <div className="flex flex-wrap items-center gap-2">
@@ -777,7 +793,15 @@ function LifecycleIndex() {
           {error}
         </Banner>
       )}
-      {agents === null ? <p className="text-[12px] text-faint">Reading the registry…</p> : QUIET && error ? null : <LifecycleIndexView agents={agents} />}
+      {agents === null ? <p className="text-[12px] text-faint">Reading the registry…</p> : QUIET && error ? (
+        <section className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">
+          <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2">
+            <span className="text-[12.5px] font-semibold text-fg">Agents</span>
+            <span className="text-[11px] text-faint">the latest save, what production runs, retired</span>
+          </div>
+          <p className="px-4 py-5 text-[12px] leading-[1.55] text-faint">Agents are listed here with where each stands: its latest saved version, the version production runs, and whether it is retired.</p>
+        </section>
+      ) : <LifecycleIndexView agents={agents} />}
     </div>
   );
 }

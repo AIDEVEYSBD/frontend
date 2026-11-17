@@ -13,7 +13,7 @@ import { OutcomesBody } from "./outcomes";
 import { failureTrend, fmtAge, fmtCount, fmtMoney, inWindow, leaders, oldestGate, totalsOf, windowWords } from "./overview-data";
 import { Card, CardFigure, FigureTile, FootNote, Nothing, RankList, TrendBars } from "./overview-parts";
 import { bucketsOf, cutCost, rankControls, rankRefusals, resultTotals, useCost, useSecurity } from "./dashboards-data";
-import { BoardNote, BoardSwitch, ValueBars } from "./dashboards-parts";
+import { BoardNote, BoardSwitch, CloudFindingsCard, ValueBars } from "./dashboards-parts";
 import type { Answer, FindingsSummary } from "@/lib/api/pending";
 
 /**
@@ -394,6 +394,8 @@ function SecurityBoard({ win, setWin }: BoardProps) {
           )}
         </Card>
       </CardGrid>
+
+      <CloudFindingsCard now={now} />
     </>
   );
 }

@@ -231,6 +231,60 @@ export function BreakersBody({ view, now, onClosed, onRefresh }: { view: Breaker
   );
 }
 
+/** Quiet (lib/quiet.ts): the same three cards with nothing read, each saying what it holds. */
+function BreakersEmpty() {
+  const head = "flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2.5";
+  const card = "flex flex-col overflow-hidden rounded-md border border-line bg-surface";
+  return (
+    <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="flex min-w-0 flex-col gap-4">
+        <section className={card}>
+          <div data-hue={hueFor("breaker refusals")} className={head}>
+            <span className="text-[12px] font-semibold">Open now</span>
+          </div>
+          <p className="px-4 py-3 text-[11.5px] text-faint">Breakers that are open are listed here, each with why it opened, when it closes on its own, and the close by hand.</p>
+        </section>
+        <section className={card}>
+          <div data-hue={hueFor("activity")} className={head}>
+            <span className="text-[12px] font-semibold">Recent openings</span>
+            <span className="text-[11px] text-faint">newest first; the last 50 the estate kept</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] border-collapse text-[11.5px]">
+              <thead>
+                <tr className="border-b border-line text-left text-[10.5px] text-faint">
+                  <th className="px-4 py-2 font-medium">Breaker</th>
+                  <th className="px-3 py-2 font-medium">Why</th>
+                  <th className="px-3 py-2 font-medium">Opened</th>
+                  <th className="px-3 py-2 font-medium">Ended</th>
+                  <th className="px-3 py-2 font-medium">Seen on</th>
+                </tr>
+              </thead>
+            </table>
+          </div>
+          <p className="px-4 py-3 text-[11.5px] text-faint">Each opening is listed here with how it ended.</p>
+        </section>
+      </div>
+      <section className={card}>
+        <div data-hue={hueFor("control thresholds")} className={head}>
+          <span className="text-[12px] font-semibold">Thresholds</span>
+        </div>
+        <div className="grid grid-cols-2 gap-px bg-line">
+          {["Calls in the window", "Window", "Failures in a row", "Open for"].map((k) => (
+            <div key={k} className="flex flex-col gap-0.5 bg-surface px-4 py-2.5">
+              <span className="text-[10.5px] text-ghost">{k}</span>
+              <span className="flex h-[16px] items-center text-[12px] text-faint">Not connected</span>
+            </div>
+          ))}
+        </div>
+        <p className="border-t border-line px-4 py-2.5 text-[11px] leading-[1.55] text-faint">
+          Counted across every run the control plane hears of, each call once: a sink tool by its name, a peer as <Mono className="text-[10.5px]">peer:&lt;name&gt;</Mono>. A refusal is never a failure, and a call that is neither a sink nor a peer is not counted. The deployment sets these (<Mono className="text-[10.5px]">AF_BREAKER_*</Mono>); the <Mono className="text-[10.5px]">breakers</Mono> settings row rules over them.
+        </p>
+      </section>
+    </div>
+  );
+}
+
 export function Breakers() {
   const now = useNow();
   const [view, setView] = useState<BreakersView | null>(null);
@@ -275,7 +329,16 @@ export function Breakers() {
           />
         ) : (
           // Quiet (lib/quiet.ts): a view that could not be read settles into one calm note, without the reason.
-          error ? QUIET && <QuietNote /> : <p className="text-[12px] text-faint">Reading the breakers…</p>
+          error ? (
+            QUIET && (
+              <div className="flex flex-col gap-4">
+                <QuietNote />
+                <BreakersEmpty />
+              </div>
+            )
+          ) : (
+            <p className="text-[12px] text-faint">Reading the breakers…</p>
+          )
         )}
       </div>
     </div>

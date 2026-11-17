@@ -568,23 +568,9 @@ export function FinOps() {
   const windowDays = winFor("kpi") === "all" ? Math.max(1, spanDays("all", kpiCalls)) : winMs(winFor("kpi")) / 86_400_000;
   const windowBudget = data?.budget != null ? (data.budget * windowDays) / PERIOD_DAYS[data.period] : null;
 
-  // Quiet (lib/quiet.ts): every card here is cut from the one read. When it was not read the page is its header and one calm note: no figure, no reason.
-  if (QUIET && error && !data) {
-    return (
-      <div className="min-h-full" data-hue="green">
-        <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7">
-          <header className="flex flex-col gap-1.5">
-            <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">Costs</h1>
-            <p className="max-w-[72ch] text-[12.5px] leading-[1.55] text-dim">
-              Model spend by provider, workflow and step, computed from every journalled model call at the configured price. Replay the same workload on
-              another model, see which steps are candidates for a smaller or local model, and route them without touching a spec.
-            </p>
-          </header>
-          <QuietNote />
-        </div>
-      </div>
-    );
-  }
+  // Quiet (lib/quiet.ts): every card here is cut from the one read. When it was not read the page keeps its whole layout under one calm note: every card empty, no figure, no reason.
+  const off = QUIET && Boolean(error) && !data;
+  const kpi = (v: string) => (data ? v : off ? null : "…");
 
   return (
     <div className="min-h-full" data-hue="green">
@@ -605,6 +591,7 @@ export function FinOps() {
           </div>
         </header>
 
+        {off && <QuietNote />}
         {error && !QUIET && <p className="text-[12.5px] text-err">{error}</p>}
 
         {/* ── Filters ── */}
@@ -642,26 +629,26 @@ export function FinOps() {
         <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
           <div data-hue="green" className="flex h-9 items-center gap-2 border-b border-line bg-raise/55 px-3">
             <span className="text-[12px] font-semibold">Spend</span>
-            <span className="truncate text-[11px] text-faint">{data ? data.costBasis : "reading the ledger…"}</span>
+            <span className="truncate text-[11px] text-faint">{data ? data.costBasis : off ? "Every journalled model call at the configured price" : "reading the ledger…"}</span>
             <span className="grow" />
             <WindowPick value={winFor("kpi")} onChange={(w) => setCardWin("kpi", w)} inherited={!overrides.kpi} />
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8">
-            <Kpi label={`Spend · ${winFor("kpi")}`} value={data ? fmtCost(totals.cost) : "…"} sub={totals.unpriced ? `${totals.calls} calls · ${totals.unpriced} estimated` : `${totals.calls} model calls`} tone="ok"
+            <Kpi label={`Spend · ${winFor("kpi")}`} value={kpi(fmtCost(totals.cost))} sub={off ? "model calls in the window" : totals.unpriced ? `${totals.calls} calls · ${totals.unpriced} estimated` : `${totals.calls} model calls`} tone="ok"
               onOpen={() => setDrill({ kind: "calls", title: `Model calls · ${winFor("kpi")}`, subtitle: "Every call in the window, newest first, with the price it was costed at.", rows: kpiCalls })} />
-            <Kpi label="Tokens" value={data ? fmtTokens(totals.tokens) : "…"} sub={`${fmtTokens(kpiCalls.reduce((s, c) => s + c.in, 0))} in · ${fmtTokens(kpiCalls.reduce((s, c) => s + c.out, 0))} out`}
+            <Kpi label="Tokens" value={kpi(fmtTokens(totals.tokens))} sub={off ? "tokens in and out" : `${fmtTokens(kpiCalls.reduce((s, c) => s + c.in, 0))} in · ${fmtTokens(kpiCalls.reduce((s, c) => s + c.out, 0))} out`}
               onOpen={() => setDrill({ kind: "calls", title: "Tokens by call", rows: [...kpiCalls].sort((a, b) => b.in + b.out - (a.in + a.out)) })} />
-            <Kpi label="Runs" value={data ? String(totals.runs) : "…"} sub={`${totals.calls} calls · ${totals.runs ? (totals.calls / totals.runs).toFixed(1) : "0"} per run`}
+            <Kpi label="Runs" value={kpi(String(totals.runs))} sub={off ? "calls per run" : `${totals.calls} calls · ${totals.runs ? (totals.calls / totals.runs).toFixed(1) : "0"} per run`}
               onOpen={() => setDrill({ kind: "runs", title: `Runs · ${winFor("kpi")}`, rows: kpiRuns })} />
-            <Kpi label="Cost per run" value={data ? fmtCost(totals.perRun, true) : "…"} sub="spend ÷ runs in window"
+            <Kpi label="Cost per run" value={kpi(fmtCost(totals.perRun, true))} sub="spend ÷ runs in window"
               onOpen={() => setDrill({ kind: "runs", title: "Runs by cost", subtitle: "Most expensive first.", rows: [...kpiRuns].sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0)) })} />
-            <Kpi label="Cost per call" value={data ? fmtCost(totals.perCall, true) : "…"} sub={`avg latency ${fmtMs(totals.avgMs)}`}
+            <Kpi label="Cost per call" value={kpi(fmtCost(totals.perCall, true))} sub={off ? "with the average latency" : `avg latency ${fmtMs(totals.avgMs)}`}
               onOpen={() => setDrill({ kind: "calls", title: "Calls by cost", subtitle: "Most expensive first.", rows: [...kpiCalls].sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0)) })} />
-            <Kpi label="Local share" value={data ? pct(totals.localShare) : "…"} sub="tokens served on local providers" tone={totals.localShare > 0 ? "ok" : undefined}
+            <Kpi label="Local share" value={kpi(pct(totals.localShare))} sub="tokens served on local providers" tone={totals.localShare > 0 ? "ok" : undefined}
               onOpen={() => setDrill({ kind: "calls", title: "Calls on local providers", rows: kpiCalls.filter((c) => book.get(c.model)?.local) })} />
-            <Kpi label="Run rate · month" value={data ? fmtCost(totals.monthly) : "…"} sub={`from ${winFor("kpi") === "all" ? "the whole record" : `the last ${winFor("kpi")}`}`}
+            <Kpi label="Run rate · month" value={kpi(fmtCost(totals.monthly))} sub={`from ${winFor("kpi") === "all" ? "the whole record" : `the last ${winFor("kpi")}`}`}
               onOpen={() => document.getElementById("calc")?.scrollIntoView({ behavior: "smooth" })} />
-            <Kpi label={data?.budget ? `Budget · this ${data.period}` : "Budget"} value={data ? (data.budget ? pct(budgetUse ?? 0) : "not set") : "…"} sub={data?.budget ? (data.budgetState.exceeded ? "exhausted · new runs are refused" : `${fmtCost(data.budgetState.spent)} of ${fmtCost(data.budget)} per ${data.period}`) : "set one below"} tone={data?.budgetState?.exceeded ? "err" : budgetUse !== null && budgetUse > 0.8 ? "warn" : undefined}
+            <Kpi label={data?.budget ? `Budget · this ${data.period}` : "Budget"} value={data ? (data.budget ? pct(budgetUse ?? 0) : "not set") : kpi("")} sub={data?.budget ? (data.budgetState.exceeded ? "exhausted · new runs are refused" : `${fmtCost(data.budgetState.spent)} of ${fmtCost(data.budget)} per ${data.period}`) : "set one below"} tone={data?.budgetState?.exceeded ? "err" : budgetUse !== null && budgetUse > 0.8 ? "warn" : undefined}
               onOpen={() => document.getElementById("billing")?.scrollIntoView({ behavior: "smooth" })} />
           </div>
         </section>
@@ -685,7 +672,7 @@ export function FinOps() {
                   }}
                 />
               ) : (
-                <p className="px-1 py-6 text-center text-[12px] text-faint">No priced model calls in this window.</p>
+                <p className="px-1 py-6 text-center text-[12px] text-faint">{off ? "Daily spend is charted here, stacked by model." : "No priced model calls in this window."}</p>
               )}
             </div>
           </Section>
@@ -719,7 +706,7 @@ export function FinOps() {
                       </td>
                     </tr>
                   ))}
-                  {!byModel.length && <tr><td colSpan={8} className="px-3 py-5 text-center text-faint">No model calls in this window.</td></tr>}
+                  {!byModel.length && <tr><td colSpan={8} className="px-3 py-5 text-center text-faint">{off ? "Models are listed here with their calls, tokens and cost." : "No model calls in this window."}</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -748,7 +735,9 @@ export function FinOps() {
                 </>
               ) : (
                 <p className="mx-auto max-w-[56ch] py-6 text-center text-[12px] leading-[1.55] text-faint">
-                  {!recordsNameOwner
+                  {off
+                    ? "Spend is split here by the person who started each run."
+                    : !recordsNameOwner
                     ? "Run records do not say who started a run yet. Once they do, spend is split by person here."
                     : byPerson.total
                       ? "No run in this window names the person who started it."
@@ -778,7 +767,9 @@ export function FinOps() {
                 </>
               ) : (
                 <p className="mx-auto max-w-[56ch] py-6 text-center text-[12px] leading-[1.55] text-faint">
-                  {!recordsNameTeam
+                  {off
+                    ? "Spend is split here by the team each run belongs to."
+                    : !recordsNameTeam
                     ? "Run records do not say which team a run belongs to yet. Once they do, spend is split by team here."
                     : byTeam.total
                       ? "No run in this window names a team."
@@ -803,7 +794,7 @@ export function FinOps() {
                   }}
                 />
               ) : (
-                <p className="py-6 text-center text-[12px] text-faint">No workflow spend in this window.</p>
+                <p className="py-6 text-center text-[12px] text-faint">{off ? "Workflows rank here by spend, each with its cost per run." : "No workflow spend in this window."}</p>
               )}
             </div>
           </Section>
@@ -833,7 +824,7 @@ export function FinOps() {
                       <td className="tnum px-3 py-2 text-right text-dim">{pct(p.share)}</td>
                     </tr>
                   ))}
-                  {!profiles.length && <tr><td colSpan={9} className="px-3 py-5 text-center text-faint">No steps made model calls in this window.</td></tr>}
+                  {!profiles.length && <tr><td colSpan={9} className="px-3 py-5 text-center text-faint">{off ? "Steps that make model calls are listed here with their call profile and cost." : "No steps made model calls in this window."}</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -884,7 +875,7 @@ export function FinOps() {
                     </td>
                   </tr>
                 ))}
-                {!verdicts.length && <tr><td colSpan={9} className="px-3 py-5 text-center text-faint">No steps to assess in this window.</td></tr>}
+                {!verdicts.length && <tr><td colSpan={9} className="px-3 py-5 text-center text-faint">{off ? "Steps a smaller or local model could take are listed here, each with the reason." : "No steps to assess in this window."}</td></tr>}
               </tbody>
             </table>
           </div>
@@ -924,24 +915,29 @@ export function FinOps() {
                   </div>
                 )}
                 {(calcTarget?.local || (calcModel === "custom" && customLocal)) && <Num label="Local latency × (vs. recorded)" value={speed} onChange={setSpeed} />}
-                <div className="flex flex-col gap-1 rounded-md border border-line bg-canvas p-2.5 text-[11px] text-dim">
-                  <span>Workload: <b className="text-fg">{calcCalls.length}</b> calls in <b className="text-fg">{calc.runs}</b> runs</span>
-                  <span>{fmtTokens(calcCalls.reduce((s, c) => s + c.in, 0))} in · {fmtTokens(calcCalls.reduce((s, c) => s + c.out, 0))} out · {fmtMs(calc.ms)} of model time</span>
-                </div>
+                {off ? (
+                  <p className="rounded-md border border-line bg-canvas p-2.5 text-[11px] leading-[1.5] text-faint">The workload in the window is summed here: calls, runs, tokens and model time.</p>
+                ) : (
+                  <div className="flex flex-col gap-1 rounded-md border border-line bg-canvas p-2.5 text-[11px] text-dim">
+                    <span>Workload: <b className="text-fg">{calcCalls.length}</b> calls in <b className="text-fg">{calc.runs}</b> runs</span>
+                    <span>{fmtTokens(calcCalls.reduce((s, c) => s + c.in, 0))} in · {fmtTokens(calcCalls.reduce((s, c) => s + c.out, 0))} out · {fmtMs(calc.ms)} of model time</span>
+                  </div>
+                )}
               </div>
               <div className="flex flex-col gap-4">
                 <div className="grid grid-cols-3 gap-3">
-                  <Big label="Actual" value={fmtCost(calc.actual)} sub={`${calcWin} as journalled`} />
-                  <Big label={calcTarget ? `On ${calcTarget.label}` : "Projected"} value={calcTarget ? fmtCost(calc.projected) : "—"} sub={calcTarget?.local ? (calcTarget.hourly === null ? "hardware hour not priced" : `${fmtCost(calcTarget.hourly)}/h hardware`) : calcTarget ? `$${calcTarget.price_in ?? "?"} in · $${calcTarget.price_out ?? "?"} out /M` : "pick a target"} />
+                  <Big label="Actual" value={off ? null : fmtCost(calc.actual)} sub={`${calcWin} as journalled`} />
+                  <Big label={calcTarget ? `On ${calcTarget.label}` : "Projected"} value={off ? null : calcTarget ? fmtCost(calc.projected) : "—"} sub={calcTarget?.local ? (calcTarget.hourly === null ? "hardware hour not priced" : `${fmtCost(calcTarget.hourly)}/h hardware`) : calcTarget ? `$${calcTarget.price_in ?? "?"} in · $${calcTarget.price_out ?? "?"} out /M` : "pick a target"} />
                   <Big
                     label="Difference"
-                    value={calc.actual !== null && calc.projected !== null ? `${calc.projected <= calc.actual ? "−" : "+"}${fmtCost(Math.abs(calc.actual - calc.projected))}` : "—"}
+                    value={off ? null : calc.actual !== null && calc.projected !== null ? `${calc.projected <= calc.actual ? "−" : "+"}${fmtCost(Math.abs(calc.actual - calc.projected))}` : "—"}
                     sub={calc.actual && calc.projected !== null ? `${pct(Math.abs(1 - calc.projected / calc.actual))} ${calc.projected <= calc.actual ? "less" : "more"} · ${fmtCost(((calc.projected - calc.actual) / calc.days) * 30)} / month` : ""}
                     tone={calc.actual !== null && calc.projected !== null ? (calc.projected <= calc.actual ? "ok" : "err") : undefined}
                   />
                 </div>
                 <div className="flex flex-col gap-1">
                   <span className="text-[10.5px] font-medium text-faint">Every offered model on this workload</span>
+                  {off && <p className="py-3 text-[12px] text-faint">Each offered model is ranked here by what the same work would cost on it.</p>}
                   <RankBar
                     data={calc.perModel.map(({ m, cost }, i) => ({ label: m.id, value: cost ?? 0, color: m.local ? "var(--color-ok)" : CAT[i % CAT.length], meta: cost === null ? "hardware hour not priced" : `${fmtCost(cost)}${m.local ? ` · local at ${fmtCost(m.hourly)}/h` : m.estimated ? " · estimated rate" : ""}` }))}
                     onPick={(label) => setCalcModel(label)}
@@ -975,7 +971,8 @@ export function FinOps() {
                   </table>
                 </div>
               ))}
-              {!evidence.size && (
+              {!evidence.size && off && <p className="px-3 py-5 text-center text-[12px] text-faint">The latest model comparison for each workflow is shown here: quality, cost per case and latency.</p>}
+              {!evidence.size && !off && (
                 <p className="px-3 py-5 text-center text-[12px] text-faint">
                   No model comparison on record yet. Run <Link href="/evals" className="underline">Compare models</Link> on a workflow&rsquo;s eval set to get evidence here.
                 </p>
@@ -1015,15 +1012,21 @@ export function FinOps() {
                     <td className="tnum px-3 py-1.5 text-right">{fmtCost(r.cost)}</td>
                   </tr>
                 ))}
-                {!routeRows.length && <tr><td colSpan={8} className="px-3 py-5 text-center text-faint">No workflows in the registry.</td></tr>}
+                {!routeRows.length && <tr><td colSpan={8} className="px-3 py-5 text-center text-faint">{off ? "Each workflow step is listed here with the model its calls go to and its override." : "No workflows in the registry."}</td></tr>}
               </tbody>
             </table>
           </div>
           <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-line px-3 py-2 text-[10.5px] text-faint">
-            <span>Deployment default: <Mono>{data?.config.default_model || "none"}</Mono></span>
-            {(["small", "medium", "large"] as const).map((c) => (
-              <span key={c}>{c}: <Mono>{data?.config.class_defaults?.[c] || "—"}</Mono></span>
-            ))}
+            {off ? (
+              <span>The deployment default and the tier defaults are named here.</span>
+            ) : (
+              <>
+                <span>Deployment default: <Mono>{data?.config.default_model || "none"}</Mono></span>
+                {(["small", "medium", "large"] as const).map((c) => (
+                  <span key={c}>{c}: <Mono>{data?.config.class_defaults?.[c] || "—"}</Mono></span>
+                ))}
+              </>
+            )}
             <span className="grow" />
             <Link href="/configuration#models" className="underline">Manage models and providers in Configuration</Link>
           </div>
@@ -1032,6 +1035,7 @@ export function FinOps() {
         {/* ── Providers + billing ── */}
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.4fr_1fr]">
           <Section id="providers" title="Providers" caption="Every endpoint this deployment can route to, with the models offered from it. Local providers are priced by the hardware hour." folded={folds.providers} onToggle={() => toggleFold("providers")}>
+            {off && <p className="px-4 pt-3 text-[12px] text-faint">Each provider is shown here with its endpoint, its models and its spend in the window.</p>}
             <div className="grid grid-cols-1 gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
               {(data?.config.providers ?? []).map((p) => {
                 const models = (data?.config.models ?? []).filter((m) => (m.provider ?? FOUNDRY_ID) === p.id);
@@ -1067,7 +1071,7 @@ export function FinOps() {
           </Section>
 
           <Section id="billing" title="Billing and budget" caption="Journalled spend against what the cloud actually billed, and the monthly budget the run rate is measured against." folded={folds.billing} onToggle={() => toggleFold("billing")}>
-            <Billing key={`${data?.budget ?? ""}/${data?.period ?? ""}`} data={data} totals={totals} windowBudget={windowBudget} window={winFor("kpi")} onSaved={load} />
+            <Billing key={`${data?.budget ?? ""}/${data?.period ?? ""}`} off={off} data={data} totals={totals} windowBudget={windowBudget} window={winFor("kpi")} onSaved={load} />
           </Section>
         </div>
       </div>
@@ -1111,21 +1115,30 @@ function Section({ id, title, caption, meta, children, folded = false, onToggle 
   );
 }
 
-function Kpi({ label, value, sub, tone, onOpen }: { label: string; value: string; sub: string; tone?: "ok" | "warn" | "err"; onOpen: () => void }) {
+/** `value` null: a quiet console whose ledger was not read. The tile says so where the figure would be and opens nothing. */
+function Kpi({ label, value, sub, tone, onOpen }: { label: string; value: string | null; sub: string; tone?: "ok" | "warn" | "err"; onOpen: () => void }) {
   return (
-    <button type="button" onClick={onOpen} className="focusable -mr-px -mb-px flex cursor-pointer flex-col gap-1 border-r border-b border-line px-3 py-2.5 text-left transition-colors hover:bg-raise/50">
+    <button type="button" onClick={value === null ? undefined : onOpen} className={`focusable -mr-px -mb-px flex flex-col gap-1 border-r border-b border-line px-3 py-2.5 text-left transition-colors ${value === null ? "cursor-default" : "cursor-pointer hover:bg-raise/50"}`}>
       <span className="truncate text-[10.5px] text-faint">{label}</span>
-      <span className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]" style={tone ? { color: `var(--color-${tone})` } : undefined}>{value}</span>
+      {value === null ? (
+        <span className="flex h-[22px] items-center text-[12px] text-faint">Not connected</span>
+      ) : (
+        <span className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]" style={tone ? { color: `var(--color-${tone})` } : undefined}>{value}</span>
+      )}
       <span className="truncate text-[10px] text-ghost">{sub}</span>
     </button>
   );
 }
 
-function Big({ label, value, sub, tone }: { label: string; value: string; sub: string; tone?: "ok" | "err" }) {
+function Big({ label, value, sub, tone }: { label: string; value: string | null; sub: string; tone?: "ok" | "err" }) {
   return (
     <div className="flex flex-col gap-1 rounded-md border border-line bg-canvas p-3">
       <span className="text-[10.5px] text-faint">{label}</span>
-      <span className="tnum text-[20px] leading-none font-semibold tracking-[-0.02em]" style={tone ? { color: `var(--color-${tone})` } : undefined}>{value}</span>
+      {value === null ? (
+        <span className="flex h-5 items-center text-[11.5px] whitespace-nowrap text-faint">Not connected</span>
+      ) : (
+        <span className="tnum text-[20px] leading-none font-semibold tracking-[-0.02em]" style={tone ? { color: `var(--color-${tone})` } : undefined}>{value}</span>
+      )}
       <span className="truncate text-[10px] text-ghost">{sub}</span>
     </div>
   );
@@ -1145,7 +1158,7 @@ function Place({ info }: { info: ModelInfo | null }) {
   return <Tag tone={info.local ? "ok" : "neutral"}>{info.local ? "local" : info.provider?.label ?? "cloud"}</Tag>;
 }
 
-function Billing({ data, totals, windowBudget, window, onSaved }: { data: Data | null; totals: { cost: number | null; monthly: number | null }; windowBudget: number | null; window: Win; onSaved: () => void }) {
+function Billing({ data, totals, windowBudget, window, onSaved, off = false }: { off?: boolean; data: Data | null; totals: { cost: number | null; monthly: number | null }; windowBudget: number | null; window: Win; onSaved: () => void }) {
   const [budget, setBudget] = useState(data?.budget ? String(data.budget) : "");
   const [period, setPeriod] = useState<Period>(data?.period ?? "month");
   const [busy, setBusy] = useState(false);
@@ -1165,7 +1178,7 @@ function Billing({ data, totals, windowBudget, window, onSaved }: { data: Data |
   };
   return (
     <div className="flex flex-col">
-      <Fact k={`Journalled · ${window}`} v={fmtCost(totals.cost)} />
+      <Fact k={`Journalled · ${window}`} v={off ? "Not connected" : fmtCost(totals.cost)} tone={off ? "text-faint" : undefined} />
       {windowBudget !== null && <Fact k={`Budget scaled to ${window}`} v={`${fmtCost(windowBudget)} · ${totals.cost !== null ? pct(totals.cost / Math.max(0.01, windowBudget)) : "—"} used`} tone={totals.cost !== null && totals.cost > windowBudget ? "text-err" : undefined} />}
       {st && data?.budget != null && (
         <Fact k={`This ${data.period} so far`} v={st.exceeded ? `${fmtCost(st.spent)} of ${fmtCost(data.budget)} · exhausted, runs refused` : `${fmtCost(st.spent)} of ${fmtCost(data.budget)} · ${fmtCost(Math.max(0, st.remaining ?? 0))} left`} tone={st.exceeded ? "text-err" : undefined} />
@@ -1173,9 +1186,9 @@ function Billing({ data, totals, windowBudget, window, onSaved }: { data: Data |
       {/* L8, second round: a canary's shadow runs, beside the budget, never in it. */}
       {st && (st.shadow_spent ?? 0) > 0 && <Fact k={`Shadow runs · this ${data?.period ?? "period"}`} v={shadowSpentLine(st.shadow_spent, (n) => fmtCost(n))} tone="text-faint" />}
       {shadowWindow.runs > 0 && <Fact k={`Shadow runs · ${window}`} v={shadowBesideLine(shadowWindow, (n) => fmtCost(n))} tone="text-faint" />}
-      <Fact k="Run rate · month" v={fmtCost(totals.monthly)} />
-      <Fact k="Cloud billed · month to date" v={az?.configured && !az.error ? `${az.currency ?? ""} ${az.mtd?.toFixed(2) ?? "—"}` : QUIET ? "not connected" : "billing connector not configured"} tone={az?.configured ? undefined : "text-faint"} />
-      <Fact k="Cloud billed · 7d" v={az?.configured && !az.error ? `${az.currency ?? ""} ${az.last7d?.toFixed(2) ?? "—"}` : "—"} />
+      <Fact k="Run rate · month" v={off ? "Not connected" : fmtCost(totals.monthly)} tone={off ? "text-faint" : undefined} />
+      <Fact k="Cloud billed · month to date" v={az?.configured && !az.error ? `${az.currency ?? ""} ${az.mtd?.toFixed(2) ?? "—"}` : QUIET ? "Not connected" : "billing connector not configured"} tone={az?.configured ? undefined : "text-faint"} />
+      <Fact k="Cloud billed · 7d" v={az?.configured && !az.error ? `${az.currency ?? ""} ${az.last7d?.toFixed(2) ?? "—"}` : off ? "Not connected" : "—"} tone={off ? "text-faint" : undefined} />
       <div className="flex items-center gap-2 px-4 py-3">
         <label className="flex items-center gap-2 text-[11.5px] text-dim">
           Budget $
@@ -1185,7 +1198,7 @@ function Billing({ data, totals, windowBudget, window, onSaved }: { data: Data |
         <div className="w-24">
           <Pick value={period} onChange={setPeriod} options={[{ value: "day", label: "day" }, { value: "week", label: "week" }, { value: "month", label: "month" }]} aria-label="Budget period" />
         </div>
-        <span className="text-[10.5px] text-ghost">Runs are refused once the rolling period&rsquo;s spend reaches it.</span>
+        <span className="text-[10.5px] text-ghost">{off ? "The rolling period\u2019s spend is held to it." : <>Runs are refused once the rolling period&rsquo;s spend reaches it.</>}</span>
         <Button size="sm" variant="solid" permission="configure" loading={busy} onClick={save}>Set budget</Button>
       </div>
     </div>

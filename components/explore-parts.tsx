@@ -738,3 +738,87 @@ export function ViewSwitch({ value, onChange }: { value: ViewId; onChange: (v: V
     </div>
   );
 }
+
+/* ═══════════════════ a view with nothing read ═══════════════════ */
+
+/**
+ * A view's frame on a quiet console whose doors did not answer (lib/quiet.ts):
+ * the timeline card, the rail with its search and facet headings, and the
+ * view's own cards beside it, all empty. The page has said once, above, that
+ * it is not connected; nothing here repeats it and nothing here is a record.
+ */
+export function QuietFrame({ title, line, sections, placeholder, children }: { title: string; line: string; sections: { title?: string; labels: string[] }[]; placeholder: string; children: ReactNode }) {
+  return (
+    <>
+      <section className="flex min-w-0 flex-col rounded-lg border border-line bg-surface elev-1" aria-label="Timeline" data-explore-timeline>
+        <div className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1.5 rounded-t-lg border-b border-line bg-raise/55 px-4 py-2">
+          <h2 className="text-[12.5px] font-semibold whitespace-nowrap text-fg">{title}</h2>
+          <span className="grow" />
+          <span className="text-[11px] text-faint">Drag across the bars to narrow the list to a span.</span>
+        </div>
+        <p className="px-4 py-7 text-center text-[12px] text-faint">{line}</p>
+      </section>
+      <div className="grid min-w-0 items-start gap-4 min-[1100px]:grid-cols-[216px_minmax(0,1fr)]">
+        <aside aria-label="Filters" className="hidden flex-col gap-4 rounded-lg border border-line bg-surface p-2.5 elev-1 min-[1100px]:flex" data-explore-rail>
+          <SearchBox value="" onChange={() => {}} placeholder={placeholder} width="w-full" />
+          {sections.map((s, i) => (
+            <div key={s.title ?? i} className="flex flex-col gap-3.5">
+              {s.title && <span className="border-t border-line px-1.5 pt-3 text-[11.5px] font-semibold text-fg">{s.title}</span>}
+              {s.labels.map((l) => (
+                <span key={l} className="px-1.5 text-[11px] font-medium text-faint">
+                  {l}
+                </span>
+              ))}
+            </div>
+          ))}
+          <span className="border-t border-line px-1.5 pt-3 text-[11px] leading-[1.5] text-ghost">The values to filter by are listed under each heading, with a count.</span>
+        </aside>
+        <div className="@container flex min-w-0 flex-col gap-4">{children}</div>
+      </div>
+    </>
+  );
+}
+
+/** The band of counts with no figure read: each tile says so where its number would be. */
+export function QuietTiles({ tiles }: { tiles: { label: string; sub: string }[] }) {
+  const row = tiles.length > 5 ? "@[1040px]:grid-flow-col @[1040px]:auto-cols-fr @[1040px]:grid-cols-none" : "@[820px]:grid-flow-col @[820px]:auto-cols-fr @[820px]:grid-cols-none";
+  return (
+    <div className="@container">
+      <div className={`grid grid-cols-2 overflow-hidden rounded-md border border-line bg-surface @[520px]:grid-cols-3 ${row}`}>
+        {tiles.map((t) => (
+          <div key={t.label} className="-mr-px -mb-px flex min-w-0 flex-col gap-1 border-r border-b border-line px-3 py-2.5 text-left">
+            <span className="truncate text-[10.5px] text-faint">{t.label}</span>
+            <span className="flex h-[22px] items-center text-[12px] whitespace-nowrap text-faint">Not connected</span>
+            <span className="truncate text-[10px] text-ghost">{t.sub}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** A table's column headers over one line saying what it will hold. */
+export function QuietTable({ columns, line }: { columns: string[]; line: string }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[640px] border-collapse text-[11.5px]">
+        <thead>
+          <tr className="border-b border-line text-left text-[10.5px] text-faint">
+            {columns.map((c, i) => (
+              <th key={c} className={`py-2 font-medium ${i === 0 ? "px-4" : "px-3"}`}>
+                {c}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td colSpan={columns.length} className="px-4 py-8 text-center text-[11.5px] text-faint">
+              {line}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}

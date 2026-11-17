@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Button, Mono, Status } from "./ui";
-import { Banner, QuietNote } from "./overlays";
+import { Banner } from "./overlays";
 import { QUIET } from "@/lib/quiet";
 import { Field, Input } from "./forms";
 import { Pick } from "./select";
@@ -238,7 +238,23 @@ function LedgerPage() {
   }, []);
   const head = ledger ? ledgerHeadline(ledger) : null;
   const notes = ledger ? ledgerNotes(ledger) : [];
-  // A quiet console whose ledger door did not answer says so once under the header.
+  // A quiet console whose ledger door did not answer says so once under the header, with the walk and the retention drawn empty beneath it.
+  const unread = <span className="flex h-[15px] items-center text-[12px] font-normal text-faint">Not connected</span>;
+  const headRow = (cols: string[], min: number) => (
+    <div className="overflow-x-auto rounded-md border border-line">
+      <table className="w-full border-collapse text-[11.5px]" style={{ minWidth: min }}>
+        <thead>
+          <tr className="bg-raise/40 text-left text-[10.5px] text-faint">
+            {cols.map((h) => (
+              <th key={h} className="px-3 py-1.5 font-medium">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+      </table>
+    </div>
+  );
   const quietDown = QUIET && Boolean(error) && !ledger;
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
@@ -255,7 +271,6 @@ function LedgerPage() {
           {head.line}
         </Banner>
       )}
-      {!quietDown && (
       <>
       <Section title="Ledger walk" action={<Button size="sm" variant="solid" tone="neutral" loading={busy} onClick={walk}>Walk again</Button>}>
         <div className="grid gap-3 md:grid-cols-3">
@@ -287,6 +302,13 @@ function LedgerPage() {
             <LedgerWalk ledger={ledger} />
           </>
         )}
+        {quietDown && (
+          <>
+            <Figures items={[{ k: "anchors", v: unread }, { k: "runs", v: unread }, ...CHAIN_STATES.map((c) => ({ k: CHAIN_META[c].label.toLowerCase(), v: unread }))]} />
+            {headRow(["Seq", "Run", "Row", "Reading", "Entries", "Anchor", "At"], 860)}
+            <p className="text-[12px] text-faint">Each anchor is listed here in order, with the run it closes and the reading of its chain.</p>
+          </>
+        )}
       </Section>
       <Section
         title="Retention"
@@ -298,10 +320,18 @@ function LedgerPage() {
           </Button>
         }
       >
-        {retention ? <RetentionPanel view={retention} /> : QUIET && retentionDown ? <QuietNote inline /> : <p className="text-[12px] text-faint">Reading…</p>}
+        {retention ? (
+          <RetentionPanel view={retention} />
+        ) : QUIET && retentionDown ? (
+          <>
+            {headRow(["Record", "Class", "Deleted", "Digest of what was deleted"], 720)}
+            <p className="text-[12px] text-faint">How long each class of record is kept is shown here, with a tombstone for every record deleted.</p>
+          </>
+        ) : (
+          <p className="text-[12px] text-faint">Reading…</p>
+        )}
       </Section>
       </>
-      )}
     </div>
   );
 }

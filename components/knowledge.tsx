@@ -296,8 +296,11 @@ export function Knowledge() {
   const totals = data?.totals;
   /** The store answered: figures are measured. Otherwise they are unknown, not zero. */
   const ready = data?.ready === true;
-  /** Quiet (lib/quiet.ts): the read failed or the store did not answer. The page says so once, without the reason, and leaves out every card that would only say "unknown". */
+  /** Quiet (lib/quiet.ts): the read failed or the store did not answer. The page says so once, without the reason, and draws every card empty: a figure says "Not connected", a list says what it will hold. */
   const off = QUIET && (Boolean(failed) || (data !== null && !ready));
+  const offFigure = <span className="mt-1 flex h-[30px] items-center text-[12px] text-faint">Not connected</span>;
+  /** A row of the index card: what the read gave, or that it was not read. */
+  const orOff = (v: string | null | undefined) => (off ? v || "Not connected" : (v ?? "—"));
   const shown = useMemo(() => {
     const term = q.trim().toLowerCase();
     return sources.filter((s) => inFamily(s, family) && hasTerm(s, term));
@@ -327,7 +330,7 @@ export function Knowledge() {
       }))
       .sort((a, b) => b.rows.length - a.rows.length || a.publisher.localeCompare(b.publisher));
   }, [shown]);
-  const offerIsOpen = offerOpen ?? (data !== null && sources.length === 0);
+  const offerIsOpen = offerOpen ?? ((data !== null || off) && sources.length === 0);
   const columns = classed ? 7 : 6;
   const current = openSource ? [...sources, ...offered].find((s) => s.id === openSource) ?? null : null;
   const ns = namespace ?? DEFAULT_NAMESPACE;
@@ -390,23 +393,23 @@ export function Knowledge() {
         )}
 
         {/* ── three states ── */}
-        {!off && <div className="grid gap-4 lg:grid-cols-3">
+        <div className="grid gap-4 lg:grid-cols-3">
           <section className="flex flex-col rounded-lg border border-line bg-surface p-4 elev-1">
             <span className="text-[11px] font-medium tracking-[0.06em] text-faint uppercase">In the register</span>
-            <span className="tnum mt-1 text-[30px] leading-none font-semibold tracking-[-0.025em]">{ready ? count(sources.length) : "—"}</span>
+            {off ? offFigure : <span className="tnum mt-1 text-[30px] leading-none font-semibold tracking-[-0.025em]">{ready ? count(sources.length) : "—"}</span>}
             <span className="mt-1 text-[11.5px] text-faint">source{sources.length === 1 ? "" : "s"} a person added to this corpus</span>
             <div className="mt-4 border-t border-line pt-3">
               {ready && sources.length > 0 && <Donut data={byLicence.filter((d) => d.value > 0)} size={96} />}
               {ready && sources.length === 0 && (
                 <p className="text-[11.5px] leading-[1.55] text-dim">No source has been added. Add one from the public sources below, or add your own.</p>
               )}
-              {!ready && <span className="text-[11.5px] text-ghost">{data ? "Unknown while the store is unreachable." : failed ? "Unknown." : "Reading…"}</span>}
+              {!ready && <span className={`text-[11.5px] ${off ? "leading-[1.55] text-faint" : "text-ghost"}`}>{off ? "The sources in the register are counted here by licence." : data ? "Unknown while the store is unreachable." : failed ? "Unknown." : "Reading…"}</span>}
             </div>
           </section>
 
           <section className={`flex flex-col rounded-lg border p-4 elev-1 ${staged.length ? "border-warn/50 bg-surface" : "border-line bg-surface"}`}>
             <span className="text-[11px] font-medium tracking-[0.06em] text-faint uppercase">Waiting for a person</span>
-            <span className={`tnum mt-1 text-[30px] leading-none font-semibold tracking-[-0.025em] ${staged.length ? "text-warn" : ""}`}>{ready ? count(staged.length) : "—"}</span>
+            {off ? offFigure : <span className={`tnum mt-1 text-[30px] leading-none font-semibold tracking-[-0.025em] ${staged.length ? "text-warn" : ""}`}>{ready ? count(staged.length) : "—"}</span>}
             <span className="mt-1 text-[11.5px] text-faint">fetched and split · not embedded, not searchable</span>
             <div className="mt-4 flex flex-col gap-1.5 border-t border-line pt-3">
               {ready && staged.length === 0 && (
@@ -414,7 +417,7 @@ export function Knowledge() {
                   Nothing is waiting. {sources.length ? "Fetch a source in the register to stage a copy." : "A copy is staged when a source in the register is fetched."}
                 </p>
               )}
-              {!ready && <span className="text-[11.5px] text-ghost">{data ? "Unknown while the store is unreachable." : failed ? "Unknown." : "Reading…"}</span>}
+              {!ready && <span className={`text-[11.5px] ${off ? "leading-[1.55] text-faint" : "text-ghost"}`}>{off ? "Fetched copies waiting for a person to review are listed here." : data ? "Unknown while the store is unreachable." : failed ? "Unknown." : "Reading…"}</span>}
               {staged.length > 0 && (
                 <div className="-mr-2 flex max-h-[188px] flex-col gap-1.5 overflow-y-auto pr-2">
                   {staged.map((s) => (
@@ -433,29 +436,30 @@ export function Knowledge() {
 
           <section className="flex flex-col rounded-lg border border-line bg-surface p-4 elev-1">
             <span className="text-[11px] font-medium tracking-[0.06em] text-faint uppercase">Indexed</span>
-            <span className="tnum mt-1 text-[30px] leading-none font-semibold tracking-[-0.025em]">{ready && totals ? count(totals.chunks) : "—"}</span>
+            {off ? offFigure : <span className="tnum mt-1 text-[30px] leading-none font-semibold tracking-[-0.025em]">{ready && totals ? count(totals.chunks) : "—"}</span>}
             <span className="mt-1 text-[11.5px] text-faint">
               {ready && totals ? `chunk${totals.chunks === 1 ? "" : "s"} retrievable now, from ${count(totals.admitted)} admitted document${totals.admitted === 1 ? "" : "s"}` : "chunks retrievable now"}
             </span>
             <div className="mt-4 flex flex-col gap-2 border-t border-line pt-3 text-[11.5px]">
-              <Row k="Store" v={data?.index?.store ?? "—"} />
-              <Row k="Embedding" v={data?.index?.model ?? "—"} mono />
-              <Row k="Provider" v={data?.index?.embedding ? (data.index.embedding.host || (QUIET ? "not connected" : "not configured")) : "—"} mono />
+              <Row k="Store" v={orOff(data?.index?.store)} faint={off && !data?.index?.store} />
+              <Row k="Embedding" v={orOff(data?.index?.model)} mono={!off || Boolean(data?.index?.model)} faint={off && !data?.index?.model} />
+              <Row k="Provider" v={data?.index?.embedding ? (data.index.embedding.host || (QUIET ? (off ? "Not connected" : "not connected") : "not configured")) : orOff(null)} mono={!off || Boolean(data?.index?.embedding?.host)} faint={off && !data?.index?.embedding?.host} />
               <Row
                 k="Dimensions"
                 v={
-                  data?.index
+                  data?.index && !(off && !data.index.dimensions)
                     ? `${data.index.dimensions} column${data.index.embedding?.dimension && data.index.embedding.dimension !== data.index.dimensions ? ` · provider answers ${data.index.embedding.dimension}` : ""}`
-                    : "—"
+                    : orOff(null)
                 }
+                faint={off && !data?.index?.dimensions}
               />
-              <Row k="Sources indexed" v={ready ? `${indexed} of ${sources.length}` : "—"} />
+              <Row k="Sources indexed" v={ready ? `${indexed} of ${sources.length}` : orOff(null)} faint={off} />
               {ready && sources.length > 0 && <Meter value={indexed / sources.length} tone="ok" />}
             </div>
             {/* Integrity: recomputed on this read against what the latest admission recorded. */}
             <div className="mt-3 flex flex-col gap-2 border-t border-line pt-3">
               {data?.index?.integrity === undefined || data?.index?.integrity === null ? (
-                <span className="text-[11px] text-faint">{data?.ready === false ? "Integrity is checked once the index is reachable." : data ? "No integrity result came with this read." : "Integrity: reading…"}</span>
+                <span className="text-[11px] text-faint">{off ? "The index is checked here against the latest admission." : data?.ready === false ? "Integrity is checked once the index is reachable." : data ? "No integrity result came with this read." : "Integrity: reading…"}</span>
               ) : (
                 <span className="flex flex-col gap-0.5">
                   <Status tone={data.index.integrity.ok === true ? "ok" : data.index.integrity.ok === false ? "err" : "neutral"}>
@@ -471,17 +475,17 @@ export function Knowledge() {
                 <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={!data?.ready || !totals?.admitted || reembed?.stage === "busy"} loading={reembed?.stage === "busy"} onClick={() => setReembed({ stage: "confirm", force: false })}>
                   Re-embed namespace
                 </Button>
-                <span className="text-[10.5px] text-ghost">{!ready ? "needs the store" : totals?.admitted ? "every admitted chunk, with the current provider" : "nothing is admitted, so there is nothing to embed"}</span>
+                <span className="text-[10.5px] text-ghost">{off ? "every admitted chunk, with the current provider" : !ready ? "needs the store" : totals?.admitted ? "every admitted chunk, with the current provider" : "nothing is admitted, so there is nothing to embed"}</span>
               </span>
             </div>
           </section>
-        </div>}
+        </div>
 
         {/* ── the register ── */}
-        {!off && <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
+        <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
           <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2.5">
             <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Sources in this corpus</span>
-            <span className="tnum text-[11px] text-faint">{data ? (ready ? (shown.length === sources.length ? count(sources.length) : `${shown.length} of ${sources.length}`) : "unknown") : failed ? "" : "reading…"}</span>
+            <span className="tnum text-[11px] text-faint">{off ? "" : data ? (ready ? (shown.length === sources.length ? count(sources.length) : `${shown.length} of ${sources.length}`) : "unknown") : failed ? "" : "reading…"}</span>
             <span className="grow" />
             {sources.length > 0 && (
               <input
@@ -584,9 +588,30 @@ export function Knowledge() {
             </div>
           )}
           {sources.length > 0 && shown.length === 0 && <p className="px-4 py-4 text-[12px] text-faint">No source in the register matches.</p>}
+          {off && sources.length === 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[920px] border-collapse text-left">
+                <thead>
+                  <tr className="border-b border-line text-[10.5px] text-faint">
+                    <th className="px-4 py-2.5 font-medium">Source</th>
+                    <th className="px-3 py-2.5 font-medium">Licence</th>
+                    <th className="px-3 py-2.5 font-medium">Used for</th>
+                    <th className="px-3 py-2.5 font-medium">Indexed</th>
+                    <th className="px-3 py-2.5 font-medium">Cadence</th>
+                    <th className="px-3 py-2.5 font-medium" />
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td colSpan={6} className="px-4 py-6 text-[12px] text-faint">Sources added to this corpus are listed here by publisher, each with its licence and what is indexed.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
           {!data && !failed && <p className="px-4 py-4 text-[12px] text-faint">Reading the register…</p>}
-          {!data && failed && <p className="px-4 py-4 text-[12px] text-faint">The register could not be read, so nothing is shown.</p>}
-          {data && !ready && <p className="px-4 py-4 text-[12px] text-faint">The register is kept in the store, which is not reachable, so it is not shown.</p>}
+          {!off && !data && failed && <p className="px-4 py-4 text-[12px] text-faint">The register could not be read, so nothing is shown.</p>}
+          {!off && data && !ready && <p className="px-4 py-4 text-[12px] text-faint">The register is kept in the store, which is not reachable, so it is not shown.</p>}
           {ready && sources.length === 0 && (
             <div className="p-4">
               <EmptyState
@@ -600,10 +625,10 @@ export function Knowledge() {
               />
             </div>
           )}
-        </section>}
+        </section>
 
         {/* ── the public catalogue: offered, not held ── */}
-        {data && (
+        {(data || off) && (
           <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
             <button
               type="button"
@@ -616,7 +641,7 @@ export function Knowledge() {
                 <path d="M6 9l6 6 6-6" />
               </svg>
               <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Public sources you can add</span>
-              <span className="tnum text-[11px] text-faint">{count(offered.length)}</span>
+              <span className="tnum text-[11px] text-faint">{off && !data ? "" : count(offered.length)}</span>
               <span className="text-[11px] leading-[1.55] text-faint">published standards, frameworks and regulation · none is part of this corpus until a person adds it</span>
               <span className="grow" />
               <span className="text-[10.5px] text-ghost">{offerIsOpen ? "hide" : "show"}</span>
@@ -685,7 +710,7 @@ export function Knowledge() {
                   </div>
                 )}
                 {offered.length > 0 && offerShown.length === 0 && <p className="px-4 py-4 text-[12px] text-faint">No public source matches.</p>}
-                {offered.length === 0 && <p className="px-4 py-4 text-[12px] text-faint">{ready ? "Every public source on offer is already in this corpus." : QUIET ? <QuietNote inline /> : "The list of public sources did not come with this read."}</p>}
+                {offered.length === 0 && <p className="px-4 py-4 text-[12px] text-faint">{ready ? "Every public source on offer is already in this corpus." : off ? "Published standards, frameworks and regulation are offered here, each ready to add." : QUIET ? <QuietNote inline /> : "The list of public sources did not come with this read."}</p>}
                 {!ready && !QUIET && offered.length > 0 && <p className="border-t border-line px-4 py-2.5 text-[11.5px] text-faint">Adding waits for the store: a source is added by writing it to this corpus&rsquo;s register.</p>}
               </div>
             )}
@@ -712,7 +737,20 @@ export function Knowledge() {
             }}
             onResult={setAskFacts}
           />
-        ) : off ? null : (
+        ) : off ? (
+          // Quiet (lib/quiet.ts), store not read: the box is drawn as it stands with nothing indexed, and takes no question.
+          <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
+            <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2.5">
+              <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Search and answer from this corpus</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+              <input disabled placeholder="Ask a question the admitted sources can answer" aria-label="Ask the corpus" className="h-9 min-w-0 grow rounded-md border border-line bg-canvas px-3 text-[12.5px] text-fg placeholder:text-ghost" />
+              <Button size="md" variant="solid" tone="ink" disabled>Answer</Button>
+              <Button size="md" variant="solid" disabled>Search</Button>
+            </div>
+            <p className="border-t border-line px-4 py-4 text-[12px] leading-[1.55] text-faint">Passages found and answers with their citations are shown here.</p>
+          </section>
+        ) : (
           <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
             <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2.5">
               <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Search and answer from this corpus</span>
@@ -730,13 +768,14 @@ export function Knowledge() {
         )}
 
         {/* ── admissions ── */}
-        {!off && <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
+        <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
           <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2.5">
             <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Admission record</span>
             <span className="text-[11px] text-faint">every admission and refusal in this corpus, newest first</span>
           </div>
-          {!data && <p className="px-4 py-3 text-[11.5px] text-faint">{failed ? "The record could not be read." : "Reading…"}</p>}
-          {data && !ready && <p className="px-4 py-3 text-[11.5px] text-faint">The record is kept in the store, which is not reachable.</p>}
+          {off && (data?.admissions ?? []).length === 0 && <p className="px-4 py-3 text-[11.5px] text-faint">Each decision is listed here with the document, who decided and when.</p>}
+          {!off && !data && <p className="px-4 py-3 text-[11.5px] text-faint">{failed ? "The record could not be read." : "Reading…"}</p>}
+          {!off && data && !ready && <p className="px-4 py-3 text-[11.5px] text-faint">The record is kept in the store, which is not reachable.</p>}
           {ready && (data?.admissions ?? []).length === 0 && <p className="px-4 py-3 text-[11.5px] text-faint">Nothing has been admitted or refused in this corpus yet.</p>}
           {(data?.admissions ?? []).map((a, i) => (
             <div key={i} className="flex items-baseline gap-3 border-b border-line px-4 py-2 last:border-0">
@@ -749,7 +788,7 @@ export function Knowledge() {
               <span className="shrink-0 text-[10.5px] text-ghost">{ago(a.at)}</span>
             </div>
           ))}
-        </section>}
+        </section>
 
         {/* ── the stages, explained ── */}
         <PipelineView />
@@ -888,11 +927,11 @@ export function Knowledge() {
   );
 }
 
-function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
+function Row({ k, v, mono, faint }: { k: string; v: string; mono?: boolean; faint?: boolean }) {
   return (
     <span className="flex items-baseline justify-between gap-3">
       <span className="text-faint">{k}</span>
-      <span className={`tnum truncate text-fg ${mono ? "font-mono text-[11px]" : ""}`}>{v}</span>
+      <span className={`tnum truncate ${faint ? "text-faint" : "text-fg"} ${mono ? "font-mono text-[11px]" : ""}`}>{v}</span>
     </span>
   );
 }

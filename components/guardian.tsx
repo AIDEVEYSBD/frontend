@@ -53,6 +53,9 @@ function ago(iso: string): string {
 
 type Filter = "all" | "acted" | "attention";
 
+/** Quiet (lib/quiet.ts): the limits form drawn with nothing read, every control locked. */
+const BLANK: GuardianForm = { enabled: false, model: "", allAgents: false, agents: [], hold: false, block: false, redirect: false, max_actions_per_hour: "", min_confidence: "", rubric: "", every_entries: "", every_s: "" };
+
 export function Guardian() {
   const { can, loaded } = useSession();
   const editable = !loaded || can("configure");
@@ -150,8 +153,10 @@ export function Guardian() {
 
   const shown = (actions ?? []).filter((a) => filter === "all" || a.outcome === filter);
   const s = view?.stats;
-  // A quiet console (lib/quiet.ts) whose guardian door did not answer says so once, and draws no panel that would read "reading" for good.
+  // A quiet console (lib/quiet.ts) whose guardian door did not answer says so once, and draws every panel empty beneath the note.
   const quietDown = QUIET && Boolean(error) && !view;
+  const f = form ?? (quietDown ? BLANK : null);
+  const locked = !editable || quietDown;
 
   return (
     <div className="mx-auto w-full max-w-[1520px] px-5 py-7" data-hue="red">
@@ -176,7 +181,6 @@ export function Guardian() {
         </div>
       )}
 
-      {!quietDown && (
       <>
       <div className="mt-5 grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         {/* ── the limits a person sets ── */}
@@ -184,40 +188,40 @@ export function Guardian() {
           <div data-hue={hueFor("approvals person")} className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2.5">
             <span className="text-[12px] font-semibold">Limits</span>
             <span className="text-[11px] text-faint">
-              {view ? (view.set_by ? `set by ${view.set_by} ${ago(view.set_at)}${auditLine(view.audit_id)}` : "never set: the defaults (off, no agents, may do nothing)") : "reading…"}
+              {view ? (view.set_by ? `set by ${view.set_by} ${ago(view.set_at)}${auditLine(view.audit_id)}` : "never set: the defaults (off, no agents, may do nothing)") : quietDown ? "" : "reading…"}
             </span>
           </div>
-          {!form || !view ? (
+          {!f || (!view && !quietDown) ? (
             <p className="px-4 py-4 text-[12px] text-faint">Reading the guardian&rsquo;s limits…</p>
           ) : (
             <div className="flex flex-col gap-4 px-4 py-4">
-              {!editable && <p className="text-[11.5px] text-warn">Proposing a change to the guardian&rsquo;s limits needs the configure permission; these are shown as set.</p>}
+              {!editable && !quietDown && <p className="text-[11.5px] text-warn">Proposing a change to the guardian&rsquo;s limits needs the configure permission; these are shown as set.</p>}
               {editable && <p className="text-[11px] text-faint">A change here goes to review: someone other than you approves it on the Policy page, and these read as they are until it applies.</p>}
               <OpenChanges target={{ kind: "guardian", id: "estate" }} tick={proposals} />
               <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-                <Switch label={form.enabled ? "On: it judges the runs it covers" : "Off: it judges no run"} checked={form.enabled} onChange={(on) => edit({ enabled: on })} disabled={!editable} />
+                <Switch label={quietDown ? "On or off across the estate" : f.enabled ? "On: it judges the runs it covers" : "Off: it judges no run"} checked={f.enabled} onChange={(on) => edit({ enabled: on })} disabled={locked} />
                 {problemOf("enabled") && <span className="text-[11px] text-err">{problemOf("enabled")}</span>}
-                <span className="text-[11.5px] text-faint">Watching {coverageText({ enabled: form.enabled, agents: form.allAgents ? "*" : form.agents })}.</span>
+                {!quietDown && <span className="text-[11.5px] text-faint">Watching {coverageText({ enabled: f.enabled, agents: f.allAgents ? "*" : f.agents })}.</span>}
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="flex flex-col gap-2">
                   <span className="text-[12.5px] font-medium text-mist">Agents it watches</span>
                   <span className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-                    <Checkbox label="Every agent" checked={form.allAgents} onChange={(on) => edit({ allAgents: on })} disabled={!editable} />
+                    <Checkbox label="Every agent" checked={f.allAgents} onChange={(on) => edit({ allAgents: on })} disabled={locked} />
                   </span>
-                  {!form.allAgents && (
+                  {!f.allAgents && (
                     <>
-                      <ChipEditor values={form.agents} onChange={(v) => edit({ agents: v })} disabled={!editable} placeholder="Agent ids, Enter after each" invalid={Boolean(problemOf("agents"))} />
+                      <ChipEditor values={f.agents} onChange={(v) => edit({ agents: v })} disabled={locked} placeholder="Agent ids, Enter after each" invalid={Boolean(problemOf("agents"))} />
                       {problemOf("agents") && <span className="text-[11px] text-err">{problemOf("agents")}</span>}
-                      {editable && known.filter((k) => !form.agents.includes(k)).length > 0 && (
+                      {editable && known.filter((k) => !f.agents.includes(k)).length > 0 && (
                         <span className="flex flex-wrap items-center gap-1">
                           <span className="text-[10.5px] text-ghost">add</span>
                           {known
-                            .filter((k) => !form.agents.includes(k))
+                            .filter((k) => !f.agents.includes(k))
                             .slice(0, 12)
                             .map((k) => (
-                              <Button key={k} size="sm" variant="solid" tone="neutral" permission="configure" onClick={() => edit({ agents: [...form.agents, k] })}>
+                              <Button key={k} size="sm" variant="solid" tone="neutral" permission="configure" onClick={() => edit({ agents: [...f.agents, k] })}>
                                 {k}
                               </Button>
                             ))}
@@ -228,37 +232,37 @@ export function Guardian() {
                 </div>
                 <div className="flex flex-col gap-2">
                   <span className="text-[12.5px] font-medium text-mist">What it may do on its own</span>
-                  <Checkbox label="Hold a run at its next gate" checked={form.hold} onChange={(on) => edit({ hold: on })} disabled={!editable} />
-                  <Checkbox label="Block a run (kill it and what it set off)" checked={form.block} onChange={(on) => edit({ block: on })} disabled={!editable} />
-                  <Checkbox label="Redirect a run (its reason becomes guidance at the next model call)" checked={form.redirect} onChange={(on) => edit({ redirect: on })} disabled={!editable} />
-                  <span className="text-[11px] text-faint">It may {mayText(mayOf(form))}.</span>
+                  <Checkbox label="Hold a run at its next gate" checked={f.hold} onChange={(on) => edit({ hold: on })} disabled={locked} />
+                  <Checkbox label="Block a run (kill it and what it set off)" checked={f.block} onChange={(on) => edit({ block: on })} disabled={locked} />
+                  <Checkbox label="Redirect a run (its reason becomes guidance at the next model call)" checked={f.redirect} onChange={(on) => edit({ redirect: on })} disabled={locked} />
+                  {!quietDown && <span className="text-[11px] text-faint">It may {mayText(mayOf(f))}.</span>}
                   {problemOf("may") && <span className="text-[11px] text-err">{problemOf("may")}</span>}
                 </div>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                 <Field label="Model" error={problemOf("model")} hint="what it judges with">
-                  <Pick value={form.model} onChange={(v) => edit({ model: v })} options={modelOptions} disabled={!editable} />
+                  <Pick value={f.model} onChange={(v) => edit({ model: v })} options={modelOptions} disabled={locked} />
                 </Field>
                 <Field label="Acts per hour, at most" error={problemOf("max_actions_per_hour")} hint="past it, verdicts are raised for a person">
-                  <Input type="number" value={form.max_actions_per_hour} onChange={(v) => edit({ max_actions_per_hour: v })} disabled={!editable} />
+                  <Input type="number" value={f.max_actions_per_hour} onChange={(v) => edit({ max_actions_per_hour: v })} disabled={locked} />
                 </Field>
                 <Field label="Minimum confidence" error={problemOf("min_confidence")} hint="0 to 1; under it, only attention">
-                  <Input type="number" value={form.min_confidence} onChange={(v) => edit({ min_confidence: v })} disabled={!editable} />
+                  <Input type="number" value={f.min_confidence} onChange={(v) => edit({ min_confidence: v })} disabled={locked} />
                 </Field>
                 <Field label="Judge every … new entries" error={problemOf("every_entries")} hint="or after the seconds below">
-                  <Input type="number" value={form.every_entries} onChange={(v) => edit({ every_entries: v })} disabled={!editable} />
+                  <Input type="number" value={f.every_entries} onChange={(v) => edit({ every_entries: v })} disabled={locked} />
                 </Field>
                 <Field label="… or after seconds" error={problemOf("every_s")} hint="with at least one new entry">
-                  <Input type="number" value={form.every_s} onChange={(v) => edit({ every_s: v })} disabled={!editable} />
+                  <Input type="number" value={f.every_s} onChange={(v) => edit({ every_s: v })} disabled={locked} />
                 </Field>
               </div>
 
               <Field label="Rubric" error={problemOf("rubric")} hint="what it judges a trajectory against, besides the run's own goal">
-                <Textarea rows={3} value={form.rubric} onChange={(v) => edit({ rubric: v })} disabled={!editable} placeholder="Triage only: never move money, never send case data outside the firm." />
+                <Textarea rows={3} value={f.rubric} onChange={(v) => edit({ rubric: v })} disabled={locked} placeholder="Triage only: never move money, never send case data outside the firm." />
               </Field>
 
-              {changed.length > 0 && <ProposalNote reason={reason} onReason={setReason} effective={effective} onEffective={setEffective} disabled={!editable} />}
+              {changed.length > 0 && <ProposalNote reason={reason} onReason={setReason} effective={effective} onEffective={setEffective} disabled={locked} />}
 
               <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
                 <Button variant="solid" tone="ink" size="sm" permission="configure" disabled={blocked} loading={saving} onClick={propose}>
@@ -270,7 +274,7 @@ export function Guardian() {
                     tone="err"
                     size="sm"
                     onClick={() => {
-                      setForm(formOf(view));
+                      if (view) setForm(formOf(view));
                       setDirty(false);
                     }}
                   >
@@ -324,6 +328,18 @@ export function Guardian() {
                 </span>
               </div>
             </div>
+          ) : quietDown ? (
+            <div className="flex flex-col">
+              <div className="grid grid-cols-4 gap-px border-b border-line bg-line">
+                {["judged", "ok", "acted", "raised", "unparseable", "model errors", "repeated", "watching"].map((k) => (
+                  <div key={k} className="flex flex-col gap-0.5 bg-surface px-3 py-2">
+                    <span className="flex h-[15px] items-center text-[10.5px] whitespace-nowrap text-faint">Not connected</span>
+                    <span className="text-[10px] text-faint">{k}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="px-4 py-3 text-[11px] text-faint">What it judged, acted on and raised is counted here, with its acts this hour against the cap.</p>
+            </div>
           ) : (
             <p className="px-4 py-4 text-[12px] text-faint">Reading…</p>
           )}
@@ -334,7 +350,7 @@ export function Guardian() {
       <section className="mt-4 flex flex-col overflow-hidden rounded-md border border-line bg-surface">
         <div data-hue={hueFor("guardrail")} className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2.5">
           <span className="text-[12px] font-semibold">Verdicts it acted on or raised</span>
-          <span className="text-[11px] text-faint">{actions ? `${actions.length} on record, newest first` : QUIET && error ? "not connected on this deployment" : "reading…"}</span>
+          <span className="text-[11px] text-faint">{actions ? `${actions.length} on record, newest first` : QUIET && error ? "" : "reading…"}</span>
           <span className="grow" />
           <span role="radiogroup" aria-label="Show" className="inline-flex items-center gap-px rounded-md border border-line bg-raise p-px">
             {(["all", "acted", "attention"] as Filter[]).map((f) => (
@@ -353,6 +369,7 @@ export function Guardian() {
         </div>
         <div className="overflow-x-auto">
           <GuardianActionsTable actions={shown} />
+          {!actions && QUIET && Boolean(error) && <p className="px-4 py-4 text-[12px] text-faint">Verdicts it acted on or raised are listed here, newest first.</p>}
           {actions && shown.length === 0 && (
             <p className="px-4 py-4 text-[12px] text-faint">
               {actions.length ? "None of this kind." : "Nothing yet: a verdict of ok leaves no row; an act, or a verdict it could not act on, lands here."}
@@ -361,7 +378,6 @@ export function Guardian() {
         </div>
       </section>
       </>
-      )}
     </div>
   );
 }

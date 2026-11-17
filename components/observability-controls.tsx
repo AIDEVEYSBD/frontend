@@ -52,6 +52,13 @@ function ControlsPage() {
                 />
               </span>
             </label>
+          ) : QUIET && error ? (
+            <label className="flex items-center gap-2">
+              <span className="text-[11.5px] font-medium text-faint">Agent</span>
+              <span className="w-[min(320px,60vw)]">
+                <Pick aria-label="Agent" value="" onChange={() => {}} options={[{ value: "", label: "Agents are picked here" }]} disabled />
+              </span>
+            </label>
           ) : undefined
         }
       >
@@ -73,8 +80,8 @@ function ControlsPage() {
         </div>
       )}
       {agents && agents.length === 0 && !asked && <EmptyState title="No agents yet" detail="Once an agent is saved, pick it here to read what governs it." action={<Button size="sm" variant="solid" tone="ink" href="/agents">Open agents</Button>} />}
-      {/* A quiet console whose registry did not answer has said so once above; the panel's own reads would only repeat it. */}
-      {agent && !(QUIET && error) && <ControlsInForce key={agent} agent={agent} />}
+      {/* A quiet console whose registry did not answer has said so once above; the panel is drawn empty beneath it and reads nothing. */}
+      {QUIET && error ? <ControlsInForce key="bare" agent="" bare /> : agent && <ControlsInForce key={agent} agent={agent} />}
     </div>
   );
 }

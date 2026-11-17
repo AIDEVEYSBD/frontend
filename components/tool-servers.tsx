@@ -571,7 +571,7 @@ export function ToolServers({
         {servers === null ? (
           <span className="text-[11px] text-faint">Reading the registry…</span>
         ) : unread ? (
-          <QuietNote inline />
+          <span className="text-[11.5px] leading-[1.5] text-faint">Tool servers are listed here with their state and their pinned tool lists.</span>
         ) : (
           <span className="flex flex-wrap items-center gap-3">
             <Status tone="ok">{count("approved")} approved</Status>

@@ -258,7 +258,8 @@ function IamPage() {
   const quietDown = QUIET && Boolean(regError || peopleError);
   const noReg = QUIET && Boolean(regError) && !reg;
   const noPeople = QUIET && Boolean(peopleError) && !people;
-  const notRead = QUIET ? <QuietNote inline /> : "Not read.";
+  /* What an unread card says: on a quiet console the one line saying what it will hold. */
+  const notRead = (line: string) => (QUIET ? line : "Not read.");
 
   const strip: { label: string; value: string; sub: string; go: () => void }[] = [
     { label: "People", value: peopleRead ? String(persons.length) : "—", sub: people ? (people.sso.configured ? "signed in through the identity provider" : "sign-in is off") : "", go: () => show({ groups: ["people"] }) },
@@ -382,18 +383,18 @@ function IamPage() {
       {/* Who the proxy lets in: read from Google IAP itself, so it stands whether or not the control plane is connected. */}
       <IapAccess />
 
-      {noReg && noPeople ? (
-        <>
-          <QuietNote />
-          {noticeBar}
-        </>
-      ) : (
+      {/* A quiet console says once that it is not connected, then draws every panel empty beneath the note. */}
+      {quietDown && <QuietNote />}
       <>
       {/* ── posture: each figure narrows the roster to what it counts ── */}
       <section className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line elev-1 sm:grid-cols-3 xl:grid-cols-6">
-        {strip.filter((k) => !quietDown || k.value !== "—").map((k) => (
+        {strip.map((k) => (
           <button key={k.label} type="button" onClick={k.go} className="focusable flex cursor-pointer flex-col justify-center gap-0.5 bg-surface px-4 py-3 text-left transition-colors hover:bg-raise/60">
-            <span className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em] text-fg">{k.value}</span>
+            {quietDown && k.value === "—" ? (
+              <span className="flex h-[22px] items-center text-[12px] text-faint">Not connected</span>
+            ) : (
+              <span className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em] text-fg">{k.value}</span>
+            )}
             <span className="text-[11.5px] text-dim">{k.label}</span>
             {k.sub && <span className="truncate text-[10.5px] text-faint">{k.sub}</span>}
           </button>
@@ -401,11 +402,10 @@ function IamPage() {
       </section>
 
       {errorLines}
-      {quietDown && <QuietNote inline />}
       {noticeBar}
 
       {/* ── findings ── */}
-      {!noReg && <FoldSection
+      <FoldSection
         id="findings"
         {...fold("findings")}
         title="Findings"
@@ -413,6 +413,7 @@ function IamPage() {
         meta={reg ? <Tag tone={errs ? "err" : warns ? "warn" : "neutral"}>{findings.length}</Tag> : null}
       >
         {!reg && !regError && <p className="px-4 py-3 text-[12px] text-faint">Reading the register…</p>}
+        {noReg && <p className="px-4 py-3 text-[12px] text-faint">Findings are listed here, the ones to fix now first, each with the action that clears it.</p>}
         {reg && findings.length === 0 && <p className="px-4 py-3 text-[12px] text-dim">No findings on this read.</p>}
         {(["err", "warn", "info"] as const).map((sev) => {
           const group = findings.filter((f) => f.severity === sev);
@@ -436,7 +437,7 @@ function IamPage() {
             </div>
           );
         })}
-      </FoldSection>}
+      </FoldSection>
 
       {/* ── the roster ── */}
       <Card id="roster" title="Roster" meta={reg || people ? `${entries.length} identities: ${persons.length} ${persons.length === 1 ? "person" : "people"}, ${all.length} not a person` : undefined}>
@@ -451,6 +452,7 @@ function IamPage() {
           onOpen={(key) => open(key)}
           onAssignOwner={(key) => open(key, true)}
           ownerStoreDown={ownerStoreDown}
+          unread={noReg && noPeople}
         />
         {ownerStoreDown && !QUIET && <p className="border-t border-line px-4 py-2 text-[11.5px] leading-[1.5] text-warn">Owners cannot be read or saved: the register&rsquo;s own table is not reachable on this deployment.</p>}
         {reg?.basis && <p className="border-t border-line px-4 py-2 text-[11px] leading-[1.5] text-faint">{reg.basis}</p>}
@@ -458,7 +460,7 @@ function IamPage() {
 
       {/* ── the shape of the estate; each segment narrows the roster ── */}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {!noReg && <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4 elev-1">
+        <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4 elev-1">
           <span className="text-[11px] font-medium text-faint">What can act here</span>
           {reg ? (
             live.length ? (
@@ -474,11 +476,11 @@ function IamPage() {
               <span className="text-[12px] text-faint">No identity is on the register.</span>
             )
           ) : (
-            <span className="text-[12px] text-faint">{regError ? notRead : "Reading…"}</span>
+            <span className="text-[12px] text-faint">{regError ? notRead("The identities on the register are drawn here by kind.") : "Reading…"}</span>
           )}
           <span className="mt-auto text-[10.5px] text-faint">Select a segment to list the identities behind it.</span>
-        </section>}
-        {!noReg && <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4 elev-1">
+        </section>
+        <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4 elev-1">
           <span className="text-[11px] font-medium text-faint">Who answers for it</span>
           {reg && live.length > 0 && (
             <StackedBar
@@ -492,10 +494,10 @@ function IamPage() {
               }}
             />
           )}
-          {!reg && <span className="text-[12px] text-faint">{regError ? notRead : "Reading…"}</span>}
+          {!reg && <span className="text-[12px] text-faint">{regError ? notRead("Each kind is drawn here by how many of its identities have a named owner.") : "Reading…"}</span>}
           <span className="mt-auto text-[10.5px] text-faint">W workflows · A agents · M MCP servers · K keys · V credentials</span>
-        </section>}
-        {!noReg && <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4 elev-1">
+        </section>
+        <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4 elev-1">
           <span className="text-[11px] font-medium text-faint">How far it reaches</span>
           {reg && live.length > 0 && (
             <RankBar
@@ -503,10 +505,10 @@ function IamPage() {
               onPick={(label) => show({ risks: [label.startsWith("Acts") ? "risky" : label.startsWith("Writes") ? "write" : "read"] })}
             />
           )}
-          {!reg && <span className="text-[12px] text-faint">{regError ? notRead : "Reading…"}</span>}
+          {!reg && <span className="text-[12px] text-faint">{regError ? notRead("Identities are ranked here by the risk of what they may call.") : "Reading…"}</span>}
           <span className="mt-auto text-[10.5px] leading-[1.45] text-faint">Reach is the declared risk of what the identity may call.</span>
-        </section>}
-        {!noPeople && <section className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4 elev-1">
+        </section>
+        <section className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4 elev-1">
           <span className="text-[11px] font-medium text-faint">Who may do what</span>
           {people ? (
             <div className="overflow-x-auto">
@@ -545,21 +547,21 @@ function IamPage() {
               </table>
             </div>
           ) : (
-            <span className="text-[12px] text-faint">{peopleError ? notRead : "Reading…"}</span>
+            <span className="text-[12px] text-faint">{peopleError ? notRead("Each role is listed here with the permissions it carries and how many people hold it.") : "Reading…"}</span>
           )}
           <span className="mt-auto text-[10.5px] text-faint">Roles are assigned in the identity provider; this platform decides what each one may do.</span>
-        </section>}
+        </section>
       </div>
 
       {/* ── roles and permissions ── */}
-      {!noPeople && <FoldSection
+      <FoldSection
         id="roles"
         {...fold("roles")}
         title="Roles and permissions"
         caption="Roles are assigned centrally and read from every token; this platform maps each role to what it may do here and stores no decision of its own."
         meta={people ? <Tag>{roleList.length} roles</Tag> : null}
       >
-        {!people && <p className="px-4 py-3 text-[12px] text-faint">{peopleError ? notRead : "Reading…"}</p>}
+        {!people && <p className="px-4 py-3 text-[12px] text-faint">{peopleError ? notRead("Roles are listed here with their permissions and holders, beside what each permission lets a person do.") : "Reading…"}</p>}
         {people && (
           <div className="grid gap-px bg-line lg:grid-cols-2">
             <div className="flex flex-col bg-surface">
@@ -589,25 +591,24 @@ function IamPage() {
             </div>
           </div>
         )}
-      </FoldSection>}
+      </FoldSection>
 
       {/* ── audit trail ── */}
-      {!noPeople && <FoldSection
+      <FoldSection
         id="audit"
         {...fold("audit")}
         title="Audit trail"
         caption="Sign-ins, sign-outs, refresh failures, re-links, provisioning failures and denials from the identity layer, and privileged actions taken through the console with who took them, as the door returned them: the latest events only."
         meta={people && !auditDown ? <Tag>{people.events.length} events</Tag> : null}
       >
-        {!people && <p className="px-4 py-3 text-[12px] text-faint">{peopleError ? notRead : "Reading…"}</p>}
+        {!people && <p className="px-4 py-3 text-[12px] text-faint">{peopleError ? notRead("Sign-ins, sign-outs, denials and privileged actions are listed here, newest first.") : "Reading…"}</p>}
         {people && auditDown && (QUIET ? <p className="px-4 py-3"><QuietNote inline /></p> : <p className="px-4 py-3 text-[12px] text-err">The audit trail could not be read: {auditError}.</p>)}
         {people && !auditDown && people.events.length === 0 && <p className="px-4 py-3 text-[12px] text-dim">No sign-in or action has been recorded yet.</p>}
         {(people?.events ?? []).map((e) => (
           <EventLine key={e.id} event={e} now={now} />
         ))}
-      </FoldSection>}
+      </FoldSection>
       </>
-      )}
     </div>
   );
 }

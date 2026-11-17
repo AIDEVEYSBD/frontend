@@ -12,6 +12,7 @@ import { NotConnected, useDoor } from "./pending";
 import { AgentLink, Lines, OfferMark } from "./workload-parts";
 import { WorkloadSetup } from "./workload-setup";
 import { WorkloadAcceptance, WorkloadFindings, WorkloadReport } from "./workload-tabs";
+import { UseCases } from "./use-cases";
 import { WORKLOADS, type Answer, type WorkloadList } from "@/lib/api/pending";
 import {
   WORKLOAD_TABS,
@@ -152,6 +153,8 @@ function Index({ answer, reload }: { answer: Answer<WorkloadList> | null; reload
           Which deployed agent runs each workload, whether it is available, and the inputs and gates it takes. Until this answers, the cards above describe each workload and none can be started.
         </NotConnected>
       )}
+
+      <UseCases workloads={answer} calm={answer?.state === "pending"} />
     </div>
   );
 }

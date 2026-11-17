@@ -3,7 +3,7 @@
 import { VertexDetected, useVertex } from "./vertex-detected";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Mono, Status, Tag } from "./ui";
+import { Button, Mono, Status, Tag } from "./ui";
 import { usePageFacts } from "./assistant";
 import { GroupHeader } from "./page-tabs";
 import { MCP_ENDPOINT } from "@/lib/site";
@@ -19,7 +19,7 @@ import type { AttachedAgent } from "@/lib/attached";
 import { JOB_STATUS_META, queueTotals } from "@/lib/queue";
 import { QuietNote } from "./overlays";
 import { QUIET } from "@/lib/quiet";
-import { PanelNote, Providers, useConfigChanges } from "./providers";
+import { Providers, useConfigChanges } from "./providers";
 import { Keys, OfferedModels } from "./settings";
 import { PeerList, meOf, usePeers } from "./peers";
 import { useSession } from "@/lib/use-session";
@@ -53,9 +53,10 @@ import { peerCounts } from "@/lib/peers";
  * A panel is addressed by its id after `#`, which opens its tab, opens the
  * panel and brings it into view; `#peer-<id>` is one row of Peers.
  *
- * A tab on which nothing is connected (a quiet console, lib/quiet.ts, with
- * nothing behind it) says so once, in one note, and lists its panels as
- * folded headings beneath it; a heading still opens.
+ * A tab on which something is not connected (a quiet console, lib/quiet.ts,
+ * with nothing behind it) says so once, in one note under the header, and
+ * draws each such panel open in its empty form: its headings, its columns
+ * and one line saying what it holds.
  *
  * A figure appears only when it was measured. A connection that is
  * configured and never called says "never called"; there is no health or
@@ -238,8 +239,8 @@ function ConfigurationTabs() {
   const [mcpFailed, setMcpFailed] = useState(false);
   const [mcp, setMcp] = useState<{ endpoint: string; transport: string; auth: string; tools: { name: string; description: string; action: boolean }[]; client: Record<string, unknown> } | null>(null);
   const [folded, setFolded] = useState<Record<string, boolean>>({});
-  /** On a tab that lists its panels as folded headings under one note (nothing on it is connected): the headings opened on this visit. Not remembered. */
-  const [opened, setOpened] = useState<Record<string, boolean>>({});
+  /** A panel drawn in its empty form (a quiet console, nothing behind it) is open: the ones shut on this visit. Not remembered. */
+  const [shut, setShut] = useState<Record<string, boolean>>({});
   /** What each panel that reads its own door says once its read has settled: true when its not-connected line is all it shows. */
   const [said, setSaid] = useState<Record<string, boolean>>({});
   const [attached, setAttached] = useState<AttachedAgent[]>([]);
@@ -265,7 +266,7 @@ function ConfigurationTabs() {
     const to = hashTarget();
     if (!to) return;
     setFolded((f) => (f[to.panel] ? { ...f, [to.panel]: false } : f));
-    setOpened((o) => (o[to.panel] ? o : { ...o, [to.panel]: true }));
+    setShut((o) => (o[to.panel] ? { ...o, [to.panel]: false } : o));
     setArrival(to);
     // The address then names the tab too, so the tab row and a reload agree with what is on screen.
     const query = new URLSearchParams(window.location.search);
@@ -427,12 +428,14 @@ function ConfigurationTabs() {
     deployment: quiet,
     appearance: bare === true,
   };
-  /** A tab on which no panel is connected says so once, in one note, and lists its panels folded beneath it. */
-  const calm = Object.fromEntries(TABS.map((t) => [t.id, QUIET && t.panels.filter((p) => p !== "vertex" || vertexShown).every((p) => down[p])])) as Record<TabId, boolean>;
-  /** A panel's fold: the remembered one, or, on a calm tab, shut until its heading is opened on this visit. */
+  /** A panel that is not connected is drawn in its empty form, in a quiet console only. */
+  const off = (id: string) => QUIET && Boolean(down[id]);
+  /** A tab with such a panel says so once, in one note under the header. */
+  const calm = Object.fromEntries(TABS.map((t) => [t.id, t.panels.some(off)])) as Record<TabId, boolean>;
+  /** A panel's fold: the remembered one, or, in its empty form, open until its heading is shut on this visit. */
   const fold = (id: string) =>
-    calm[tabOf(id)]
-      ? { folded: !opened[id], onToggle: () => setOpened((o) => ({ ...o, [id]: !o[id] })) }
+    off(id)
+      ? { folded: Boolean(shut[id]), onToggle: () => setShut((o) => ({ ...o, [id]: !o[id] })) }
       : { folded: Boolean(folded[id]), onToggle: () => toggle(id) };
   /** Not known yet whether anything is behind the console: the panels wait a moment, out of sight, for the record. */
   const settling = bare === null && !waited;
@@ -515,8 +518,7 @@ function ConfigurationTabs() {
 
   /** One tab's panels. Every tab stays mounted; only the open one is shown. */
   const pane = (id: TabId, panels: React.ReactNode) => (
-    <div data-tab={id} hidden={id !== tab} className={`flex flex-col ${calm[id] ? "gap-2.5" : "gap-5"} ${settling ? "invisible" : ""}`}>
-      {calm[id] && <QuietNote />}
+    <div data-tab={id} hidden={id !== tab} className={`flex flex-col gap-5 ${settling ? "invisible" : ""}`}>
       {panels}
     </div>
   );
@@ -528,6 +530,9 @@ function ConfigurationTabs() {
         <GroupHeader group="configuration" tab={tab}>
           {TABS.find((t) => t.id === tab)?.about}
         </GroupHeader>
+
+        {/* Every tab stays mounted, so the one note is the open tab's and sits here, outside the panes. */}
+        {calm[tab] && !settling && <QuietNote />}
 
         {failed && !QUIET && (
           <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">
@@ -559,7 +564,10 @@ function ConfigurationTabs() {
               caption="Where model calls can go. Add a provider, discover what it serves and offer the models you want."
               how="A provider is a chat-completions endpoint, the name of the vault key that authenticates to it, and whether it is served on your own hardware. The runtime routes every call to the provider its model names, with that provider's credential from the vault. Local providers are priced by the hardware hour, not per token, and the Costs page uses that rate."
             >
-              <Providers bare={bare} onQuiet={says.providers} />
+              {off("providers") && <EmptyBar action="Add provider">Providers are listed here, each with its endpoint, its vault key and the models offered from it.</EmptyBar>}
+              <Kept off={off("providers")}>
+                <Providers bare={bare} onQuiet={says.providers} />
+              </Kept>
             </Panel>
             {/* ── models: the short list every model choice in the console shows ── */}
             <Panel
@@ -569,7 +577,10 @@ function ConfigurationTabs() {
               caption="What teams may pick from, the tier each sits in, and the price cost figures are computed against. Every model choice in the console shows exactly this list."
               how="Tick what this deployment offers, from what its catalogue lists and what was offered from a provider under Providers. A workflow names a model, never a provider. Record the price per million tokens beside each offered model; a model with no price makes its runs unpriced rather than free."
             >
-              <OfferedModels bare={bare} onChanged={changed} onQuiet={says.models} />
+              {off("models") && <Holds>Offered models are listed here, each with its provider, its tier and its price per million tokens.</Holds>}
+              <Kept off={off("models")}>
+                <OfferedModels bare={bare} onChanged={changed} onQuiet={says.models} />
+              </Kept>
             </Panel>
           </>,
         )}
@@ -605,7 +616,7 @@ function ConfigurationTabs() {
               caption="Every tool granted to a workflow, with the risk it was registered at. Risk is declared on the tool and read as a lookup at call time, never inferred while a run is in flight."
               meta={data ? <span className="tnum text-[10.5px] font-normal text-faint">{data.tools.length} granted</span> : undefined}
             >
-              {quiet ? <PanelNote /> : <>
+              {quiet ? <EmptyTable cols={["Tool", "Workflow", "Risk", "Properties", "Calls", "Last used"]}>Each tool granted to a workflow is listed here with its risk and its calls.</EmptyTable> : <>
               {workflowPick && (
                 <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2">
                   <span className="grow" />
@@ -672,12 +683,12 @@ function ConfigurationTabs() {
                   <div className="grid gap-px border-b border-line bg-line sm:grid-cols-3">
                     {[
                       { k: "Endpoint", v: mcp?.endpoint ?? MCP_ENDPOINT, mono: true },
-                      { k: "Transport", v: mcp ? "Streamable HTTP · JSON-RPC 2.0" : "—" },
+                      { k: "Transport", v: mcp ? "Streamable HTTP · JSON-RPC 2.0" : off("mcp") ? "Not connected" : "—", faint: !mcp && off("mcp") },
                       { k: "Authentication", v: "Bearer API key · same keys as ingress" },
                     ].map((f) => (
                       <div key={f.k} className="flex flex-col gap-0.5 bg-surface px-4 py-2.5">
                         <span className="text-[10.5px] text-ghost">{f.k}</span>
-                        <span className={`truncate text-[12px] text-fg ${f.mono ? "font-mono text-[11px]" : ""}`}>{f.v}</span>
+                        <span className={`truncate text-[12px] ${f.faint ? "text-faint" : "text-fg"} ${f.mono ? "font-mono text-[11px]" : ""}`}>{f.v}</span>
                       </div>
                     ))}
                   </div>
@@ -689,7 +700,7 @@ function ConfigurationTabs() {
                       <Tag tone={t.action ? "warn" : "neutral"}>{t.action ? "action" : "read"}</Tag>
                     </span>
                   ))}
-                  {!mcp && (QUIET && mcpFailed ? <PanelNote /> : <span className="px-4 py-3 text-[11.5px] text-faint">Reading the server description…</span>)}
+                  {!mcp && (QUIET && mcpFailed ? <Holds>The tools this server exposes are listed here, each marked as a read or an action.</Holds> : <span className="px-4 py-3 text-[11.5px] text-faint">Reading the server description…</span>)}
                 </div>
                 <div className="flex flex-col bg-surface">
                   <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">Connect a client</span>
@@ -742,7 +753,7 @@ function ConfigurationTabs() {
               )}
 
               {!data && !failed && <p className="px-4 py-3 text-[11.5px] text-faint">Reading the workflows&hellip;</p>}
-              {failed && (QUIET ? <PanelNote /> : <p className="px-4 py-3 text-[11.5px] text-faint">The connections could not be read.</p>)}
+              {failed && (QUIET ? <EmptyTable min="min-w-[980px]" cols={["Source", "Mode", "Tool", "Held by", "Calls", "Last used", "Reaches", "Use"]}>Each connection a saved workflow configures is listed here with its mode, its tool and its calls.</EmptyTable> : <p className="px-4 py-3 text-[11.5px] text-faint">The connections could not be read.</p>)}
               {data && rows.length === 0 && (
                 <p className="px-4 py-6 text-[12px] leading-[1.55] text-dim">
                   No workflow on this deployment configures a connection yet. A connection appears here once a saved workflow names one.
@@ -835,7 +846,10 @@ function ConfigurationTabs() {
               how="Each peer is admitted the way a tool server is: its agent card is fetched signed and pinned by digest. A card that changes detaches the peer until someone approves it again. Every request both ways is signed under a secret the two sides share, held in the vault and shown here by name only."
               meta={peers.peers && !peers.error && peerCount.changed > 0 ? <Tag tone="err" solid>{peerCount.changed} changed</Tag> : undefined}
             >
-              <PeerList peers={peers.peers} twoPerson={peers.twoPerson} me={meOf(session)} error={peers.error} refresh={peers.refresh} bare={bare} />
+              {off("peers") && <EmptyBar action="Register a peer">Peers are listed here, each with its agent card, the state of its approval and the secret it signs under, by name.</EmptyBar>}
+              <Kept off={off("peers")}>
+                <PeerList peers={peers.peers} twoPerson={peers.twoPerson} me={meOf(session)} error={peers.error} refresh={peers.refresh} bare={bare} />
+              </Kept>
             </Panel>
             {/* ── third-party agents: attached over the SDK or A2A ── */}
             <Panel
@@ -863,7 +877,7 @@ function ConfigurationTabs() {
             >
               <div className="flex flex-col gap-2 px-4 py-3">
                 {!data && !failed && <span className="text-[11.5px] text-faint">Reading the deployment&hellip;</span>}
-                {failed && (QUIET ? <QuietNote inline /> : <span className="text-[11.5px] text-faint">The allowlist could not be read.</span>)}
+                {failed && <span className="text-[11.5px] text-faint">{QUIET ? "The hosts an outbound request may reach are listed here." : "The allowlist could not be read."}</span>}
                 {data && data.deployment.egress.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
                     {data.deployment.egress.map((h) => (
@@ -900,7 +914,10 @@ function ConfigurationTabs() {
               caption="What the vault holds, by name. A value is pasted here once and shown masked from then on."
               how="A connector referencing one of these carries the reference in the spec and never the value, which is what makes a workflow safe to export. Only the runtime reads a value, at the moment a tool is called."
             >
-              <Keys bare={bare} onChanged={changed} onQuiet={says.credentials} />
+              {off("credentials") && <EmptyBar action="Add a key">Vault keys are listed here by name, each value masked.</EmptyBar>}
+              <Kept off={off("credentials")}>
+                <Keys bare={bare} onChanged={changed} onQuiet={says.credentials} />
+              </Kept>
             </Panel>
             {/* ── ingress ── */}
             <Panel
@@ -909,7 +926,18 @@ function ConfigurationTabs() {
               title={TITLES.ingress}
               caption="Who may post work to this factory, and what is in the queue. A key scoped to one workflow cannot start another."
             >
-              {quiet ? <PanelNote /> : <div className="grid gap-px bg-line sm:grid-cols-2">
+              {quiet ? (
+                <div className="grid gap-px bg-line sm:grid-cols-2">
+                  <div className="flex flex-col bg-surface">
+                    <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">API keys</span>
+                    <Holds>Keys that may post work are listed here, each with the workflow it is scoped to.</Holds>
+                  </div>
+                  <div className="flex flex-col bg-surface">
+                    <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">Queue</span>
+                    <Holds>Jobs in the queue are counted here by state.</Holds>
+                  </div>
+                </div>
+              ) : <div className="grid gap-px bg-line sm:grid-cols-2">
                 <div className="flex flex-col bg-surface">
                   <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">API keys</span>
                   {(data?.apiKeys ?? []).map((k) => (
@@ -947,7 +975,7 @@ function ConfigurationTabs() {
               title={TITLES.gates}
               caption="Per workflow: the risk level at which an action stops and waits for a human, and who may answer. A gate with no approver is refused at parse time, so every line here has a name behind it."
             >
-              {quiet && <PanelNote />}
+              {quiet && <Holds>Each workflow that declares a gate is listed here with the risk level it stops at and who may answer.</Holds>}
               {(data?.gates ?? []).length === 0 && data && (
                 <p className="px-4 py-3 text-[11.5px] text-faint">
                   No workflow declares a gate. Every action runs on the agent&rsquo;s own authority.
@@ -974,7 +1002,16 @@ function ConfigurationTabs() {
           <>
             {/* ── deployment ── */}
             <Panel id="deployment" {...fold("deployment")} title={TITLES.deployment} caption="Where this deployment keeps its records and what it sends model calls to.">
-              {quiet ? <PanelNote /> : <div className="grid gap-px bg-line sm:grid-cols-2 lg:grid-cols-3">
+              {quiet ? (
+                <div className="grid gap-px bg-line sm:grid-cols-2 lg:grid-cols-3">
+                  {["Registry", "Model gateway", "Gateway resource", "Billing feed", "Workflows", "Runs on record"].map((k) => (
+                    <div key={k} className="flex flex-col gap-0.5 bg-surface px-4 py-2.5">
+                      <span className="text-[10.5px] text-ghost">{k}</span>
+                      <span className="truncate text-[12px] text-faint">Not connected</span>
+                    </div>
+                  ))}
+                </div>
+              ) : <div className="grid gap-px bg-line sm:grid-cols-2 lg:grid-cols-3">
                 {[
                   { k: "Registry", v: !data ? "—" : data.deployment.registry === "postgres" ? "Postgres" : "Workspace files" },
                   { k: "Model gateway", v: !data ? "—" : data.deployment.gateway === "not configured" ? "Not configured" : data.deployment.gateway },
@@ -999,13 +1036,79 @@ function ConfigurationTabs() {
               howLabel="Which colour means what"
               how="Spend is green, approvals amber, live activity blue, controls red, knowledge violet, identity teal and traces indigo."
             >
-              <Appearance bare={bare} />
+              {off("appearance") && (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5">
+                  <span className="min-w-0 text-[11.5px] leading-[1.5] text-faint">The look in use is named here, with the choice between subject colours and monochrome.</span>
+                  <span className="grow" />
+                  <Button size="sm" variant="solid" tone="neutral" disabled>Subject colours</Button>
+                  <Button size="sm" variant="solid" tone="neutral" disabled>Monochrome</Button>
+                </div>
+              )}
+              <Kept off={off("appearance")}>
+                <Appearance bare={bare} />
+              </Kept>
             </Panel>
           </>,
         )}
 
         <p className="pb-4 text-[10.5px] text-ghost">{data?.basis ?? ""}</p>
       </div>
+    </div>
+  );
+}
+
+/* A panel's empty form in a quiet console (lib/quiet.ts): what it holds, in one line, with its bar or its columns. */
+
+/** The one line: what the panel holds, in the present tense, and no claim that there is none. */
+function Holds({ children }: { children: React.ReactNode }) {
+  return <p className="px-4 py-3 text-[11.5px] leading-[1.5] text-faint">{children}</p>;
+}
+
+/** The bar a panel's button sits on. The button is drawn and waits for the connection. */
+function EmptyBar({ action, children }: { action: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5">
+      <span className="min-w-0 max-w-[92ch] text-[11.5px] leading-[1.5] text-faint">{children}</span>
+      <span className="grow" />
+      <Button size="sm" variant="solid" tone="ink" disabled>
+        {action}
+      </Button>
+    </div>
+  );
+}
+
+/** A table's columns over the one line. */
+function EmptyTable({ cols, min = "min-w-[720px]", children }: { cols: string[]; min?: string; children: React.ReactNode }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className={`w-full ${min} border-collapse text-left text-[11.5px]`}>
+        <thead>
+          <tr className="border-b border-line text-[10.5px] text-faint">
+            {cols.map((c, i) => (
+              <th key={c} className={`${i === 0 ? "px-4" : "px-3"} py-2 font-medium`}>
+                {c}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td colSpan={cols.length} className="px-4 py-3 leading-[1.5] text-faint">
+              {children}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** A panel that reads its own door stays mounted behind its empty form, out of sight, so it still says when its door answers. */
+function Kept({ off, children }: { off: boolean; children: React.ReactNode }) {
+  // One wrapper either way, so the panel is not mounted again when its door answers; shown, the wrapper is no box of its own.
+  return (
+    <div hidden={off} className={off ? undefined : "contents"}>
+      {children}
     </div>
   );
 }

@@ -730,7 +730,7 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
             })}
             {agents && agents.length === 0 && (
               <tr>
-                <td colSpan={11} className="px-4 py-3 text-[11.5px] text-faint">{QUIET && unread ? <QuietNote inline /> : "No third-party agent is attached. The first one appears here with its key."}</td>
+                <td colSpan={11} className="px-4 py-3 text-[11.5px] text-faint">{QUIET && unread ? "Attached agents are listed here with their owner, runs, cost and refusals." : "No third-party agent is attached. The first one appears here with its key."}</td>
               </tr>
             )}
             {!agents && (

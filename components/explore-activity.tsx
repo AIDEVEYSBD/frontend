@@ -32,7 +32,8 @@ import {
   type RunEvent,
   type RunEventKind,
 } from "./observability-shared";
-import { ExploreFrame, Timeline, domainOf, fill, narrow, pageChips, type FacetDef } from "./explore-parts";
+import { ExploreFrame, QuietFrame, QuietTable, Timeline, domainOf, fill, narrow, pageChips, type FacetDef } from "./explore-parts";
+import type { Win } from "./window-pick";
 import type { ViewProps } from "./explore";
 
 /**
@@ -79,6 +80,30 @@ const EVENT_FACETS: FacetDef<RunEvent>[] = [
 
 const runWords = (r: RunRow) => `${r.id} ${agentOf(r)} ${r.state} ${(r.models ?? []).join(" ")} ${r.source ?? ""}`;
 const runFailed = (r: RunRow) => r.state === "failed";
+
+/** The view with no ledger behind it on a quiet console (lib/quiet.ts): its cards, empty. */
+export function AgentActivityQuiet({ win }: { win: Win }) {
+  return (
+    <QuietFrame
+      title={`Runs, ${windowWords(win)}`}
+      line="Runs are counted here over time, by when each was last active."
+      sections={[
+        { title: "Runs", labels: ["Agent", "Run state", "Model", "Started from"] },
+        { title: "Events on those runs", labels: EVENT_FACETS.map((f) => f.label) },
+      ]}
+      placeholder="Search run, agent or model"
+    >
+      <div className="grid items-start gap-4 @[1180px]:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+        <Card title="Agents" hue="agent" meta="runs and calls from the ledger, steps from the journals read">
+          <QuietTable columns={["Agent", "Runs", "Steps", "Model calls", "Tool calls", "Failed runs", "Last active"]} line="Each agent is listed here with its runs, steps and calls in the window." />
+        </Card>
+        <Card title="Recent events" hue="activity" meta="newest first">
+          <p className="px-4 py-6 text-[11.5px] text-faint">What happened on those runs is listed here: started, a gate opened or answered, a refusal, ended.</p>
+        </Card>
+      </div>
+    </QuietFrame>
+  );
+}
 
 export function AgentActivityView({ ledger, win, now, address }: ViewProps) {
   const { rows, error } = ledger;

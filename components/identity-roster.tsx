@@ -101,6 +101,7 @@ export function IdentityRoster({
   onOpen,
   onAssignOwner,
   ownerStoreDown,
+  unread = false,
 }: {
   entries: Entry[];
   findingsOf: Map<string, Finding[]>;
@@ -114,6 +115,8 @@ export function IdentityRoster({
   onAssignOwner: (key: string) => void;
   /** The register's own table (owners) cannot be written on this deployment. */
   ownerStoreDown: boolean;
+  /** A quiet console (lib/quiet.ts) with neither door read: the roster is drawn empty, with no counts. */
+  unread?: boolean;
 }) {
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "group", dir: 1 });
 
@@ -163,21 +166,21 @@ export function IdentityRoster({
     onFilter({ ...filter, [k]: cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v] });
   };
 
-  const groupChips: Chip[] = GROUPS.map((g) => ({ value: g.id, label: g.label, count: entries.filter((e) => groupOf(e) === g.id && matches(e, "group")).length, active: filter.groups.includes(g.id) }));
-  const kindChips: Chip[] = KINDS.map((k) => ({ value: k, label: KIND_META[k].plural, count: entries.filter((e) => e.type === "identity" && e.identity.kind === k && matches(e, "kind")).length, active: filter.kinds.includes(k) }));
+  const groupChips: Chip[] = GROUPS.map((g) => ({ value: g.id, label: g.label, count: unread ? undefined : entries.filter((e) => groupOf(e) === g.id && matches(e, "group")).length, active: filter.groups.includes(g.id) }));
+  const kindChips: Chip[] = KINDS.map((k) => ({ value: k, label: KIND_META[k].plural, count: unread ? undefined : entries.filter((e) => e.type === "identity" && e.identity.kind === k && matches(e, "kind")).length, active: filter.kinds.includes(k) }));
   const statusValues = [...new Set(entries.map((e) => statusOf(e).label))];
   const statusChips: Chip[] = statusValues.map((s) => {
     const tone = STATUS_TONE[s] ?? (s === "disabled" ? "err" : "neutral");
-    return { value: s, label: s, count: entries.filter((e) => statusOf(e).label === s && matches(e, "status")).length, active: filter.statuses.includes(s), tone: tone === "err" ? "err" : tone === "warn" ? "warn" : undefined };
+    return { value: s, label: s, count: unread ? undefined : entries.filter((e) => statusOf(e).label === s && matches(e, "status")).length, active: filter.statuses.includes(s), tone: tone === "err" ? "err" : tone === "warn" ? "warn" : undefined };
   });
   const riskChips: Chip[] = ["read", "write", "risky"].map((r) => ({
     value: r,
     label: riskLabel(r),
-    count: entries.filter((e) => e.type === "identity" && (e.identity.risk || "none") === r && matches(e, "risk")).length,
+    count: unread ? undefined : entries.filter((e) => e.type === "identity" && (e.identity.risk || "none") === r && matches(e, "risk")).length,
     active: filter.risks.includes(r),
     tone: r === "risky" ? "err" : r === "write" ? "warn" : "ok",
   }));
-  const flagChips: Chip[] = ROSTER_FLAGS.map((f) => ({ value: f.value, label: f.label, count: entries.filter((e) => hasFlag(e, f.value, now, findingsOf) && matches(e, "flag")).length, active: filter.flags.includes(f.value), tone: f.tone }));
+  const flagChips: Chip[] = ROSTER_FLAGS.map((f) => ({ value: f.value, label: f.label, count: unread ? undefined : entries.filter((e) => hasFlag(e, f.value, now, findingsOf) && matches(e, "flag")).length, active: filter.flags.includes(f.value), tone: f.tone }));
 
   const active = [
     ...filter.groups.map((g) => ({ key: `groups:${g}`, label: GROUPS.find((x) => x.id === g)?.label ?? g })),
@@ -303,7 +306,7 @@ export function IdentityRoster({
             {!loading && rows.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-5 text-center text-[12px] text-faint">
-                  {entries.length === 0 ? "Nobody has signed in and no identity is on the register yet." : "Nothing matches these filters."}
+                  {unread ? "People and non-human identities are listed here with their kind, role or owner, last seen and status." : entries.length === 0 ? "Nobody has signed in and no identity is on the register yet." : "Nothing matches these filters."}
                 </td>
               </tr>
             )}

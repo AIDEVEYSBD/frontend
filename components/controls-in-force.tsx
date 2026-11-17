@@ -30,8 +30,10 @@ import { targetLabel } from "@/lib/policy";
  * and the rest still read.
  */
 
-type Load<T> = { state: "reading" } | { state: "ok"; data: T } | { state: "error"; message: string };
+type Load<T> = { state: "reading" } | { state: "idle" } | { state: "ok"; data: T } | { state: "error"; message: string };
 const READING = { state: "reading" } as const;
+/** Nothing is read (the bare panel): no block reads, fails or fills. */
+const IDLE = { state: "idle" } as const;
 
 function useLoad<T>(read: () => Promise<T>, key: string): Load<T> {
   const [got, setGot] = useState<{ key: string; load: Load<T> }>({ key, load: READING });
@@ -271,20 +273,25 @@ interface Counted {
 
 /* ═══════════════════ the panel ═══════════════════ */
 
-export function ControlsInForce({ agent }: { agent: string }) {
-  const spec = useLoad(() => agentDocument(agent).then(governedOf), `spec:${agent}`);
-  const tiers = useLoad<AutonomyTiers>(() => getAutonomyTiers(agent), `tier:${agent}`);
-  const targets = useLoad<TargetKinds>(() => listPolicyTargets(), "targets");
-  const fleet = useLoad<FleetState>(() => getFleet(), "fleet");
-  const fired = useLoad<Counted>(
+export function ControlsInForce({ agent, bare = false }: { agent: string; /** Quiet (lib/quiet.ts), no agent read: every block drawn with the line saying what it holds, and nothing read. */ bare?: boolean }) {
+  const specRead = useLoad(() => (bare ? Promise.reject(new Error("")) : agentDocument(agent).then(governedOf)), `spec:${agent}`);
+  const tiersRead = useLoad<AutonomyTiers>(() => (bare ? Promise.reject(new Error("")) : getAutonomyTiers(agent)), `tier:${agent}`);
+  const targetsRead = useLoad<TargetKinds>(() => (bare ? Promise.reject(new Error("")) : listPolicyTargets()), "targets");
+  const fleetRead = useLoad<FleetState>(() => (bare ? Promise.reject(new Error("")) : getFleet()), "fleet");
+  const spec = bare ? IDLE : specRead;
+  const tiers = bare ? IDLE : tiersRead;
+  const targets = bare ? IDLE : targetsRead;
+  const fleet = bare ? IDLE : fleetRead;
+  const firedRead = useLoad<Counted>(
     () =>
-      fetch("/api/guardrails", { cache: "no-store" }).then(async (r) => {
+      bare ? Promise.reject(new Error("")) : fetch("/api/guardrails", { cache: "no-store" }).then(async (r) => {
         const body = (await r.json().catch(() => null)) as Counted | null;
         if (!r.ok || !body) throw new Error(body?.error || `the server answered ${r.status}`);
         return body;
       }),
     "fired",
   );
+  const fired = bare ? IDLE : firedRead;
 
   const g = spec.state === "ok" ? spec.data : null;
   const tier = tiers.state === "ok" ? tiers.data.agent : null;
@@ -308,13 +315,13 @@ export function ControlsInForce({ agent }: { agent: string }) {
     <section className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1" aria-label={`Controls in force on ${agent}`}>
       <div data-hue={hueFor("control")} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-raise/55 px-4 py-2.5">
         <span className="text-[12.5px] font-semibold tracking-[-0.005em] text-fg">Controls in force</span>
-        <span className="text-[11px] text-faint">what governs {g?.name || agent}</span>
+        <span className="text-[11px] text-faint">what governs {bare ? "one agent" : g?.name || agent}</span>
         <span className="grow" />
         <span className="flex flex-wrap items-center gap-2">
           {tier && <Tag>{tier.tier}</Tag>}
           {pause && <Tag tone="warn">{pause.mode === "drain" ? "draining" : "paused"}</Tag>}
           {lockdown?.on && <Tag tone="err">estate locked down</Tag>}
-          <Mono className="text-[10.5px] text-faint">{agent}</Mono>
+          {agent && <Mono className="text-[10.5px] text-faint">{agent}</Mono>}
         </span>
       </div>
 
@@ -322,6 +329,7 @@ export function ControlsInForce({ agent }: { agent: string }) {
         <div className="flex min-w-0 flex-col divide-y divide-line border-line lg:border-r">
         {/* ── gates ── */}
         <Block title="Gates and who signs them" meta={g ? `${g.gates.length + g.waits.length} declared` : undefined} where={{ href: agentHref(agent), label: "Kept in the agent's spec" }}>
+          {bare && <None>Each gate the agent declares is listed here with who signs it and what happens when nobody does.</None>}
           {spec.state === "reading" && <Skeleton lines={2} />}
           {spec.state === "error" && <Failed what="The agent's spec could not be read" message={spec.message} />}
           {g && g.gates.length + g.waits.length === 0 && <None>No gate is declared: nothing this agent does waits for a person.</None>}
@@ -354,6 +362,7 @@ export function ControlsInForce({ agent }: { agent: string }) {
         <Block title="Tools it is granted" meta={g ? `${granted.size} tool${granted.size === 1 ? "" : "s"} across ${g.grants.length} step${g.grants.length === 1 ? "" : "s"} · ${beyondRead} beyond read` : undefined} where={{ href: `/bom?agent=${encodeURIComponent(agent)}`, label: "Each tool on the AI-BOM" }}>
           {spec.state === "reading" && <Skeleton lines={3} />}
           {spec.state === "error" && <Failed what="The agent's spec could not be read" message={spec.message} />}
+          {bare && <None>The tools granted to each step are listed here, each marked with its declared risk.</None>}
           {g && g.grants.length === 0 && <None>No tool is granted to any step: this agent can call none.</None>}
           {g && g.grants.length > 0 && (
             <>
@@ -387,6 +396,7 @@ export function ControlsInForce({ agent }: { agent: string }) {
         <div className="flex min-w-0 flex-col divide-y divide-line border-t border-line lg:border-t-0">
         {/* ── autonomy ── */}
         <Block title="Autonomy tier" meta={tier ? `${tier.tier} ${tier.name}` : undefined} where={{ href: "/policy", label: "Tier rules on Policy" }}>
+          {bare && <None>The agent&rsquo;s tier is shown here with each control the tier requires and whether it is met.</None>}
           {tiers.state === "reading" && <Skeleton lines={2} />}
           {tiers.state === "error" && <Failed what="The autonomy tiers could not be read" message={tiers.message} />}
           {tiers.state === "ok" && !tier && <None>The tiers door named no tier for this agent.</None>}
@@ -426,6 +436,7 @@ export function ControlsInForce({ agent }: { agent: string }) {
         <Block title="Its limits" where={{ href: agentHref(agent), label: "Kept in the agent's spec" }}>
           {spec.state === "reading" && <Skeleton lines={3} />}
           {spec.state === "error" && <Failed what="The agent's spec could not be read" message={spec.message} />}
+          {bare && <None>Step limits, fan-out caps, budgets, screening phrases and sink protection from the spec are listed here.</None>}
           {g && (
             <>
               {g.loops.length + g.fanouts.length + g.extra.length === 0 && !g.injection && !g.blockTaintedSinks ? (
@@ -477,6 +488,7 @@ export function ControlsInForce({ agent }: { agent: string }) {
 
         {/* ── estate rules ── */}
         <Block title="Estate rules that apply now" meta={targets.state === "ok" ? `${applicable.length} of ${targets.data.targets.length} policy targets · every change goes through ${targets.data.door}` : undefined} where={{ href: "/policy", label: "The rules now, on Policy" }}>
+          {bare && <None>The estate rules that bear on the agent are listed here, with a pause or a lockdown when one is in force.</None>}
           {fleet.state === "error" && <Failed what="Whether the agent is paused or the estate locked down could not be read" message={fleet.message} />}
           {(pause || lockdown?.on) && (
             <List>
@@ -520,6 +532,7 @@ export function ControlsInForce({ agent }: { agent: string }) {
 
         {/* ── controls ── */}
         <Block title="Controls it maps to" meta={g ? `${declared.length} from its spec${fired.state === "ok" ? ` · ${[...firings.values()].reduce((a, b) => a + b, 0)} firings on record` : ""}` : undefined} where={{ href: "/guardrails", label: "The register, on Controls" }}>
+          {bare && <None>The register controls the spec brings into force are listed here, each with how often it fired.</None>}
           {spec.state === "reading" && <Skeleton lines={3} />}
           {fired.state === "error" && <Failed what="How often each control fired could not be read" message={fired.message} />}
           {g && declared.length === 0 && undeclared.length === 0 && <None>Nothing this spec declares names a control in the register.</None>}
