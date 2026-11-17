@@ -15,20 +15,12 @@ import { RUNTIME_ROOT } from "@/lib/server/paths";
 const ROOT = RUNTIME_ROOT;
 
 /**
- * Published list prices per million tokens for models the platform itself
- * calls (the console assistant, the knowledge answer loop, the reranker's
- * fallback) so their cost is never "unknown" just because nobody typed a
- * price. An operator's figure on the Configuration page always wins; these
- * only fill a gap, and the cost basis says when they did.
+ * Published list prices for models the platform itself calls, to fill a gap
+ * when nobody typed a price. This deployment names no model of its own, so
+ * the list is empty: every price is the operator's, on the Configuration
+ * page, and a model without one is costed at the estimate and marked so.
  */
-const LIST_PRICES: Record<string, { in: number; out: number }> = {
-  "gpt-4o": { in: 2.5, out: 10 },
-  "gpt-4o-mini": { in: 0.15, out: 0.6 },
-  "gpt-4.1": { in: 2, out: 8 },
-  "gpt-4.1-mini": { in: 0.4, out: 1.6 },
-  "text-embedding-3-small": { in: 0.02, out: 0 },
-  "text-embedding-3-large": { in: 0.13, out: 0 },
-};
+const LIST_PRICES: Record<string, { in: number; out: number }> = {};
 
 /** Models whose price came from the list above rather than the operator, as of the last sheet read. */
 let assumed: string[] = [];

@@ -596,7 +596,7 @@ client = OpenAI(
 )
 
 reply = client.chat.completions.create(
-    model="${c.model || "gpt-4o"}",
+    model="${c.model || "MODEL_ID"}",
     messages=[{"role": "user", "content": "Summarise our password policy."}],
 )
 print(reply.choices[0].message.content)
@@ -611,7 +611,7 @@ const client = new OpenAI({
 });
 
 const reply = await client.chat.completions.create({
-  model: "${c.model || "gpt-4o"}",
+  model: "${c.model || "MODEL_ID"}",
   messages: [{ role: "user", content: "Summarise our password policy." }],
 });
 console.log(reply.choices[0].message.content);
