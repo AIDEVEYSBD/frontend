@@ -1,5 +1,6 @@
 import path from "node:path";
 import { readFile } from "node:fs/promises";
+import { RUNTIME_ROOT } from "@/lib/server/paths";
 
 /**
  * The model gateway's own credentials, resolved the way every other route
@@ -8,8 +9,8 @@ import { readFile } from "node:fs/promises";
  * are derived from it, the same way the embedder derives its own.
  */
 
-const VAULT = path.resolve(process.cwd(), "..", "runtime", "workspace", "vault.json");
-const CONFIG = path.resolve(process.cwd(), "..", "runtime", "workspace", "config.json");
+const VAULT = path.resolve(RUNTIME_ROOT, "workspace", "vault.json");
+const CONFIG = path.resolve(RUNTIME_ROOT, "workspace", "config.json");
 
 export interface Foundry {
   /** .../openai/v1 */

@@ -10,7 +10,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button, IconButton, Kbd, Label, Mono, RUN_STATE, Status, Tag } from "./ui";
 import { Skeleton, Thinking } from "./loaders";
 import { Field, Textarea } from "./forms";
-import { Banner } from "./overlays";
+import { Banner, QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { Icon } from "./builder/icons";
 import { Pick } from "./select";
 import { fromDocument, HARNESS, inputKeysOf, toDocument, type AgentSystem, type Kind } from "@/lib/spec";
@@ -212,11 +213,19 @@ function Launcher() {
   /** Whose runs: sent as `scope` on the list call once chosen. Offered only when the ledger's rows carry owners. */
   const [scope, setScope] = useState<Scope | "">("");
   const [owned, setOwned] = useState(false);
+  /* Which of the two reads failed. A quiet console (lib/quiet.ts) does not turn a failed read into "no workflow yet" or "no runs yet". */
+  const [agentsFailed, setAgentsFailed] = useState(false);
+  const [historyFailed, setHistoryFailed] = useState(false);
+  const agentsOff = QUIET && agentsFailed;
+  const historyOff = QUIET && historyFailed;
 
   useEffect(() => {
     listAgents()
       .then((rows) => setAgents(rows.map((a) => ({ id: a.id, name: a.name, description: a.description ?? "", nodes: a.nodes, retired: retiredOf(a.retired) }))))
-      .catch(() => setAgents([]));
+      .catch(() => {
+        setAgents([]);
+        setAgentsFailed(true);
+      });
   }, []);
 
   useEffect(() => {
@@ -228,10 +237,13 @@ function Launcher() {
         if (!live) return;
         const rows = data?.runs ?? [];
         setHistory(rows);
+        setHistoryFailed(!data);
         if (rows.some((r) => ownerOf(r))) setOwned(true);
       })
       .catch(() => {
-        if (live) setHistory([]);
+        if (!live) return;
+        setHistory([]);
+        setHistoryFailed(true);
       });
     return () => {
       live = false;
@@ -248,6 +260,8 @@ function Launcher() {
             call, control decision, human approval and output in the resulting run record.
           </p>
         </header>
+
+        {(agentsOff || historyOff) && <QuietNote />}
 
         <section className="flex flex-col gap-3">
           <h2>
@@ -267,7 +281,7 @@ function Launcher() {
               ))}
             {agents?.length === 0 && (
               <p className="col-span-full rounded-lg border border-dashed border-line-strong px-5 py-8 text-[12.5px] text-faint">
-                No workflow is on this deployment yet. Once one is deployed it can be run from here.
+                {agentsOff ? "Deployed workflows are listed here, each ready to run." : "No workflow is on this deployment yet. Once one is deployed it can be run from here."}
               </p>
             )}
             {(agents ?? []).map((a) => (
@@ -347,7 +361,7 @@ function Launcher() {
                   }`}
                 >
                   {s ? (RUN_STATE[s]?.label ?? s) : "All"}
-                  {s && history ? ` (${history.filter((r) => r.state === s).length})` : ""}
+                  {s && history && !historyOff ? ` (${history.filter((r) => r.state === s).length})` : ""}
                 </button>
               ))}
               {shadows > 0 && (
@@ -369,7 +383,7 @@ function Launcher() {
               </div>
             )}
             {history?.length === 0 && (
-              <p className="px-4 py-5 text-[12px] text-faint">{scope === "mine" ? "No run of yours is recorded." : scope === "team" ? "No run of your team is recorded." : "No runs recorded yet."}</p>
+              <p className="px-4 py-5 text-[12px] text-faint">{historyOff ? "Runs are listed here, newest first, each opening its record." : scope === "mine" ? "No run of yours is recorded." : scope === "team" ? "No run of your team is recorded." : "No runs recorded yet."}</p>
             )}
             {(history ?? [])
               .filter((r) => !stateFilter || r.state === stateFilter)

@@ -58,7 +58,8 @@ export function errorText(error: unknown, response?: { status: number; statusTex
     const e = (error as { error?: unknown }).error;
     if (typeof e === "string" && e) return e;
   }
-  if (typeof error === "string" && error.trim()) return error.slice(0, 300);
+  // A page (Next's own 404, a proxy's 502) is no message: it is read as the status alone, never printed.
+  if (typeof error === "string" && error.trim() && !error.trimStart().startsWith("<")) return error.slice(0, 300);
   if (response) return `the backend answered ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`;
   return "the request failed";
 }

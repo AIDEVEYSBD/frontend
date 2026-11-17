@@ -6,6 +6,10 @@ import { readConfig } from "@/app/api/config/route";
 import { permit } from "@/lib/server/auth";
 import { budgetState, PERIODS, writeBudget, type Period } from "@/lib/server/budget";
 import { productionRuns, shadowRuns } from "@/lib/production";
+import path from "node:path";
+import { stat } from "node:fs/promises";
+import { backendConfigured } from "@/lib/server/backend";
+import { RUNTIME_ROOT } from "@/lib/server/paths";
 
 /**
  * FinOps: the primary records behind every cost figure, in one read.
@@ -105,7 +109,20 @@ export async function GET(req: Request) {
     r.calls.map((c) => ({ run: r.id, system: r.system, at: r.at, state: r.state, ...c })),
   );
 
+  // A console with nothing behind it (no database, no backend named, no runtime
+  // files beside it) says so, so that a quiet console (lib/quiet.ts) does not
+  // print a ledger of zeros as fact. With any of the three present the answer
+  // is what it always was.
+  const bare =
+    !db &&
+    !backendConfigured() &&
+    !(await stat(path.join(RUNTIME_ROOT, "workspace")).then(
+      () => true,
+      () => false,
+    ));
+
   return Response.json({
+    ...(bare ? { connected: false } : {}),
     now: new Date().toISOString(),
     config: cfg,
     agents,

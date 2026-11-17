@@ -3,7 +3,8 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Button, Status } from "./ui";
-import { Banner, Dialog, EmptyState } from "./overlays";
+import { Banner, Dialog, EmptyState, QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { Field, Textarea } from "./forms";
 import { Pick } from "./select";
 import { Chips } from "./filters";
@@ -148,7 +149,7 @@ function Sign({ record, disabled = false, onSigned }: { record: Acceptance | nul
           <Button size="sm" variant="solid" tone="ink" permission="deploy" disabled={disabled || !ready} loading={busy} onClick={() => setConfirming(true)}>
             {role ? `Sign as ${role}` : "Sign"}
           </Button>
-          {error && <span className="text-[11.5px] text-err">{error}</span>}
+          {error && (QUIET ? <QuietNote inline /> : <span className="text-[11.5px] text-err">{error}</span>)}
         </span>
         {(disabled || pending) && <NotConnectedNote door={pending ?? "acceptanceSign"} />}
       </div>

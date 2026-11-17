@@ -1,5 +1,5 @@
 import * as oidc from "openid-client";
-import { CALLBACK_URL, IAP_HEADER, RESOURCE, SCOPE, authEvent, createIapSession, defaultRole, iapEnabled, loginCookie, provider, sessionCookie, ssoEnabled, verifyIap } from "@/lib/server/auth";
+import { CALLBACK_URL, IAP_HEADER, RESOURCE, SCOPE, authEvent, createIapSession, createRowlessIapSession, defaultRole, iapEnabled, loginCookie, provider, sessionCookie, ssoEnabled, verifyIap } from "@/lib/server/auth";
 import { dbReady } from "@/lib/server/db";
 
 /**
@@ -35,9 +35,10 @@ async function iapSignIn(req: Request, next: string): Promise<Response> {
     await authEvent("denied", null, null, { stage: "iap", error: String((e as Error).message ?? e).slice(0, 300) });
     return go("/no-access?reason=iap-invalid");
   }
+  // No registry database (a console deployed on its own): the sign-in keeps no row, and every later request is read from IAP's assertion again.
   if (!(await dbReady())) {
-    await authEvent("provision_failed", who.sub, who.email || null, { error: "registry database unreachable" });
-    return go("/no-access?reason=provisioning");
+    const rowless = createRowlessIapSession(who);
+    return go(next, await sessionCookie(rowless.id, rowless.expiresAt));
   }
   let made;
   try {

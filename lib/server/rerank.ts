@@ -1,4 +1,5 @@
 import path from "node:path";
+import { RUNTIME_ROOT } from "@/lib/server/paths";
 
 /**
  * Reranking: score each candidate passage against the question directly.
@@ -17,7 +18,7 @@ import path from "node:path";
  */
 
 const CROSS_ENCODER = process.env.RERANK_CROSS_ENCODER ?? "Xenova/ms-marco-MiniLM-L-6-v2";
-const CACHE = path.resolve(process.cwd(), "..", "runtime", "workspace", "models");
+const CACHE = path.resolve(RUNTIME_ROOT, "workspace", "models");
 
 export interface Rerank {
   model: string;

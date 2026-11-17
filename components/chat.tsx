@@ -3,7 +3,8 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Status } from "./ui";
-import { EmptyState } from "./overlays";
+import { EmptyState, QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { PageHeader } from "./section";
 import { usePageFacts } from "./assistant";
 import { ChatPane } from "./chat-pane";
@@ -66,7 +67,12 @@ function ChatBody() {
         to do something in plain words.
       </PageHeader>
 
-      {error && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">The applications register could not be read: {error}</p>}
+      {error && QUIET && (
+        <p className="rounded-md border border-line bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-faint">
+          <QuietNote inline /> Chatbots registered on the Applications page are listed here to talk to.
+        </p>
+      )}
+      {error && !QUIET && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">The applications register could not be read: {error}</p>}
 
       {apps === null && <p className="rounded-md border border-line bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-faint">Reading the applications register…</p>}
 

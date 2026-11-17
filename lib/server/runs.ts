@@ -1,6 +1,7 @@
 import path from "node:path";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { costOf as priceCost, isPriced, type Sheet } from "./prices";
+import { RUNTIME_ROOT } from "@/lib/server/paths";
 
 /**
  * The run ledger, read from the journals the runtime wrote.
@@ -12,7 +13,7 @@ import { costOf as priceCost, isPriced, type Sheet } from "./prices";
  * cost" but "which step of which workflow is the money going to".
  */
 
-const ROOT = path.resolve(process.cwd(), "..", "runtime");
+const ROOT = RUNTIME_ROOT;
 const RUNS = path.join(ROOT, "workspace", "runs");
 
 export interface CallRow {

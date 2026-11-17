@@ -4,7 +4,8 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Mono, Status, Tag } from "./ui";
-import { Banner } from "./overlays";
+import { Banner, QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { Field } from "./forms";
 import { Pick } from "./select";
 import { DigestChip } from "./digest-chip";
@@ -232,6 +233,8 @@ function BomPage() {
   const params = useSearchParams();
   const router = useRouter();
   const [agents, setAgents] = useState<AgentSummary[] | null>(null);
+  /** The registry did not answer: a quiet console says it is not connected, never that no agent is saved. */
+  const [agentsDown, setAgentsDown] = useState(false);
   const [versions, setVersions] = useState<VersionView[]>([]);
   const [bom, setBom] = useState<AiBom | null>(null);
   const [error, setError] = useState("");
@@ -255,7 +258,10 @@ function BomPage() {
   useEffect(() => {
     listAgents()
       .then(setAgents)
-      .catch(() => setAgents([]));
+      .catch(() => {
+        setAgents([]);
+        setAgentsDown(true);
+      });
   }, []);
   useEffect(() => {
     if (!agent) return;
@@ -273,6 +279,7 @@ function BomPage() {
     };
   }, [agent]);
   const go = (a: string, v?: string) => router.push(`/bom?agent=${encodeURIComponent(a)}${v ? `&version=${encodeURIComponent(v)}` : ""}`);
+  const quietDown = QUIET && agentsDown && !bom;
   const versionOptions = useMemo(() => [{ value: "", label: "Latest, or what production runs" }, ...[...versions].reverse().map((v) => ({ value: String(v.version), label: `Version ${v.version}${v.deployed ? " (production)" : ""}` }))], [versions]);
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
@@ -302,6 +309,9 @@ function BomPage() {
       >
         What an agent is made of: its models and routes, its tools with their data classes, the servers and peers behind them, and the digest of each.
       </PageHeader>
+      {quietDown && <QuietNote />}
+      {!quietDown && (
+      <>
       <div className="grid max-w-[640px] gap-3 md:grid-cols-2">
         <Field label="Agent">
           <Pick value={agent} onChange={(a) => go(a)} options={(agents ?? []).map((a) => ({ value: a.id, label: a.name }))} disabled={!agents?.length} loading={agents === null} />
@@ -317,6 +327,8 @@ function BomPage() {
       )}
       {agents?.length === 0 && <p className="text-[12px] text-faint">No agent is saved yet.</p>}
       {bom && <BomView bom={bom} />}
+      </>
+      )}
     </div>
   );
 }

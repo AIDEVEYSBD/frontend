@@ -1,6 +1,7 @@
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { embedConfig, endpointHost, type EmbedConfig } from "@/lib/embed-config";
+import { RUNTIME_ROOT } from "@/lib/server/paths";
 
 /**
  * Embeddings, from any OpenAI-compatible `/embeddings` endpoint.
@@ -23,7 +24,7 @@ export const COLUMN_DIMENSIONS = 1536;
 /** @deprecated the column's width; use COLUMN_DIMENSIONS. */
 export const DIMENSIONS = COLUMN_DIMENSIONS;
 
-const VAULT = path.resolve(process.cwd(), "..", "runtime", "workspace", "vault.json");
+const VAULT = path.resolve(RUNTIME_ROOT, "workspace", "vault.json");
 
 /** The vault's `embedding` entry, when the file is readable. The backend's encrypted vault is not read here; set EMBEDDING_API_KEY there. */
 async function vaultKey(): Promise<string> {

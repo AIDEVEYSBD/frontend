@@ -4,6 +4,7 @@ import { priceSheet } from "@/lib/server/prices";
 import { toTrace } from "@/lib/server/trace";
 import { destination, send, toOtlp } from "@/lib/server/langfuse";
 import { permit } from "@/lib/server/auth";
+import { RUNTIME_ROOT } from "@/lib/server/paths";
 
 /**
  * A run, as OpenTelemetry.
@@ -22,7 +23,7 @@ import { permit } from "@/lib/server/auth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ROOT = path.resolve(process.cwd(), "..", "runtime");
+const ROOT = RUNTIME_ROOT;
 const RUNS = path.join(ROOT, "workspace", "runs");
 
 async function build(runId: string) {

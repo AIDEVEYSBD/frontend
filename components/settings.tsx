@@ -1,13 +1,15 @@
 "use client";
 
+import { VertexDetected } from "./vertex-detected";
 import { Appearance } from "./appearance";
-import { DATA_CLASS_STORED, PermittedClass, PermittedClassNote, Providers, useConfigChanges } from "./providers";
+import { DATA_CLASS_STORED, PermittedClass, PermittedClassNote, Providers, useBare, useConfigChanges } from "./providers";
 import type { DataClass } from "@/lib/api/pending";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Status } from "./ui";
 import { Checkbox, Input, Segmented } from "./forms";
-import { Banner } from "./overlays";
+import { Banner, QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { Skeleton } from "./loaders";
 import { Icon } from "./builder/icons";
 import { Pick } from "./select";
@@ -73,6 +75,8 @@ export function Settings() {
 
         <Appearance />
 
+        <VertexDetected framed />
+
         <Providers />
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
@@ -90,6 +94,9 @@ function Models() {
   const [catalogue, setCatalogue] = useState<CatalogueModel[] | null>(null);
   const [catalogueError, setCatalogueError] = useState("");
   const [config, setConfig] = useState<Config | null>(null);
+  /** The configuration's read failed and an empty one stands in for it. A quiet console (lib/quiet.ts) says not connected instead of "none offered". */
+  const [unread, setUnread] = useState(false);
+  const nothingBehind = useBare();
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("Name");
   const [savedTick, setSavedTick] = useState(false);
@@ -102,13 +109,21 @@ function Models() {
     fetch("/api/config")
       .then((r) => r.json())
       .then(setConfig)
-      .catch(() => setConfig({ models: [], default_model: "" }));
+      .catch(() => {
+        setUnread(true);
+        setConfig({ models: [], default_model: "" });
+      });
   }, []);
   useConfigChanges(reloadConfig);
   useEffect(() => {
     reloadConfig();
     fetch("/api/models")
-      .then((r) => r.json())
+      .then(async (r) => {
+        // A page (a proxy's 502, Next's own 404) is no answer and no message: the status alone is the reason.
+        const d = await r.json().catch(() => null);
+        if (!d) throw new Error(`the server answered ${r.status}`);
+        return d;
+      })
       .then((d) => {
         if (d.error) setCatalogueError(String(d.error));
         setCatalogue(d.models ?? []);
@@ -120,6 +135,8 @@ function Models() {
   }, [reloadConfig]);
 
   const chosen = useMemo(() => new Set((config?.models ?? []).map((m) => m.id)), [config]);
+  // Quiet, with nothing behind the console: the offered list was not read from anywhere, so the card does not say none is offered.
+  const bare = (nothingBehind || (QUIET && unread)) && (config?.models.length ?? 0) === 0;
   // A deployment with no catalogue to list is not a fault: the door says its endpoint is not set, and the card says there is nothing to browse.
   const noCatalogue = /not set/i.test(catalogueError);
   const providerLabel = useCallback((id?: string) => (config?.providers ?? []).find((p) => p.id === id), [config]);
@@ -215,7 +232,7 @@ function Models() {
         <Icon name="chip" size={15} className="text-dim" />
         <h2 className="text-[14px] font-semibold">Models</h2>
         <span className="tnum font-mono text-[11px] text-faint">
-          {config ? `${config.models.length} offered` : "…"}
+          {bare ? "" : config ? `${config.models.length} offered` : "…"}
         </span>
         <span className="grow" />
         <span className={`text-[11px] transition-opacity ${savedTick ? "text-ok opacity-100" : "opacity-0"}`}>
@@ -244,7 +261,7 @@ function Models() {
           <span className="text-[11px] text-faint">Sort</span>
           <Segmented options={["Name", "Price", "Context"]} defaultValue="Name" />
         </div>
-        {catalogueError && !noCatalogue && (
+        {catalogueError && !noCatalogue && !QUIET && (
           <Banner tone="warn" title="The catalogue could not be read">
             {catalogueError}. The offered list still works; only browsing is unavailable.
           </Banner>
@@ -395,7 +412,12 @@ function Models() {
             </div>
           );
         })}
-        {catalogue !== null && config && shown.length === 0 && (
+        {catalogue !== null && config && shown.length === 0 && bare && !query.trim() && (
+          <p className="px-4 py-4">
+            <QuietNote inline />
+          </p>
+        )}
+        {catalogue !== null && config && shown.length === 0 && !(bare && !query.trim()) && (
           <div className="flex flex-col gap-1 px-4 py-6">
             <span className="text-[13px] font-medium text-fg">{query.trim() ? "Nothing matches that search" : "No model is offered"}</span>
             {!query.trim() && (

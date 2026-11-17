@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Mono, Status } from "./ui";
-import { EmptyState } from "./overlays";
+import { EmptyState, QuietNote } from "./overlays";
 import { PageHeader } from "./section";
 import { Chips, FilterBar, SearchBox } from "./filters";
 import { ControlMark } from "./control-ref";
@@ -16,6 +16,7 @@ import { readUsers } from "@/lib/api/l2";
 import type { RunRow } from "@/lib/api/client";
 import { useSession } from "@/lib/use-session";
 import { soon } from "@/lib/soon";
+import { QUIET } from "@/lib/quiet";
 import { Card, ErrorLine, MoreRow, RUN_BATCH, ROW_BATCH, RunLink, Tiles, agentOf, ago, clockText, count, lastActive, runHref, useDigests, useLedger, type RunDigest, type RunEvent } from "./observability-shared";
 
 /**
@@ -348,6 +349,10 @@ export function SecurityEventsView() {
   const unread = named.length - journals.digests.length - journals.pending - journals.failed.length;
   // No record, no count: a figure that could not be read is unknown, never zero.
   const dash = busy && !ready ? "…" : error && !data ? "unknown" : null;
+  // A quiet console (lib/quiet.ts) says once that it is not connected, whichever of the reads failed, and prints no reason.
+  // With nothing read into the stream there are no figures to show either: a count of zero would say nothing happened.
+  const quietGap = QUIET && Boolean(error || data?.error || gatesError || lockdownError || auditError || ledger.error);
+  const quietDown = quietGap && stream.length === 0;
 
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
@@ -362,13 +367,14 @@ export function SecurityEventsView() {
         What the controls did and what people did about it, newest first: refusals, screening blocks and flags, gates opened and answered, operator kills and lockdown changes. Each row names what fired and on which run, and opens the run at that entry.
       </PageHeader>
 
-      {error && <ErrorLine what="The record of what the controls did could not be read" message={error} />}
-      {data?.error && <ErrorLine what="The record of what the controls did is incomplete" message={data.error} />}
-      {gatesError && <ErrorLine what="The approvals inbox did not answer, so gates still waiting are missing" message={gatesError} />}
-      {lockdownError && <ErrorLine what="The lockdown door did not answer, so its state is missing" message={lockdownError} />}
-      {auditError && <ErrorLine what="The audit trail could not be read, so kills and lockdown changes made outside a run are missing" message={auditError} />}
+      {quietGap && <QuietNote />}
+      {!QUIET && error && <ErrorLine what="The record of what the controls did could not be read" message={error} />}
+      {!QUIET && data?.error && <ErrorLine what="The record of what the controls did is incomplete" message={data.error} />}
+      {!QUIET && gatesError && <ErrorLine what="The approvals inbox did not answer, so gates still waiting are missing" message={gatesError} />}
+      {!QUIET && lockdownError && <ErrorLine what="The lockdown door did not answer, so its state is missing" message={lockdownError} />}
+      {!QUIET && auditError && <ErrorLine what="The audit trail could not be read, so kills and lockdown changes made outside a run are missing" message={auditError} />}
 
-      <Tiles
+      {!quietDown && <Tiles
         tiles={[
           { id: "all", label: "Events listed", value: dash ?? count(stream.length), sub: data ? `across ${count(data.runs)} run${data.runs === 1 ? "" : "s"} on record` : "reading the record", onPick: () => setGroups(new Set()) },
           { id: "refusal", label: "Refusals", value: dash ?? count(tally("refusal")), sub: data ? `${count(data.runsWithARefusal)} run${data.runsWithARefusal === 1 ? "" : "s"} with a refusal` : "calls a control stopped", tone: tally("refusal") ? "err" : undefined, onPick: () => only("refusal"), active: is("refusal") },
@@ -377,9 +383,9 @@ export function SecurityEventsView() {
           { id: "kill", label: "Operator kills", value: dash ?? count(tally("kill")), sub: "runs stopped by a person", tone: tally("kill") ? "err" : undefined, onPick: () => only("kill"), active: is("kill") },
           { id: "lockdown", label: "Lockdown", value: lockdown ? (lockdown.on ? "On" : "Off") : lockdownError ? "unknown" : "…", sub: lockdown?.at ? `${lockdown.on ? "set" : "lifted"} ${ago(ms(lockdown.at), now)}${lockdown.by ? ` by ${lockdown.by}` : ""}` : lockdown ? "never switched on this deployment" : "", tone: lockdown?.on ? "err" : undefined, onPick: () => only("lockdown"), active: is("lockdown") },
         ]}
-      />
+      />}
 
-      {nothing && !error ? (
+      {quietDown ? null : nothing && !error ? (
         <EmptyState
           title="No security events yet"
           detail={data && data.runs > 0 ? `${count(data.runs)} run${data.runs === 1 ? "" : "s"} are on record and no control has refused, screened, gated or stopped anything on them.` : "Nothing has run on this deployment, so no control has fired. Events are listed here as runs are recorded."}
@@ -400,7 +406,7 @@ export function SecurityEventsView() {
               The door answers its 40 most recent firings and 300 most recent watch events; the ledger adds the runs it marks killed or refused. Journals are read for <span className="tnum font-medium text-fg">{count(journals.digests.length)}</span> of the{" "}
               <span className="tnum font-medium text-fg">{count(named.length)}</span> run{named.length === 1 ? "" : "s"} they name, {RUN_BATCH} at a time, to give each firing its entry and to find gate answers and kills.
               {journals.pending > 0 ? ` Reading ${count(journals.pending)} more…` : ""}
-              {journals.failed.length > 0 && <span className="text-err"> {count(journals.failed.length)} did not read: {journals.failed[0].message}</span>}
+              {journals.failed.length > 0 && !QUIET && <span className="text-err"> {count(journals.failed.length)} did not read: {journals.failed[0].message}</span>}
               {!mayAudit && loaded ? " Kills and lockdown changes made outside a run are on the audit trail, which needs the iam permission to read." : ""}
             </span>
             {unread > 0 && (
@@ -479,7 +485,7 @@ export function SecurityEventsView() {
                   {ready && filtered.length === 0 && (
                     <tr>
                       <td colSpan={6} className="px-4 py-8 text-center text-[11.5px] text-faint">
-                        {stream.length ? "No event matches these filters." : error ? "Nothing to list: the record could not be read." : "Reading…"}
+                        {stream.length ? "No event matches these filters." : error ? (QUIET ? "Not connected on this deployment." : "Nothing to list: the record could not be read.") : "Reading…"}
                       </td>
                     </tr>
                   )}

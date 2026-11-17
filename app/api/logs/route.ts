@@ -1,6 +1,7 @@
 import path from "node:path";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { permit } from "@/lib/server/auth";
+import { RUNTIME_ROOT } from "@/lib/server/paths";
 
 /**
  * Log export: every journal entry of every recorded run, flattened to NDJSON —
@@ -13,7 +14,7 @@ import { permit } from "@/lib/server/auth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const RUNS = path.resolve(process.cwd(), "..", "runtime", "workspace", "runs");
+const RUNS = path.resolve(RUNTIME_ROOT, "workspace", "runs");
 
 export async function GET(req: Request) {
   { const gate = await permit(req, "view"); if (gate) return gate; }

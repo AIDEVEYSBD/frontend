@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Status } from "./ui";
 import { Markdown } from "./markdown";
+import { QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { AssistantChart, ChartDrawing, parseChart } from "./assistant-charts";
 
 /**
@@ -94,7 +96,13 @@ export function AskCorpus({
   const [probe, setProbe] = useState("");
   const [mode, setMode] = useState<"search" | "answer" | null>(null);
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNoticeText] = useState<string | null>(null);
+  /** Whether the notice is a failure (the search or the answer did not come) and not a plain "nothing found". A quiet console (lib/quiet.ts) does not print the reason. */
+  const [fault, setFault] = useState(false);
+  const setNotice = (text: string | null, failed = false) => {
+    setNoticeText(text);
+    setFault(failed);
+  };
   const [hits, setHits] = useState<Hit[] | null>(null);
   const [stages, setStages] = useState<Stages | null>(null);
   const [live, setLive] = useState<{ stage: string; attempt?: number; queries?: string[] }[]>([]);
@@ -112,8 +120,8 @@ export function AskCorpus({
     setNotice(null);
     try {
       const res = await fetch("/api/knowledge/search", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query: probe, namespace, limit: 6 }) });
-      const d = await res.json();
-      if (d.error) setNotice(d.error);
+      const d = await res.json().catch(() => ({ error: `the server answered ${res.status}` }));
+      if (d.error) setNotice(d.error, true);
       else {
         setHits(d.hits ?? []);
         setStages({ stages: d.stages, timings: d.timings, rerankModel: d.rerankModel, rerankKind: d.rerankKind });
@@ -121,7 +129,7 @@ export function AskCorpus({
         onResult?.({ mode: "search", namespace, query: probe, stages: d.stages, hits: (d.hits ?? []).map((h: Hit) => h.source) });
       }
     } catch (e) {
-      setNotice((e as Error).message);
+      setNotice((e as Error).message, true);
     } finally {
       setBusy(false);
     }
@@ -161,7 +169,7 @@ export function AskCorpus({
           if (!line) continue;
           const e = JSON.parse(line.slice(6));
           if (e.type === "stage") setLive((l) => [...l, { stage: e.stage, attempt: e.attempt, queries: e.queries }]);
-          else if (e.type === "error") setNotice(e.error);
+          else if (e.type === "error") setNotice(e.error, true);
           else if (e.type === "done") {
             setAnswer(e as Answer);
             if (e.note) setNotice(e.note);
@@ -179,7 +187,7 @@ export function AskCorpus({
         }
       }
     } catch (e) {
-      if ((e as Error).name !== "AbortError") setNotice((e as Error).message);
+      if ((e as Error).name !== "AbortError") setNotice((e as Error).message, true);
     } finally {
       setBusy(false);
     }
@@ -216,7 +224,7 @@ export function AskCorpus({
         </span>
       </div>
 
-      {notice && <p className="border-t border-line px-4 py-2.5 text-[11.5px] text-faint">{notice}</p>}
+      {notice && <p className="border-t border-line px-4 py-2.5 text-[11.5px] text-faint">{QUIET && fault ? <QuietNote inline /> : notice}</p>}
 
       {/* ── the loop, as it turns ── */}
       {mode === "answer" && (live.length > 0 || answer) && (

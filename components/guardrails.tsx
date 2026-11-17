@@ -11,6 +11,8 @@ import { CLIENT_RESPONSIBILITIES, CONTROLS, FAMILIES, RESIDUAL_RISK, STANDARDS, 
 import { GROUPINGS, GROUPING_BY_ID } from "@/lib/control-domains";
 import type { WatchEvent } from "@/lib/guardrails-watch";
 import { GuardrailsWatch } from "./guardrails-watch";
+import { QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 
 /**
  * The control register, and the framework it is assessed against.
@@ -58,6 +60,8 @@ function Chip({ std, ref_, name }: { std: string; ref_: string; name: string }) 
 
 export function Guardrails() {
   const [data, setData] = useState<Data | null>(null);
+  /** The read came back with no record in it, or did not come back. */
+  const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
   const [std, setStd] = useState("");
   const [view, setView] = useState<View>("register");
@@ -75,7 +79,14 @@ export function Guardrails() {
 
   useEffect(() => {
     let stop = false;
-    fetch("/api/guardrails").then((r) => r.json()).then((d) => !stop && setData(d)).catch(() => {});
+    fetch("/api/guardrails")
+      .then(async (r) => {
+        // An answer that is not the record (a refusal, a page) is a failed read, never a record to draw.
+        const d = (await r.json().catch(() => null)) as Data | null;
+        if (!r.ok || !d || typeof d.counts !== "object" || !d.posture) throw new Error("no record");
+        if (!stop) setData({ ...d, recent: Array.isArray(d.recent) ? d.recent : [] });
+      })
+      .catch(() => !stop && setFailed(true));
     return () => { stop = true; };
   }, []);
 
@@ -107,6 +118,11 @@ export function Guardrails() {
   const sumOf = (m: Record<string, number> | undefined, c: Control) => keysOf(c).reduce((n, k) => n + (m?.[k] ?? 0), 0);
   const fired = (c: Control) => (c.journal === "—" ? null : sumOf(data?.counts, c));
   const totalFired = data ? Object.values(data.counts).reduce((a, b) => a + b, 0) : 0;
+  // A quiet console (lib/quiet.ts) with no run and no deployed workflow behind it has no record to count from:
+  // the register is shown as the catalogue it is, and the figures read from the record are left out, never drawn as zeros.
+  const noRecord = QUIET && (failed || (data !== null && data.runs === 0 && data.posture.agents === 0));
+  // Until the read settles, a quiet console draws the catalogue alone: no placeholder figure, and no note it may have to take back.
+  const bare = noRecord || (QUIET && data === null);
   // The register can be read in the platform's own families or in another
   // framework's domains; the controls are the same, only the shelves move.
   const DOMAIN_PALETTE = ["var(--t-c1)", "var(--t-c2)", "var(--t-c5)", "var(--t-c7)", "var(--t-c8)", "var(--t-c3)", "var(--t-c6)", "var(--t-c9)", "var(--t-c4)"];
@@ -187,7 +203,7 @@ export function Guardrails() {
         <>
           {/* ── posture band ── */}
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-            <section className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line elev-1 sm:grid-cols-3">
+            <section className={`grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line elev-1 ${bare ? "" : "sm:grid-cols-3"}`}>
               {[
                 { label: "Controls", value: String(CONTROLS.length), sub: `${FAMILIES.length} families` },
                 { label: "Standards cited", value: String(STANDARDS.length), sub: "sources, not examiners" },
@@ -195,7 +211,7 @@ export function Guardrails() {
                 { label: "Tools registered", value: data ? String(data.posture.tools) : "—", sub: data ? `${data.posture.sinks} act outside` : "" },
                 { label: "Runs on record", value: data ? String(data.runs) : "—", sub: "the evidence base" },
                 { label: "Control firings", value: data ? String(totalFired) : "—", sub: "refusals, marks, gates" },
-              ].map((k) => (
+              ].slice(0, bare ? 2 : 6).map((k) => (
                 <div key={k.label} className="flex flex-col justify-center gap-0.5 bg-surface px-4 py-3">
                   <span className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]">{k.value}</span>
                   <span className="text-[11px] text-faint">{k.label}</span>
@@ -203,7 +219,7 @@ export function Guardrails() {
                 </div>
               ))}
             </section>
-            <section className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4 elev-1">
+            {noRecord ? <QuietNote /> : bare ? null : <section className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4 elev-1">
               <span className="text-[11px] font-medium tracking-[0.06em] text-faint uppercase">Firings by family</span>
               {FAMILIES.map((f) => {
                 const n = CONTROLS.filter((c) => c.family === f.id).reduce((s, c) => s + (fired(c) ?? 0), 0);
@@ -219,7 +235,7 @@ export function Guardrails() {
                   </div>
                 );
               })}
-            </section>
+            </section>}
           </div>
 
           {/* ── provenance ── */}
@@ -296,7 +312,7 @@ export function Guardrails() {
                             <span className="grow" />
                             {n === null ? (
                               <span className="text-[10px] text-ghost">outside the run</span>
-                            ) : (
+                            ) : bare ? null : (
                               <span className={`tnum rounded-sm px-1.5 py-px text-[10px] ${n > 0 ? "bg-raise text-fg" : "text-ghost"}`}>{n} fired</span>
                             )}
                           </span>
@@ -428,7 +444,7 @@ export function Guardrails() {
         </>
       )}
 
-      {view === "watch" && <GuardrailsWatch events={data ? data.events ?? [] : null} />}
+      {view === "watch" && (noRecord ? <QuietNote /> : <GuardrailsWatch events={data ? data.events ?? [] : null} />)}
 
       {/* ── the open control, as a dialog rather than a card that grows ── */}
       {openControl && (
@@ -439,7 +455,7 @@ export function Guardrails() {
           actions={
             openFired === null ? (
               <span className="text-[10.5px] text-ghost">outside the run</span>
-            ) : (
+            ) : bare ? undefined : (
               <span className={`tnum rounded-sm px-1.5 py-px text-[11px] ${openFired > 0 ? "bg-raise text-fg" : "text-ghost"}`}>{openFired} fired</span>
             )
           }
@@ -524,7 +540,7 @@ export function Guardrails() {
       </section>
 
       {/* ── evidence ── */}
-      <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
+      {!bare && <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
         <div className="flex items-center gap-2 border-b border-line px-4 py-3">
           <span className="text-[13px] font-semibold tracking-[-0.005em]">Latest control firings</span>
           <span className="text-[11.5px] text-faint">{data ? "from the run journals · click through to the run" : "reading the record…"}</span>
@@ -540,7 +556,7 @@ export function Guardrails() {
             <span className="shrink-0 text-[10.5px] text-ghost">{e.agent}{e.node ? ` · ${e.node}` : ""}</span>
           </a>
         ))}
-      </section>
+      </section>}
     </div>
   );
 }

@@ -6,6 +6,8 @@ import { Button, Mono, Spinner, Status, Tag } from "./ui";
 import { Markdown } from "./markdown";
 import { ControlRef, resolveControl } from "./control-ref";
 import { api, errorText, type Schemas } from "@/lib/api/client";
+import { QUIET } from "@/lib/quiet";
+import { QuietNote } from "./overlays";
 import { getConversation, listConversations, type Application, type Conversation, type ConversationRow } from "@/lib/api/l4";
 import { controlLabel } from "@/lib/guardrails";
 
@@ -377,7 +379,12 @@ export function ChatPane({ app, me }: { app: Application; /** The principal the 
           </div>
           <div className="flex max-h-[220px] flex-col overflow-y-auto lg:max-h-[520px]">
             {convs === null && <span className="px-3 py-3 text-[11.5px] text-faint">Reading the conversations…</span>}
-            {convError && <span className="px-3 py-3 text-[11.5px] leading-[1.5] text-err">{convError}</span>}
+            {convError && QUIET && (
+              <span className="px-3 py-3">
+                <QuietNote inline />
+              </span>
+            )}
+            {convError && !QUIET && <span className="px-3 py-3 text-[11.5px] leading-[1.5] text-err">{convError}</span>}
             {convs?.length === 0 && !convError && <span className="px-3 py-3 text-[11.5px] leading-[1.5] text-faint">No conversation is on the record for this chatbot yet.</span>}
             {(convs ?? []).map((c) => {
               const mine = Boolean(me) && c.principal.toLowerCase() === me.toLowerCase();
@@ -412,7 +419,8 @@ export function ChatPane({ app, me }: { app: Application; /** The principal the 
         {/* ── the conversation ── */}
         <div className="flex min-w-0 flex-col">
           <div ref={scroller} className="flex h-[min(52vh,520px)] min-h-[260px] flex-col gap-4 overflow-y-auto px-4 py-4">
-            {openError && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{openError}</p>}
+            {openError && QUIET && <QuietNote inline />}
+            {openError && !QUIET && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{openError}</p>}
             {exchanges.length === 0 && !openError && (
               <div className="m-auto flex max-w-[46ch] flex-col items-center gap-1.5 text-center">
                 <span className="text-[13px] font-medium text-fg">A new conversation</span>

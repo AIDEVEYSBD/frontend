@@ -14,7 +14,8 @@ import { Donut } from "./charts";
 import { PipelineView } from "./pipeline";
 import { AskCorpus } from "./ask";
 import { FetchModal } from "./fetch-modal";
-import { Dialog, EmptyState } from "./overlays";
+import { Dialog, EmptyState, QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { NotConnectedNote } from "./pending";
 import { usePageFacts } from "./assistant";
 import { DATA_CLASSES, DOORS, ask, doorUrl, type DataClass, type Door, type DoorId } from "@/lib/api/pending";
@@ -295,6 +296,8 @@ export function Knowledge() {
   const totals = data?.totals;
   /** The store answered: figures are measured. Otherwise they are unknown, not zero. */
   const ready = data?.ready === true;
+  /** Quiet (lib/quiet.ts): the read failed or the store did not answer. The page says so once, without the reason, and leaves out every card that would only say "unknown". */
+  const off = QUIET && (Boolean(failed) || (data !== null && !ready));
   const shown = useMemo(() => {
     const term = q.trim().toLowerCase();
     return sources.filter((s) => inFamily(s, family) && hasTerm(s, term));
@@ -372,20 +375,21 @@ export function Knowledge() {
           <span className="text-[11.5px] leading-[1.5] text-faint">Everything below is this corpus&rsquo;s and no other&rsquo;s.</span>
         </div>
 
-        {failed && <p className="rounded-md border border-err/40 bg-surface px-3 py-2.5 text-[11.5px] leading-[1.5] text-err">The knowledge base could not be read: {failed}</p>}
-        {data && !data.ready && (
+        {off && <QuietNote />}
+        {failed && !QUIET && <p className="rounded-md border border-err/40 bg-surface px-3 py-2.5 text-[11.5px] leading-[1.5] text-err">The knowledge base could not be read: {failed}</p>}
+        {data && !data.ready && !QUIET && (
           <p className="rounded-md border border-err/40 bg-surface px-3 py-2.5 text-[11.5px] leading-[1.5] text-err">
             {data.error} Which sources this corpus holds, and what is indexed, is not known until the store answers.
           </p>
         )}
         {notice && (
-          <p className={`rounded-md border px-3 py-2 text-[11.5px] leading-[1.5] ${notice.ok ? "border-line bg-surface text-faint" : "border-err/40 bg-surface text-err"}`}>
-            {notice.text}
+          <p className={`rounded-md border px-3 py-2 text-[11.5px] leading-[1.5] ${notice.ok || QUIET ? "border-line bg-surface text-faint" : "border-err/40 bg-surface text-err"}`}>
+            {QUIET && !notice.ok ? <QuietNote inline /> : notice.text}
           </p>
         )}
 
         {/* ── three states ── */}
-        <div className="grid gap-4 lg:grid-cols-3">
+        {!off && <div className="grid gap-4 lg:grid-cols-3">
           <section className="flex flex-col rounded-lg border border-line bg-surface p-4 elev-1">
             <span className="text-[11px] font-medium tracking-[0.06em] text-faint uppercase">In the register</span>
             <span className="tnum mt-1 text-[30px] leading-none font-semibold tracking-[-0.025em]">{ready ? count(sources.length) : "—"}</span>
@@ -435,7 +439,7 @@ export function Knowledge() {
             <div className="mt-4 flex flex-col gap-2 border-t border-line pt-3 text-[11.5px]">
               <Row k="Store" v={data?.index?.store ?? "—"} />
               <Row k="Embedding" v={data?.index?.model ?? "—"} mono />
-              <Row k="Provider" v={data?.index?.embedding ? (data.index.embedding.host || "not configured") : "—"} mono />
+              <Row k="Provider" v={data?.index?.embedding ? (data.index.embedding.host || (QUIET ? "not connected" : "not configured")) : "—"} mono />
               <Row
                 k="Dimensions"
                 v={
@@ -470,10 +474,10 @@ export function Knowledge() {
               </span>
             </div>
           </section>
-        </div>
+        </div>}
 
         {/* ── the register ── */}
-        <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
+        {!off && <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
           <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2.5">
             <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Sources in this corpus</span>
             <span className="tnum text-[11px] text-faint">{data ? (ready ? (shown.length === sources.length ? count(sources.length) : `${shown.length} of ${sources.length}`) : "unknown") : failed ? "" : "reading…"}</span>
@@ -595,7 +599,7 @@ export function Knowledge() {
               />
             </div>
           )}
-        </section>
+        </section>}
 
         {/* ── the public catalogue: offered, not held ── */}
         {data && (
@@ -680,15 +684,25 @@ export function Knowledge() {
                   </div>
                 )}
                 {offered.length > 0 && offerShown.length === 0 && <p className="px-4 py-4 text-[12px] text-faint">No public source matches.</p>}
-                {offered.length === 0 && <p className="px-4 py-4 text-[12px] text-faint">{ready ? "Every public source on offer is already in this corpus." : "The list of public sources did not come with this read."}</p>}
-                {!ready && offered.length > 0 && <p className="border-t border-line px-4 py-2.5 text-[11.5px] text-faint">Adding waits for the store: a source is added by writing it to this corpus&rsquo;s register.</p>}
+                {offered.length === 0 && <p className="px-4 py-4 text-[12px] text-faint">{ready ? "Every public source on offer is already in this corpus." : QUIET ? <QuietNote inline /> : "The list of public sources did not come with this read."}</p>}
+                {!ready && !QUIET && offered.length > 0 && <p className="border-t border-line px-4 py-2.5 text-[11.5px] text-faint">Adding waits for the store: a source is added by writing it to this corpus&rsquo;s register.</p>}
               </div>
             )}
           </section>
         )}
 
         {/* ── ask it ── */}
-        {ready && totals && totals.chunks > 0 ? (
+        {QUIET && ready && totals && totals.chunks > 0 && data?.index?.embeddingReady === false ? (
+          // Quiet (lib/quiet.ts): with no embedding provider behind it a question cannot be answered, so the box is not offered and no failed attempt is put on record.
+          <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
+            <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2.5">
+              <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Search and answer from this corpus</span>
+            </div>
+            <p className="px-4 py-4">
+              <QuietNote inline />
+            </p>
+          </section>
+        ) : ready && totals && totals.chunks > 0 ? (
           <AskCorpus
             namespace={ns}
             onLocate={(documentId, body) => {
@@ -697,7 +711,7 @@ export function Knowledge() {
             }}
             onResult={setAskFacts}
           />
-        ) : (
+        ) : off ? null : (
           <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
             <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2.5">
               <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Search and answer from this corpus</span>
@@ -715,7 +729,7 @@ export function Knowledge() {
         )}
 
         {/* ── admissions ── */}
-        <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
+        {!off && <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
           <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2.5">
             <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Admission record</span>
             <span className="text-[11px] text-faint">every admission and refusal in this corpus, newest first</span>
@@ -734,7 +748,7 @@ export function Knowledge() {
               <span className="shrink-0 text-[10.5px] text-ghost">{ago(a.at)}</span>
             </div>
           ))}
-        </section>
+        </section>}
 
         {/* ── the stages, explained ── */}
         <PipelineView />
@@ -1015,7 +1029,12 @@ function DocumentModal({ id, namespace, locate, onClose, onDone }: { id: string;
   useEffect(() => {
     let stop = false;
     fetch(`/api/knowledge/document?id=${encodeURIComponent(id)}&namespace=${encodeURIComponent(namespace)}`)
-      .then((r) => r.json())
+      .then(async (r) => {
+        // A page in place of an answer is no message: the status alone is the reason.
+        const d = await r.json().catch(() => null);
+        if (!d) throw new Error(`the server answered ${r.status}`);
+        return d;
+      })
       .then((d) => {
         if (stop) return;
         if (d.error) setFailed(String(d.error));
@@ -1044,7 +1063,7 @@ function DocumentModal({ id, namespace, locate, onClose, onDone }: { id: string;
     setError("");
     try {
       const res = await fetch("/api/knowledge/admit", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ document: doc.id, namespace, admit, by, note: note.trim() }) });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({ error: `the server answered ${res.status}` }));
       if (d.error) setError(d.error);
       else onDone(d.note, true);
     } catch (e) {
@@ -1119,7 +1138,7 @@ function DocumentModal({ id, namespace, locate, onClose, onDone }: { id: string;
           <Button size="sm" variant="solid" tone="err" onClick={onClose}>Close</Button>
         </header>
 
-        {failed && <p className="px-4 py-4 text-[12px] text-err">{failed}</p>}
+        {failed && (QUIET ? <div className="p-4"><QuietNote /></div> : <p className="px-4 py-4 text-[12px] text-err">{failed}</p>)}
 
         {doc && (
           <>
@@ -1201,7 +1220,7 @@ function DocumentModal({ id, namespace, locate, onClose, onDone }: { id: string;
                   />
                   <Button size="sm" variant="solid" tone="ink" permission="configure" loading={busy === "admit"} disabled={Boolean(busy)} onClick={() => decide(true)}>Admit and index</Button>
                   <Button size="sm" variant="solid" tone="err" permission="configure" loading={busy === "refuse"} disabled={Boolean(busy)} onClick={() => decide(false)}>Refuse</Button>
-                  {error && <span className="basis-full text-[11.5px] text-err">{error}</span>}
+                  {error && (QUIET ? <span className="basis-full"><QuietNote inline /></span> : <span className="basis-full text-[11.5px] text-err">{error}</span>)}
                 </>
               ) : (
                 <span className="text-[11.5px] text-faint">
@@ -1462,7 +1481,7 @@ function SourceDialog({
             <Field label="Entitled" hint="Group or role names, as your identity provider names them, separated by commas. Leave it empty to name nobody.">
               <Input value={entitled} onChange={setEntitled} disabled={pending || saving} autoComplete="off" />
             </Field>
-            {error && <p role="alert" className="text-[11.5px] leading-[1.5] text-err">{error}</p>}
+            {error && (QUIET ? <p><QuietNote inline /></p> : <p role="alert" className="text-[11.5px] leading-[1.5] text-err">{error}</p>)}
             <span className="flex flex-wrap items-center gap-2">
               <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={pending || !cls || !changed || there === "asking"} loading={saving} onClick={save}>
                 Save class and entitlement
@@ -1579,7 +1598,7 @@ function AddSourceDialog({ namespace, namespaces, onClose, onDone }: { namespace
             <span className="text-[11.5px] text-faint">The classification of its content, as your organisation labels it.</span>
           </div>
         </div>
-        {error && <p role="alert" className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>}
+        {error && (QUIET ? <p className="rounded-md border border-dashed border-line-strong bg-surface px-3 py-2"><QuietNote inline /></p> : <p role="alert" className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>)}
       </div>
     </Frame>
   );
@@ -1681,7 +1700,7 @@ function UploadDocumentDialog({ namespace, namespaces, onClose, onDone }: { name
         <Field label="Corpus" hint="The namespace it goes into.">
           <Pick<string> size="md" value={into} disabled={off} onChange={setInto} options={corpora.map((n) => ({ value: n, label: n }))} />
         </Field>
-        {error && <p role="alert" className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>}
+        {error && (QUIET ? <p className="rounded-md border border-dashed border-line-strong bg-surface px-3 py-2"><QuietNote inline /></p> : <p role="alert" className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>)}
       </div>
     </Frame>
   );

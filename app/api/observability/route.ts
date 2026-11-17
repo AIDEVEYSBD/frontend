@@ -4,6 +4,7 @@ import { priceSheet } from "@/lib/server/prices";
 import { toTrace, type Trace } from "@/lib/server/trace";
 import { destination } from "@/lib/server/langfuse";
 import { permit } from "@/lib/server/auth";
+import { RUNTIME_ROOT } from "@/lib/server/paths";
 
 /**
  * Observability, computed from the journals this platform already writes.
@@ -21,7 +22,7 @@ import { permit } from "@/lib/server/auth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ROOT = path.resolve(process.cwd(), "..", "runtime");
+const ROOT = RUNTIME_ROOT;
 const RUNS = path.join(ROOT, "workspace", "runs");
 
 function percentile(sorted: number[], p: number): number {

@@ -1,5 +1,6 @@
 import path from "node:path";
 import { validateLabels, type Labels } from "@/lib/metrics";
+import { RUNTIME_ROOT } from "@/lib/server/paths";
 
 /**
  * Eval-set shapes and validation, for the console's eval-set door
@@ -10,7 +11,7 @@ import { validateLabels, type Labels } from "@/lib/metrics";
  * grader are retired.
  */
 
-export const EVALS_DIR = path.resolve(process.cwd(), "..", "runtime", "workspace", "evals");
+export const EVALS_DIR = path.resolve(RUNTIME_ROOT, "workspace", "evals");
 
 export interface Check {
   kind: "contains" | "not_contains" | "field" | "state";

@@ -4,7 +4,8 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Mono, Status, Tag } from "./ui";
-import { Banner } from "./overlays";
+import { Banner, QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { Field, Input, Textarea } from "./forms";
 import { Pick } from "./select";
 import { DeployDialog, DeployedReceipt } from "./deploy-gate";
@@ -415,7 +416,7 @@ function RollbackForm({ agent, list, onDone }: { agent: string; list: Deployment
         </Field>
       </div>
       {tried && problem && <span className="text-[11px] text-err">{problem}</span>}
-      {error && <span className="text-[11.5px] text-err">{error}</span>}
+      {error && (QUIET ? <QuietNote inline /> : <span className="text-[11.5px] text-err">{error}</span>)}
       <span className="flex items-center gap-2">
         <span className="grow" />
         <Button
@@ -472,7 +473,7 @@ function RetireForm({ agent, others, onDone }: { agent: string; others: string[]
         </Field>
       </div>
       {tried && problem && <span className="text-[11px] text-err">{problem}</span>}
-      {error && <span className="text-[11.5px] text-err">{error}</span>}
+      {error && (QUIET ? <QuietNote inline /> : <span className="text-[11.5px] text-err">{error}</span>)}
       <span className="flex items-center gap-2">
         <span className="grow" />
         <Button
@@ -641,6 +642,8 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
       {retired && <RetiredView retired={retired} cancelled={retirement?.cancelled_jobs ?? []} />}
       {deployed && !deployAsk && <DeployedReceipt d={deployed} />}
 
+      {/* A quiet console (lib/quiet.ts): with the agent unread, the note above is the whole page; no panel calls an unread record empty. */}
+      {!(QUIET && data?.error && !data.detail && !data.lifecycle) && <>
       <Section title="Spine" meta="each stage lit only by its own record">
         {versionOptions.length > 1 && (
           <div className="flex flex-wrap items-center gap-2">
@@ -715,6 +718,7 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
           />
         )}
       </Section>
+      </>}
     </div>
   );
 }
@@ -778,7 +782,7 @@ function LifecycleIndex() {
           {error}
         </Banner>
       )}
-      {agents === null ? <p className="text-[12px] text-faint">Reading the registry…</p> : <LifecycleIndexView agents={agents} />}
+      {agents === null ? <p className="text-[12px] text-faint">Reading the registry…</p> : QUIET && error ? null : <LifecycleIndexView agents={agents} />}
     </div>
   );
 }

@@ -366,7 +366,7 @@ export async function session(req: Request): Promise<Session | null> {
   if (req.headers.get(INTERNAL_HEADER) === secret()) return internalSession();
   const cookie = await readSessionCookie(readCookie(req.headers.get("cookie"), SESSION_COOKIE), secret());
   if (!cookie) return null;
-  if (!(await dbReady())) return null;
+  if (!(await dbReady())) return iapEnabled() ? iapHeaderSession(req, cookie) : null;
   let row = await loadRow(cookie.id);
   if (!row) return null;
   if (new Date(row.access_expires_at).getTime() - Date.now() < REFRESH_AHEAD_S * 1000) {
@@ -506,6 +506,58 @@ export async function createSession(
   return { id, expiresAt, appRoles, jwt, groups, groupsClaim: claim, groupsOverage: overage };
 }
 
+/** A readable name from an address: "asha.rao@example.com" is "Asha Rao". */
+function nameFromEmail(email: string): string {
+  const local = email.split("@")[0] ?? "";
+  return local.split(/[._-]+/).filter(Boolean).map((w) => w[0]!.toUpperCase() + w.slice(1)).join(" ");
+}
+
+/**
+ * Behind IAP with no registry database (a console deployed on its own): the
+ * person is read from the assertion IAP sends on every request, verified each
+ * time, and their roles from the deployment's mapping at that moment. No row
+ * is kept, so there is nothing to revoke here: access ends when IAP stops
+ * letting the person through, or when the mapping changes. The cookie only
+ * says a sign-in happened, which is what the page gate reads.
+ */
+async function iapHeaderSession(req: Request, cookie: { id: string; exp: number }): Promise<Session | null> {
+  const assertion = req.headers.get(IAP_HEADER);
+  if (!assertion) return null;
+  let who: IapIdentity;
+  try {
+    who = await verifyIap(assertion);
+  } catch {
+    return null;
+  }
+  const appRoles = iapRoles(who.email);
+  const name = nameFromEmail(who.email) || who.sub;
+  const expiresAt = new Date(cookie.exp * 1000).toISOString();
+  return {
+    mode: "sso",
+    id: cookie.id,
+    sub: who.sub,
+    name,
+    email: who.email,
+    initials: initialsOf(name, who.email),
+    orgType: who.domain,
+    isEy: false,
+    roles: [],
+    appRoles,
+    groups: [],
+    permissions: permissionsFor(appRoles, defaultRole()),
+    demoDefaultApplied: appRoles.length === 0,
+    disabled: false,
+    accessExpiresAt: expiresAt,
+    expiresAt,
+    via: "iap",
+  };
+}
+
+/** The cookie for a sign-in that keeps no row (see iapHeaderSession). */
+export function createRowlessIapSession(who: IapIdentity): { id: string; expiresAt: Date; appRoles: string[] } {
+  return { id: randomBytes(32).toString("hex"), expiresAt: new Date(Date.now() + SESSION_HOURS * 3600 * 1000), appRoles: iapRoles(who.email) };
+}
+
 /**
  * A session for a person IAP has signed in. The user row is provisioned as
  * for any sign-in; the session row holds no provider tokens and no refresh
@@ -514,8 +566,7 @@ export async function createSession(
  * sending. Roles are read from the deployment's mapping at this moment.
  */
 export async function createIapSession(who: IapIdentity): Promise<{ id: string; expiresAt: Date; appRoles: string[] }> {
-  const local = who.email.split("@")[0] ?? "";
-  const name = local.split(/[._-]+/).filter(Boolean).map((w) => w[0]!.toUpperCase() + w.slice(1)).join(" ");
+  const name = nameFromEmail(who.email);
   await provision({ sub: who.sub, email: who.email, email_verified: Boolean(who.email), name, preferred_username: who.email, "autox:org_type": who.domain });
   const id = randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + SESSION_HOURS * 3600 * 1000);

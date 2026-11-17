@@ -4,6 +4,8 @@ import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Status, Tag } from "./ui";
+import { QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { hueFor } from "@/lib/hue";
 import { DoorError } from "@/lib/api/l5";
 import { candidatesOf, getBlastRadius, getDependencies, type BlastRadius, type DepEdge, type DepMap, type DepNode } from "@/lib/api/l7";
@@ -99,6 +101,8 @@ function DependenciesInner() {
   const pick = (id: string) => router.replace(id ? `/dependencies?node=${encodeURIComponent(id)}` : "/dependencies", { scroll: false });
   const byId = useMemo(() => new Map((map?.nodes ?? []).map((n) => [n.id, n])), [map]);
   const node = picked ? byId.get(picked) ?? null : null;
+  // Quiet (lib/quiet.ts): a map that could not be read is one calm note, not counts that never arrive and a map that reads forever.
+  const quiet = QUIET && Boolean(error) && !map;
 
   return (
     <div className="mx-auto w-full max-w-[1520px] px-5 py-7" data-hue="indigo">
@@ -134,7 +138,13 @@ function DependenciesInner() {
         </span>
       </header>
 
-      <section className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-4">
+      {quiet && (
+        <div className="mt-5">
+          <QuietNote />
+        </div>
+      )}
+
+      {!quiet && <section className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-4">
         {[
           { k: "Nodes", v: map?.counts.nodes },
           { k: "Edges", v: map?.counts.edges },
@@ -146,16 +156,16 @@ function DependenciesInner() {
             <span className="text-[10.5px] text-faint">{x.k}</span>
           </div>
         ))}
-      </section>
+      </section>}
 
-      <Legend />
+      {!quiet && <Legend />}
 
-      {error && <p className="mt-4 text-[12.5px] text-err">{error}</p>}
+      {error && !QUIET && <p className="mt-4 text-[12.5px] text-err">{error}</p>}
 
-      <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+      {!quiet && <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
         <MapView map={map} picked={picked} lit={lit && lit.node === picked ? lit.ids : null} onPick={pick} />
         <SidePanel map={map} node={node} picked={picked} window={win} byId={byId} onPick={pick} onLit={(ids) => setLit(ids ? { node: picked, ids } : null)} />
-      </div>
+      </div>}
     </div>
   );
 }
@@ -471,7 +481,7 @@ function Blast({ id, window, byId, onPick, onLit }: { id: string; window: string
         <p className="px-4 py-2.5 text-[11.5px] text-faint">Asking the backend…</p>
       ) : !b ? (
         <div className="flex flex-col gap-1.5 px-4 py-2.5">
-          <p className={`text-[11.5px] leading-[1.55] ${current.status === 403 ? "text-warn" : "text-err"}`}>{current.error}</p>
+          {QUIET && current.status !== 403 ? <QuietNote inline /> : <p className={`text-[11.5px] leading-[1.55] ${current.status === 403 ? "text-warn" : "text-err"}`}>{current.error}</p>}
           {current.candidates.length > 0 && (
             <span className="flex flex-wrap gap-1.5">
               {current.candidates.map((c) => (

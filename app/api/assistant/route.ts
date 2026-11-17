@@ -118,6 +118,12 @@ async function snapshot(origin: string): Promise<string> {
   }, 9000);
 }
 
+/** Whether the assistant has a model to talk to, so the console can leave its button out when it has none. */
+export async function GET(req: Request) {
+  { const gate = await permit(req, "view"); if (gate) return gate; }
+  return Response.json({ available: Boolean(process.env.FOUNDRY_ENDPOINT && (process.env.FOUNDRY_API_KEY || process.env.AZURE_AI_KEY)) }, { headers: { "cache-control": "no-store" } });
+}
+
 export async function POST(req: Request) {
   { const gate = await permit(req, "view"); if (gate) return gate; }
   const endpoint = process.env.FOUNDRY_ENDPOINT ?? "";

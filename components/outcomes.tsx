@@ -1,5 +1,6 @@
 "use client";
 
+import { QUIET } from "@/lib/quiet";
 import { useState } from "react";
 import Link from "next/link";
 import { Button, Status } from "./ui";
@@ -78,7 +79,7 @@ function WorkloadCard({ id, name, line, entry, state, win }: { id: string; name:
       <div className="flex flex-col gap-4 p-4">
         {state === "reading" && <p className="text-[12px] text-faint">Reading the summary…</p>}
         {state === "pending" && <p className="text-[12px] text-faint">No figures: the summary is not connected on this deployment.</p>}
-        {state === "error" && <p className="text-[12px] text-faint">No figures: the summary could not be read.</p>}
+        {state === "error" && <p className="text-[12px] text-faint">{QUIET ? "No figures: the summary is not connected on this deployment." : "No figures: the summary could not be read."}</p>}
         {state === "ok" && nothing && <p className="text-[12px] text-faint">No runs yet{win === "all" ? "" : " in this window"}.</p>}
         {state === "ok" && !nothing && (
           <>

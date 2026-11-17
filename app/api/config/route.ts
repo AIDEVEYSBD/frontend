@@ -3,6 +3,7 @@ import { permit } from "@/lib/server/auth";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dbReady, query } from "@/lib/server/db";
 import { FOUNDRY_ID, KINDS, type Provider, type ProviderKind } from "@/lib/providers";
+import { RUNTIME_ROOT } from "@/lib/server/paths";
 
 /**
  * Deployment configuration: the providers this factory reaches, the models it
@@ -22,7 +23,7 @@ import { FOUNDRY_ID, KINDS, type Provider, type ProviderKind } from "@/lib/provi
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const FILE = path.resolve(process.cwd(), "..", "runtime", "workspace", "config.json");
+const FILE = path.resolve(RUNTIME_ROOT, "workspace", "config.json");
 
 const CLASSES = ["small", "medium", "large"] as const;
 type ModelClass = (typeof CLASSES)[number];

@@ -4,7 +4,8 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Status, Tag } from "./ui";
-import { Banner } from "./overlays";
+import { Banner, QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { Field, Input } from "./forms";
 import { Pick } from "./select";
 import { ControlRef } from "./control-ref";
@@ -168,6 +169,8 @@ function FrameworksPage() {
       { title: "Frameworks", rows: all.filter((f) => f.kind !== "regulation") },
     ];
   }, [frameworks]);
+  // A quiet console (lib/quiet.ts) whose framework catalogue did not answer says so once, with no panel left reading.
+  const quietDown = QUIET && Boolean(error) && !frameworks;
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
       <PageHeader title="Frameworks">
@@ -178,7 +181,7 @@ function FrameworksPage() {
           {error}
         </Banner>
       )}
-      <div className="grid items-start gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
+      {!quietDown && <div className="grid items-start gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
         <Section title="Frameworks and regulations" hue="control">
           {frameworks === null && <p className="text-[12px] text-faint">Reading the catalogue…</p>}
           {groups.map((g) =>
@@ -206,7 +209,7 @@ function FrameworksPage() {
         <Section
           title={view?.framework.short ?? "View"}
           hue="control"
-          meta={view ? `${view.count} agent${view.count === 1 ? "" : "s"}` : "reading…"}
+          meta={view ? `${view.count} agent${view.count === 1 ? "" : "s"}` : QUIET && error ? undefined : "reading…"}
           action={
             name ? (
               <Button size="sm" variant="solid" tone="neutral" disabled={!view || isUnmapped(view.framework)} href={`/evidence?framework=${encodeURIComponent(name)}`}>
@@ -228,7 +231,7 @@ function FrameworksPage() {
           </div>
           {view ? <FrameworkViewPanel view={view} /> : busy ? <p className="text-[12px] text-faint">Reading…</p> : null}
         </Section>
-      </div>
+      </div>}
     </div>
   );
 }

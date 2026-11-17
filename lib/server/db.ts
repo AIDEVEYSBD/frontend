@@ -257,6 +257,8 @@ let ready: Promise<boolean> | null = null;
 
 /** True when the schema exists and the pool answers. Cached per process. */
 export function dbReady(): Promise<boolean> {
+  // A console deployed on its own has no registry: AGENTFACTORY_DB=off says so, and nothing waits on a connection that cannot come.
+  if (process.env.AGENTFACTORY_DB === "off") return Promise.resolve(false);
   if (!ready) {
     ready = (async () => {
       try {

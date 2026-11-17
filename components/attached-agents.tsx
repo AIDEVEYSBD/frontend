@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button, Mono, Status, Tag } from "./ui";
 import { Pick } from "./select";
+import { QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { Code, CopyButton } from "./code";
 import { OpenChanges, ProposalNote } from "./policy";
 import {
@@ -176,6 +178,8 @@ const control = "focusable h-8 rounded-md border border-line-strong bg-field px-
 export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent[], store: string) => void }) {
   const [agents, setAgents] = useState<AttachedAgent[] | null>(null);
   const [store, setStore] = useState("");
+  /** The register's read was refused or did not answer. A quiet console (lib/quiet.ts) says so instead of showing an empty register. */
+  const [unread, setUnread] = useState(false);
   const [mode, setMode] = useState<AttachMode>("sdk");
   const [language, setLanguage] = useState<Language>("python");
 
@@ -209,9 +213,15 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
   };
   const load = () =>
     listAttached()
-      .then(shown)
+      .then((d) => {
+        setUnread(false);
+        shown(d);
+      })
       // A refusal reads as an empty register, as it always has.
-      .catch(() => shown({ agents: [], store: "" }));
+      .catch(() => {
+        setUnread(true);
+        shown({ agents: [], store: "" });
+      });
   useEffect(() => {
     load();
     attachableTools()
@@ -356,7 +366,7 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
         <span className="min-w-0 max-w-[62ch] text-[11px] leading-[1.5] text-faint">{MODE_META[mode].blurb}</span>
         <span className="grow" />
         <span className="tnum whitespace-nowrap text-[10.5px] text-ghost">
-          {agents ? `${counts.total} attached · ${counts.sdk} over the SDK · ${counts.a2a} over A2A` : "reading the registry…"}
+          {QUIET && unread ? "" : agents ? `${counts.total} attached · ${counts.sdk} over the SDK · ${counts.a2a} over A2A` : "reading the registry…"}
         </span>
       </div>
 
@@ -486,7 +496,7 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
           Attach
         </Button>
         {name.trim() && <Mono className="pb-1.5 text-[10.5px] text-ghost">id · {slugOf(name) || "—"}</Mono>}
-        {error && <span className="basis-full text-[11px] text-err">{error}</span>}
+        {error && (QUIET ? <span className="basis-full"><QuietNote inline /></span> : <span className="basis-full text-[11px] text-err">{error}</span>)}
         {minted && (
           <div className="mt-1 flex basis-full flex-wrap items-center gap-3 rounded-sm border border-ok-line bg-ok-bg px-3 py-2">
             <Status tone="ok">{minted.agent.name} attached</Status>
@@ -706,7 +716,7 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
             })}
             {agents && agents.length === 0 && (
               <tr>
-                <td colSpan={11} className="px-4 py-3 text-[11.5px] text-faint">No third-party agent is attached. The first one appears here with its key.</td>
+                <td colSpan={11} className="px-4 py-3 text-[11.5px] text-faint">{QUIET && unread ? <QuietNote inline /> : "No third-party agent is attached. The first one appears here with its key."}</td>
               </tr>
             )}
             {!agents && (

@@ -60,7 +60,7 @@ export function LandingHeader() {
     <header className="sticky top-0 z-40 border-b border-line bg-surface">
       <div className={`${WRAP} flex h-16 items-center gap-4`}>
         <Link href="/" aria-label="Agent Factory" className="focusable rounded-sm">
-          <BrandLockup height={17} />
+          <BrandLockup height={22} />
         </Link>
         <span className="grow" />
         <OpenConsole size="sm" />
@@ -354,7 +354,7 @@ export function LandingFooter() {
     <footer className="border-t border-line bg-canvas">
       <div className={`${WRAP} flex flex-col gap-12 py-14 lg:flex-row lg:gap-16`}>
         <div className="shrink-0 lg:w-[220px]">
-          <BrandLockup height={17} />
+          <BrandLockup height={22} />
         </div>
         <nav aria-label="The console" className="grid grow grid-cols-2 gap-x-8 gap-y-10 sm:grid-cols-3 lg:grid-cols-6">
           {AREAS.map((a) => (

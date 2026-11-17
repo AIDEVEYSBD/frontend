@@ -5,6 +5,7 @@ import { Button, Status } from "./ui";
 import { Field, Switch, Textarea } from "./forms";
 import { auditLine, fleet, FLEET_ACTIONS, getFleet, getLockdown, setLockdown, type FleetAction, type FleetResult, type FleetState, type LockdownState } from "@/lib/api/l5";
 import { soon } from "@/lib/soon";
+import { QUIET } from "@/lib/quiet";
 
 /**
  * Operating the estate: fleet actions on chosen agents, and the lockdown.
@@ -162,7 +163,7 @@ export function FleetBar({
       {ask && action && (
         <ReasonDialog
           title={`${action.label} ${agents.length} agent${agents.length === 1 ? "" : "s"}?`}
-          what={`${list}. ${action.label} ${action.what}. One audit event records the action, the reason and your name.${error ? ` Last attempt: ${error}` : ""}`}
+          what={`${list}. ${action.label} ${action.what}. One audit event records the action, the reason and your name.${error ? (QUIET ? " Not connected on this deployment." : ` Last attempt: ${error}`) : ""}`}
           confirm={`${action.label} ${agents.length === 1 ? "agent" : `${agents.length} agents`}`}
           tone={action.tone}
           permission="run"
@@ -250,7 +251,7 @@ export function LockdownSwitch({
       onNotice(`${ask ? "Lockdown on: nothing new starts or is claimed until it is lifted" : "Lockdown lifted"}${auditLine(s.audit_id)}`);
       setAsk(null);
     } catch (e) {
-      onNotice(`Lockdown refused: ${(e as Error).message.slice(0, 140)}`);
+      onNotice(QUIET ? "Not connected on this deployment." : `Lockdown refused: ${(e as Error).message.slice(0, 140)}`);
     } finally {
       setBusy(false);
     }

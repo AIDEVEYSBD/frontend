@@ -8,6 +8,8 @@ import { ActiveFilters, Chips, FilterBar, SearchBox, type Chip } from "./filters
 import { usePageFacts } from "./assistant";
 import { DrillModal, DrillTable } from "./drill";
 import { Pick } from "./select";
+import { QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { hueFor } from "@/lib/hue";
 import { FOUNDRY_ID, kindOf, type Provider } from "@/lib/providers";
 import { WindowPick, winMs, type Win } from "./window-pick";
@@ -128,9 +130,16 @@ export function FinOps() {
 
   const load = useCallback(() => {
     fetch("/api/finops")
-      .then((r) => r.json())
+      .then(async (r) => {
+        // A page (a proxy's 502, Next's own 404) is no ledger and no message: the status alone is the reason.
+        const d = (await r.json().catch(() => null)) as Data | null;
+        if (!d) throw new Error(`the server answered ${r.status}`);
+        return d;
+      })
       .then((d: Data) => {
         if ((d as unknown as { error?: string }).error) throw new Error((d as unknown as { error: string }).error);
+        // Quiet (lib/quiet.ts): a ledger assembled with nothing behind the console is not read as zero spend.
+        if (QUIET && (d as unknown as { connected?: boolean }).connected === false) throw new Error("not connected");
         setData(d);
         setRoutes(d.config.node_routes ?? {});
         setRoutesDirty(false);
@@ -518,6 +527,24 @@ export function FinOps() {
   const windowDays = winFor("kpi") === "all" ? Math.max(1, spanDays("all", kpiCalls)) : winMs(winFor("kpi")) / 86_400_000;
   const windowBudget = data?.budget != null ? (data.budget * windowDays) / PERIOD_DAYS[data.period] : null;
 
+  // Quiet (lib/quiet.ts): every card here is cut from the one read. When it was not read the page is its header and one calm note: no figure, no reason.
+  if (QUIET && error && !data) {
+    return (
+      <div className="min-h-full" data-hue="green">
+        <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7">
+          <header className="flex flex-col gap-1.5">
+            <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">FinOps</h1>
+            <p className="max-w-[72ch] text-[12.5px] leading-[1.55] text-dim">
+              Model spend by provider, workflow and step, computed from every journalled model call at the configured price. Replay the same workload on
+              another model, see which steps are candidates for a smaller or local model, and route them without touching a spec.
+            </p>
+          </header>
+          <QuietNote />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-full" data-hue="green">
       <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7">
@@ -537,7 +564,7 @@ export function FinOps() {
           </div>
         </header>
 
-        {error && <p className="text-[12.5px] text-err">{error}</p>}
+        {error && !QUIET && <p className="text-[12.5px] text-err">{error}</p>}
 
         {/* ── Filters ── */}
         <div className="flex flex-col gap-2 rounded-lg border border-line bg-surface px-4 py-3 elev-1">
@@ -857,7 +884,7 @@ export function FinOps() {
         <Section id="routing" title="Model routing" caption="Where each step's calls go. A route set here outranks the step's own model in its spec and the tier defaults; a forced model for a measurement outranks everything. Saved routes apply to the next run of the workflow." folded={folds.routing} onToggle={() => toggleFold("routing")}
           meta={
             <span className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-              {saved && <span className={`text-[11px] ${saved.startsWith("could not") ? "text-err" : "text-ok"}`}>{saved}</span>}
+              {saved && (QUIET && saved.startsWith("could not") ? <QuietNote inline /> : <span className={`text-[11px] ${saved.startsWith("could not") ? "text-err" : "text-ok"}`}>{saved}</span>)}
               {routesDirty && <Button size="sm" variant="quiet" onClick={() => { setRoutes(data?.config.node_routes ?? {}); setRoutesDirty(false); }}>Discard</Button>}
               <Button size="sm" variant="solid" permission="configure" loading={saving} disabled={!routesDirty} onClick={saveRoutes}>Save routes</Button>
             </span>
@@ -1043,7 +1070,7 @@ function Billing({ data, totals, windowBudget, window, onSaved }: { data: Data |
       {st && (st.shadow_spent ?? 0) > 0 && <Fact k={`Shadow runs · this ${data?.period ?? "period"}`} v={shadowSpentLine(st.shadow_spent, (n) => fmtCost(n))} tone="text-faint" />}
       {shadowWindow.runs > 0 && <Fact k={`Shadow runs · ${window}`} v={shadowBesideLine(shadowWindow, (n) => fmtCost(n))} tone="text-faint" />}
       <Fact k="Run rate · month" v={fmtCost(totals.monthly)} />
-      <Fact k="Cloud billed · month to date" v={az?.configured && !az.error ? `${az.currency ?? ""} ${az.mtd?.toFixed(2) ?? "—"}` : "billing connector not configured"} tone={az?.configured ? undefined : "text-faint"} />
+      <Fact k="Cloud billed · month to date" v={az?.configured && !az.error ? `${az.currency ?? ""} ${az.mtd?.toFixed(2) ?? "—"}` : QUIET ? "not connected" : "billing connector not configured"} tone={az?.configured ? undefined : "text-faint"} />
       <Fact k="Cloud billed · 7d" v={az?.configured && !az.error ? `${az.currency ?? ""} ${az.last7d?.toFixed(2) ?? "—"}` : "—"} />
       <div className="flex items-center gap-2 px-4 py-3">
         <label className="flex items-center gap-2 text-[11.5px] text-dim">

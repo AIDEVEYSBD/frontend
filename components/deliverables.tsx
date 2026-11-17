@@ -4,7 +4,8 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Mono, Status, Tag } from "./ui";
-import { Banner } from "./overlays";
+import { Banner, QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { Field, Input } from "./forms";
 import { Pick } from "./select";
 import { DigestChip } from "./digest-chip";
@@ -312,6 +313,10 @@ function DeliverablesPage() {
   const [registers, setRegisters] = useState<RegisterList | null>(null);
   const [items, setItems] = useState<RegisterItems | null>(null);
   const [itemsError, setItemsError] = useState("");
+  /* A quiet console (lib/quiet.ts): a list that was not read is not shown as an empty one. */
+  const [registersFailed, setRegistersFailed] = useState(false);
+  const listOff = QUIET && Boolean(error);
+  const registersOff = QUIET && registersFailed;
   const [agents, setAgents] = useState<AgentSummary[]>([]);
 
   const go = useCallback(
@@ -335,8 +340,10 @@ function DeliverablesPage() {
     }
     try {
       setRegisters(await listRegisters());
+      setRegistersFailed(false);
     } catch {
       setRegisters({ registers: [], count: 0 });
+      setRegistersFailed(true);
     }
   }, [state, agent, run]);
   useEffect(() => soon(load), [load]);
@@ -403,7 +410,7 @@ function DeliverablesPage() {
         </Banner>
       )}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
-        <Section title="Deliverables" meta={list ? `${list.count} · ${statesLine(list.states)}` : undefined}>
+        <Section title="Deliverables" meta={list && !listOff ? `${list.count} · ${statesLine(list.states)}` : undefined}>
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex flex-col gap-1">
               <span className="text-[11px] text-faint">State</span>
@@ -426,17 +433,18 @@ function DeliverablesPage() {
               Apply
             </Button>
           </div>
-          {list ? <DeliverablesListView list={list} selected={selected} onSelect={(id) => go({ id })} /> : <p className="text-[12px] text-faint">Reading the deliverables…</p>}
+          {listOff ? <p className="text-[12px] text-faint">Each document a run writes is listed here with its state.</p> : list ? <DeliverablesListView list={list} selected={selected} onSelect={(id) => go({ id })} /> : <p className="text-[12px] text-faint">Reading the deliverables…</p>}
         </Section>
-        <Section title="Deliverable" meta={shownDetail ? shownDetail.id : selected ? "reading…" : "pick one"}>
+        <Section title="Deliverable" meta={shownDetail ? shownDetail.id : selected ? (QUIET && detailError ? undefined : "reading…") : "pick one"}>
           {!selected && <p className="text-[12px] text-faint">Pick a deliverable to read its history and download its file.</p>}
-          {detailError && <span className="text-[11.5px] text-err">{detailError}</span>}
+          {detailError && QUIET && <QuietNote inline />}
+          {detailError && !QUIET && <span className="text-[11.5px] text-err">{detailError}</span>}
           {shownDetail && <DeliverableDetailView deliverable={shownDetail} />}
         </Section>
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
-        <Section title="Registers" meta={registers ? `${registers.count} on record` : undefined}>
-          {registers ? <RegistersView list={registers} selected={register} onSelect={(name) => go({ register: name })} /> : <p className="text-[12px] text-faint">Reading the registers…</p>}
+        <Section title="Registers" meta={registers && !registersOff ? `${registers.count} on record` : undefined}>
+          {registersOff ? <p className="text-[12px] text-faint">Each register a records backend wrote to is listed here with its items.</p> : registers ? <RegistersView list={registers} selected={register} onSelect={(name) => go({ register: name })} /> : <p className="text-[12px] text-faint">Reading the registers…</p>}
         </Section>
         <Section title={register ? `Register ${register}` : "Register items"} meta={shownItems ? `${shownItems.count} · ${statesLine(shownItems.states)}` : undefined}>
           {!register && <p className="text-[12px] text-faint">Pick a register to read its items and their states.</p>}
@@ -446,7 +454,8 @@ function DeliverablesPage() {
               {DELIVERABLE_STATES.map((s) => stateButton(s, deliverableStateMeta(s).label, itemState === s, () => setItemState(s)))}
             </span>
           )}
-          {itemsError && <span className="text-[11.5px] text-err">{itemsError}</span>}
+          {itemsError && QUIET && <QuietNote inline />}
+          {itemsError && !QUIET && <span className="text-[11.5px] text-err">{itemsError}</span>}
           {shownItems && <RegisterItemsView items={shownItems} />}
         </Section>
       </div>

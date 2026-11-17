@@ -4,7 +4,8 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Button, Mono, Status } from "./ui";
-import { Banner } from "./overlays";
+import { Banner, QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { Field, Input } from "./forms";
 import { Pick } from "./select";
 import { DigestChip } from "./digest-chip";
@@ -70,7 +71,8 @@ export function RunChain({ run, tick = 0 }: { run: string; tick?: number }) {
       stop = true;
     };
   }, [run, tick]);
-  if (error) return <p className="text-[11px] text-faint">The chain could not be read: {error}</p>;
+  // A quiet console (lib/quiet.ts) prints no reason a read failed: the run page has said once that it is not connected.
+  if (error) return QUIET ? null : <p className="text-[11px] text-faint">The chain could not be read: {error}</p>;
   return reading ? <RunChainView reading={reading} /> : null;
 }
 
@@ -207,6 +209,8 @@ function LedgerPage() {
   const [to, setTo] = useState("");
   const [ledger, setLedger] = useState<LedgerVerification | null>(null);
   const [retention, setRetention] = useState<RetentionView | null>(null);
+  /** The retention door did not answer: a quiet console says so in place of "Reading" for good. */
+  const [retentionDown, setRetentionDown] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const walk = useCallback(() => {
@@ -226,10 +230,15 @@ function LedgerPage() {
       .catch(() => setAgents([]));
     getRetention()
       .then(setRetention)
-      .catch(() => setRetention(null));
+      .catch(() => {
+        setRetention(null);
+        setRetentionDown(true);
+      });
   }, []);
   const head = ledger ? ledgerHeadline(ledger) : null;
   const notes = ledger ? ledgerNotes(ledger) : [];
+  // A quiet console whose ledger door did not answer says so once under the header.
+  const quietDown = QUIET && Boolean(error) && !ledger;
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
       <PageHeader title="Ledger">
@@ -245,6 +254,8 @@ function LedgerPage() {
           {head.line}
         </Banner>
       )}
+      {!quietDown && (
+      <>
       <Section title="Ledger walk" action={<Button size="sm" variant="solid" tone="neutral" loading={busy} onClick={walk}>Walk again</Button>}>
         <div className="grid gap-3 md:grid-cols-3">
           <Field label="Agent">
@@ -286,8 +297,10 @@ function LedgerPage() {
           </Button>
         }
       >
-        {retention ? <RetentionPanel view={retention} /> : <p className="text-[12px] text-faint">Reading…</p>}
+        {retention ? <RetentionPanel view={retention} /> : QUIET && retentionDown ? <QuietNote inline /> : <p className="text-[12px] text-faint">Reading…</p>}
       </Section>
+      </>
+      )}
     </div>
   );
 }

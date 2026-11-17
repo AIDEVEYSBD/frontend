@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Status } from "./ui";
 import { Banner } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { Figures } from "./section";
 import { NotConnected, useDoor } from "./pending";
 import { FindingDetail, hasFindingDetail } from "./finding-detail";
@@ -132,7 +133,7 @@ export function WorkloadFindings({ profile, selected }: { profile: WorkloadProfi
             What {profile.name.toLowerCase()} reported: the count at each severity, and the most recent findings with the detail of the one you pick.
           </NotConnected>
         )}
-        {answer?.state === "error" && <Note>Not read.</Note>}
+        {answer?.state === "error" && !QUIET && <Note>Not read.</Note>}
         {answer?.state === "ok" &&
           (rows.length === 0 ? (
             <p className="text-[12.5px] leading-[1.6] text-dim">No finding is on record for this workload.</p>

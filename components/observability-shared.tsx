@@ -9,6 +9,8 @@ import { redactText } from "@/lib/redact";
 import { soon } from "@/lib/soon";
 import { hueFor } from "@/lib/hue";
 import { Button } from "./ui";
+import { QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { WINDOWS, WindowPick, winMs, type Win } from "./window-pick";
 
 /**
@@ -532,7 +534,7 @@ export function ReadNote({ read, total, pending, failed, win, onMore }: { read: 
       <span className="min-w-0 grow text-[11.5px] leading-[1.5] text-faint">
         Journals read for <span className="tnum font-medium text-fg">{count(read)}</span> of <span className="tnum font-medium text-fg">{count(total)}</span> run{total === 1 ? "" : "s"} in {windowWords(win)}, newest first, {RUN_BATCH} at a
         time.{pending > 0 ? ` Reading ${count(pending)} more…` : ""}
-        {failed.length > 0 && (
+        {failed.length > 0 && !QUIET && (
           <span className="text-err">
             {" "}
             {count(failed.length)} did not read: {failed[0].message}
@@ -557,8 +559,9 @@ export function RunLink({ run, entry, children }: { run: string; entry?: string;
   );
 }
 
-/** A door's failure, in the door's words. */
+/** A door's failure, in the door's words. A quiet console (lib/quiet.ts) says it is not connected and prints no reason; a page shows it once. */
 export function ErrorLine({ what, message }: { what: string; message: string }) {
+  if (QUIET) return <QuietNote />;
   return (
     <p role="alert" className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">
       {what}: {message}

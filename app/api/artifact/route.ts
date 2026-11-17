@@ -1,6 +1,7 @@
 import path from "node:path";
 import { readFile, realpath } from "node:fs/promises";
 import { permit } from "@/lib/server/auth";
+import { RUNTIME_ROOT } from "@/lib/server/paths";
 
 /**
  * Download one artifact a run produced.
@@ -14,7 +15,7 @@ import { permit } from "@/lib/server/auth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const OUTBOX = path.resolve(process.cwd(), "..", "runtime", "workspace", "outbox");
+const OUTBOX = path.resolve(RUNTIME_ROOT, "workspace", "outbox");
 
 const MIME: Record<string, string> = {
   pdf: "application/pdf",

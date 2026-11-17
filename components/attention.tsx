@@ -33,6 +33,7 @@ import { TextDialog } from "./text-dialog";
 import { alreadySummary, killSummary } from "@/lib/run-tree";
 import { rateLimitText } from "@/lib/rate-limit";
 import { useNow } from "./gate-form";
+import { QUIET } from "@/lib/quiet";
 
 /**
  * What needs a person, ranked.
@@ -207,6 +208,7 @@ export function AttentionPanel({
   const [textAsk, setTextAsk] = useState<AttentionItem | null>(null);
 
   const refusedText = (item: AttentionItem, e: unknown) => {
+    if (QUIET) return "Not connected on this deployment.";
     const rl = rateLimitOfError(e);
     return `${attentionVerb(item)} refused: ${rl ? rateLimitText(rl) : (e as Error).message.slice(0, 140)}`;
   };
@@ -287,6 +289,8 @@ export function AttentionPanel({
   };
 
   const worst = items?.[0];
+  /* A quiet console (lib/quiet.ts) whose queue was not read: the panel says what lands here, not that nothing is waiting and not why the read failed. */
+  const off = QUIET && Boolean(error) && !items?.length;
   return (
     <section className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">
       {killAsk && killAsk.run && (
@@ -383,12 +387,13 @@ export function AttentionPanel({
           </span>
         )}
         <span className="truncate text-[11px] text-faint">
-          {items === null ? "reading the queue…" : items.length ? `${items.length} thing${items.length === 1 ? "" : "s"} need a person · ranked by severity × age` : "nothing needs a person"}
+          {off ? "" : items === null ? "reading the queue…" : items.length ? `${items.length} thing${items.length === 1 ? "" : "s"} need a person · ranked by severity × age` : "nothing needs a person"}
         </span>
         <span className="grow" />
-        <Mono className="text-[10px] text-ghost">{error ? "queue unreachable" : "every 5 s"}</Mono>
+        <Mono className="text-[10px] text-ghost">{QUIET && error ? "" : error ? "queue unreachable" : "every 5 s"}</Mono>
       </div>
-      {error && items?.length === 0 && <p className="px-3 py-2 text-[11.5px] text-err">{error}</p>}
+      {error && items?.length === 0 && !QUIET && <p className="px-3 py-2 text-[11.5px] text-err">{error}</p>}
+      {off && <p className="px-3 py-3 text-[12px] text-faint">Gates, stopped runs, budget breaches, dead letters, failing health checks and drift land here, most urgent first, each with the action that clears it.</p>}
       <div className="max-h-[320px] overflow-y-auto">
         {(items ?? []).map((it, i) => {
           const dl = countdown(it.deadline, now);

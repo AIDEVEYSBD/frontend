@@ -40,11 +40,19 @@ export type { Gate } from "@/lib/api/l5";
 /** The inbox, re-read every `everyMs` while `active`: a gate escalates, times out or is answered elsewhere without a click here. */
 export function useGates(active = true, everyMs = 8000) {
   const [gates, setGates] = useState<Gate[] | null>(null);
+  /* Whether the last read failed: a caller that must not read an empty list as "no gates open" (a quiet console, lib/quiet.ts) asks this. */
+  const [failed, setFailed] = useState(false);
 
   const load = () => {
     listGates()
-      .then((d) => setGates(d.pending))
-      .catch(() => setGates((cur) => cur ?? []));
+      .then((d) => {
+        setGates(d.pending);
+        setFailed(false);
+      })
+      .catch(() => {
+        setGates((cur) => cur ?? []);
+        setFailed(true);
+      });
   };
 
   useEffect(() => {
@@ -54,7 +62,7 @@ export function useGates(active = true, everyMs = 8000) {
     return () => clearInterval(id);
   }, [active, everyMs]);
 
-  return { gates, reload: load };
+  return { gates, failed, reload: load };
 }
 
 /** Everything one gate's answer needs while it is being composed. */

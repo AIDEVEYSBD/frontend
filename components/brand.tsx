@@ -210,19 +210,22 @@ export const PRODUCT = { name: "Agent Factory", line: "AI SecOps Platform" };
 export function BrandLockup({
   onDark = false,
   line = true,
-  height = 15,
+  height = 20,
 }: {
   onDark?: boolean;
   /** The second line under the product's name. */
   line?: boolean;
+  /** The wordmark's height; the two lines of type scale with it. */
   height?: number;
 }) {
+  const name = Math.round(height * 0.72 * 2) / 2;
+  const sub = Math.round(height * 0.6 * 2) / 2;
   return (
-    <span className="flex min-w-0 items-center gap-2.5">
+    <span className="flex min-w-0 items-center gap-3">
       <ABBWordmark height={height} />
-      <span className={`min-w-0 border-l pl-2.5 leading-tight ${onDark ? "border-white/15" : "border-line-strong"}`}>
-        <span className={`block truncate text-[12.5px] font-semibold tracking-[-0.01em] ${onDark ? "text-white" : "text-fg"}`}>{PRODUCT.name}</span>
-        {line && <span className={`block truncate text-[10.5px] ${onDark ? "text-white/50" : "text-faint"}`}>{PRODUCT.line}</span>}
+      <span className={`min-w-0 border-l pl-3 leading-[1.2] ${onDark ? "border-white/20" : "border-line-strong"}`}>
+        <span className={`block truncate font-semibold tracking-[-0.01em] ${onDark ? "text-white" : "text-fg"}`} style={{ fontSize: name }}>{PRODUCT.name}</span>
+        {line && <span className={`block truncate font-medium ${onDark ? "text-white/70" : "text-dim"}`} style={{ fontSize: sub }}>{PRODUCT.line}</span>}
       </span>
     </span>
   );

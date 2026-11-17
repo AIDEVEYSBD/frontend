@@ -6,6 +6,7 @@ import { foundry } from "@/lib/server/foundry";
 import { search, type Hit } from "@/app/api/knowledge/search/route";
 import { permit } from "@/lib/server/auth";
 import { NAMESPACE_RULE, parseNamespace } from "@/lib/knowledge";
+import { RUNTIME_ROOT } from "@/lib/server/paths";
 
 /**
  * Agentic retrieval with a grounded answer.
@@ -45,7 +46,7 @@ import { NAMESPACE_RULE, parseNamespace } from "@/lib/knowledge";
  * and is noted, not priced.
  */
 
-const RUNS = path.resolve(process.cwd(), "..", "runtime", "workspace", "runs");
+const RUNS = path.resolve(RUNTIME_ROOT, "workspace", "runs");
 const SYSTEM = "knowledge-answer";
 
 interface JournalEntry { t: number; kind: string; node: string; title: string; detail?: string; data: Record<string, unknown>; because: string[]; id: string; tainted: boolean }

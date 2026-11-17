@@ -6,6 +6,8 @@ import { Button, Meter, Status, Tag } from "./ui";
 import { Checkbox, Field, Input, Switch, Textarea } from "./forms";
 import { Pick } from "./select";
 import { ChipEditor } from "./gate-form";
+import { QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { OpenChanges, ProposalNote } from "./policy";
 import { hueFor } from "@/lib/hue";
 import { soon } from "@/lib/soon";
@@ -148,6 +150,8 @@ export function Guardian() {
 
   const shown = (actions ?? []).filter((a) => filter === "all" || a.outcome === filter);
   const s = view?.stats;
+  // A quiet console (lib/quiet.ts) whose guardian door did not answer says so once, and draws no panel that would read "reading" for good.
+  const quietDown = QUIET && Boolean(error) && !view;
 
   return (
     <div className="mx-auto w-full max-w-[1520px] px-5 py-7" data-hue="red">
@@ -165,8 +169,15 @@ export function Guardian() {
         </div>
       </header>
 
-      {error && <p className="mt-4 text-[12.5px] text-err">{error}</p>}
+      {error && !QUIET && <p className="mt-4 text-[12.5px] text-err">{error}</p>}
+      {quietDown && (
+        <div className="mt-4">
+          <QuietNote />
+        </div>
+      )}
 
+      {!quietDown && (
+      <>
       <div className="mt-5 grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         {/* ── the limits a person sets ── */}
         <section className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">
@@ -272,7 +283,7 @@ export function Guardian() {
                     {proposedLine(saved)}
                   </Link>
                 )}
-                {saveError && <span className="text-[11.5px] text-err">{saveError}</span>}
+                {saveError && (QUIET && !refused ? <QuietNote inline /> : <span className="text-[11.5px] text-err">{saveError}</span>)}
               </div>
             </div>
           )}
@@ -323,7 +334,7 @@ export function Guardian() {
       <section className="mt-4 flex flex-col overflow-hidden rounded-md border border-line bg-surface">
         <div data-hue={hueFor("guardrail")} className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2.5">
           <span className="text-[12px] font-semibold">Verdicts it acted on or raised</span>
-          <span className="text-[11px] text-faint">{actions ? `${actions.length} on record, newest first` : "reading…"}</span>
+          <span className="text-[11px] text-faint">{actions ? `${actions.length} on record, newest first` : QUIET && error ? "not connected on this deployment" : "reading…"}</span>
           <span className="grow" />
           <span role="radiogroup" aria-label="Show" className="inline-flex items-center gap-px rounded-md border border-line bg-raise p-px">
             {(["all", "acted", "attention"] as Filter[]).map((f) => (
@@ -349,6 +360,8 @@ export function Guardian() {
           )}
         </div>
       </section>
+      </>
+      )}
     </div>
   );
 }

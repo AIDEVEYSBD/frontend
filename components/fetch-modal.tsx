@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, Status } from "./ui";
 import { BrandMark } from "./brand";
+import { QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { CURRENT_USER } from "@/lib/user";
 import { useSession, signerName } from "@/lib/use-session";
 
@@ -94,12 +96,13 @@ export function FetchModal({
     (async () => {
       try {
         const res = await fetch("/api/knowledge/fetch", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ source: sourceId, namespace }) });
-        const d = (await res.json()) as Staged;
+        // A page in place of an answer is no message: the status alone is the reason.
+        const d = (await res.json().catch(() => ({ error: `the server answered ${res.status}` }))) as Staged;
         if (stop) return;
         if (d.error) throw new Error(d.error);
         setStaged(d);
         const r = await fetch(`/api/knowledge/document?id=${encodeURIComponent(d.document)}&namespace=${encodeURIComponent(namespace)}`);
-        const full = (await r.json()) as Doc & { error?: string };
+        const full = (await r.json().catch(() => ({ error: `the server answered ${r.status}` }))) as Doc & { error?: string };
         if (stop) return;
         if (full.error) throw new Error(full.error);
         setDoc(full);
@@ -169,7 +172,7 @@ export function FetchModal({
     setDecideError("");
     try {
       const res = await fetch("/api/knowledge/admit", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ document: doc.id, namespace, admit, by, note: note.trim() }) });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({ error: `the server answered ${res.status}` }));
       if (d.error) setDecideError(d.error);
       else onDone(d.note, true);
     } catch (e) {
@@ -201,7 +204,7 @@ export function FetchModal({
               {phase === "fetching" && <Status tone="run">fetching · {elapsed}s</Status>}
               {(phase === "raw" || phase === "morph") && <Status tone="run">reading the record</Status>}
               {settled && doc && <Status tone={doc.status === "staged" ? "warn" : staged?.unchanged ? "neutral" : "ok"}>{doc.status === "staged" ? "staged · awaiting a person" : doc.status}</Status>}
-              {phase === "failed" && <Status tone="err">failed</Status>}
+              {phase === "failed" && !QUIET && <Status tone="err">failed</Status>}
             </span>
             <span className="truncate text-[11px] text-faint">
               {phase === "fetching"
@@ -214,7 +217,7 @@ export function FetchModal({
           <Button size="sm" variant="solid" tone="err" onClick={onClose}>Close</Button>
         </header>
 
-        {phase === "failed" && <p className="px-4 py-4 text-[12px] text-err">{error}</p>}
+        {phase === "failed" && (QUIET ? <div className="p-4"><QuietNote /></div> : <p className="px-4 py-4 text-[12px] text-err">{error}</p>)}
 
         {phase === "fetching" && (
           <div className="flex grow flex-col items-center justify-center gap-3 px-6 text-center">
@@ -353,7 +356,7 @@ export function FetchModal({
                 />
                 <Button size="sm" variant="solid" tone="ink" permission="configure" loading={busy === "admit"} disabled={Boolean(busy)} onClick={() => decide(true)}>Admit and index</Button>
                 <Button size="sm" variant="solid" tone="err" permission="configure" loading={busy === "refuse"} disabled={Boolean(busy)} onClick={() => decide(false)}>Refuse</Button>
-                {decideError && <span className="basis-full text-[11.5px] text-err">{decideError}</span>}
+                {decideError && (QUIET ? <span className="basis-full"><QuietNote inline /></span> : <span className="basis-full text-[11.5px] text-err">{decideError}</span>)}
               </>
             ) : (
               <span className="text-[11.5px] text-faint">

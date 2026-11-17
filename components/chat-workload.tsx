@@ -6,6 +6,8 @@ import { Button, Mono, Status } from "./ui";
 import { Pick } from "./select";
 import { Markdown } from "./markdown";
 import { NotConnected, useDoor } from "./pending";
+import { QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { WORKLOADS, ask, type Door, type WorkloadList } from "@/lib/api/pending";
 
 /**
@@ -125,7 +127,8 @@ export function WorkloadChat() {
               Gates on this workload: {chosen.gates.map((g) => `${g.name} (${g.role}, ${g.when})`).join("; ")}.
             </span>
           )}
-          {error && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>}
+          {error && QUIET && <QuietNote inline />}
+          {error && !QUIET && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>}
           <div className="flex items-start gap-3">
             <span className="min-w-0 grow pt-1 text-[11.5px] leading-[1.5] text-faint">
               {offered === null ? "Asking which workloads this deployment offers…" : off ? "The composer opens once this deployment is connected." : "The request runs with what you are permitted to start, and nothing more."}
@@ -139,7 +142,8 @@ export function WorkloadChat() {
         </form>
 
         <div className="flex min-w-0 flex-col gap-3">
-          {offered?.state === "error" && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">The workloads could not be read: {offered.message}</p>}
+          {offered?.state === "error" && QUIET && <QuietNote />}
+          {offered?.state === "error" && !QUIET && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">The workloads could not be read: {offered.message}</p>}
           {offered?.state === "ok" && available.length === 0 && !absent && (
             <p className="rounded-md border border-line bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-faint">No workload is available on this deployment yet, so there is nothing to ask.</p>
           )}

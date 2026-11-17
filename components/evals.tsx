@@ -8,7 +8,8 @@ import { Icon } from "./builder/icons";
 import { useModels } from "@/lib/use-models";
 import { Pick, PickMany } from "./select";
 import { Field, Input, Switch, Textarea } from "./forms";
-import { Banner } from "./overlays";
+import { Banner, QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { fromDocument, inputKeysOf, type Kind } from "@/lib/spec";
 import { derive, labeledTemplate, INVALID, type Labels, type Matrix, type Reducer } from "@/lib/metrics";
 import { TriangleGlyph, bestOf, logScore } from "./tradeoff";
@@ -360,14 +361,20 @@ export function Evals() {
 
   /* Which agents are retired (L8): their benchmarks still read, and take no new eval. */
   const [retired, setRetired] = useState<Record<string, Retired>>({});
+  /* Neither read answered: the console's own store is down and the backend was not there. An empty list then means "not read", not "none created". */
+  const [unread, setUnread] = useState(false);
   const refresh = useCallback(async () => {
     // The latest finished score per set: the console's read of the shared history.
     let consoleRows: SetRow[] = [];
+    let consoleDown = false;
+    let backendDown = false;
     try {
       const d = await (await fetch("/api/evals")).json();
       consoleRows = Array.isArray(d.sets) ? d.sets : [];
+      consoleDown = d.store === "db unreachable";
     } catch {
       consoleRows = [];
+      consoleDown = true;
     }
     // The sets themselves, as the backend's runner reads them, agent by agent.
     let agents: Awaited<ReturnType<typeof listAgents>> = [];
@@ -375,13 +382,16 @@ export function Evals() {
       agents = await listAgents();
     } catch {
       agents = [];
+      backendDown = true;
     }
     try {
       setSets(mergeSetRows(await listEvalSets(agents.map((a) => a.id)), consoleRows));
     } catch {
       // No backend to ask: the console's own read is what there is.
       setSets(consoleRows);
+      backendDown = true;
     }
+    setUnread(consoleDown && backendDown);
     const out: Record<string, Retired> = {};
     for (const a of agents) {
       const r = retiredOf(a.retired);
@@ -425,7 +435,9 @@ export function Evals() {
 
       <div className="mt-6 flex flex-col gap-3">
         {sets === null && <p className="text-[12.5px] text-faint">Reading the benchmarks…</p>}
-        {sets?.length === 0 && !building && (
+        {/* A quiet console (lib/quiet.ts) does not call an unread list empty. */}
+        {sets?.length === 0 && !building && QUIET && unread && <QuietNote />}
+        {sets?.length === 0 && !building && !(QUIET && unread) && (
           <div className="flex flex-col items-start gap-3 rounded-md border border-dashed border-line-strong bg-surface px-5 py-6">
             <p className="text-[13px] font-medium text-fg">No evaluations have been created.</p>
             <p className="max-w-[60ch] text-[12px] leading-[1.6] text-dim">
@@ -459,6 +471,9 @@ export function Evals() {
 }
 
 /* ═══════════════════ the set builder ═══════════════════ */
+
+/** What the builder holds in place of a save's failure reason in a quiet console (lib/quiet.ts). */
+const NOT_SAVED = "\u0000not-saved";
 
 interface AgentOpt {
   id: string;
@@ -622,7 +637,8 @@ function SetBuilder({
       if (!res.ok || d.error) throw new Error(String(d.error ?? res.status));
       onDone(d.id);
     } catch (e) {
-      setError((e as Error).message);
+      // A quiet console says the save is not connected; it does not print the reason.
+      setError(QUIET ? NOT_SAVED : (e as Error).message);
       setBusy(false);
     }
   };
@@ -721,7 +737,7 @@ function SetBuilder({
         <>
           <Textarea value={jsonText} onChange={setJsonText} rows={14} mono aria-label="Benchmark as JSON" />
           <div className="flex items-center gap-3">
-            {error && <span className="text-[11.5px] text-err">{error}</span>}
+            {error && (error === NOT_SAVED ? <QuietNote inline /> : <span className="text-[11.5px] text-err">{error}</span>)}
             <span className="grow" />
             <Button size="sm" variant="solid" onClick={importJson}>
               Apply to the form
@@ -1092,7 +1108,7 @@ function SetBuilder({
                 Add a case
               </Button>
               <span className="grow" />
-              {error && <span className="max-w-[44ch] truncate text-[11.5px] text-err">{error}</span>}
+              {error && (error === NOT_SAVED ? <QuietNote inline /> : <span className="max-w-[44ch] truncate text-[11.5px] text-err">{error}</span>)}
               <Button
                 size="sm"
                 variant="solid"
@@ -2002,7 +2018,7 @@ function Recommendation({
         </Button>
       </div>
       {applied && <span className="text-[11.5px] text-dim">{applied}</span>}
-      {applyError && <span className="text-[11.5px] text-err">{applyError}</span>}
+      {applyError && (QUIET ? <QuietNote inline /> : <span className="text-[11.5px] text-err">{applyError}</span>)}
       <ul className="flex flex-col gap-0.5 pl-4 text-[11.5px] leading-[1.5] text-dim">
         {reasons.map((r) => (
           <li key={r} className="list-disc">{r}</li>

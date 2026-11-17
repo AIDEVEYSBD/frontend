@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useState } from "react";
 import { Button, Mono, Status, Tag } from "./ui";
 import { Field, Input } from "./forms";
+import { QUIET } from "@/lib/quiet";
+import { QuietNote } from "./overlays";
 import { Figures } from "./section";
 import {
   Card,
@@ -81,6 +83,7 @@ export function IdentityPage({
   ownerStoreDown,
   editOwner,
   actions,
+  unread = false,
 }: {
   entry: Entry;
   findings: Finding[];
@@ -96,6 +99,8 @@ export function IdentityPage({
   /** Open the owner form at once (the roster's and a finding's "Assign owner"). */
   editOwner: boolean;
   actions: IamActions;
+  /** A quiet console (lib/quiet.ts) with a door unread: "nothing needs attention" is not known, so the card is left out. */
+  unread?: boolean;
 }) {
   const [confirming, setConfirming] = useState("");
   const st = statusOf(entry);
@@ -229,7 +234,7 @@ export function IdentityPage({
       </div>
 
       {/* ── needs attention ── */}
-      <Card id="attention" title="Needs attention" meta={attention ? `${attention}` : "nothing"}>
+      {!(unread && attention === 0) && <Card id="attention" title="Needs attention" meta={attention ? `${attention}` : "nothing"}>
         {attention === 0 && <p className="px-4 py-3 text-[12px] text-dim">Nothing about this identity needs attention on this read.</p>}
         {personIssues.map((x) => (
           <div key={x.title} className="flex flex-wrap items-start gap-3 border-b border-line px-4 py-2.5 last:border-0">
@@ -256,7 +261,7 @@ export function IdentityPage({
             </span>
           </div>
         )}
-      </Card>
+      </Card>}
 
       {/* ── access ── */}
       {p && (
@@ -308,7 +313,7 @@ export function IdentityPage({
 
       {/* ── activity ── */}
       <Card id="activity" title="Activity" meta={events && events.length ? `${mine.length} of the last ${events.length} audit events name this identity` : undefined}>
-        {eventsError && <p className="px-4 py-3 text-[12px] text-err">The audit trail could not be read: {eventsError}.</p>}
+        {eventsError && (QUIET ? <p className="px-4 py-3"><QuietNote inline /></p> : <p className="px-4 py-3 text-[12px] text-err">The audit trail could not be read: {eventsError}.</p>)}
         {!events && !eventsError && <p className="px-4 py-3 text-[12px] text-faint">Reading the audit trail…</p>}
         {events && mine.length === 0 && (
           <p className="px-4 py-3 text-[12px] text-dim">
@@ -417,7 +422,7 @@ function IdentityAccess({ identity: i, now, busy, ownerStoreDown, editOwner, act
                   {i.owner ? "Change owner" : "Assign owner"}
                 </Button>
               )}
-              {ownerStoreDown && <span className="text-[11.5px] leading-[1.5] text-faint">Owners cannot be saved here: the register&rsquo;s own table is not reachable on this deployment.</span>}
+              {ownerStoreDown && (QUIET ? <QuietNote inline /> : <span className="text-[11.5px] leading-[1.5] text-faint">Owners cannot be saved here: the register&rsquo;s own table is not reachable on this deployment.</span>)}
             </>
           )}
         </form>

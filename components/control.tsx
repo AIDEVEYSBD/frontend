@@ -5,7 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, IconButton, Label, Mono, Status, Tag } from "./ui";
-import { Banner } from "./overlays";
+import { Banner, QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { useDismiss } from "./dismiss";
 import { Sparkline } from "./data";
 import { CAT } from "./charts";
@@ -414,7 +415,7 @@ export function Control() {
   const [tickHint, setTickHint] = useState<string | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const drill = stack[stack.length - 1] ?? null;
-  const { gates, reload: reloadGates } = useGates();
+  const { gates, failed: gatesFailed, reload: reloadGates } = useGates();
 
   const notice = useCallback((msg: string) => {
     setStageNotice(msg);
@@ -432,7 +433,9 @@ export function Control() {
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/control");
-      const d = await res.json();
+      // An answer that is not the estate's JSON (a proxy's page, an empty body) is said in a short plain line, never as a parser's complaint about the page it was handed.
+      const d = await res.json().catch(() => null);
+      if (!d || typeof d !== "object") throw new Error(`the estate read answered ${res.status} with nothing this page can read`);
       if (d.error) throw new Error(String(d.error));
       setRaw(d);
       setNow(Date.now());
@@ -539,11 +542,11 @@ export function Control() {
         } catch (e) {
           // Everything in flight already stopping on an earlier kill is that, not a refusal.
           const refusal = killRefusalOf(e);
-          notice(refusal?.already.length ? alreadySummary(refusal) : `Kill refused: ${(e as Error).message.slice(0, 120)}`);
+          notice(refusal?.already.length ? alreadySummary(refusal) : QUIET ? "Not connected on this deployment." : `Kill refused: ${(e as Error).message.slice(0, 120)}`);
         }
         await load();
       } catch (e) {
-        notice(`Kill failed: ${(e as Error).message.slice(0, 120)}`);
+        notice(QUIET ? "Not connected on this deployment." : `Kill failed: ${(e as Error).message.slice(0, 120)}`);
       } finally {
         setKilling(null);
       }
@@ -554,6 +557,10 @@ export function Control() {
   const askKill = useCallback((id: string) => setKillAsk({ id }), []);
 
   const t = data?.totals;
+  /* A quiet console (lib/quiet.ts). `regOff`: the registry behind the estate did not answer, so nothing is said about agents, grants or peers.
+     `off`: nor is there a run on record, so no figure on the page was read from anything; each panel says what it will hold, under one note. */
+  const regOff = QUIET && ((!raw && Boolean(error)) || (raw !== null && raw.store !== "db" && raw.agents.length === 0));
+  const off = regOff && (!raw || (raw.runs.length === 0 && raw.ledger.entries === 0));
   usePageFacts(
     data
       ? {
@@ -567,7 +574,9 @@ export function Control() {
   const locked = Boolean(lockdown?.on);
   const statusLine = locked
     ? `lockdown${lockdown?.reason ? ` · ${lockdown.reason}` : ""}${data && t!.active > 0 ? ` · ${t!.active} in flight` : ""}`
-    : !data
+    : off
+      ? "not connected"
+      : !data
       ? "reading the estate…"
       : t!.active > 0
         ? `${t!.active} run${t!.active === 1 ? "" : "s"} in flight`
@@ -607,7 +616,7 @@ export function Control() {
                   <span className="relative inline-flex size-2 rounded-full bg-run" />
                 </span>
               ) : (
-                <span className="size-2 rounded-full bg-ok" />
+                <span className={`size-2 rounded-full ${off ? "bg-faint" : "bg-ok"}`} />
               )}
               <span className={`text-[11.5px] font-medium ${locked ? "text-err" : "text-dim"}`}>{statusLine}</span>
             </span>
@@ -632,7 +641,12 @@ export function Control() {
         )}
       </div>
 
-      {error && <p className="mt-4 text-[12.5px] text-err">{error}</p>}
+      {error && !QUIET && <p className="mt-4 text-[12.5px] text-err">{error}</p>}
+      {regOff && (
+        <div className="mt-4">
+          <QuietNote />
+        </div>
+      )}
 
       {/* ── Lockdown: the banner stays while it is on ── */}
       {locked && (
@@ -648,27 +662,27 @@ export function Control() {
 
       {/* ── KPI band — every tile opens its records ── */}
       <div className="mt-6 grid grid-cols-2 overflow-hidden rounded-md border border-line bg-surface sm:grid-cols-4 xl:grid-cols-8">
-        <Kpi label="Deployed agents" value={t ? String(t.deployed) : "…"} sub={t ? `${t.registered} registered` : ""}
+        <Kpi off={regOff} label="Deployed agents" value={t ? String(t.deployed) : "…"} sub={t ? `${t.registered} registered` : ""}
           active={drill?.kind === "kpi" && drill.which === "deployed"} onOpen={() => open({ kind: "kpi", which: "deployed" })} />
-        <Kpi label="Active now" value={t ? String(t.active) : "…"} sub={t?.active ? "streaming live" : "nothing in flight"}
+        <Kpi off={off} label="Active now" value={t ? String(t.active) : "…"} sub={t?.active ? "streaming live" : "nothing in flight"}
           tone={t?.active ? "run" : undefined} active={drill?.kind === "kpi" && drill.which === "active"}
           onOpen={() => open({ kind: "kpi", which: "active" })} />
-        <Kpi label="Awaiting approval" value={t ? String(t.pending) : "…"} sub={t?.pending ? "a person is next" : "no gates open"}
+        <Kpi off={off} label="Awaiting approval" value={t ? String(t.pending) : "…"} sub={t?.pending ? "a person is next" : "no gates open"}
           tone={t?.pending ? "warn" : undefined} active={drill?.kind === "kpi" && drill.which === "pending"}
           onOpen={() => open({ kind: "kpi", which: "pending" })} />
-        <Kpi label="Runs" value={cut("runs")?.totals ? String(cut("runs")!.totals.runs7d) : "…"} sub={raw?.shadow?.runs ? `${raw.shadow.runs} shadow run${raw.shadow.runs === 1 ? "" : "s"} left out (7d)` : "every journal counted"}
+        <Kpi off={off} label="Runs" value={cut("runs")?.totals ? String(cut("runs")!.totals.runs7d) : "…"} sub={raw?.shadow?.runs ? `${raw.shadow.runs} shadow run${raw.shadow.runs === 1 ? "" : "s"} left out (7d)` : "every journal counted"}
           win={wf("runs")} onWin={() => tile("runs")} spark={cut("runs")?.days.map((d) => d.runs)} active={drill?.kind === "kpi" && drill.which === "runs"}
           onOpen={() => open({ kind: "kpi", which: "runs" })} />
-        <Kpi label="Spend" value={cut("spend")?.totals ? fmtCost(cut("spend")!.totals.cost7d) : "…"} sub={cut("spend")?.totals ? `${fmtTokens(cut("spend")!.totals.tokens7d)} tokens${cut("spend")!.totals.unpriced7d ? ` · ${cut("spend")!.totals.unpriced7d} estimated` : ""}` : ""}
+        <Kpi off={off} label="Spend" value={cut("spend")?.totals ? fmtCost(cut("spend")!.totals.cost7d) : "…"} sub={cut("spend")?.totals ? `${fmtTokens(cut("spend")!.totals.tokens7d)} tokens${cut("spend")!.totals.unpriced7d ? ` · ${cut("spend")!.totals.unpriced7d} estimated` : ""}` : ""}
           win={wf("spend")} onWin={() => tile("spend")} spark={cut("spend")?.days.map((d) => d.cost ?? 0)} active={drill?.kind === "kpi" && drill.which === "spend"}
           onOpen={() => open({ kind: "kpi", which: "spend" })} />
-        <Kpi label="Avg run time" value={cut("time")?.totals ? fmtMs(cut("time")!.totals.avgMs7d) : "…"} sub="wall clock"
+        <Kpi off={off} label="Avg run time" value={cut("time")?.totals ? fmtMs(cut("time")!.totals.avgMs7d) : "…"} sub="wall clock"
           win={wf("time")} onWin={() => tile("time")} spark={cut("time")?.days.map((d) => d.avgMs ?? 0)} active={drill?.kind === "kpi" && drill.which === "time"}
           onOpen={() => open({ kind: "kpi", which: "time" })} />
-        <Kpi label="Guardrail denials" value={cut("denials")?.totals ? String(cut("denials")!.totals.denials7d) : "…"} sub="click for the rule that fired"
+        <Kpi off={off} label="Guardrail denials" value={cut("denials")?.totals ? String(cut("denials")!.totals.denials7d) : "…"} sub="click for the rule that fired"
           win={wf("denials")} onWin={() => tile("denials")} tone={cut("denials")?.totals.denials7d ? "warn" : undefined} spark={cut("denials")?.days.map((d) => d.denials)}
           active={drill?.kind === "kpi" && drill.which === "denials"} onOpen={() => open({ kind: "kpi", which: "denials" })} />
-        <Kpi label="Kills" value={cut("kills")?.totals ? String(cut("kills")!.totals.kills7d) : "…"} sub="operator decisions"
+        <Kpi off={off} label="Kills" value={cut("kills")?.totals ? String(cut("kills")!.totals.kills7d) : "…"} sub="operator decisions"
           win={wf("kills")} onWin={() => tile("kills")} tone={cut("kills")?.totals.kills7d ? "err" : undefined} spark={cut("kills")?.days.map((d) => d.kills)}
           active={drill?.kind === "kpi" && drill.which === "kills"} onOpen={() => open({ kind: "kpi", which: "kills" })} />
       </div>
@@ -748,12 +762,15 @@ export function Control() {
                 </div>
               );
             })}
-            {!data && <p className="px-4 py-4 text-[12px] text-faint">Reading the registry…</p>}
+            {!data && !regOff && <p className="px-4 py-4 text-[12px] text-faint">Reading the registry…</p>}
+            {regOff && <p className="px-4 py-4 text-[12px] text-faint">Each agent is a row here, its stages lit by their own records.</p>}
           </div>
         </div>
-        <p className="truncate border-t border-line px-4 py-1.5 text-[10.5px] text-faint" aria-live="polite">
-          {stageHint ?? "Hover a stage for the record behind it and what a click does."}
-        </p>
+        {!regOff && (
+          <p className="truncate border-t border-line px-4 py-1.5 text-[10.5px] text-faint" aria-live="polite">
+            {stageHint ?? "Hover a stage for the record behind it and what a click does."}
+          </p>
+        )}
       </section>
 
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
@@ -912,18 +929,21 @@ export function Control() {
                 </div>
               ))}
 
-              {data && data.agents.length === 0 && attached.length === 0 && (
+              {regOff && attached.length === 0 && <p className="px-4 py-6 text-[12.5px] text-faint">Deployed workflows are listed here, each with its whole record.</p>}
+              {data && !regOff && data.agents.length === 0 && attached.length === 0 && (
                 <p className="px-4 py-6 text-[12.5px] text-faint">
                   Nothing in the registry. Build a workflow and deploy it — it appears here with
                   its whole record.
                 </p>
               )}
-              {!data && <p className="px-4 py-6 text-[12.5px] text-faint">Reading the registry…</p>}
+              {!data && !regOff && <p className="px-4 py-6 text-[12.5px] text-faint">Reading the registry…</p>}
             </div>
           </div>
-          <p className="truncate border-t border-line px-4 py-1.5 text-[10.5px] text-faint" aria-live="polite">
-            {tickHint ?? "Health: one tick per run — hover for its state and age, click to open."}
-          </p>
+          {!regOff && (
+            <p className="truncate border-t border-line px-4 py-1.5 text-[10.5px] text-faint" aria-live="polite">
+              {tickHint ?? "Health: one tick per run — hover for its state and age, click to open."}
+            </p>
+          )}
 
           {/* Recent runs fill the column — the estate's pulse, row by row. */}
           <div className="border-t border-line">
@@ -991,8 +1011,9 @@ export function Control() {
                 <KillButton id={r.id} busy={killing === r.id || killing === "*"} onKill={askKill} />
               </div>
             ))}
-            {!data && <p className="px-3 py-4 text-[12px] text-faint">Reading the process table…</p>}
-            {data && data.live.length === 0 && (
+            {!data && !off && <p className="px-3 py-4 text-[12px] text-faint">Reading the process table…</p>}
+            {off && <p className="px-3 py-4 text-[12px] text-faint">Runs appear here the moment they start, kill switch beside each.</p>}
+            {data && !off && data.live.length === 0 && (
               <p className="px-3 py-4 text-[12px] text-faint">
                 Nothing in flight. Runs appear here the moment they start, kill switch beside each.
               </p>
@@ -1076,7 +1097,10 @@ export function Control() {
                   </Button>
                 </div>
               ))}
-              {gates && gates.length === 0 && (
+              {gates && gates.length === 0 && QUIET && gatesFailed && (
+                <p className="px-3 py-4 text-[12px] text-faint">When a workflow suspends for a person, it queues here with an Answer button.</p>
+              )}
+              {gates && gates.length === 0 && !(QUIET && gatesFailed) && (
                 <p className="px-3 py-4 text-[12px] text-faint">
                   No gates open. When a workflow suspends for a person, it queues here with an
                   Answer button.
@@ -1089,7 +1113,7 @@ export function Control() {
           {/* Guardrails — the record of "no" */}
           <section className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">
             <PanelHead title="Guardrails" meta="policy in action, 7 days" />
-            <div className="grid grid-cols-3 divide-x divide-line">
+            <div className={off ? "hidden" : "grid grid-cols-3 divide-x divide-line"}>
               {[
                 { label: "Denials", value: t?.denials7d ?? 0, tone: t?.denials7d ? "text-warn" : "text-fg", drill: "denials" as const },
                 { label: "Kills", value: t?.kills7d ?? 0, tone: t?.kills7d ? "text-err" : "text-fg", drill: "kills" as const },
@@ -1106,14 +1130,14 @@ export function Control() {
                 </button>
               ))}
             </div>
-            <p className="border-t border-line px-3 py-2 text-[10.5px] leading-[1.5] text-faint">
+            <p className={`${off ? "" : "border-t border-line "}px-3 py-2 text-[10.5px] leading-[1.5] text-faint`}>
               Every refusal, gate and kill is a journal entry with a because-chain — open any run
               to read the exact rule that fired.
             </p>
           </section>
 
           {/* FinOps — the gateway's own balance, and the budget beside the burn */}
-          <FinOpsPanel finops={data?.finops ?? null} window={win} onSaved={load} />
+          <FinOpsPanel finops={data?.finops ?? null} window={win} onSaved={load} off={off} />
         </div>
       </div>
 
@@ -1124,11 +1148,15 @@ export function Control() {
         <section className="mb-4 flex break-inside-avoid flex-col overflow-hidden rounded-md border border-line bg-surface">
           <PanelHead title="Activity" meta={`${cut("activity")?.days.length ?? 14} days — click a day`} right={
             <span className="flex items-center gap-2">
-              <Mono className="text-[10px] text-ghost">{cut("activity")?.totals ? `${fmtCost(cut("activity")!.totals.cost7d)} · ${wf("activity")}` : ""}</Mono>
+              <Mono className="text-[10px] text-ghost">{off ? "" : cut("activity")?.totals ? `${fmtCost(cut("activity")!.totals.cost7d)} · ${wf("activity")}` : ""}</Mono>
               <WindowPick value={wf("activity")} onChange={(w) => tile("activity", w)} inherited={!cardWin.activity} />
             </span>
           } />
-          <ActivityChart days={cut("activity")?.days ?? []} selected={drill?.kind === "day" ? drill.day : null} onPick={(day) => open({ kind: "day", day })} />
+          {off ? (
+            <p className="px-3 py-4 text-[12px] text-faint">Runs per day, with their cost, chart here.</p>
+          ) : (
+            <ActivityChart days={cut("activity")?.days ?? []} selected={drill?.kind === "day" ? drill.day : null} onPick={(day) => open({ kind: "day", day })} />
+          )}
           {/* A canary's shadow runs (L8, second round) are listed on the Runs page, marked; they are counted in none of these figures. */}
           {raw?.shadow && shadowBesideLine(raw.shadow, (n) => fmtCost(n)) && (
             <p className="border-t border-line px-3 py-2 text-[10.5px] text-faint">{shadowBesideLine(raw.shadow, (n) => fmtCost(n))} (last 7 days).</p>
@@ -1137,7 +1165,7 @@ export function Control() {
 
         <section className="mb-4 flex break-inside-avoid flex-col overflow-hidden rounded-md border border-line bg-surface">
           <PanelHead title="Model mix" meta={`${wf("mix")} — click a model`} right={<WindowPick value={wf("mix")} onChange={(w) => tile("mix", w)} inherited={!cardWin.mix} />} />
-          <ModelMix models={cut("mix")?.models ?? []} onPick={(id) => open({ kind: "model", id })} selected={drill?.kind === "model" ? drill.id : null} />
+          <ModelMix off={off} models={cut("mix")?.models ?? []} onPick={(id) => open({ kind: "model", id })} selected={drill?.kind === "model" ? drill.id : null} />
         </section>
 
         {/* The intake: what external systems have posted, and who is draining it */}
@@ -1157,6 +1185,7 @@ export function Control() {
             where its own evidence pulls it. */}
         <section className="mb-4 flex break-inside-avoid flex-col overflow-hidden rounded-md border border-line bg-surface">
           <TradeoffTriangle
+            off={off}
             models={data?.models ?? []}
             runs={data?.runs ?? []}
             agents={data?.agents ?? []}
@@ -1201,7 +1230,8 @@ export function Control() {
                   </a>
                 </div>
               ))}
-            {data && !data.runs.some((r) => r.artifactNames.length) && (
+            {off && <p className="px-3 py-4 text-[12px] text-faint">Documents land here the moment a run produces them.</p>}
+            {data && !off && !data.runs.some((r) => r.artifactNames.length) && (
               <p className="px-3 py-4 text-[12px] text-faint">
                 Nothing written yet — documents land here the moment a run produces them.
               </p>
@@ -1228,7 +1258,8 @@ export function Control() {
               </Link>
             );
           })}
-          {data && data.peers.length === 0 && (
+          {regOff && (data?.peers.length ?? 0) === 0 && <p className="px-3 py-4 text-[12px] leading-[1.55] text-faint">Peers registered on the Peers page are listed here with their state.</p>}
+          {data && !regOff && data.peers.length === 0 && (
             <p className="px-3 py-4 text-[12px] leading-[1.55] text-faint">
               No peer is registered or named by a workflow. Register one on the Peers page: its card is pinned and nothing is sent to it until a person
               approves it.
@@ -1242,7 +1273,8 @@ export function Control() {
         {/* Least-privilege posture */}
         <section className="mb-4 flex break-inside-avoid flex-col overflow-hidden rounded-md border border-line bg-surface">
           <PanelHead title="Least privilege" meta="grants × declared risk × gates" />
-          {data && (
+          {regOff && <p className="px-3 py-4 text-[12px] leading-[1.55] text-faint">Grants by declared risk, and the sinks behind a gate, are counted here from the specs.</p>}
+          {data && !regOff && (
             <>
               <div className="grid grid-cols-4 divide-x divide-line border-b border-line">
                 {(["read", "write", "risky", "destructive"] as const).map((r) => (
@@ -1294,7 +1326,7 @@ export function Control() {
         {/* The ledger */}
         <section className="mb-4 flex break-inside-avoid flex-col overflow-hidden rounded-md border border-line bg-surface">
           <PanelHead title="Execution ledger" meta="append-only, exportable" />
-          <div className="grid grid-cols-3 divide-x divide-line border-b border-line">
+          <div className={off ? "hidden" : "grid grid-cols-3 divide-x divide-line border-b border-line"}>
             {[
               { label: "Entries", value: data ? String(data.ledger.entries) : "…" },
               { label: "Runs", value: data ? String(data.ledger.runs) : "…" },
@@ -1320,10 +1352,19 @@ export function Control() {
 
       </div>
 
-      <p className="mt-4 flex items-center gap-2 text-[10.5px] text-ghost">
-        <Icon name="database" size={11} />
-        {data ? `${data.store} · cost basis: ${data.costBasis}` : "reading the estate…"}
-      </p>
+      {/* A quiet console prints no storage failure and no price assumed for a model the deployment may not have; with nothing on record there is no cost to give a basis for. */}
+      {!off && (
+        <p className="mt-4 flex items-center gap-2 text-[10.5px] text-ghost">
+          <Icon name="database" size={11} />
+          {!data
+            ? QUIET && error
+              ? ""
+              : "reading the estate…"
+            : QUIET
+              ? `${data.store === "db" ? "db · " : ""}cost basis: ${data.costBasis.replace(/; list price assumed for [^;]*/, "")}`
+              : `${data.store} · cost basis: ${data.costBasis}`}
+        </p>
+      )}
 
       {/* Stage-action feedback — the honest answer, or the receipt. */}
       {stageNotice && (
@@ -1404,10 +1445,13 @@ function FinOpsPanel({
   finops,
   window,
   onSaved,
+  off = false,
 }: {
   finops: ControlData["finops"] | null;
   window: Win;
   onSaved: () => void;
+  /** A quiet console with nothing on record: no figure is shown for a spend that was not read. */
+  off?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState("");
@@ -1435,7 +1479,8 @@ function FinOpsPanel({
         title="FinOps"
         meta={azure?.configured ? `Azure billed · ${azure.scope === "resource" ? "Foundry resource" : "subscription"} · burn vs budget` : "journalled burn vs budget"}
       />
-      <div className="grid grid-cols-4 divide-x divide-line border-b border-line">
+      {off && <p className="border-b border-line px-3 py-3 text-[12px] text-faint">What was billed and what the journals priced show here, beside the budget.</p>}
+      <div className={off ? "hidden" : "grid grid-cols-4 divide-x divide-line border-b border-line"}>
         {[
           { label: "Billed · MTD", value: fmtBilled(azure?.configured && azure.error === null ? azure.mtd : null), tone: "text-fg" },
           { label: "Billed · 7d", value: fmtBilled(billed), tone: "text-fg" },
@@ -1532,8 +1577,10 @@ function FinOpsPanel({
               {finops?.budget != null ? "Change budget" : "Set a weekly budget"}
             </Button>
             <span className="grow" />
-            <span className="truncate text-[10px] text-ghost" title={azure?.error ?? azure?.missing.join(", ") ?? ""}>
-              {!azure?.configured
+            <span className="truncate text-[10px] text-ghost" title={QUIET ? undefined : (azure?.error ?? azure?.missing.join(", ") ?? "")}>
+              {QUIET && (!azure?.configured || azure.error)
+                ? ""
+                : !azure?.configured
                 ? `Azure billing not connected: set ${azure?.missing.join(", ") ?? "the AZURE_* variables"}`
                 : azure.error
                   ? `Azure Cost Management: ${azure.error}`
@@ -1649,7 +1696,10 @@ function Kpi({
   onOpen,
   win,
   onWin,
+  off = false,
 }: {
+  /** A quiet console whose figure was not read: the tile says so, shows no figure and opens nothing. */
+  off?: boolean;
   label: string;
   value: string;
   sub: string;
@@ -1665,16 +1715,18 @@ function Kpi({
     <div
       role="button"
       tabIndex={0}
-      onClick={onOpen}
+      onClick={off ? undefined : onOpen}
       onKeyDown={(e) => {
+        if (off) return;
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           onOpen();
         }
       }}
       aria-pressed={active}
-      className={`focusable -mr-px -mb-px flex cursor-pointer flex-col gap-1 border-r border-b border-line px-3 py-2.5 text-left transition-colors ${
-        active ? "bg-raise/80" : "hover:bg-raise/50"
+      aria-disabled={off || undefined}
+      className={`focusable -mr-px -mb-px flex flex-col gap-1 border-r border-b border-line px-3 py-2.5 text-left transition-colors ${
+        off ? "" : active ? "cursor-pointer bg-raise/80" : "cursor-pointer hover:bg-raise/50"
       }`}
     >
       <span className="flex items-center gap-1.5">
@@ -1694,17 +1746,21 @@ function Kpi({
         )}
       </span>
       <span className="flex items-end justify-between gap-2">
-        <span
-          className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]"
-          style={tone ? { color: `var(--color-${tone})` } : undefined}
-        >
-          {value}
-        </span>
-        {spark && spark.some((v) => v > 0) && (
+        {off ? (
+          <span className="flex h-[22px] items-center text-[12px] text-faint">Not connected</span>
+        ) : (
+          <span
+            className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]"
+            style={tone ? { color: `var(--color-${tone})` } : undefined}
+          >
+            {value}
+          </span>
+        )}
+        {!off && spark && spark.some((v) => v > 0) && (
           <Sparkline points={spark} tone={tone ?? "run"} width={52} height={16} area={false} />
         )}
       </span>
-      <span className="truncate text-[10px] text-ghost">{sub}</span>
+      <span className="truncate text-[10px] text-ghost">{off ? "\u00a0" : sub}</span>
     </div>
   );
 }
@@ -1785,13 +1841,17 @@ function ModelMix({
   models,
   selected,
   onPick,
+  off = false,
 }: {
+  /** A quiet console with nothing on record: the panel says what it will hold. */
+  off?: boolean;
   models: ModelRow[];
   selected: string | null;
   onPick: (id: string) => void;
 }) {
   const total = Math.max(1, models.reduce((s, m) => s + m.tokens, 0));
   const localShare = Math.round((models.filter((m) => m.local).reduce((s, m) => s + m.tokens, 0) / total) * 100);
+  if (off) return <p className="px-3 py-4 text-[12px] text-faint">Where the tokens went, model by model, shows here.</p>;
   if (!models.length) return <p className="px-3 py-4 text-[12px] text-faint">No model calls in this window.</p>;
   return (
     <div className="flex flex-col gap-2.5 p-3">
@@ -2467,7 +2527,10 @@ function TradeoffTriangle({
   agents,
   selected,
   onPick,
+  off = false,
 }: {
+  /** A quiet console with nothing on record: the key stays, and nothing is said about model calls that were not read. */
+  off?: boolean;
   models: ModelRow[];
   runs: RunRow[];
   agents: AgentRow[];
@@ -2532,7 +2595,7 @@ function TradeoffTriangle({
                   <td className="px-3 py-1.5 text-right">{c.runs}</td>
                 </tr>
               ))}
-              {!corners.length && (
+              {!corners.length && !off && (
                 <tr><td colSpan={5} className="px-3 py-3 text-faint">No model calls in the last 7 days.</td></tr>
               )}
             </tbody>
@@ -2556,7 +2619,7 @@ function TradeoffTriangle({
             </div>
           </div>
 
-          {!ranked.length && (
+          {!ranked.length && !off && (
             <p className="px-3 py-4 text-[12px] text-faint">No model calls in the last 7 days.</p>
           )}
 
@@ -2642,6 +2705,7 @@ type QueueData = QueueSummary;
  * the oldest queued age says how far behind the estate is right now.
  */
 function QueuePanel({ queue, now }: { queue: QueueData | null; now: number }) {
+  if (!queue && QUIET) return <p className="px-3 py-4 text-[12px] text-faint">What external systems post queues here by agent, with the workers draining it.</p>;
   if (!queue) return <p className="px-3 py-4 text-[12px] text-faint">The queue needs the registry database.</p>;
   const rows = Object.entries(queue.agents);
   const age = (iso: string | null | undefined) => {

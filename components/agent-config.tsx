@@ -5,7 +5,8 @@ import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Button, Mono, Status, Tag, type Tone } from "./ui";
-import { Banner } from "./overlays";
+import { Banner, QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { Section } from "./section";
 import { Pick } from "./select";
 import { DigestChip } from "./digest-chip";
@@ -646,9 +647,13 @@ function AgentForm({ edit, saved, onSaved }: { edit: EditableDocument; saved: Ag
       {canEdit && (dirty || saved || refusal) && (
         <div className="sticky bottom-3 z-10 mr-[104px] flex flex-col gap-2 rounded-lg border border-line-strong bg-surface px-4 py-3 elev-3" role="region" aria-label="Save">
           {refusal && (
+            QUIET ? (
+              <p role="status"><QuietNote inline /></p>
+            ) : (
             <p role="alert" className="text-[12.5px] leading-[1.55] whitespace-pre-wrap text-err">
               <span className="font-medium">The save was refused.</span> {refusal}
             </p>
+            )
           )}
           {!dirty && saved && !refusal && (
             <div className="flex flex-wrap items-center gap-3">
@@ -732,7 +737,7 @@ function AgentConfig({ id }: { id: string }) {
   }
   return (
     <>
-      {error && (
+      {error && !QUIET && (
         <Banner tone="err" title="The agent could not be read again">
           {error}
         </Banner>
@@ -775,7 +780,9 @@ function AgentIndex() {
         <h1 className="text-[24px] font-semibold tracking-[-0.02em]">Agent configuration</h1>
         <p className="text-[13.5px] leading-relaxed text-dim">The limits, bounds and gates of each agent, with the tools each step was granted. Pick an agent to read or change them.</p>
       </header>
-      {error && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>}
+      {error && !QUIET && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>}
+      {/* A quiet console (lib/quiet.ts) says the list is not connected; it does not print the reason or count a failed read as "0 agents". */}
+      {error && QUIET ? <QuietNote /> : (
       <Section title="Agents" meta={agents ? plural(agents.length, "agent") : "reading the registry"}>
         {agents === null && <p className="text-[12px] text-faint">Reading the registry&hellip;</p>}
         {agents && agents.length === 0 && !error && <p className="text-[12.5px] text-dim">No agent is saved on this deployment yet.</p>}
@@ -809,6 +816,7 @@ function AgentIndex() {
           </div>
         )}
       </Section>
+      )}
     </>
   );
 }

@@ -1,5 +1,6 @@
 import path from "node:path";
 import { readFile } from "node:fs/promises";
+import { RUNTIME_ROOT } from "@/lib/server/paths";
 
 /**
  * Prices per token, from the deployment configuration. Foundry publishes no
@@ -11,7 +12,7 @@ import { readFile } from "node:fs/promises";
  * because an unknown cost is one nobody can budget, route or stop.
  */
 
-const ROOT = path.resolve(process.cwd(), "..", "runtime");
+const ROOT = RUNTIME_ROOT;
 
 /**
  * Published list prices per million tokens for models the platform itself

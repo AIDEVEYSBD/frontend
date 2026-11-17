@@ -22,6 +22,8 @@ import {
   type Policy,
 } from "@/lib/api/l4";
 import { api, errorText } from "@/lib/api/client";
+import { QUIET } from "@/lib/quiet";
+import { QuietNote } from "./overlays";
 import { Button, Mono, Status, Tag } from "./ui";
 import { Pick } from "./select";
 import { Code, CopyButton } from "./code";
@@ -114,9 +116,11 @@ export function Applications() {
   const priced = known.filter((a) => a.cost !== null);
   const cost = priced.length ? priced.reduce((s, a) => s + (a.cost ?? 0), 0) : null;
   const pending = apps ? apps.filter((a) => !activity[a.id]).length : 0;
+  // A quiet console (lib/quiet.ts): the register could not be read, so the page says it is not connected and counts nothing.
+  const unread = QUIET && Boolean(error) && (apps?.length ?? 0) === 0;
 
   usePageFacts({
-    applications: apps ? apps.length : "loading",
+    applications: unread ? "not connected" : apps ? apps.length : "loading",
     byClass: apps ? Object.fromEntries((["chatbot", "rag", "agent", "multi_agent"] as ApplicationClass[]).map((c) => [c, count(c)])) : null,
     blocked,
     controlsFired30d: fired,
@@ -162,10 +166,11 @@ export function Applications() {
           <Button variant="solid" tone="ink" permission="configure" onClick={() => setConnecting(true)}>Connect an application</Button>
         </header>
 
-        {error && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>}
+        {error && !QUIET && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>}
+        {error && QUIET && (unread ? <QuietNote /> : <QuietNote inline />)}
 
         {/* ── the band ── */}
-        <div className="grid grid-cols-2 overflow-hidden rounded-md border border-line bg-surface sm:grid-cols-4 xl:grid-cols-7">
+        {!unread && <div className="grid grid-cols-2 overflow-hidden rounded-md border border-line bg-surface sm:grid-cols-4 xl:grid-cols-7">
           {tiles.map((t) => {
             const isClass = t.id === "chatbot" || t.id === "rag" || t.id === "agent" || t.id === "multi_agent";
             const active = isClass && cls === t.id;
@@ -194,10 +199,10 @@ export function Applications() {
               </div>
             );
           })}
-        </div>
+        </div>}
 
         {/* ── the register ── */}
-        <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
+        {!unread && <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
           <div className="flex w-full flex-wrap items-center gap-3 border-b border-line bg-raise/55 px-4 py-2.5">
             <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Register</span>
             <span className="max-w-[110ch] text-[11px] leading-[1.55] text-faint">
@@ -288,7 +293,7 @@ export function Applications() {
               </tbody>
             </table>
           </div>
-        </section>
+        </section>}
 
         {/* ── the agent classes come from elsewhere ── */}
         <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
@@ -474,7 +479,7 @@ function ConnectDialog({ onClose, onMinted }: { onClose: () => void; onMinted: (
         <Field label="System prompt (optional)" htmlFor="app-prompt" hint="Registered here and injected by the gateway; the app sends none. A response that echoes it is a screened hit.">
           <Textarea id="app-prompt" value={prompt} onChange={setPrompt} rows={4} />
         </Field>
-        {error && <p className="text-[11.5px] text-err md:col-span-2" role="alert">{error}</p>}
+        {error && (QUIET ? <p className="md:col-span-2" role="status"><QuietNote inline /></p> : <p className="text-[11.5px] text-err md:col-span-2" role="alert">{error}</p>)}
         <div className="flex justify-end gap-2 md:col-span-2">
           <Button variant="solid" tone="err" size="sm" onClick={onClose}>Cancel</Button>
           <Button variant="solid" tone="ink" size="sm" type="submit" permission="configure" loading={busy} disabled={!name.trim()}>Connect and mint the key</Button>

@@ -1,5 +1,6 @@
 "use client";
 
+import { QUIET } from "@/lib/quiet";
 import { useEffect, useRef, type ReactNode } from "react";
 import { Avatar, Button, IconButton, Kbd, Mono, Spinner, type Tone } from "./ui";
 import { useDismiss } from "./dismiss";
@@ -26,6 +27,23 @@ const ICON_TONE: Record<string, string> = {
   neutral: "text-dim",
 };
 
+/** Titles that report a failed read or a refused write, whatever tone the caller gave them. */
+const FAILURE = /could not|couldn.t|cannot be|can.t be|failed|unreachable|not reachable|refused|did not answer|no answer|unavailable|went wrong/i;
+
+/** What a panel shows in a quiet console where it would have shown a failure. */
+export function QuietNote({ inline = false }: { inline?: boolean }) {
+  if (inline) return <span className="text-[11.5px] leading-[1.5] text-faint" data-quiet>Not connected on this deployment.</span>;
+  return (
+    <div className="flex flex-col gap-1 rounded-lg border border-dashed border-line-strong bg-surface px-4 py-3" data-quiet>
+      <span className="flex items-center gap-2">
+        <span className="size-1.5 shrink-0 rounded-[2px] bg-faint" />
+        <span className="text-[13px] font-semibold text-fg">Not connected on this deployment</span>
+      </span>
+      <p className="text-[11.5px] leading-[1.5] text-faint">The screen is ready and fills in once the control plane behind it is connected.</p>
+    </div>
+  );
+}
+
 export function Banner({
   tone = "neutral",
   title,
@@ -37,6 +55,8 @@ export function Banner({
   children?: ReactNode;
   action?: ReactNode;
 }) {
+  // A quiet console (lib/quiet.ts) does not print why a read failed: the panel says it is not connected, in the form a screen ahead of its door uses.
+  if (QUIET && (tone === "err" || FAILURE.test(title))) return <QuietNote />;
   return (
     <div className="relative flex gap-3 overflow-hidden rounded-lg border border-line bg-surface p-3.5 pl-4 elev-1">
       <span className={`absolute inset-y-0 left-0 w-[3px] ${RULE[tone]}`} />

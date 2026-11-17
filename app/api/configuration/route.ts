@@ -3,6 +3,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { dbReady, query } from "@/lib/server/db";
 import { permit } from "@/lib/server/auth";
 import { backendConfigured, backendFetch } from "@/lib/server/backend";
+import { RUNTIME_ROOT } from "@/lib/server/paths";
 
 /**
  * Everything this factory is configured with, in one read.
@@ -26,7 +27,7 @@ import { backendConfigured, backendFetch } from "@/lib/server/backend";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ROOT = path.resolve(process.cwd(), "..", "runtime");
+const ROOT = RUNTIME_ROOT;
 const RUNS = path.join(ROOT, "workspace", "runs");
 
 /** One backend door, read on the caller's behalf; null when it cannot answer. */
@@ -272,7 +273,20 @@ export async function GET(req: Request) {
     }
   }
 
+  // A console with nothing behind it (no database, no backend named, no runtime
+  // files beside it) says so, so that a quiet console (lib/quiet.ts) does not
+  // print the empty record as fact. With any of the three present the answer
+  // is what it always was.
+  const bare =
+    !(await dbReady()) &&
+    !backendConfigured() &&
+    !(await stat(path.join(ROOT, "workspace")).then(
+      () => true,
+      () => false,
+    ));
+
   return Response.json({
+    ...(bare ? { connected: false } : {}),
     deployment: {
       registry: (await dbReady()) ? "postgres" : "files",
       gateway: process.env.FOUNDRY_ENDPOINT ? "configured" : "not configured",

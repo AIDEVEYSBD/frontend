@@ -4,7 +4,8 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Status, Tag } from "./ui";
-import { Banner } from "./overlays";
+import { Banner, QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { Field, Switch, Textarea } from "./forms";
 import { Pick } from "./select";
 import { DigestChip } from "./digest-chip";
@@ -153,7 +154,7 @@ function AttestForm({ agent, list, onDone }: { agent: string; list: AttestationL
           Attest
         </Button>
         {!may && <span className="text-[11px] text-faint">{why}.</span>}
-        {error && <span className="text-[11.5px] text-err">{error}</span>}
+        {error && (QUIET ? <QuietNote inline /> : <span className="text-[11.5px] text-err">{error}</span>)}
       </span>
     </div>
   );
@@ -172,8 +173,8 @@ function AgentAttestations({ agent, onChanged }: { agent: string; onChanged: () 
   }, [agent]);
   useEffect(() => soon(load), [load]);
   return (
-    <Section title={agent} hue="approvals" meta={list ? `${list.count} on record` : "reading…"}>
-      {error && <p className="text-[11.5px] text-err">{error}</p>}
+    <Section title={agent} hue="approvals" meta={list ? `${list.count} on record` : QUIET && error ? undefined : "reading…"}>
+      {error && (QUIET ? <QuietNote inline /> : <p className="text-[11.5px] text-err">{error}</p>)}
       {list && (
         <>
           <span className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-dim">
@@ -227,6 +228,8 @@ function AttestationsPage() {
   }, []);
   const rows = (standings?.agents ?? []).filter((r) => !overdueOnly || r.overdue);
   const never = (standings?.agents ?? []).filter((r) => !r.last).length;
+  // A quiet console (lib/quiet.ts) whose attestations door did not answer says so once, with no table left reading.
+  const quietDown = QUIET && Boolean(error) && !standings;
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
       <PageHeader title="Attestations">
@@ -237,6 +240,8 @@ function AttestationsPage() {
           {error}
         </Banner>
       )}
+      {!quietDown && (
+      <>
       {standings && (
         <Figures
           items={[
@@ -260,6 +265,8 @@ function AttestationsPage() {
         </Field>
       </div>
       {agent && <AgentAttestations key={agent} agent={agent} onChanged={load} />}
+      </>
+      )}
     </div>
   );
 }

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Button, Mono, Status, Tag } from "./ui";
+import { QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { RunSourceTag } from "./run-source";
 import { useNow } from "./gate-form";
 import { hueFor } from "@/lib/hue";
@@ -123,7 +125,7 @@ export function OpenBreakerRow({ breaker: b, now, onClosed, onRefresh }: { break
       ) : (
         <span className="text-[11px] text-faint">Served to every worker as open; the opening behind it is not on this instance&rsquo;s list.</span>
       )}
-      {error && <span className="text-[11.5px] text-err">{error}</span>}
+      {error && (QUIET ? <QuietNote inline /> : <span className="text-[11.5px] text-err">{error}</span>)}
     </div>
   );
 }
@@ -265,7 +267,7 @@ export function Breakers() {
           </p>
         </div>
       </header>
-      {error && <p className="mt-4 text-[12.5px] text-err">{error}</p>}
+      {error && !QUIET && <p className="mt-4 text-[12.5px] text-err">{error}</p>}
       {notice && <p className="mt-4 text-[12px] text-ok">{notice}</p>}
       <div className="mt-5">
         {view ? (
@@ -280,7 +282,8 @@ export function Breakers() {
             onRefresh={load}
           />
         ) : (
-          !error && <p className="text-[12px] text-faint">Reading the breakers…</p>
+          // Quiet (lib/quiet.ts): a view that could not be read settles into one calm note, without the reason.
+          error ? QUIET && <QuietNote /> : <p className="text-[12px] text-faint">Reading the breakers…</p>
         )}
       </div>
     </div>

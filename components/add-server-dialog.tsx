@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "rea
 import { Button, Mono, Status, Tag } from "./ui";
 import { Field, Input, Textarea } from "./forms";
 import { Pick } from "./select";
+import { QUIET } from "@/lib/quiet";
 import { DigestChip } from "./digest-chip";
 import { listVault } from "@/lib/api/l2";
 import { addBody, addServer, EMPTY_FORM, RegistryError, type AddForm, type McpServer, type NewServer, type Transport } from "@/lib/api/l6";
@@ -568,9 +569,9 @@ export function AddServerDialog({
                           ) : null}
                           {vault !== null && typing && <Input value={shared.typed} onChange={(v) => patchShared({ typed: v })} mono autoComplete="off" aria-label="Vault name of the secret" />}
                           <span className="text-[11.5px] leading-[1.5] text-faint">
-                            {vaultError
+                            {vaultError && !QUIET
                               ? `The vault could not be read (${vaultError}). Name the secret; the registry checks it.`
-                              : vault !== null && vault.length === 0
+                              : vault !== null && vault.length === 0 && !vaultError
                                 ? "The vault holds no secret yet. Name the one you will store; the registry refuses a reference nothing holds."
                                 : "Referenced by name; the value never leaves the vault."}{" "}
                             Secrets are stored under{" "}
@@ -628,7 +629,7 @@ export function AddServerDialog({
                   )}
 
                   {error && (
-                    <div className="flex flex-col gap-1.5 rounded-md border border-err-line bg-surface px-3 py-2.5">
+                    <div className={`flex flex-col gap-1.5 rounded-md border bg-surface px-3 py-2.5 ${QUIET && !(error instanceof RegistryError && (error.control || error.hits.length)) ? "border-dashed border-line-strong" : "border-err-line"}`}>
                       {renderRefusal(error)}
                       {refused && <span className="text-[11.5px] leading-[1.5] text-dim">The registry kept the server as refused; it is in the list with these hits, and it never attaches to a run.</span>}
                     </div>

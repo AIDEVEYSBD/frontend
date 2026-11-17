@@ -4,13 +4,14 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Mono, Status } from "./ui";
-import { EmptyState } from "./overlays";
+import { EmptyState, QuietNote } from "./overlays";
 import { PageHeader } from "./section";
 import { ControlMark } from "./control-ref";
 import { Skeleton } from "./loaders";
 import { listAgents, type AgentSummary } from "@/lib/api/l2";
 import { agentHref } from "@/lib/agent-link";
 import { soon } from "@/lib/soon";
+import { QUIET } from "@/lib/quiet";
 import {
   Card,
   EVENT,
@@ -146,6 +147,9 @@ function ActivityPage() {
   const selectedRow = table.find((a) => a.id === selected);
   const unknown = <span className="text-ghost">unknown</span>;
   const noRecords = rows !== null && rows.length === 0 && registry !== null && registry.length === 0;
+  // A quiet console whose ledger did not answer says so once; with no agent read either, there is nothing else to draw.
+  const quietDown = QUIET && Boolean(error) && !rows;
+  const nothingRead = quietDown && !registry?.length;
 
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
@@ -154,11 +158,11 @@ function ActivityPage() {
       </PageHeader>
 
       {error && <ErrorLine what="The run ledger did not answer" message={error} />}
-      {registryError && <ErrorLine what="The agent registry did not answer, so only agents with a run are listed" message={registryError} />}
+      {registryError && !QUIET && <ErrorLine what="The agent registry did not answer, so only agents with a run are listed" message={registryError} />}
 
       {noRecords && <EmptyState title="No agents and no runs yet" detail="Activity is read from the run ledger. Once an agent is saved and has run, it is listed here." action={<Button size="sm" variant="solid" tone="ink" href="/workflows">Open workflows</Button>} />}
 
-      {!noRecords && (
+      {!noRecords && !nothingRead && (
         <>
           {inWin.length > 0 && <ReadNote read={estate.digests.length} total={inWin.length} pending={estate.pending} failed={estate.failed} win={win} onMore={more} />}
 
@@ -166,7 +170,7 @@ function ActivityPage() {
             <Card
               title="Agents"
               hue="agent"
-              meta={rows ? `${count(table.filter((a) => a.runs > 0).length)} of ${count(table.length)} active in ${windowWords(win)} · runs and calls from the ledger, steps from the journals read` : error ? "the run ledger did not answer, so runs and calls are unknown" : "reading the run ledger…"}
+              meta={rows ? `${count(table.filter((a) => a.runs > 0).length)} of ${count(table.length)} active in ${windowWords(win)} · runs and calls from the ledger, steps from the journals read` : error ? (QUIET ? "runs and calls are not connected on this deployment" : "the run ledger did not answer, so runs and calls are unknown") : "reading the run ledger…"}
             >
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[620px] border-collapse text-[11.5px]">
@@ -251,7 +255,7 @@ function ActivityPage() {
               {!selected && <p className="px-4 py-6 text-[11.5px] text-faint">Pick an agent to read what happened on its runs.</p>}
               {selected && agentRuns.length === 0 && <p className="px-4 py-6 text-[11.5px] text-faint">This agent has no run in {windowWords(win)}, so there is nothing to list.</p>}
               {selected && agentRuns.length > 0 && events.length === 0 && (
-                <div className="px-4 py-4">{own.pending > 0 ? <Skeleton lines={4} /> : <p className="text-[11.5px] text-faint">{own.failed.length ? `The journals did not read: ${own.failed[0].message}` : "The journals read hold no run start, gate, refusal or run end."}</p>}</div>
+                <div className="px-4 py-4">{own.pending > 0 ? <Skeleton lines={4} /> : own.failed.length && QUIET ? <QuietNote inline /> : <p className="text-[11.5px] text-faint">{own.failed.length ? `The journals did not read: ${own.failed[0].message}` : "The journals read hold no run start, gate, refusal or run end."}</p>}</div>
               )}
               {events.length > 0 && (
                 <ol className="flex flex-col">

@@ -4,7 +4,8 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Mono, Status, Tag } from "./ui";
-import { Banner } from "./overlays";
+import { Banner, QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { Field, Input, Textarea } from "./forms";
 import { Pick } from "./select";
 import { SpecDiffView } from "./versions";
@@ -227,7 +228,7 @@ function MakeTemplateForm({ agents, onMade }: { agents: AgentSummary[]; onMade: 
         </Field>
       </div>
       {tried && problem && <span className="text-[11px] text-err">{problem}</span>}
-      {error && <span className="text-[11.5px] text-err">{error}</span>}
+      {error && (QUIET ? <QuietNote inline /> : <span className="text-[11.5px] text-err">{error}</span>)}
       <span className="flex items-center gap-2">
         <span className="grow" />
         <Button
@@ -432,7 +433,8 @@ function TemplatesPage() {
           {error}
         </Banner>
       )}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+      {/* A quiet console (lib/quiet.ts): the note above is the whole page; an unread list is not shown as "0 on record". */}
+      {!(QUIET && error) && <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
         <Section title="Templates" meta={list ? `${list.count} on record · a certifier holds the "${list.role}" role` : undefined}>
           <div className="flex items-center gap-1">
             {STATE_FILTERS.map((f) => (
@@ -458,7 +460,7 @@ function TemplatesPage() {
         </Section>
         <Section title="Template" meta={shown ? shown.id : selected ? "reading…" : "pick one"}>
           {!selected && <p className="text-[12px] text-faint">Pick a template to read its params and document, certify it, or cut an agent from it.</p>}
-          {docError && <span className="text-[11.5px] text-err">{docError}</span>}
+          {docError && (QUIET ? <QuietNote inline /> : <span className="text-[11.5px] text-err">{docError}</span>)}
           {shown && (
             <>
               <TemplateDetailView template={shown} />
@@ -496,7 +498,7 @@ function TemplatesPage() {
             </>
           )}
         </Section>
-      </div>
+      </div>}
     </div>
   );
 }

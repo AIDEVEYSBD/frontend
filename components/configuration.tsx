@@ -1,5 +1,6 @@
 "use client";
 
+import { VertexDetected } from "./vertex-detected";
 import { useEffect, useMemo, useState } from "react";
 import { Mono, Status, Tag } from "./ui";
 import { usePageFacts } from "./assistant";
@@ -14,6 +15,8 @@ import { Pick } from "./select";
 import { soon } from "@/lib/soon";
 import type { AttachedAgent } from "@/lib/attached";
 import { JOB_STATUS_META, queueTotals } from "@/lib/queue";
+import { QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 
 /**
  * Configuration: everything this deployment is set up with, in one place.
@@ -82,6 +85,17 @@ interface Data {
   apiKeys: { name: string; agent: string | null; prefix: string; last_used: string | null; revoked_at: string | null }[];
   queue: Record<string, number>;
   basis: string;
+  /** False only when the console has nothing behind it: no database, no backend, no runtime files (app/api/configuration/route.ts). */
+  connected?: boolean;
+}
+
+/** One calm line for a panel whose record was not read (a quiet console, lib/quiet.ts). */
+function PanelNote() {
+  return (
+    <div className="px-4 py-3">
+      <QuietNote inline />
+    </div>
+  );
 }
 
 const SECTIONS = [
@@ -136,6 +150,7 @@ export function Configuration() {
   const [failed, setFailed] = useState(false);
   const [agent, setAgent] = useState<string>("");
   const [q, setQ] = useState("");
+  const [mcpFailed, setMcpFailed] = useState(false);
   const [mcp, setMcp] = useState<{ endpoint: string; transport: string; auth: string; tools: { name: string; description: string; action: boolean }[]; client: Record<string, unknown> } | null>(null);
   const [folded, setFolded] = useState<Record<string, boolean>>({});
   const [attached, setAttached] = useState<AttachedAgent[]>([]);
@@ -153,7 +168,7 @@ export function Configuration() {
         /* fresh */
       }
     });
-    fetch("/api/mcp/server").then((r) => r.json()).then(setMcp).catch(() => {});
+    fetch("/api/mcp/server").then((r) => r.json()).then(setMcp).catch(() => setMcpFailed(true));
     return cancel;
   }, []);
   const toggle = (id: string) => {
@@ -177,6 +192,8 @@ export function Configuration() {
         if (stop) return;
         // A refusal or a fault answers without the record: say so, and show no rows.
         if (!r.ok || !d || !Array.isArray(d.sources)) setFailed(true);
+        // Quiet (lib/quiet.ts): a record assembled with nothing behind the console is not read as zeros and empty lists.
+        else if (QUIET && d.connected === false) setFailed(true);
         else setData(d);
       })
       .catch(() => !stop && setFailed(true));
@@ -192,6 +209,8 @@ export function Configuration() {
   const sources = useMemo(() => (data?.sources ?? []).filter((s) => !agent || s.agent === agent), [data, agent]);
   const tools = useMemo(() => (data?.tools ?? []).filter((t) => !agent || t.agent === agent), [data, agent]);
   const used = sources.filter((s) => s.calls > 0).length;
+  /** Quiet (lib/quiet.ts): the record was not read; each panel that depends on it says so in one line, without the reason. */
+  const quiet = QUIET && failed;
 
   /* The connections the saved workflows configure, as the record lists them:
      a named instance of a backend on a tool binding, with the calls the run
@@ -269,7 +288,7 @@ export function Configuration() {
         </header>
 
         {/* ── the strip ── */}
-        <section className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-3 lg:grid-cols-6">
+        {!quiet && <section className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-3 lg:grid-cols-6">
           {[
             { label: "Workflows", value: data ? String(data.deployment.workflows) : "—", sub: data ? `${data.deployment.deployed} deployed` : "" },
             { label: "Connections", value: data ? String(rows.length) : "—", sub: data ? `${used} called at least once` : "" },
@@ -284,7 +303,7 @@ export function Configuration() {
               {k.sub && <span className="truncate text-[9.5px] text-ghost">{k.sub}</span>}
             </div>
           ))}
-        </section>
+        </section>}
 
         {/* ── anchors ── */}
         <nav className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-y border-line py-2">
@@ -309,7 +328,7 @@ export function Configuration() {
           )}
         </nav>
 
-        {failed && (
+        {failed && !QUIET && (
           <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">
             The configuration could not be read, so the deployment, connections, tools, gates, models, credentials and ingress below show nothing.
           </p>
@@ -317,7 +336,7 @@ export function Configuration() {
 
         {/* ── deployment ── */}
         <Panel id="deployment" folded={Boolean(folded["deployment"])} onToggle={() => toggle("deployment")} title="Deployment" caption="Where this deployment keeps its records and what it sends model calls to.">
-          <div className="grid gap-px bg-line sm:grid-cols-2 lg:grid-cols-4">
+          {quiet ? <PanelNote /> : <div className="grid gap-px bg-line sm:grid-cols-2 lg:grid-cols-4">
             {[
               { k: "Registry", v: !data ? "—" : data.deployment.registry === "postgres" ? "Postgres" : "Workspace files" },
               { k: "Model gateway", v: !data ? "—" : data.deployment.gateway === "not configured" ? "Not configured" : data.deployment.gateway },
@@ -329,7 +348,7 @@ export function Configuration() {
                 <span className={`truncate text-[12px] text-fg ${f.mono ? "font-mono text-[11px]" : ""}`}>{f.v}</span>
               </div>
             ))}
-          </div>
+          </div>}
         </Panel>
 
         {/* ── egress: the hosts outbound requests may reach (9.6) ── */}
@@ -343,7 +362,7 @@ export function Configuration() {
         >
           <div className="flex flex-col gap-2 px-4 py-3">
             {!data && !failed && <span className="text-[11.5px] text-faint">Reading the deployment&hellip;</span>}
-            {failed && <span className="text-[11.5px] text-faint">The allowlist could not be read.</span>}
+            {failed && (QUIET ? <QuietNote inline /> : <span className="text-[11.5px] text-faint">The allowlist could not be read.</span>)}
             {data && data.deployment.egress.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {data.deployment.egress.map((h) => (
@@ -414,7 +433,7 @@ export function Configuration() {
                   <Tag tone={t.action ? "warn" : "neutral"}>{t.action ? "action" : "read"}</Tag>
                 </span>
               ))}
-              {!mcp && <span className="px-4 py-3 text-[11.5px] text-faint">Reading the server description…</span>}
+              {!mcp && (QUIET && mcpFailed ? <PanelNote /> : <span className="px-4 py-3 text-[11.5px] text-faint">Reading the server description…</span>)}
             </div>
             <div className="flex flex-col bg-surface">
               <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">Connect a client</span>
@@ -458,7 +477,9 @@ export function Configuration() {
             data
               ? `${rows.length === 1 ? "1 connection" : `${rows.length} connections`} configured in the workflows saved on this deployment, ${used} called at least once · ${data.deployment.runs} runs on record. A connection is a named instance of a backend on a tool: the agent holding it knows the verb, never the product. Mode says whether it is offline (a file or folder handed over) or live (read from a system when the run asks). Reaches says whether it returns untrusted content, acts outside the system, or both. Calls and last used are counted from the run journals; there is no health figure, because nothing measures one. Credentials are named in the vault and never held in the workflow.`
               : failed
-                ? "not read"
+                ? QUIET
+                  ? "The connections configured in the workflows saved on this deployment. A connection is a named instance of a backend on a tool: the agent holding it knows the verb, never the product."
+                  : "not read"
                 : "reading the workflows…"
           }
         >
@@ -477,7 +498,7 @@ export function Configuration() {
           )}
 
           {!data && !failed && <p className="px-4 py-3 text-[11.5px] text-faint">Reading the workflows&hellip;</p>}
-          {failed && <p className="px-4 py-3 text-[11.5px] text-faint">The connections could not be read.</p>}
+          {failed && (QUIET ? <PanelNote /> : <p className="px-4 py-3 text-[11.5px] text-faint">The connections could not be read.</p>)}
           {data && rows.length === 0 && (
             <p className="px-4 py-6 text-[12px] leading-[1.55] text-dim">
               No workflow on this deployment configures a connection yet. A connection appears here once a saved workflow names one.
@@ -570,7 +591,7 @@ export function Configuration() {
           title="Tool registry"
           caption="Every tool granted to a workflow, with the risk it was registered at. Risk is declared on the tool and read as a lookup at call time, never inferred while a run is in flight."
         >
-          <div className="max-h-[420px] overflow-x-auto overflow-y-auto">
+          {quiet ? <PanelNote /> : <div className="max-h-[420px] overflow-x-auto overflow-y-auto">
             <table className="w-full min-w-[820px] border-collapse text-[11.5px]">
               <thead className="sticky top-0 z-10 bg-surface">
                 <tr className="border-b border-line text-left text-[10.5px] text-faint">
@@ -614,7 +635,7 @@ export function Configuration() {
                 )}
               </tbody>
             </table>
-          </div>
+          </div>}
         </Panel>
 
         {/* ── gates ── */}
@@ -625,6 +646,7 @@ export function Configuration() {
           title="Where a person signs"
           caption="Per workflow: the risk level at which an action stops and waits for a human, and who may answer. A gate with no approver is refused at parse time, so every line here has a name behind it."
         >
+          {quiet && <PanelNote />}
           {(data?.gates ?? []).length === 0 && data && (
             <p className="px-4 py-3 text-[11.5px] text-faint">
               No workflow declares a gate. Every action runs on the agent&rsquo;s own authority.
@@ -651,7 +673,14 @@ export function Configuration() {
           title="Models"
           caption="What teams may pick from, the tier each sits in, and the price cost figures are computed against. A model with no price makes its runs unpriced rather than free."
         >
-          <div className="overflow-x-auto">
+          <VertexDetected />
+          {/* Quiet: the offered models were not read. The line shows only when nothing else is in the panel (no detected connection above it). */}
+          {quiet && (
+            <div className="hidden px-4 py-3 only:block">
+              <QuietNote inline />
+            </div>
+          )}
+          {!quiet && <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] border-collapse text-[11.5px]">
               <thead>
                 <tr className="border-b border-line text-left text-[10.5px] text-faint">
@@ -698,7 +727,7 @@ export function Configuration() {
                 )}
               </tbody>
             </table>
-          </div>
+          </div>}
         </Panel>
 
         {/* ── credentials ── */}
@@ -709,7 +738,7 @@ export function Configuration() {
           title="Credentials"
           caption="What the vault holds, by name. A connector referencing one of these carries the reference in the spec and never the value, which is what makes a workflow safe to export."
         >
-          <div className="flex flex-wrap gap-1.5 px-4 py-3">
+          {quiet ? <PanelNote /> : <div className="flex flex-wrap gap-1.5 px-4 py-3">
             {(data?.vaultKeys ?? []).map((k) => (
               <span key={k} className="rounded-sm border border-line bg-raise px-2 py-1 font-mono text-[11px] text-fg">
                 {k}
@@ -718,7 +747,7 @@ export function Configuration() {
             {data && data.vaultKeys.length === 0 && (
               <span className="text-[11.5px] text-faint">The vault is empty.</span>
             )}
-          </div>
+          </div>}
         </Panel>
 
         {/* ── ingress ── */}
@@ -729,7 +758,7 @@ export function Configuration() {
           title="Ingress"
           caption="Who may post work to this factory, and what is in the queue. A key scoped to one workflow cannot start another."
         >
-          <div className="grid gap-px bg-line sm:grid-cols-2">
+          {quiet ? <PanelNote /> : <div className="grid gap-px bg-line sm:grid-cols-2">
             <div className="flex flex-col bg-surface">
               <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">API keys</span>
               {(data?.apiKeys ?? []).map((k) => (
@@ -758,7 +787,7 @@ export function Configuration() {
                 <span className="px-4 py-2 text-[11.5px] text-faint">The queue is empty.</span>
               )}
             </div>
-          </div>
+          </div>}
         </Panel>
         <p className="pb-4 text-[10.5px] text-ghost">{data?.basis ?? ""}</p>
       </div>

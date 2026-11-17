@@ -370,8 +370,8 @@ function Sidebar({ groups, auto, onAuto, who }: { groups: NavGroup[]; auto: Grou
   if (rail) {
     return (
       <aside className={`relative z-30 hidden w-14 shrink-0 flex-col items-center lg:flex ${SIDE}`} data-sidebar="rail">
-        <Link href="/" aria-label="Agent Factory, home" className={`${SIDE_FOCUS} flex h-12 w-full shrink-0 items-center justify-center border-b border-white/10`}>
-          <ABBWordmark height={11} />
+        <Link href="/" aria-label="Agent Factory, home" className={`${SIDE_FOCUS} flex h-16 w-full shrink-0 items-center justify-center border-b border-white/10`}>
+          <ABBWordmark height={13} />
         </Link>
         <nav aria-label="Main" className="flex grow flex-col items-center gap-1.5 py-3">
           {groups.map((g) => <RailGroup key={g.label} g={g} />)}
@@ -385,7 +385,7 @@ function Sidebar({ groups, auto, onAuto, who }: { groups: NavGroup[]; auto: Grou
   }
   return (
     <aside className={`relative z-30 hidden w-[224px] shrink-0 flex-col lg:flex ${SIDE}`} data-sidebar="full">
-      <Link href="/" aria-label="Agent Factory, home" className={`${SIDE_FOCUS} flex h-12 shrink-0 items-center border-b border-white/10 px-4`}>
+      <Link href="/" aria-label="Agent Factory, home" className={`${SIDE_FOCUS} flex h-16 shrink-0 items-center border-b border-white/10 px-4`}>
         <BrandLockup onDark />
       </Link>
       <NavGroups groups={groups} auto={auto} onAuto={onAuto} />
@@ -510,7 +510,7 @@ export function Chrome({ children }: { children: React.ReactNode }) {
         <div className="fixed inset-0 z-50 flex lg:hidden">
           <button type="button" aria-label="Close the navigation" onClick={() => setDrawer(false)} className="absolute inset-0 cursor-default bg-black/45" />
           <div role="dialog" aria-modal="true" aria-label="Navigation" className={`relative flex h-full w-[248px] max-w-[85vw] flex-col elev-3 ${SIDE}`} data-sidebar="drawer">
-            <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-white/10 pr-2.5 pl-4">
+            <div className="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-white/10 pr-2.5 pl-4">
               <BrandLockup onDark />
               <button type="button" aria-label="Close the navigation" onClick={() => setDrawer(false)} className={`${SIDE_FOCUS} grid size-7 shrink-0 cursor-pointer place-items-center rounded-md bg-white/10 text-white hover:bg-white/15`}>
                 <NavIcon name="x" size={14} />

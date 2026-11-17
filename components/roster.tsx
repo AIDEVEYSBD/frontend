@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { HARNESS } from "@/lib/spec";
 import { Mono, Status } from "./ui";
+import { QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { listAgents } from "@/lib/api/l2";
 import { retiredOf, type Retired } from "@/lib/api/l8";
 import { retiredLine } from "@/lib/lifecycle";
@@ -127,13 +129,18 @@ export function Roster() {
       })
       .catch(() => {});
     fetch("/api/roster")
-      .then((r) => r.json())
+      .then(async (r) => {
+        // An answer that is not JSON (a 404 page, a proxy's error page) is read as its status, never parsed or printed.
+        const d = await r.json().catch(() => null);
+        if (d && typeof d === "object" && d.error) throw new Error(String(d.error));
+        if (!r.ok || !d || typeof d !== "object") throw new Error(`the roster answered ${r.status}${r.statusText ? ` ${r.statusText}` : ""}`);
+        return d;
+      })
       .then((d) => {
         if (stop) return;
-        if (d.error) throw new Error(String(d.error));
         setGroups(d.groups ?? []);
       })
-      .catch((e) => !stop && setError((e as Error).message));
+      .catch((e) => !stop && setError((e as Error).message || "the roster did not answer"));
     return () => {
       stop = true;
     };
@@ -150,7 +157,7 @@ export function Roster() {
         </p>
       </div>
 
-      {error && <p className="mt-6 text-[12.5px] text-err">{error}</p>}
+      {error && (QUIET ? <div className="mt-6"><QuietNote /></div> : <p className="mt-6 text-[12.5px] text-err">{error}</p>)}
       {!groups && !error && <p className="mt-6 text-[12.5px] text-faint">Reading the registry…</p>}
       {groups && groups.length === 0 && (
         <p className="mt-6 text-[13px] text-faint">

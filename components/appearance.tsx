@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Button, Status } from "./ui";
+import { QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 
 /**
  * The console's appearance, chosen once for everyone.
@@ -36,7 +38,8 @@ export function Appearance() {
     setError("");
     try {
       const r = await fetch("/api/ui", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accent: on }) });
-      const d = await r.json();
+      // A page in place of an answer is no message: the status alone is the reason.
+      const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(String(d.error ?? r.status));
       setAccent(Boolean(d.accent));
       applyAccent(Boolean(d.accent));
@@ -63,7 +66,7 @@ export function Appearance() {
         <Button size="sm" variant="solid" tone={accent ? "ink" : "neutral"} permission="configure" loading={busy && accent === false} disabled={accent === null || accent === true} onClick={() => choose(true)}>Subject colours</Button>
         <Button size="sm" variant="solid" tone={accent === false ? "ink" : "neutral"} permission="configure" loading={busy && accent === true} disabled={accent === null || accent === false} onClick={() => choose(false)}>Monochrome</Button>
       </div>
-      {error && <p className="border-t border-line px-4 py-2 text-[11.5px] text-err">{error}</p>}
+      {error && (QUIET ? <p className="border-t border-line px-4 py-2"><QuietNote inline /></p> : <p className="border-t border-line px-4 py-2 text-[11.5px] text-err">{error}</p>)}
     </section>
   );
 }

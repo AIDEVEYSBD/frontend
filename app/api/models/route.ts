@@ -1,6 +1,7 @@
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { permit } from "@/lib/server/auth";
+import { RUNTIME_ROOT } from "@/lib/server/paths";
 
 /**
  * What a spec can name: the deployments on the Foundry resource, listed
@@ -12,7 +13,7 @@ import { permit } from "@/lib/server/auth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ROOT = path.resolve(process.cwd(), "..", "runtime");
+const ROOT = RUNTIME_ROOT;
 
 let cache: { at: number; rows: unknown[] } | null = null;
 

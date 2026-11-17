@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Mono, Status, Tag } from "./ui";
 import { Field, Textarea } from "./forms";
+import { QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { api, errorText, type RunRow } from "@/lib/api/client";
 import { auditLine, fleet, FLEET_ACTIONS, inFlight, setLockdown, type FleetResult, type LockdownState } from "@/lib/api/l5";
 import type { Owner } from "@/lib/api/pending";
@@ -319,7 +321,8 @@ export function StopForm({
                     Read again
                   </Button>
                 </div>
-                {runsError && (
+                {runsError && QUIET && <QuietNote inline />}
+                {runsError && !QUIET && (
                   <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">
                     The runs in flight could not be read: {runsError}. Nothing is listed; the door still answers what it reached.
                   </p>
@@ -334,7 +337,8 @@ export function StopForm({
                 {runs && affected.length > 0 && <RunList rows={affected} />}
               </div>
 
-              {failure && (
+              {failure && QUIET && <QuietNote inline />}
+              {failure && !QUIET && (
                 <p role="alert" className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[12px] leading-[1.5] text-err">
                   {scope === "lockdown" ? "Lockdown refused" : "Stop refused"}: {failure}
                 </p>

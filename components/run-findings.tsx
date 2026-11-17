@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { Button } from "./ui";
 import { NotConnected, useDoor } from "./pending";
+import { QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { FindingStatusMark, SEVERITIES, SEVERITY_META, SeverityTag, bySeverityThenRecent, count, severityMeta } from "./finding-marks";
 import type { Finding, FindingList } from "@/lib/api/pending";
 
@@ -57,7 +59,12 @@ export function RunFindings({ run }: { run: string }) {
       </div>
 
       {answer === null && <p className="px-3 py-2.5 text-[11.5px] text-faint">Reading the findings…</p>}
-      {answer?.state === "error" && <p className="px-3 py-2.5 text-[11.5px] text-err">Could not read this run&rsquo;s findings: {answer.message}</p>}
+      {answer?.state === "error" && QUIET && (
+        <p className="px-3 py-2.5">
+          <QuietNote inline />
+        </p>
+      )}
+      {answer?.state === "error" && !QUIET && <p className="px-3 py-2.5 text-[11.5px] text-err">Could not read this run&rsquo;s findings: {answer.message}</p>}
       {answer?.state === "ok" && rows.length === 0 && <p className="px-3 py-2.5 text-[11.5px] text-faint">This run reported no findings.</p>}
 
       {groups.map((g) => (

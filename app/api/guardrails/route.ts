@@ -4,6 +4,7 @@ import { dbReady, query } from "@/lib/server/db";
 import { permit } from "@/lib/server/auth";
 import { liveSecrets } from "@/lib/server/redact";
 import { watchEventsOf, type WatchEvent, type WatchRecord } from "@/lib/guardrails-watch";
+import { RUNTIME_ROOT } from "@/lib/server/paths";
 
 /**
  * What the guardrails actually did, counted from the record.
@@ -21,7 +22,7 @@ import { watchEventsOf, type WatchEvent, type WatchRecord } from "@/lib/guardrai
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ROOT = path.resolve(process.cwd(), "..", "runtime");
+const ROOT = RUNTIME_ROOT;
 const RUNS = path.join(ROOT, "workspace", "runs");
 
 interface Entry {

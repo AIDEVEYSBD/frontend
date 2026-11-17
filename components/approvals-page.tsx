@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Mono, Status, Tag } from "./ui";
-import { Banner, EmptyState } from "./overlays";
+import { Banner, EmptyState, QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { Checkbox } from "./forms";
 import { Pick } from "./select";
 import { Chips, FilterBar, SearchBox, type Chip } from "./filters";
@@ -143,10 +144,13 @@ export function ApprovalsView() {
     return true;
   });
   const agents = [...new Set(all.map((g) => g.agent))].sort();
+  /* A quiet console (lib/quiet.ts) whose inbox was not read: no count stands in for it, on a chip or in a figure. */
+  const inboxOff = QUIET && gates === null && Boolean(error);
+  const off = <span className="text-[11.5px] font-normal text-faint">Not connected</span>;
   const views: Chip[] = [
-    { value: "all", label: "All waiting", count: all.length, active: view === "all" },
-    { value: "mine", label: "Mine to answer", count: all.filter((g) => mayAnswer(g).ok).length, active: view === "mine" },
-    { value: "overdue", label: "Overdue", count: all.filter(overdue).length, active: view === "overdue", tone: "err" },
+    { value: "all", label: "All waiting", count: inboxOff ? undefined : all.length, active: view === "all" },
+    { value: "mine", label: "Mine to answer", count: inboxOff ? undefined : all.filter((g) => mayAnswer(g).ok).length, active: view === "mine" },
+    { value: "overdue", label: "Overdue", count: inboxOff ? undefined : all.filter(overdue).length, active: view === "overdue", tone: "err" },
   ];
   const filterCount = (view !== "all" ? 1 : 0) + (agent ? 1 : 0) + (term ? 1 : 0);
   const pickedGates = all.filter((g) => picked.has(g.run));
@@ -171,11 +175,11 @@ export function ApprovalsView() {
 
       <Figures
         items={[
-          { k: "Waiting", v: gates ? all.length : "—" },
-          { k: "Overdue", v: gates ? all.filter(overdue).length : "—" },
-          { k: "Due within the hour", v: gates ? dueSoon : "—" },
-          { k: "Mine to answer", v: gates && who ? all.filter((g) => mayAnswer(g).ok).length : "—" },
-          { k: `Answered · ${win === "all" ? "all time" : win}`, v: answeredNow && !answeredNow.error ? answeredNow.decisions.length : "—" },
+          { k: "Waiting", v: gates ? all.length : inboxOff ? off : "—" },
+          { k: "Overdue", v: gates ? all.filter(overdue).length : inboxOff ? off : "—" },
+          { k: "Due within the hour", v: gates ? dueSoon : inboxOff ? off : "—" },
+          { k: "Mine to answer", v: gates && who ? all.filter((g) => mayAnswer(g).ok).length : inboxOff ? off : "—" },
+          { k: `Answered · ${win === "all" ? "all time" : win}`, v: answeredNow && !answeredNow.error ? answeredNow.decisions.length : QUIET && answeredNow?.error ? off : "—" },
         ]}
       />
 
@@ -215,6 +219,7 @@ export function ApprovalsView() {
         </FilterBar>
 
         {gates === null && !error && <p className="text-[12px] text-faint">Reading the inbox…</p>}
+        {inboxOff && <p className="text-[12px] text-faint">Gates waiting for a person are listed here, the most urgent first.</p>}
         {gates && all.length === 0 && <EmptyState title="No gates are waiting" detail="When a run stops for a person, it is listed here with what it asks, who may answer and its deadline." />}
         {gates && all.length > 0 && shown.length === 0 && <p className="text-[12px] text-faint">No waiting gate matches these filters.</p>}
 
@@ -336,7 +341,8 @@ export function ApprovalsView() {
         action={<WindowPick value={win} onChange={setWin} />}
       >
         {!answeredNow && <p className="text-[12px] text-faint">Reading the answered gates…</p>}
-        {answeredNow?.error && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">The answered gates could not be read: {answeredNow.error}</p>}
+        {answeredNow?.error && QUIET && (inboxOff ? <p className="text-[12px] text-faint">Gates answered in the window are listed here, with who answered and how.</p> : <QuietNote inline />)}
+        {answeredNow?.error && !QUIET && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">The answered gates could not be read: {answeredNow.error}</p>}
         {answeredNow && !answeredNow.error && answeredNow.decisions.length === 0 && <p className="text-[12px] text-faint">No gate was answered in this window.</p>}
         {answeredNow && answeredNow.decisions.length > 0 && (
           <div className="-m-4 overflow-x-auto">

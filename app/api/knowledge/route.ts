@@ -4,6 +4,7 @@ import { DEFAULT_NAMESPACE, NAMESPACE_RULE, SOURCES, parseNamespace } from "@/li
 import { ensureAnnIndex, integrityOf, knowledgeReady, kq, listNamespaces, seedNamespace } from "@/lib/server/knowledge-db";
 import { COLUMN_DIMENSIONS, embeddingStatus } from "@/lib/server/embed";
 import { permit } from "@/lib/server/auth";
+import { RUNTIME_ROOT } from "@/lib/server/paths";
 
 /**
  * The knowledge base, as it actually stands, for one namespace.
@@ -25,7 +26,7 @@ import { permit } from "@/lib/server/auth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ROOT = path.resolve(process.cwd(), "..", "runtime");
+const ROOT = RUNTIME_ROOT;
 const RUNS = path.join(ROOT, "workspace", "runs");
 
 /** How often agents actually searched, from the record. */

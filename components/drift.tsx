@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Status, Tag } from "./ui";
 import { Checkbox } from "./forms";
+import { QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { hueFor } from "@/lib/hue";
 import { getDrift, type AgentDrift, type DriftMeasure, type DriftReport } from "@/lib/api/l7";
 import { MEASURE_ASKS, MEASURE_LABEL, STATISTIC_LABEL, benchmarkEvalLine, dispositionField, driftVerdict, orderDrift, sideText, statText, thresholdText, windowsLine } from "@/lib/drift";
@@ -58,6 +60,8 @@ function DriftInner() {
   const thin = agents.filter((a) => !a.enough).length;
   const mix = report?.thresholds.mix_js ?? 0.2;
   const z = report?.thresholds.mean_z ?? 2;
+  // A quiet console (lib/quiet.ts) whose drift door did not answer says so once, in place of figures that would never settle.
+  const quietDown = QUIET && Boolean(error) && !report;
 
   return (
     <div className="mx-auto w-full max-w-[1520px] px-5 py-7" data-hue="amber">
@@ -85,7 +89,12 @@ function DriftInner() {
         </span>
       </header>
 
-      <section className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-4">
+      {quietDown && (
+        <div className="mt-5">
+          <QuietNote />
+        </div>
+      )}
+      {!quietDown && <section className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-4">
         {[
           { k: "Drifted", v: report ? String(drifted) : "…", tone: drifted ? "text-err" : "" },
           { k: "Within thresholds", v: report ? String(compared) : "…", tone: "" },
@@ -97,7 +106,7 @@ function DriftInner() {
             <span className="text-[10.5px] text-faint">{x.k}</span>
           </div>
         ))}
-      </section>
+      </section>}
       {report && (
         <p className="mt-2 text-[11px] text-faint">
           Each window needs {report.min_runs.recent ?? 5} finished runs in the last {report.windows.recent_h ?? 24} h and {report.min_runs.baseline ?? 20} in the{" "}
@@ -106,7 +115,7 @@ function DriftInner() {
         </p>
       )}
 
-      {error && <p className="mt-4 text-[12.5px] text-err">{error}</p>}
+      {error && !QUIET && <p className="mt-4 text-[12.5px] text-err">{error}</p>}
       {report && shown.length === 0 && !error && (
         <p className="mt-6 text-[12.5px] text-faint">{onlyDrifted ? "No agent drifted." : "No agent has finished runs in these windows yet."}</p>
       )}

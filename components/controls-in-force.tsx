@@ -5,6 +5,8 @@ import Link from "next/link";
 import { Mono, Status, Tag, type Tone } from "./ui";
 import { ControlMark, ControlRef, resolveControl } from "./control-ref";
 import { Skeleton } from "./loaders";
+import { QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { hueFor } from "@/lib/hue";
 import { soon } from "@/lib/soon";
 import { agentHref } from "@/lib/agent-link";
@@ -198,11 +200,17 @@ function Block({ title, where, meta, children }: { title: string; where?: { href
 const Line = ({ children }: { children: ReactNode }) => <li className="flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-line px-3 py-1.5 text-[11.5px] leading-[1.55] text-dim last:border-b-0">{children}</li>;
 const List = ({ children }: { children: ReactNode }) => <ul className="flex flex-col overflow-hidden rounded-md border border-line">{children}</ul>;
 const None = ({ children }: { children: ReactNode }) => <p className="text-[11.5px] leading-[1.55] text-faint">{children}</p>;
-const Failed = ({ what, message }: { what: string; message: string }) => (
-  <p role="alert" className="text-[11.5px] leading-[1.55] text-err">
-    {what}: {message}
-  </p>
-);
+// A quiet console (lib/quiet.ts) prints no reason a read failed: the block says in one faint line that it is not connected.
+const Failed = ({ what, message }: { what: string; message: string }) =>
+  QUIET ? (
+    <p>
+      <QuietNote inline />
+    </p>
+  ) : (
+    <p role="alert" className="text-[11.5px] leading-[1.55] text-err">
+      {what}: {message}
+    </p>
+  );
 
 function ToolChip({ tool }: { tool: SpecTool | undefined; }) {
   if (!tool) return null;
@@ -292,6 +300,9 @@ export function ControlsInForce({ agent }: { agent: string }) {
   const granted = g ? new Set(g.grants.flatMap((x) => x.tools)) : new Set<string>();
   const beyondRead = g ? [...granted].filter((n) => (g.tools.get(n)?.risk ?? "read") !== "read").length : 0;
   const evidence = (control: string) => `/evidence?control=${encodeURIComponent(control)}&agent=${encodeURIComponent(agent)}`;
+
+  // With the agent's own spec unread there is no block to fill: a quiet console says so once, in place of a note per block.
+  if (QUIET && spec.state === "error") return <QuietNote />;
 
   return (
     <section className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1" aria-label={`Controls in force on ${agent}`}>

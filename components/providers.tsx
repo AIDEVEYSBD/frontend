@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Tag } from "./ui";
-import { Banner } from "./overlays";
+import { Banner, QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { Icon } from "./builder/icons";
 import { Pick } from "./select";
 import { Text } from "./builder/controls";
@@ -70,6 +71,31 @@ export function PermittedClassNote({ short = false }: { short?: boolean }) {
   );
 }
 
+/**
+ * Whether the console has nothing behind it: no database, no backend, no
+ * runtime files (app/api/configuration/route.ts says so). Asked only in a
+ * quiet console (lib/quiet.ts), where an empty configuration read from
+ * nowhere is shown as not connected and not as "none configured"; otherwise
+ * nothing is asked and this is always false.
+ */
+let bareAsked: Promise<boolean> | null = null;
+export function useBare(): boolean {
+  const [bare, setBare] = useState(false);
+  useEffect(() => {
+    if (!QUIET) return;
+    let live = true;
+    bareAsked ??= fetch("/api/configuration", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { connected?: boolean } | null) => d?.connected === false)
+      .catch(() => false);
+    void bareAsked.then((b) => live && setBare(b));
+    return () => {
+      live = false;
+    };
+  }, []);
+  return bare;
+}
+
 /** Tell the other settings cards the configuration changed under them. */
 const CONFIG_EVENT = "af:config";
 export function announceConfig() {
@@ -92,7 +118,12 @@ export function Providers() {
 
   const refresh = useCallback(() => {
     fetch("/api/config")
-      .then((r) => r.json())
+      .then(async (r) => {
+        // A page (a proxy's 502, Next's own 404) is no answer and no message: the status alone is the reason.
+        const d = await r.json().catch(() => null);
+        if (!d) throw new Error(`the server answered ${r.status}`);
+        return d;
+      })
       .then((d) => (d.error ? setError(String(d.error)) : setConfig(d)))
       .catch((e) => setError(String(e)));
     listVault()
@@ -117,6 +148,8 @@ export function Providers() {
     return true;
   }, []);
 
+  // Quiet, with nothing behind the console: the providers were not read from anywhere, so the card does not say there are none.
+  const bare = useBare() && (config?.providers.length ?? 0) === 0;
   const modelsOf = (id: string) => (config?.models ?? []).filter((m) => (m.provider ?? FOUNDRY_ID) === id);
 
   const remove = async (p: Provider) => {
@@ -145,7 +178,7 @@ export function Providers() {
       <header className="flex items-center gap-2.5 border-b border-line px-4 py-3">
         <Icon name="server" size={15} className="text-dim" />
         <h2 className="text-[14px] font-semibold">Providers</h2>
-        <span className="tnum font-mono text-[11px] text-faint">{config ? `${config.providers.length} endpoint${config.providers.length === 1 ? "" : "s"}` : "…"}</span>
+        {!bare && <span className="tnum font-mono text-[11px] text-faint">{config ? `${config.providers.length} endpoint${config.providers.length === 1 ? "" : "s"}` : QUIET && error ? "" : "…"}</span>}
         <span className="grow" />
         <span className={`text-[11px] transition-opacity ${saved ? "text-ok opacity-100" : "opacity-0"}`}>saved</span>
         {!adding && (
@@ -191,7 +224,12 @@ export function Providers() {
 
       <div className="flex flex-col">
         {!config && !error && <p className="px-4 py-4 text-[12px] text-faint">Reading the configuration&hellip;</p>}
-        {config && config.providers.length === 0 && !adding && (
+        {bare && !adding && (
+          <p className="px-4 py-4">
+            <QuietNote inline />
+          </p>
+        )}
+        {config && config.providers.length === 0 && !adding && !bare && (
           <div className="flex flex-col gap-1 px-4 py-6">
             <span className="text-[13px] font-medium text-fg">No provider is configured</span>
             <span className="max-w-[64ch] text-[12.5px] leading-[1.55] text-dim">
@@ -278,7 +316,12 @@ function Discover({ provider, already, onOffer }: { provider: Pick<Provider, "ki
   useEffect(() => {
     let live = true;
     fetch("/api/providers/discover", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(provider) })
-      .then((r) => r.json())
+      .then(async (r) => {
+        // A page (a proxy's 502, Next's own 404) is no answer and no message: the status alone is the reason.
+        const d = await r.json().catch(() => null);
+        if (!d) throw new Error(`the server answered ${r.status}`);
+        return d;
+      })
       .then((d) => {
         if (!live) return;
         if (d.error) setError(String(d.error));

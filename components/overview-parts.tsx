@@ -127,6 +127,7 @@ export function FigureTile({
   label,
   chip,
   value,
+  off = false,
   sub,
   href,
   tone,
@@ -136,6 +137,8 @@ export function FigureTile({
   chip?: string;
   /** The figure, or null while it is being read (or could not be). */
   value: string | null;
+  /** A quiet console whose read failed: the tile says it is not connected, with no figure and no reason. */
+  off?: boolean;
   sub: string;
   href: string;
   /** A tone on the figure, only when the state warrants it. */
@@ -147,10 +150,14 @@ export function FigureTile({
         <span className="truncate text-[11px] text-faint">{label}</span>
         {chip && <span className="rounded-[3px] border border-line bg-canvas px-1 font-mono text-[9px] leading-[14px] text-dim">{chip}</span>}
       </span>
-      <span className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]" style={tone && value !== null ? { color: `var(--color-${tone})` } : undefined}>
-        {value ?? "—"}
-      </span>
-      <span className="truncate text-[10.5px] text-ghost">{sub}</span>
+      {off && value === null ? (
+        <span className="flex h-[22px] items-center text-[12px] text-faint">Not connected</span>
+      ) : (
+        <span className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]" style={tone && value !== null ? { color: `var(--color-${tone})` } : undefined}>
+          {value ?? "—"}
+        </span>
+      )}
+      <span className="truncate text-[10.5px] text-ghost">{off && value === null ? "\u00a0" : sub}</span>
     </Link>
   );
 }

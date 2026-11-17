@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Icon } from "./builder/icons";
 import { IconButton, Label, RUN_STATE, Status } from "./ui";
 import { Banner } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { DrillModal } from "./drill";
 import { VersionHistory } from "./versions";
 import { useSession } from "@/lib/use-session";
@@ -146,7 +147,7 @@ export function Workflows() {
           </div>
           <span className="grow" />
           <span className="tnum shrink-0 pb-1 font-mono text-[11px] text-faint">
-            {agents ? `${agents.length} saved` : "…"}
+            {agents ? `${agents.length} saved` : QUIET && error ? "" : "…"}
           </span>
         </header>
 

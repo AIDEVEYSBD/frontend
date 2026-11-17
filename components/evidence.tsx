@@ -4,7 +4,8 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Button, Mono, Tag } from "./ui";
-import { Banner } from "./overlays";
+import { Banner, QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { Field, Input } from "./forms";
 import { Pick } from "./select";
 import { ControlMark, ControlRef } from "./control-ref";
@@ -325,6 +326,8 @@ function EvidencePage() {
   const controls = useMemo(() => [{ value: "", label: "No single control" }, ...(catalogue?.controls ?? []).map((c) => ({ value: c.id, label: `${c.id} · ${c.title}` }))], [catalogue]);
   const frameworks = useMemo(() => [{ value: "", label: "No framework" }, ...(catalogue?.frameworks ?? []).map((f) => ({ value: f.id, label: f.short }))], [catalogue]);
   const picked = catalogue?.frameworks.find((f) => f.id === form.framework);
+  // A quiet console (lib/quiet.ts) whose catalogue did not answer says so once; a form with nothing to pick from is left out.
+  const quietDown = QUIET && Boolean(loadError) && !catalogue;
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
       <PageHeader title="Evidence">
@@ -335,6 +338,8 @@ function EvidencePage() {
           {loadError}
         </Banner>
       )}
+      {!quietDown && (
+      <>
       <Section title="Build a pack" hue="control" meta={catalogue ? `${catalogue.count} controls · ${catalogue.frameworks.length} frameworks` : "reading the catalogue…"}>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <Field label="Control">
@@ -365,13 +370,15 @@ function EvidencePage() {
           </Button>
           {problem && <span className="text-[11px] text-faint">{problem}</span>}
           {saved && <Mono className="text-[10.5px] break-all text-faint">{saved}</Mono>}
-          {error && <span className="text-[11.5px] text-err">{error}</span>}
+          {error && (QUIET ? <QuietNote inline /> : <span className="text-[11.5px] text-err">{error}</span>)}
         </span>
       </Section>
       {pack ? (
         <EvidencePackView pack={pack} />
       ) : (
         !busy && !error && <p className="text-[12px] text-faint">Name a control or a framework to build a pack.</p>
+      )}
+      </>
       )}
     </div>
   );

@@ -1,0 +1,14 @@
+# What never enters the console image.
+.git
+.github
+.vercel
+.next
+node_modules
+tests
+deploy
+*.tsbuildinfo
+*.log
+.DS_Store
+.env
+.env.*
+*.pem

@@ -4,7 +4,8 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Mono, Status, Tag } from "./ui";
-import { Banner } from "./overlays";
+import { Banner, QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { Field, Input, Switch, Textarea } from "./forms";
 import { Pick } from "./select";
 import { ChipEditor } from "./gate-form";
@@ -224,7 +225,7 @@ export function ChangeDetail({ change, who, onMoved }: { change: PolicyChange; w
           </span>
         </div>
       )}
-      {error && <p className="text-[11.5px] text-err">{error}</p>}
+      {error && (QUIET ? <QuietNote inline /> : <p className="text-[11.5px] text-err">{error}</p>)}
       {ask === "reject" && (
         <TextDialog
           title={`Reject ${c.id}?`}
@@ -458,7 +459,7 @@ function ProposalFields({ target, id, current, inherits, onProposed }: { target:
         {changed.length > 0 && !reason.trim() && <span className="text-[11px] text-faint">A change needs a reason.</span>}
         {changed.length > 0 && reason.trim() && <span className="text-[11px] text-faint">Sends only {changed.join(", ")}; the rest keep their value.</span>}
       </span>
-      {error && <p className="text-[11.5px] text-err">{error}</p>}
+      {error && (QUIET ? <QuietNote inline /> : <p className="text-[11.5px] text-err">{error}</p>)}
       {sim && <SimulationView result={sim} />}
     </div>
   );
@@ -512,7 +513,7 @@ function ProposeForm({ targets, agents, kind, onKind, onProposed }: { targets: T
           </Field>
         )}
       </div>
-      {error && <p className="text-[11.5px] text-err">{error}</p>}
+      {error && (QUIET ? <QuietNote inline /> : <p className="text-[11.5px] text-err">{error}</p>)}
       {current?.key === key && <ProposalFields key={key} target={target} id={picked} current={current.rules} inherits={current.inherits} onProposed={onProposed} />}
     </div>
   );
@@ -607,7 +608,7 @@ function SimulatePanel({ agents, preset }: { agents: AgentSummary[] | null; pres
   /** Each of these belongs to one subject: picking another leaves them behind. */
   const [policy, setPolicy] = useState<{ key: string; text?: string; error?: string } | null>(null);
   const [edited, setEdited] = useState<{ key: string; text: string } | null>(null);
-  const [outcome, setOutcome] = useState<{ key: string; result?: SimulationResult; error?: string } | null>(null);
+  const [outcome, setOutcome] = useState<{ key: string; result?: SimulationResult; error?: string; door?: boolean } | null>(null);
   useEffect(() => {
     listAttached()
       .then((l) => setAttached(l.agents.map((a) => ({ id: a.id, name: a.name, grants: a.grants, gate_at: a.gate_at }))))
@@ -647,7 +648,7 @@ function SimulatePanel({ agents, preset }: { agents: AgentSummary[] | null; pres
       setOutcome({ key, result: await simulatePolicy(subject === "agent" ? { agent: picked, proposed: parsed.proposed, window: w } : { target: { kind: "attached", id: picked }, proposed: parsed.proposed, window: w }) });
     } catch (e) {
       const at = e instanceof DoorError && typeof e.body.path === "string" ? ` (${e.body.path})` : "";
-      setOutcome({ key, error: `${(e as Error).message}${at}` });
+      setOutcome({ key, error: `${(e as Error).message}${at}`, door: true });
     } finally {
       setBusy(false);
     }
@@ -693,7 +694,8 @@ function SimulatePanel({ agents, preset }: { agents: AgentSummary[] | null; pres
         </Button>
         <span className="text-[11px] text-faint">Every recorded call is ruled again by the runtime&rsquo;s own enforcer. Nothing is executed.</span>
       </span>
-      {error && <p className="text-[11.5px] text-err">{error}</p>}
+      {/* What the person typed not parsing is theirs to fix and is said; a door that did not answer is not, in a quiet console. */}
+      {error && (QUIET && (shown?.error ? shown.door : true) ? <QuietNote inline /> : <p className="text-[11.5px] text-err">{error}</p>)}
       {shown?.result && <SimulationView result={shown.result} />}
     </div>
   );
@@ -807,6 +809,8 @@ function PolicyPage() {
   const open = (id: string) => router.push(`/policy?change=${encodeURIComponent(id)}`);
   const pending = list ? (list.states.pending ?? 0) : null;
   const waiting = list ? (list.states.approved ?? 0) : null;
+  // A quiet console (lib/quiet.ts) whose policy door did not answer says so once under the header, with no panel left reading.
+  const quietDown = QUIET && Boolean(error) && !list && !targets;
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
       <PageHeader title="Policy">
@@ -824,8 +828,10 @@ function PolicyPage() {
         </Banner>
       )}
 
+      {!quietDown && (
+      <>
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <Section title="Changes" hue="approvals" meta={list ? `${list.count} shown · ${pending} awaiting review · ${waiting} approved, not yet effective` : "reading…"}>
+        <Section title="Changes" hue="approvals" meta={list ? `${list.count} shown · ${pending} awaiting review · ${waiting} approved, not yet effective` : QUIET && error ? undefined : "reading…"}>
           <div className="flex flex-wrap items-end gap-3">
             <div className="w-56">
               <Field label="State">
@@ -838,10 +844,10 @@ function PolicyPage() {
               </Field>
             </div>
           </div>
-          {list ? <ChangesListView list={list} selected={selected} onSelect={open} filtered={Boolean(state || target)} /> : <p className="text-[12px] text-faint">Reading the history…</p>}
+          {list ? <ChangesListView list={list} selected={selected} onSelect={open} filtered={Boolean(state || target)} /> : QUIET && error ? <QuietNote inline /> : <p className="text-[12px] text-faint">Reading the history…</p>}
         </Section>
         <Section title="Change" hue="approvals" meta={selected ?? "pick one to review it"}>
-          {detailError && <p className="text-[11.5px] text-err">{detailError}</p>}
+          {detailError && (QUIET ? <QuietNote inline /> : <p className="text-[11.5px] text-err">{detailError}</p>)}
           {!selected && <p className="text-[12px] text-faint">Nothing picked. A change waiting on you is in the list.</p>}
           {selected && change?.id === selected && (
             <ChangeDetail
@@ -872,6 +878,8 @@ function PolicyPage() {
                 open(c.id);
               }}
             />
+          ) : QUIET && error ? (
+            <QuietNote inline />
           ) : (
             <p className="text-[12px] text-faint">Reading the targets…</p>
           )}
@@ -896,10 +904,14 @@ function PolicyPage() {
               />
             ))}
           </div>
+        ) : QUIET && error ? (
+          <QuietNote inline />
         ) : (
           <p className="text-[12px] text-faint">Reading…</p>
         )}
       </Section>
+      </>
+      )}
     </div>
   );
 }

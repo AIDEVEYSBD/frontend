@@ -4,7 +4,8 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Mono, Tag } from "./ui";
-import { Banner, Dialog, EmptyState } from "./overlays";
+import { Banner, Dialog, EmptyState, QuietNote } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { PageHeader } from "./section";
 import { Chips, FilterBar, SearchBox } from "./filters";
 import { DigestChip } from "./digest-chip";
@@ -197,7 +198,7 @@ function DatasetsPage() {
             </NotConnected>
           </div>
         )}
-        {answer?.state === "error" && <p className="px-4 py-4 text-[12px] text-faint">The list could not be read, so nothing is shown.</p>}
+        {answer?.state === "error" && !QUIET && <p className="px-4 py-4 text-[12px] text-faint">The list could not be read, so nothing is shown.</p>}
         {connected && all.length === 0 && (
           <div className="p-4">
             <EmptyState
@@ -291,7 +292,7 @@ function DatasetDetail({ id, row, now, onClose, onRemoved }: { id: string; row: 
           d ? (
             <>
               <span className="min-w-0 grow text-[11.5px] leading-[1.5] text-faint">
-                {waits ? <NotConnectedNote door={waits} /> : error ? <span className="text-err">{error}</span> : "Removing a dataset takes it out of the list of run inputs."}
+                {waits ? <NotConnectedNote door={waits} /> : error ? QUIET ? <QuietNote inline /> : <span className="text-err">{error}</span> : "Removing a dataset takes it out of the list of run inputs."}
               </span>
               <Button size="sm" variant="solid" tone="err" permission="configure" onClick={() => setConfirming(true)}>
                 Remove
@@ -301,7 +302,7 @@ function DatasetDetail({ id, row, now, onClose, onRemoved }: { id: string; row: 
         }
       >
         {!d && answer === null && <p className="px-4 py-4 text-[12px] text-faint">Reading the dataset…</p>}
-        {!d && answer?.state === "error" && <p className="px-4 py-4 text-[12px] text-err">{answer.message}</p>}
+        {!d && answer?.state === "error" && (QUIET ? <div className="p-4"><QuietNote /></div> : <p className="px-4 py-4 text-[12px] text-err">{answer.message}</p>)}
         {!d && answer?.state === "pending" && (
           <div className="p-4">
             <NotConnected door={answer.door} compact />
@@ -362,7 +363,7 @@ function DatasetDetail({ id, row, now, onClose, onRemoved }: { id: string; row: 
                 <NotConnectedNote door={answer.door} />
               </p>
             )}
-            {answer?.state === "error" && <p className="border-b border-line px-4 py-2.5 text-[11.5px] text-err">Its own record could not be read: {answer.message}. What the list said is shown.</p>}
+            {answer?.state === "error" && !QUIET && <p className="border-b border-line px-4 py-2.5 text-[11.5px] text-err">Its own record could not be read: {answer.message}. What the list said is shown.</p>}
 
             {/* the runs that took it */}
             <div className="flex flex-col">

@@ -1,5 +1,6 @@
 "use client";
 
+import { QUIET } from "@/lib/quiet";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Mono, Spinner } from "./ui";
@@ -64,6 +65,19 @@ const TOOL_LABEL: Record<string, string> = {
 /** The bubble at the bottom right, and the panel it opens. */
 export function Assistant() {
   const [open, setOpen] = useState(false);
+  // A quiet console with no model for the assistant leaves the button out, so nobody opens a drawer that cannot answer.
+  const [available, setAvailable] = useState(!QUIET);
+  useEffect(() => {
+    if (!QUIET) return;
+    let live = true;
+    fetch("/api/assistant", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { available?: boolean } | null) => live && setAvailable(Boolean(d?.available)))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
@@ -71,6 +85,7 @@ export function Assistant() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+  if (!available) return null;
   return (
     <>
       <AssistantPanel open={open} onClose={() => setOpen(false)} />

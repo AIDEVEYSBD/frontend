@@ -1,6 +1,7 @@
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { redactText, redactValue } from "@/lib/redact";
+import { RUNTIME_ROOT } from "@/lib/server/paths";
 
 /**
  * The live secrets this process holds, for redaction on the way out.
@@ -12,7 +13,7 @@ import { redactText, redactValue } from "@/lib/redact";
  * next read, and a route never pays a file read per journal.
  */
 
-const VAULT = path.resolve(process.cwd(), "..", "runtime", "workspace", "vault.json");
+const VAULT = path.resolve(RUNTIME_ROOT, "workspace", "vault.json");
 const SECRET_ENV = /(_API_KEY|_TOKEN|_SECRET|_PASSWORD|^AUTH_SECRET$|^RUNTIME_KEY$|^VAULT_KEY$)$/;
 
 let cache: { at: number; values: string[] } | null = null;

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Button, Status } from "./ui";
 import { Banner } from "./overlays";
+import { QUIET } from "@/lib/quiet";
 import { PageHeader } from "./section";
 import { usePageFacts } from "./assistant";
 import { WINDOWS, WindowPick, type Win } from "./window-pick";
@@ -93,6 +94,9 @@ function Overview() {
   const latest = runs?.[0]?.at ?? null;
   const loading = runs === null && !estate.runsError;
   const unread = runs === null && Boolean(estate.runsError);
+  /* A quiet console (lib/quiet.ts): a read that failed leaves its panel saying what it will hold, under the one note at the top, and no figure stands in for it. */
+  const off = QUIET && unread;
+  const gatesOff = QUIET && gates === null && Boolean(estate.gatesError);
   const chip = WINDOWS.find((w) => w.id === win)!.label;
 
   /* Rankings. */
@@ -140,6 +144,7 @@ function Overview() {
   /** What a ranking says in place of rows (null when it has rows to show): `ranks` is what the list will hold once there are runs, `none` what it says of runs that give it nothing. */
   const noRows = (has: boolean, ranks: string, none: string) => {
     if (loading) return <Nothing>Reading the run ledger.</Nothing>;
+    if (off) return <Nothing>{ranks}</Nothing>;
     if (unread) return <Nothing>The run ledger could not be read.</Nothing>;
     if (!rows.length) return <Nothing>{runs?.length ? `No runs in ${windowWords(win)}.` : `No runs yet. ${ranks}`}</Nothing>;
     return has ? null : <Nothing>{none}</Nothing>;
@@ -152,14 +157,14 @@ function Overview() {
     ) : toolCalls.pending ? (
       <Nothing>Reading tool calls from {plural(toolRuns.length, "run")}.</Nothing>
     ) : !readable || (toolCalls.read === 0 && toolCalls.unread > 0) ? (
-      <Nothing>The journals of these runs cannot be read from this console, so their tool calls are not counted.</Nothing>
+      <Nothing>{QUIET ? "Tools rank here by calls, or by the time spent in them." : "The journals of these runs cannot be read from this console, so their tool calls are not counted."}</Nothing>
     ) : (
       <Nothing>These runs made no tool calls.</Nothing>
     ));
   const toolsNote = [
     tools.top.length ? `${tools.top.length} of ${plural(tools.of, "tool")}` : "",
     toolRuns.length && rows.length > toolRuns.length ? `the ${toolRuns.length} most recent of ${fmtCount(rows.length)} runs` : "",
-    toolCalls.unread ? `${plural(toolCalls.unread, "run")} not readable` : "",
+    toolCalls.unread && !QUIET ? `${plural(toolCalls.unread, "run")} not readable` : "",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -208,12 +213,13 @@ function Overview() {
       {/* ── figures ── */}
       <div className="@container">
         <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-line bg-surface elev-1 @min-[460px]:grid-cols-3 @min-[760px]:grid-cols-5">
-          <FigureTile label="Runs" chip={chip} href="/runs" value={runs ? fmtCount(totals.runs) : null} sub={loading ? "reading the ledger" : unread ? "ledger not read" : totals.runs ? `${fmtCount(totals.done)} complete` : "none in this window"} />
-          <FigureTile label="Running now" href="/runs" value={runs ? fmtCount(live) : null} tone={live ? "run" : undefined} sub={loading ? "reading the ledger" : unread ? "ledger not read" : live ? "in flight" : "nothing in flight"} />
+          <FigureTile label="Runs" chip={chip} href="/runs" value={runs ? fmtCount(totals.runs) : null} off={off} sub={loading ? "reading the ledger" : unread ? "ledger not read" : totals.runs ? `${fmtCount(totals.done)} complete` : "none in this window"} />
+          <FigureTile label="Running now" href="/runs" value={runs ? fmtCount(live) : null} off={off} tone={live ? "run" : undefined} sub={loading ? "reading the ledger" : unread ? "ledger not read" : live ? "in flight" : "nothing in flight"} />
           <FigureTile
             label="Awaiting approval"
             href="/approvals"
             value={gates ? fmtCount(gates.length) : null}
+            off={gatesOff}
             tone={gates?.length ? "warn" : undefined}
             sub={gates === null ? (estate.gatesError ? "inbox not read" : "reading the inbox") : gates.length ? (waiting !== null ? `oldest waiting ${fmtAge(waiting)}` : "gates open") : "no gates open"}
           />
@@ -222,6 +228,7 @@ function Overview() {
             chip={chip}
             href="/runs"
             value={runs ? fmtCount(totals.failed) : null}
+            off={off}
             tone={totals.failed ? "err" : undefined}
             sub={loading ? "reading the ledger" : unread ? "ledger not read" : totals.runs ? [`${percent(totals.failed, totals.runs)} of runs`, totals.killed ? `${fmtCount(totals.killed)} killed` : ""].filter(Boolean).join(" · ") : "none in this window"}
           />
@@ -230,6 +237,7 @@ function Overview() {
             chip={chip}
             href="/finops"
             value={runs ? fmtMoney(totals.spend) : null}
+            off={off}
             sub={loading ? "reading the ledger" : unread ? "ledger not read" : !totals.runs ? "nothing spent in this window" : totals.estimated ? `${plural(totals.estimated, "run")} priced by estimate` : `across ${plural(totals.runs, "run")}`}
           />
         </div>
@@ -299,24 +307,30 @@ function Overview() {
               </>
             }
           >
-            <div className="grid grid-cols-3 gap-4 px-4 pt-4 pb-3">
-              <CardFigure label="p50" value={latency ? fmtMs(latency.p50) : "—"} />
-              <CardFigure label="p95" value={latency ? fmtMs(latency.p95) : "—"} />
-              <CardFigure label="Slowest" value={latency ? fmtMs(latency.max) : "—"} />
-            </div>
-            <p className="px-4 pb-4 text-[12px] leading-[1.55] text-faint">
-              {latency
-                ? `Half the runs finished within ${fmtMs(latency.p50)}, 95 in 100 within ${fmtMs(latency.p95)}.`
-                : loading
-                  ? "Reading the run ledger."
-                  : unread
-                    ? "The run ledger could not be read."
-                    : rows.length
-                      ? "These runs carry no recorded duration."
-                      : runs?.length
-                        ? `No runs in ${windowWords(win)}, so there is no duration to measure.`
-                        : "No runs yet, so there is no duration to measure."}
-            </p>
+            {off ? (
+              <Nothing>The median run time, the time 95 in 100 runs finish within, and the slowest run show here.</Nothing>
+            ) : (
+              <>
+                <div className="grid grid-cols-3 gap-4 px-4 pt-4 pb-3">
+                  <CardFigure label="p50" value={latency ? fmtMs(latency.p50) : "—"} />
+                  <CardFigure label="p95" value={latency ? fmtMs(latency.p95) : "—"} />
+                  <CardFigure label="Slowest" value={latency ? fmtMs(latency.max) : "—"} />
+                </div>
+                <p className="px-4 pb-4 text-[12px] leading-[1.55] text-faint">
+                  {latency
+                    ? `Half the runs finished within ${fmtMs(latency.p50)}, 95 in 100 within ${fmtMs(latency.p95)}.`
+                    : loading
+                      ? "Reading the run ledger."
+                      : unread
+                        ? "The run ledger could not be read."
+                        : rows.length
+                          ? "These runs carry no recorded duration."
+                          : runs?.length
+                            ? `No runs in ${windowWords(win)}, so there is no duration to measure.`
+                            : "No runs yet, so there is no duration to measure."}
+                </p>
+              </>
+            )}
           </Card>
 
           <Card
@@ -331,18 +345,24 @@ function Overview() {
               </>
             }
           >
-            <div className="grid grid-cols-3 gap-4 px-4 pt-4 pb-3">
-              <CardFigure label="Failure rate" value={totals.runs ? percent(totals.failed, totals.runs) : "—"} tone={totals.failed ? "err" : undefined} />
-              <CardFigure label={`Most in one ${trend.unit === "30 days" ? "span" : trend.unit}`} value={totals.runs ? fmtCount(peak) : "—"} />
-            </div>
-            {totals.failed > 0 ? (
-              <div className="px-4 pb-4">
-                <TrendBars points={trend.points} from={stamp(trend.from, trend.unit)} to="now" />
-              </div>
+            {off ? (
+              <Nothing>The share of runs that failed, and the failed runs per {trend.unit === "30 days" ? "span" : trend.unit}, show here.</Nothing>
             ) : (
-              <p className="px-4 pb-4 text-[12px] leading-[1.55] text-faint">
-                {loading ? "Reading the run ledger." : unread ? "The run ledger could not be read." : rows.length ? `No run failed in ${windowWords(win)}.` : runs?.length ? `No runs in ${windowWords(win)}.` : "No runs yet."}
-              </p>
+              <>
+                <div className="grid grid-cols-3 gap-4 px-4 pt-4 pb-3">
+                  <CardFigure label="Failure rate" value={totals.runs ? percent(totals.failed, totals.runs) : "—"} tone={totals.failed ? "err" : undefined} />
+                  <CardFigure label={`Most in one ${trend.unit === "30 days" ? "span" : trend.unit}`} value={totals.runs ? fmtCount(peak) : "—"} />
+                </div>
+                {totals.failed > 0 ? (
+                  <div className="px-4 pb-4">
+                    <TrendBars points={trend.points} from={stamp(trend.from, trend.unit)} to="now" />
+                  </div>
+                ) : (
+                  <p className="px-4 pb-4 text-[12px] leading-[1.55] text-faint">
+                    {loading ? "Reading the run ledger." : unread ? "The run ledger could not be read." : rows.length ? `No run failed in ${windowWords(win)}.` : runs?.length ? `No runs in ${windowWords(win)}.` : "No runs yet."}
+                  </p>
+                )}
+              </>
             )}
           </Card>
 
@@ -352,7 +372,7 @@ function Overview() {
             meta={needs.length ? `${fmtCount(needs.length)} open` : undefined}
             footer={
               <>
-                <FootNote>{needs.length > 5 ? `5 of ${fmtCount(needs.length)}, most urgent first` : estate.attentionError && !nobodyAnswered ? "The attention queue could not be read" : "Open items and pending gates"}</FootNote>
+                <FootNote>{needs.length > 5 ? `5 of ${fmtCount(needs.length)}, most urgent first` : estate.attentionError && !nobodyAnswered && !QUIET ? "The attention queue could not be read" : "Open items and pending gates"}</FootNote>
                 <Button size="sm" href="/control">
                   Control
                 </Button>
@@ -362,7 +382,9 @@ function Overview() {
               </>
             }
           >
-            {nobodyAnswered ? (
+            {nobodyAnswered && QUIET ? (
+              <Nothing>Open items and the gates waiting on a person list here, most urgent first.</Nothing>
+            ) : nobodyAnswered ? (
               <ReadError>The attention queue and the inbox could not be read: {estate.attentionError || estate.gatesError}.</ReadError>
             ) : attention === null && gates === null ? (
               <Nothing>Reading the attention queue.</Nothing>
