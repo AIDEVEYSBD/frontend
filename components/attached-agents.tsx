@@ -31,11 +31,13 @@ import { attachedSplit, effectiveAt, effectiveProblem, proposedLine } from "@/li
 /**
  * Third-party agents: how one attaches, and which ones have.
  *
- * The top half is the manual — the SDK in the five languages teams write
- * agents in, or the A2A route for an agent whose code cannot change — and
- * it renders with the id and key of whatever was just attached, so the
- * snippet on screen is the one to paste. The bottom half is the registry:
- * every attached agent with its activity beside the factory's own.
+ * The manual (the SDK in the five languages teams write agents in, or the
+ * A2A route for an agent whose code cannot change) sits behind "Show the
+ * code", so the panel opens on the attach form and the registry. It renders
+ * with the id and key of whatever was just attached, so the snippet on
+ * screen is the one to paste, and it opens by itself when a key is minted.
+ * The registry is every attached agent with its activity beside the
+ * factory's own.
  */
 
 const MODES: AttachMode[] = ["sdk", "a2a"];
@@ -175,13 +177,15 @@ const control = "focusable h-8 rounded-md border border-line-strong bg-field px-
 
 /* ═══════════════════ the panel body ═══════════════════ */
 
-export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent[], store: string) => void }) {
+export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: AttachedAgent[], store: string) => void; /** Told, once the register has answered or not, whether a quiet console has no register to show (see Providers). */ onQuiet?: (quiet: boolean) => void }) {
   const [agents, setAgents] = useState<AttachedAgent[] | null>(null);
   const [store, setStore] = useState("");
   /** The register's read was refused or did not answer. A quiet console (lib/quiet.ts) says so instead of showing an empty register. */
   const [unread, setUnread] = useState(false);
   const [mode, setMode] = useState<AttachMode>("sdk");
   const [language, setLanguage] = useState<Language>("python");
+  /** The install line, the snippets and the setup steps are folded away until asked for. */
+  const [code, setCode] = useState(false);
 
   const [name, setName] = useState("");
   const [framework, setFramework] = useState("langgraph");
@@ -222,6 +226,10 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
         setUnread(true);
         shown({ agents: [], store: "" });
       });
+  const settled = agents !== null;
+  useEffect(() => {
+    if (settled) onQuiet?.(QUIET && unread);
+  }, [settled, unread, onQuiet]);
   useEffect(() => {
     load();
     attachableTools()
@@ -308,7 +316,8 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
   const changeFramework = (id: string) => {
     setFramework(id);
     const lang = FRAMEWORK_BY_ID.get(id)?.language;
-    if (lang) setLanguage(lang);
+    // Only a language this console offers a snippet in; otherwise the choice stands.
+    if (lang && LANGUAGES.some((l) => l.id === lang)) setLanguage(lang);
   };
   const changeMode = (m: AttachMode) => {
     setMode(m);
@@ -334,6 +343,8 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
     try {
       const d = await attachAgent({ name, mode, framework, language, owner, card_url: cardUrl });
       setMinted({ agent: d.agent as AttachedAgent, key: d.key });
+      // The snippet now carries the new agent's id and key: show it.
+      setCode(true);
       setName("");
       setOwner("");
       setCardUrl("");
@@ -368,9 +379,12 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
         <span className="tnum whitespace-nowrap text-[10.5px] text-ghost">
           {QUIET && unread ? "" : agents ? `${counts.total} attached · ${counts.sdk} over the SDK · ${counts.a2a} over A2A` : "reading the registry…"}
         </span>
+        <Button size="sm" variant="solid" tone="neutral" onClick={() => setCode(!code)}>
+          {code ? "Hide the code" : "Show the code"}
+        </Button>
       </div>
 
-      {mode === "sdk" ? (
+      {!code ? null : mode === "sdk" ? (
         <div className="grid gap-px bg-line lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
           <div className="flex min-w-0 flex-col bg-surface">
             <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2">
@@ -453,7 +467,7 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
 
       {/* ── attach ── */}
       <form
-        className="flex flex-wrap items-end gap-2 border-t border-line bg-raise/40 px-4 py-3"
+        className={`flex flex-wrap items-end gap-2 bg-raise/40 px-4 py-3 ${code ? "border-t border-line" : ""}`}
         onSubmit={(e) => {
           e.preventDefault();
           if (!busy && name.trim()) attach();

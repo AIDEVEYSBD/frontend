@@ -35,12 +35,16 @@ export const MODE_META: Record<AttachMode, { label: string; blurb: string; enfor
   },
 };
 
+/**
+ * The languages the panel offers a snippet in. The Java and Go reference
+ * clients exist (the snippets below, `Language`), but their package paths
+ * carry the name of the organisation that wrote them, so this console does
+ * not offer them until those clients are renamed.
+ */
 export const LANGUAGES: { id: Language; label: string; install: string }[] = [
-  { id: "python", label: "Python", install: "pip install agentfactory  (sdk/python in this repo)" },
-  { id: "typescript", label: "TypeScript", install: "npm install @agentfactory/sdk  (sdk/typescript in this repo)" },
-  { id: "java", label: "Java", install: "sdk/java — reference client, single file, no dependencies" },
-  { id: "csharp", label: "C#", install: "sdk/csharp — reference client, single file, no dependencies" },
-  { id: "go", label: "Go", install: "go get github.com/ey/agentfactory-go  (sdk/go in this repo)" },
+  { id: "python", label: "Python", install: "pip install agentfactory" },
+  { id: "typescript", label: "TypeScript", install: "npm install @agentfactory/sdk" },
+  { id: "csharp", label: "C#", install: "Reference client: one file, no dependencies, supplied with the platform" },
 ];
 
 export interface Framework {
@@ -79,7 +83,7 @@ export const FRAMEWORK_BY_ID = new Map(FRAMEWORKS.map((f) => [f.id, f]));
 
 /** What lands in the journal from an attached agent, and where it then shows. */
 export const RECORDED: { kind: string; what: string }[] = [
-  { kind: "model.call", what: "model, tokens in and out, latency — priced against the model sheet, so cost is a measurement" },
+  { kind: "model.call", what: "model, tokens in and out, latency; priced against the model sheet, so cost is a measurement" },
   { kind: "tool.call · tool.result", what: "every tool with its arguments and result, at the risk it was declared" },
   { kind: "denied", what: "a call the policy engine refused, and the rule that refused it" },
   { kind: "gate.open · gate.answer", what: "who was asked, who answered, when, and the note they left" },
@@ -89,10 +93,10 @@ export const RECORDED: { kind: string; what: string }[] = [
 
 export const SHOWN_ON: { page: string; what: string }[] = [
   { page: "Control", what: "spend, activity, latency and denials beside the factory's own agents" },
-  { page: "Runs", what: "every run replayable in the theater, decision by decision" },
+  { page: "Runs", what: "every run readable afterwards, decision by decision" },
   { page: "Controls", what: "refusals, gates and taint counted from the record" },
-  { page: "Roster", what: "the agent on the payroll with its derived autonomy" },
-  { page: "Observability", what: "traces in OpenTelemetry GenAI form, exportable to Langfuse or any OTLP collector" },
+  { page: "Agents", what: "the agent in the one list, with its derived autonomy" },
+  { page: "Explore", what: "its tool calls and activity beside every other agent's; traces export in OpenTelemetry form to any OTLP collector" },
 ];
 
 /* ═══════════════════ Endpoints an attached agent talks to ═══════════════════ */
@@ -275,7 +279,7 @@ PATCH ${ENDPOINTS.origin}/api/attached     { "id": "${c.agent}", "secret_name": 
   {
     title: "Route its model calls through the factory",
     body: "Point the agent's OpenAI-compatible base URL at the model gateway and give it the key. Every completion is forwarded to the deployment's own model resource and journalled with model, tokens and latency, priced from the model sheet. User and tool turns are screened before they leave; a blocked agent gets no answer. Streaming works; send x-agentfactory-run to group calls into one run.",
-    snippet: (c) => `# OpenAI SDKs, LangChain, LlamaIndex, Vercel AI, Spring AI — anything that honours these
+    snippet: (c) => `# OpenAI SDKs, LangChain, LlamaIndex, Vercel AI, Spring AI: anything that honours these
 OPENAI_BASE_URL=${ENDPOINTS.gateway}
 OPENAI_API_KEY=${KEY(c)}
 

@@ -5,7 +5,9 @@
  * still lands on it; the navigation shows the group once, and the header
  * every member page draws (components/page-tabs.tsx) carries the group's
  * name and the tabs. A tab with `param` carries the header's subject in that
- * query parameter (an agent's pages: the same agent on every tab).
+ * query parameter (an agent's pages: the same agent on every tab). A group
+ * whose tabs are views of one page writes the view into each tab's address
+ * (Configuration: `/configuration?tab=models`).
  */
 
 export interface PageTab {
@@ -66,6 +68,17 @@ export const PAGE_GROUPS = {
     tabs: [
       { id: "dependencies", label: "Dependencies", href: "/dependencies" },
       { id: "breakers", label: "Breakers", href: "/breakers" },
+    ],
+  },
+  /** One page, five views of it (components/configuration.tsx): the address carries the open one as `?tab=`. */
+  configuration: {
+    title: "Configuration",
+    tabs: [
+      { id: "models", label: "Models", href: "/configuration?tab=models" },
+      { id: "tools", label: "Tools", href: "/configuration?tab=tools" },
+      { id: "connections", label: "Connections", href: "/configuration?tab=connections" },
+      { id: "access", label: "Access", href: "/configuration?tab=access" },
+      { id: "deployment", label: "Deployment", href: "/configuration?tab=deployment" },
     ],
   },
   controls: {

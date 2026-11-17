@@ -62,8 +62,8 @@ interface VaultKey {
 
 /* ═══════════════════ Models ═══════════════════ */
 
-/** `onChanged` tells the page a write went through, so its own figures (the strip, the facts) are read again. */
-export function OfferedModels({ bare = false, onChanged }: { bare?: boolean | null; onChanged?: () => void }) {
+/** `onChanged` tells the page a write went through, so its own figures (the facts) are read again. `onQuiet`: see Providers. */
+export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boolean | null; onChanged?: () => void; onQuiet?: (quiet: boolean) => void }) {
   const [catalogue, setCatalogue] = useState<CatalogueModel[] | null>(null);
   const [catalogueError, setCatalogueError] = useState("");
   const [config, setConfig] = useState<Config | null>(null);
@@ -118,6 +118,10 @@ export function OfferedModels({ bare = false, onChanged }: { bare?: boolean | nu
   const none = (config?.models.length ?? 0) === 0;
   // Quiet, with nothing behind the console: the offered list was not read from anywhere, so the panel does not say none is offered.
   const quietUnread = none && (bare === true || (QUIET && Boolean(unread)));
+  const settled = config !== null;
+  useEffect(() => {
+    if (settled) onQuiet?.(quietUnread);
+  }, [settled, quietUnread, onQuiet]);
   // A deployment with no catalogue to list is not a fault: the door says its endpoint is not set, and the panel says there is nothing to browse.
   const noCatalogue = /not set/i.test(catalogueError);
   const providerLabel = useCallback((id?: string) => (config?.providers ?? []).find((p) => p.id === id), [config]);
@@ -408,7 +412,7 @@ export function OfferedModels({ bare = false, onChanged }: { bare?: boolean | nu
 
 /* ═══════════════════ Keys ═══════════════════ */
 
-export function Keys({ bare = false, onChanged }: { bare?: boolean | null; onChanged?: () => void }) {
+export function Keys({ bare = false, onChanged, onQuiet }: { bare?: boolean | null; onChanged?: () => void; onQuiet?: (quiet: boolean) => void }) {
   const [keys, setKeys] = useState<VaultKey[] | null>(null);
   /** The vault did not answer the read. */
   const [unread, setUnread] = useState("");
@@ -454,7 +458,12 @@ export function Keys({ bare = false, onChanged }: { bare?: boolean | null; onCha
 
   const none = (keys?.length ?? 0) === 0;
   // Quiet: the vault was not read (the console is bare, or the read failed), so the panel does not say it is empty.
-  if (none && !adding && (bare === true || (QUIET && Boolean(unread)))) return <PanelNote />;
+  const quiet = none && !adding && (bare === true || (QUIET && Boolean(unread)));
+  const settled = keys !== null || Boolean(unread);
+  useEffect(() => {
+    if (settled) onQuiet?.(quiet);
+  }, [settled, quiet, onQuiet]);
+  if (quiet) return <PanelNote />;
   if (keys === null && unread) return <PanelFailure title="The vault could not be read">{unread}</PanelFailure>;
   // Not known yet whether anything is behind the console: no "the vault is empty" in the meantime.
   if (keys === null || (none && bare === null && !adding)) return <p className="px-4 py-3 text-[11.5px] text-faint">Reading the vault&hellip;</p>;

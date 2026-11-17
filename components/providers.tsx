@@ -113,8 +113,10 @@ export function useConfigChanges(refresh: () => void) {
  * nothing behind it (no database, no backend, no runtime files), null while
  * that is still being read. A quiet console with nothing behind it shows
  * the one calm line, never "no provider is configured" read from nowhere.
+ * `onQuiet` tells the page, once the read has settled, whether that line is
+ * all the panel shows, so a tab of such panels can say it once.
  */
-export function Providers({ bare = false }: { bare?: boolean | null }) {
+export function Providers({ bare = false, onQuiet }: { bare?: boolean | null; onQuiet?: (quiet: boolean) => void }) {
   const [config, setConfig] = useState<Config | null>(null);
   const [keys, setKeys] = useState<string[]>([]);
   const [error, setError] = useState("");
@@ -160,6 +162,10 @@ export function Providers({ bare = false }: { bare?: boolean | null }) {
   const none = (config?.providers ?? []).length === 0;
   // Quiet: nothing was read from anywhere (the console is bare, or the read failed), so the panel does not say there are none.
   const unread = none && !adding && (bare === true || (QUIET && Boolean(error) && !config));
+  const settled = config !== null || Boolean(error);
+  useEffect(() => {
+    if (settled) onQuiet?.(unread);
+  }, [settled, unread, onQuiet]);
   const modelsOf = (id: string) => (config?.models ?? []).filter((m) => (m.provider ?? FOUNDRY_ID) === id);
 
   const remove = async (p: Provider) => {
@@ -183,14 +189,7 @@ export function Providers({ bare = false }: { bare?: boolean | null }) {
     await write({ providers: config.providers.map((x) => (x.id === p.id ? { ...x, max_data_class: v || undefined } : x)) });
   };
 
-  // The one line shows only when nothing else is in the panel (no detected connection above it).
-  if (unread) {
-    return (
-      <div className="hidden px-4 py-3 only:block">
-        <QuietNote inline />
-      </div>
-    );
-  }
+  if (unread) return <PanelNote />;
   // Not known yet whether anything is behind the console: no "none configured" in the meantime.
   if (!config || (none && bare === null && !adding)) {
     return error && config === null ? <PanelFailure title="The providers could not be read">{error}</PanelFailure> : <p className="px-4 py-3 text-[11.5px] text-faint">Reading the configuration&hellip;</p>;

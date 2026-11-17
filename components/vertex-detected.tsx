@@ -50,7 +50,7 @@ const SOURCE: Record<string, string> = {
   token: "a token handed to this server",
 };
 
-/** Drawn inside a panel that already has a card: the Providers panel on Configuration. */
+/** Drawn inside a panel that already has a card: its own panel on Configuration's Models tab. */
 export function VertexDetected() {
   const { answer, busy, reload } = useVertex();
   const [q, setQ] = useState("");
@@ -71,7 +71,7 @@ export function VertexDetected() {
     const line = answer.source
       ? `This server has a Google identity${answer.account ? ` (${answer.account})` : ""}, but Vertex AI did not list any model to it${refused?.error ? `: ${refused.error}` : ""}.`
       : "This server has no Google identity, so nothing is detected from Vertex AI.";
-    return <p className="border-b border-line px-4 py-3 text-[11.5px] leading-[1.55] text-faint">{line}</p>;
+    return <p className="border-b border-line px-4 py-3 text-[11.5px] leading-[1.55] text-faint last:border-b-0">{line}</p>;
   }
 
   const total = groups.reduce((n, g) => n + g.models.length, 0);
@@ -161,7 +161,8 @@ export function VertexDetected() {
     </div>
   );
 
-  return <div className="border-b border-line">{body}</div>;
+  // Alone in its panel (Configuration's Models tab), the panel's own edge is the line under it.
+  return <div className="border-b border-line last:border-b-0">{body}</div>;
 }
 
 function Fact({ term, value, title }: { term: string; value: string; title?: string }) {

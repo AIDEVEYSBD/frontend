@@ -1,9 +1,11 @@
 "use client";
 
-import { VertexDetected } from "./vertex-detected";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { VertexDetected, useVertex } from "./vertex-detected";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Mono, Status, Tag } from "./ui";
 import { usePageFacts } from "./assistant";
+import { GroupHeader } from "./page-tabs";
 import { MCP_ENDPOINT } from "@/lib/site";
 import { hueFor } from "@/lib/hue";
 import { CONNECTOR_DEFS } from "@/lib/connections";
@@ -36,14 +38,24 @@ import { peerCounts } from "@/lib/peers";
  * deployment with no workflow shows no connection, and a read that fails
  * shows an error and no rows.
  *
+ * The panels sit on five tabs (TABS below; the tab row is the
+ * `configuration` group of lib/page-groups.ts, drawn by GroupHeader), and
+ * the address carries the open one as `?tab=`. Every tab stays mounted, so
+ * a panel keeps what it read, and a form half filled in, while another tab
+ * is looked at; only the open tab is shown.
+ *
  * Most panels are read. Four are where their subject is managed, and each
  * reads and writes its own door: Providers and Models (components/
  * providers.tsx, components/settings.tsx), Credentials (the vault) and Peers
  * (components/peers.tsx). Appearance is the console's own setting. The old
  * Settings and Peers pages are these panels; their addresses redirect here.
  *
- * A panel is addressed by its id after `#`, which opens it and brings it
- * into view; `#peer-<id>` is one row of Peers.
+ * A panel is addressed by its id after `#`, which opens its tab, opens the
+ * panel and brings it into view; `#peer-<id>` is one row of Peers.
+ *
+ * A tab on which nothing is connected (a quiet console, lib/quiet.ts, with
+ * nothing behind it) says so once, in one note, and lists its panels as
+ * folded headings beneath it; a heading still opens.
  *
  * A figure appears only when it was measured. A connection that is
  * configured and never called says "never called"; there is no health or
@@ -104,22 +116,60 @@ interface Data {
   connected?: boolean;
 }
 
-const SECTIONS = [
-  { id: "deployment", label: "Deployment" },
-  { id: "egress", label: "Egress allowlist" },
-  { id: "agents", label: "Third-party agents" },
-  { id: "mcp", label: "MCP server" },
-  { id: "registry", label: "Tool servers" },
-  { id: "peers", label: "Peers" },
-  { id: "sources", label: "Connected sources" },
-  { id: "tools", label: "Tool registry" },
-  { id: "gates", label: "Where a person signs" },
-  { id: "providers", label: "Providers" },
-  { id: "models", label: "Models" },
-  { id: "credentials", label: "Credentials" },
-  { id: "ingress", label: "Ingress" },
-  { id: "appearance", label: "Appearance" },
+type TabId = "models" | "tools" | "connections" | "access" | "deployment";
+
+/** The five tabs: the panels each holds, in order, and one sentence on it. The row itself, with each tab's label and address, is in lib/page-groups.ts. */
+const TABS: { id: TabId; panels: string[]; about: string }[] = [
+  {
+    id: "models",
+    panels: ["vertex", "providers", "models"],
+    about: "Where model calls can go and which models teams may pick from; providers and offered models are managed here.",
+  },
+  {
+    id: "tools",
+    panels: ["registry", "tools", "mcp"],
+    about: "The tool servers registered here, every tool the workflows hold, and this deployment's own MCP server.",
+  },
+  {
+    id: "connections",
+    panels: ["sources", "peers", "agents", "egress"],
+    about: "What the workflows connect to and who this deployment talks to: sources, peers, outside agents and allowed hosts.",
+  },
+  {
+    id: "access",
+    panels: ["credentials", "ingress", "gates"],
+    about: "The vault's credentials (a value is never shown in full), the keys that may post work here, and where a person has to sign.",
+  },
+  {
+    id: "deployment",
+    panels: ["deployment", "appearance"],
+    about: "Where this deployment keeps its records, and how the console looks.",
+  },
 ];
+
+/** Each panel's heading, by its id (the id is also its address after `#`). */
+const TITLES: Record<string, string> = {
+  vertex: "Detected on Google Vertex AI",
+  providers: "Providers",
+  models: "Models",
+  registry: "Tool servers",
+  tools: "Tool registry",
+  mcp: "Agent Factory as an MCP server",
+  sources: "Connected sources",
+  peers: "Peers",
+  agents: "Third-party agents",
+  egress: "Egress allowlist",
+  credentials: "Credentials",
+  ingress: "Ingress",
+  gates: "Where a person signs",
+  deployment: "Deployment",
+  appearance: "Appearance",
+};
+
+/** The tab that holds a panel. */
+function tabOf(panel: string): TabId {
+  return TABS.find((t) => t.panels.includes(panel))?.id ?? "models";
+}
 
 /** What an address names after `#`: the element to bring into view, and the panel that holds it. A row of Peers is `peer-<id>`. */
 function hashTarget(): { id: string; panel: string } | null {
@@ -129,10 +179,11 @@ function hashTarget(): { id: string; panel: string } | null {
   } catch {
     /* as written */
   }
-  if (SECTIONS.some((s) => s.id === id)) return { id, panel: id };
+  if (Object.hasOwn(TITLES, id)) return { id, panel: id };
   if (id.startsWith("peer-")) return { id, panel: "peers" };
   return null;
 }
+
 
 /**
  * Whether a source is offline or live, from its kind (7.4): a file or a
@@ -168,6 +219,18 @@ function ago(iso: string | null): string {
 }
 
 export function Configuration() {
+  // The open tab is in the address, which a prerendered page learns only in the browser.
+  return (
+    <Suspense>
+      <ConfigurationTabs />
+    </Suspense>
+  );
+}
+
+function ConfigurationTabs() {
+  const params = useSearchParams();
+  const asked = params.get("tab");
+  const tab: TabId = TABS.find((t) => t.id === asked)?.id ?? "models";
   const [data, setData] = useState<Data | null>(null);
   const [failed, setFailed] = useState(false);
   const [agent, setAgent] = useState<string>("");
@@ -175,45 +238,79 @@ export function Configuration() {
   const [mcpFailed, setMcpFailed] = useState(false);
   const [mcp, setMcp] = useState<{ endpoint: string; transport: string; auth: string; tools: { name: string; description: string; action: boolean }[]; client: Record<string, unknown> } | null>(null);
   const [folded, setFolded] = useState<Record<string, boolean>>({});
+  /** On a tab that lists its panels as folded headings under one note (nothing on it is connected): the headings opened on this visit. Not remembered. */
+  const [opened, setOpened] = useState<Record<string, boolean>>({});
+  /** What each panel that reads its own door says once its read has settled: true when its not-connected line is all it shows. */
+  const [said, setSaid] = useState<Record<string, boolean>>({});
   const [attached, setAttached] = useState<AttachedAgent[]>([]);
   /** The element an address named after `#`, kept in view while the page above it fills in. */
   const [arrival, setArrival] = useState<{ id: string; panel: string } | null>(null);
+  /** The record has had a moment to answer. Until it has, the panels are held back, so a console with nothing behind it opens on its calm form and not on a column of "Reading" lines that then fold away. */
+  const [waited, setWaited] = useState(false);
   const frame = useRef<HTMLDivElement>(null);
   // The MCP registry is the backend's (phase L6); read once for the panel and the page facts.
   const registry = useMcp();
   // The peer registry (phase L7): read here so the panel's heading and the page facts carry its counts.
   const peers = usePeers();
   const { session } = useSession();
+  // What the deployment's own Google identity can see on Vertex AI: its panel is drawn only when there is something to show.
+  const vertex = useVertex();
 
-  useEffect(() => {
-    // An address that names a panel opens it, whatever fold is remembered for it, and brings it into view.
-    const arrive = () => {
-      const to = hashTarget();
-      if (!to) return;
-      setFolded((f) => (f[to.panel] ? { ...f, [to.panel]: false } : f));
-      setArrival(to);
-    };
-    // The remembered folds are read after the first paint, so the server and
-    // the client render the same page and the folds settle a tick later.
-    const cancel = soon(() => {
-      try {
-        const saved = localStorage.getItem("af.config.folds");
-        if (saved) setFolded(JSON.parse(saved));
-      } catch {
-        /* fresh */
-      }
-      arrive();
-    });
-    window.addEventListener("hashchange", arrive);
-    fetch("/api/mcp/server").then((r) => r.json()).then(setMcp).catch(() => setMcpFailed(true));
-    return () => {
-      cancel();
-      window.removeEventListener("hashchange", arrive);
-    };
+  /** The address names a panel after `#`: open its tab and the panel, whatever fold is remembered for it, and bring it into view. Acts once per address. */
+  const lastHash = useRef("");
+  const arrive = useCallback(() => {
+    const hash = window.location.hash;
+    if (hash === lastHash.current) return;
+    lastHash.current = hash;
+    const to = hashTarget();
+    if (!to) return;
+    setFolded((f) => (f[to.panel] ? { ...f, [to.panel]: false } : f));
+    setOpened((o) => (o[to.panel] ? o : { ...o, [to.panel]: true }));
+    setArrival(to);
+    // The address then names the tab too, so the tab row and a reload agree with what is on screen.
+    const query = new URLSearchParams(window.location.search);
+    const home = tabOf(to.panel);
+    if (query.get("tab") !== home) {
+      query.set("tab", home);
+      window.history.replaceState(null, "", `${window.location.pathname}?${query.toString()}${hash}`);
+    }
   }, []);
 
+  const foldsRead = useRef(false);
+  useEffect(
+    () =>
+      // The remembered folds are read after the first paint, so the server and
+      // the client render the same page and the folds settle a tick later. The
+      // address is looked at again whenever it changes: a link that only
+      // changes what follows `#` raises no event of its own.
+      soon(() => {
+        if (!foldsRead.current) {
+          foldsRead.current = true;
+          try {
+            const saved = localStorage.getItem("af.config.folds");
+            if (saved) setFolded(JSON.parse(saved));
+          } catch {
+            /* fresh */
+          }
+        }
+        arrive();
+      }),
+    [params, arrive],
+  );
+
   useEffect(() => {
-    if (!arrival || !frame.current) return;
+    window.addEventListener("hashchange", arrive);
+    fetch("/api/mcp/server").then((r) => r.json()).then(setMcp).catch(() => setMcpFailed(true));
+    const timer = setTimeout(() => setWaited(true), 400);
+    return () => {
+      window.removeEventListener("hashchange", arrive);
+      clearTimeout(timer);
+    };
+  }, [arrive]);
+
+  useEffect(() => {
+    // Nothing to bring into view until the tab that holds it is the one shown.
+    if (!arrival || !frame.current || tabOf(arrival.panel) !== tab) return;
     // The panels above the one asked for grow as their records arrive, so it is
     // brought back to the top each time the page changes height, for a few
     // seconds or until the person scrolls, types or clicks.
@@ -221,9 +318,14 @@ export function Configuration() {
     const bring = () => {
       if (live) (document.getElementById(arrival.id) ?? document.getElementById(arrival.panel))?.scrollIntoView({ block: "start" });
     };
-    const settle = () => {
+    const stop = () => {
       live = false;
       watch.disconnect();
+    };
+    // Settled for good: coming back to this tab later does not scroll again.
+    const settle = () => {
+      stop();
+      setArrival(null);
     };
     const watch = new ResizeObserver(bring);
     watch.observe(frame.current);
@@ -232,11 +334,11 @@ export function Configuration() {
     const acts = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
     acts.forEach((a) => window.addEventListener(a, settle, { passive: true }));
     return () => {
-      settle();
+      stop();
       clearTimeout(timer);
       acts.forEach((a) => window.removeEventListener(a, settle));
     };
-  }, [arrival]);
+  }, [arrival, tab]);
   const toggle = (id: string) => {
     setFolded((f) => {
       const next = { ...f, [id]: !f[id] };
@@ -248,7 +350,11 @@ export function Configuration() {
       return next;
     });
   };
-  const expand = (id: string) => setFolded((f) => (f[id] ? { ...f, [id]: false } : f));
+  /** One reporter per panel that reads its own door (Providers, Models, Credentials, Third-party agents). */
+  const says = useMemo(() => {
+    const of = (id: string) => (quiet: boolean) => setSaid((s) => (s[id] === quiet ? s : { ...s, [id]: quiet }));
+    return { providers: of("providers"), models: of("models"), credentials: of("credentials"), agents: of("agents") };
+  }, []);
 
   /** Read the record. Read again after a panel below wrote something, a failure leaves the record already shown as it is. */
   const read = useCallback((again: boolean) => {
@@ -270,8 +376,8 @@ export function Configuration() {
     };
   }, []);
   useEffect(() => read(false), [read]);
-  // The Providers, Models and Credentials panels write through their own doors; the strip and the
-  // page facts are this record's, so it is read again shortly after the last change.
+  // The Providers, Models and Credentials panels write through their own doors; the page facts and the
+  // figures on the other panels are this record's, so it is read again shortly after the last change.
   const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
   const changed = useCallback(() => {
     if (pending.current) clearTimeout(pending.current);
@@ -297,6 +403,39 @@ export function Configuration() {
   /** For the panels that read their own doors: whether the console has nothing behind it (null until the record answers). */
   const bare = data ? false : failed ? QUIET : null;
   const peerCount = peerCounts(peers.peers ?? []);
+
+  /* Which panels show nothing but their not-connected line. The ones that read
+     the page's record follow it; the ones with a door of their own say so
+     themselves once they have read it, and until then are taken to follow a
+     console with nothing behind it. */
+  const own = (id: string) => said[id] ?? bare === true;
+  const vertexShown = Boolean(vertex.answer && (vertex.answer.connected || !QUIET));
+  const down: Record<string, boolean> = {
+    vertex: false,
+    providers: own("providers"),
+    models: own("models"),
+    registry: QUIET && registry.servers !== null && registry.servers.length === 0 && Boolean(registry.error),
+    tools: quiet,
+    mcp: QUIET && mcpFailed && !mcp,
+    sources: quiet,
+    peers: (peers.peers ?? []).length === 0 && (bare === true || (QUIET && Boolean(peers.error))),
+    agents: own("agents"),
+    egress: quiet,
+    credentials: own("credentials"),
+    ingress: quiet,
+    gates: quiet,
+    deployment: quiet,
+    appearance: bare === true,
+  };
+  /** A tab on which no panel is connected says so once, in one note, and lists its panels folded beneath it. */
+  const calm = Object.fromEntries(TABS.map((t) => [t.id, QUIET && t.panels.filter((p) => p !== "vertex" || vertexShown).every((p) => down[p])])) as Record<TabId, boolean>;
+  /** A panel's fold: the remembered one, or, on a calm tab, shut until its heading is opened on this visit. */
+  const fold = (id: string) =>
+    calm[tabOf(id)]
+      ? { folded: !opened[id], onToggle: () => setOpened((o) => ({ ...o, [id]: !o[id] })) }
+      : { folded: Boolean(folded[id]), onToggle: () => toggle(id) };
+  /** Not known yet whether anything is behind the console: the panels wait a moment, out of sight, for the record. */
+  const settling = bare === null && !waited;
 
   /* The connections the saved workflows configure, as the record lists them:
      a named instance of a backend on a tool binding, with the calls the run
@@ -330,6 +469,8 @@ export function Configuration() {
   usePageFacts(
     data
       ? {
+          // The page is five tabs of folding panels; a panel's id after # in the address opens its tab and the panel.
+          tabs: { open: tab, panels: Object.fromEntries(TABS.map((t) => [t.id, t.panels.filter((p) => p !== "vertex" || vertexShown).map((p) => TITLES[p])])) },
           deployment: data.deployment,
           egressAllowlist: data.deployment.egress,
           connections: { total: rows.length, calledAtLeastOnce: used, offline: rows.filter((r) => r.mode === "offline").length, live: rows.filter((r) => r.mode === "live").length },
@@ -362,540 +503,585 @@ export function Configuration() {
     return rows.filter((r) => !term || r.name.toLowerCase().includes(term) || r.kindLabel.toLowerCase().includes(term) || r.heldBy.toLowerCase().includes(term) || r.tool.toLowerCase().includes(term));
   }, [rows, q]);
 
+  /** The workflow filter over Connected sources and the Tool registry: one choice, shown in both panels. */
+  const workflowPick = agents.length > 1 && (
+    <span className="flex items-center gap-1.5">
+      <span className="text-[10.5px] text-ghost">workflow</span>
+      <span className="block w-[200px]">
+        <Pick value={agent} onChange={setAgent} options={[{ value: "", label: "all" }, ...agents.map((a) => ({ value: a, label: a }))]} aria-label="Workflow" />
+      </span>
+    </span>
+  );
+
+  /** One tab's panels. Every tab stays mounted; only the open one is shown. */
+  const pane = (id: TabId, panels: React.ReactNode) => (
+    <div data-tab={id} hidden={id !== tab} className={`flex flex-col ${calm[id] ? "gap-2.5" : "gap-5"} ${settling ? "invisible" : ""}`}>
+      {calm[id] && <QuietNote />}
+      {panels}
+    </div>
+  );
+
   return (
     <div className="min-h-full">
       {/* The same frame as the control pane: full width to the same cap, the same gutter, so the two pages line up at every size. */}
       <div ref={frame} className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7">
-        <header className="flex flex-col gap-1.5">
-          <h1 className="text-[22px] font-semibold tracking-[-0.02em]">Configuration</h1>
-          <p className="max-w-[80ch] text-[12.5px] leading-[1.6] text-faint">
-            The systems, tools and services this deployment&rsquo;s workflows are set up with: what each
-            reaches, at what risk, and whether it has been called. Providers, models, credentials and peers
-            are managed here; the rest is read from the saved workflows, the run records and the registries.
-            A credential&rsquo;s value is never shown in full.
-          </p>
-        </header>
-
-        {/* ── the strip ── */}
-        {!quiet && <section className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-3 lg:grid-cols-6">
-          {[
-            { label: "Workflows", value: data ? String(data.deployment.workflows) : "—", sub: data ? `${data.deployment.deployed} deployed` : "" },
-            { label: "Connections", value: data ? String(rows.length) : "—", sub: data ? `${used} called at least once` : "" },
-            { label: "Tools granted", value: data ? String(data.tools.length) : "—", sub: "across all workflows" },
-            { label: "Models offered", value: data ? String(data.models.length) : "—", sub: data?.defaultModel ?? "" },
-            { label: "Credentials", value: data ? String(data.vaultKeys.length) : "—", sub: "in the vault" },
-            { label: "Runs on record", value: data ? String(data.deployment.runs) : "—", sub: "the basis for usage" },
-          ].map((k) => (
-            <div key={k.label} className="flex flex-col gap-0.5 bg-surface px-3 py-2.5">
-              <span className="tnum text-[17px] leading-none font-semibold">{k.value}</span>
-              <span className="text-[10.5px] text-faint">{k.label}</span>
-              {k.sub && <span className="truncate text-[9.5px] text-ghost">{k.sub}</span>}
-            </div>
-          ))}
-        </section>}
-
-        {/* ── anchors ── */}
-        <nav className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-y border-line py-2">
-          {SECTIONS.map((s) => (
-            <a
-              key={s.id}
-              href={`#${s.id}`}
-              onClick={() => expand(s.id)}
-              className="focusable rounded-sm text-[11.5px] text-faint transition-colors hover:text-fg"
-            >
-              {s.label}
-            </a>
-          ))}
-          <span className="grow" />
-          {agents.length > 1 && (
-            <span className="flex items-center gap-1.5">
-              <span className="text-[10.5px] text-ghost">workflow</span>
-              <span className="block w-[200px]">
-                <Pick value={agent} onChange={setAgent} options={[{ value: "", label: "all" }, ...agents.map((a) => ({ value: a, label: a }))]} aria-label="Workflow" />
-              </span>
-            </span>
-          )}
-        </nav>
+        <GroupHeader group="configuration" tab={tab}>
+          {TABS.find((t) => t.id === tab)?.about}
+        </GroupHeader>
 
         {failed && !QUIET && (
           <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">
-            The configuration could not be read, so the deployment, connections, tools, gates and ingress below show nothing.
+            The configuration could not be read, so the deployment, connections, tools, gates and ingress show nothing.
           </p>
         )}
 
-        {/* ── deployment ── */}
-        <Panel id="deployment" folded={Boolean(folded["deployment"])} onToggle={() => toggle("deployment")} title="Deployment" caption="Where this deployment keeps its records and what it sends model calls to.">
-          {quiet ? <PanelNote /> : <div className="grid gap-px bg-line sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              { k: "Registry", v: !data ? "—" : data.deployment.registry === "postgres" ? "Postgres" : "Workspace files" },
-              { k: "Model gateway", v: !data ? "—" : data.deployment.gateway === "not configured" ? "Not configured" : data.deployment.gateway },
-              { k: "Gateway resource", v: !data ? "—" : data.deployment.endpoint?.replace(/^https:\/\//, "") || "None set", mono: Boolean(data?.deployment.endpoint) },
-              { k: "Billing feed", v: !data ? "—" : data.deployment.billing ? "Connected" : "Not connected" },
-            ].map((f) => (
-              <div key={f.k} className="flex flex-col gap-0.5 bg-surface px-4 py-2.5">
-                <span className="text-[10.5px] text-ghost">{f.k}</span>
-                <span className={`truncate text-[12px] text-fg ${f.mono ? "font-mono text-[11px]" : ""}`}>{f.v}</span>
-              </div>
-            ))}
-          </div>}
-        </Panel>
+        {/* ═══════════════════ models ═══════════════════ */}
+        {pane(
+          "models",
+          <>
+            {/* ── what the deployment's own Google identity can see, before any provider is added: the one place it is shown ── */}
+            {vertexShown && (
+              <Panel
+                id="vertex"
+                {...fold("vertex")}
+                title={TITLES.vertex}
+                caption="What this deployment's own Google identity can see on Vertex AI, before any provider is added."
+                className="has-[#vertex-body:empty]:hidden"
+              >
+                <VertexDetected />
+              </Panel>
+            )}
+            {/* ── providers: where model calls can go ── */}
+            <Panel
+              id="providers"
+              {...fold("providers")}
+              title={TITLES.providers}
+              caption="Where model calls can go. Add a provider, discover what it serves and offer the models you want."
+              how="A provider is a chat-completions endpoint, the name of the vault key that authenticates to it, and whether it is served on your own hardware. The runtime routes every call to the provider its model names, with that provider's credential from the vault. Local providers are priced by the hardware hour, not per token, and the Costs page uses that rate."
+            >
+              <Providers bare={bare} onQuiet={says.providers} />
+            </Panel>
+            {/* ── models: the short list every model choice in the console shows ── */}
+            <Panel
+              id="models"
+              {...fold("models")}
+              title={TITLES.models}
+              caption="What teams may pick from, the tier each sits in, and the price cost figures are computed against. Every model choice in the console shows exactly this list."
+              how="Tick what this deployment offers, from what its catalogue lists and what was offered from a provider under Providers. A workflow names a model, never a provider. Record the price per million tokens beside each offered model; a model with no price makes its runs unpriced rather than free."
+            >
+              <OfferedModels bare={bare} onChanged={changed} onQuiet={says.models} />
+            </Panel>
+          </>,
+        )}
 
-        {/* ── egress: the hosts outbound requests may reach (9.6) ── */}
-        <Panel
-          id="egress"
-          folded={Boolean(folded["egress"])}
-          onToggle={() => toggle("egress")}
-          title="Egress allowlist"
-          caption="The hosts an outbound request from a run may reach: a web fetch, a webhook output, a notify transport that calls a URL, an A2A peer, a tool server spoken to over HTTP. A listed host also covers its subdomains. A request to any other host is refused and the refusal is recorded against the egress control, naming the host."
-          meta={data ? <span className="tnum text-[10.5px] font-normal text-faint">{data.deployment.egress.length === 1 ? "1 host" : `${data.deployment.egress.length} hosts`}</span> : undefined}
-        >
-          <div className="flex flex-col gap-2 px-4 py-3">
-            {!data && !failed && <span className="text-[11.5px] text-faint">Reading the deployment&hellip;</span>}
-            {failed && (QUIET ? <QuietNote inline /> : <span className="text-[11.5px] text-faint">The allowlist could not be read.</span>)}
-            {data && data.deployment.egress.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {data.deployment.egress.map((h) => (
-                  <span key={h} className="rounded-sm border border-line bg-raise px-2 py-1 font-mono text-[11px] text-fg">
-                    {h}
+        {/* ═══════════════════ tools ═══════════════════ */}
+        {pane(
+          "tools",
+          <>
+            {/* ── the MCP registry: tool servers, admitted, pinned and approved ── */}
+            <Panel
+              id="registry"
+              {...fold("registry")}
+              title={TITLES.registry}
+              caption="The MCP servers that carry a team's own tools to its agents. A server's tools attach to a run only after a person approves its pinned tool list."
+              how="Registering is admission, not trust: the server is started once, every tool's name, description and schema is screened, and the tool list is pinned by its digest. A rescan that finds a different list marks the server changed and detaches it until someone approves again. Environment and header values stay with the registry; only their names are shown."
+              meta={
+                registry.servers && registry.servers.some((x) => STATUS_META[x.status].alarming) ? (
+                  <Tag tone="err" solid>
+                    {registry.servers.filter((x) => STATUS_META[x.status].alarming).length} need attention
+                  </Tag>
+                ) : (
+                  <Tag tone="ok" solid>MCP</Tag>
+                )
+              }
+            >
+              <ToolServers servers={registry.servers} twoPerson={registry.twoPerson} error={registry.error} refresh={registry.refresh} />
+            </Panel>
+            {/* ── tools ── */}
+            <Panel
+              id="tools"
+              {...fold("tools")}
+              title={TITLES.tools}
+              caption="Every tool granted to a workflow, with the risk it was registered at. Risk is declared on the tool and read as a lookup at call time, never inferred while a run is in flight."
+              meta={data ? <span className="tnum text-[10.5px] font-normal text-faint">{data.tools.length} granted</span> : undefined}
+            >
+              {quiet ? <PanelNote /> : <>
+              {workflowPick && (
+                <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2">
+                  <span className="grow" />
+                  {workflowPick}
+                </div>
+              )}
+              <div className="max-h-[420px] overflow-x-auto overflow-y-auto">
+                <table className="w-full min-w-[820px] border-collapse text-[11.5px]">
+                  <thead className="sticky top-0 z-10 bg-surface">
+                    <tr className="border-b border-line text-left text-[10.5px] text-faint">
+                      <th className="px-4 py-2 font-medium">Tool</th>
+                      <th className="px-3 py-2 font-medium">Workflow</th>
+                      <th className="px-3 py-2 font-medium">Risk</th>
+                      <th className="px-3 py-2 font-medium">Properties</th>
+                      <th className="px-3 py-2 font-medium">Calls</th>
+                      <th className="px-3 py-2 font-medium">Last used</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tools
+                      .slice()
+                      .sort((a, b) => b.calls - a.calls || a.tool.localeCompare(b.tool))
+                      .map((t, i) => (
+                        <tr key={`${t.agent}-${t.tool}-${i}`} className="border-b border-line last:border-0">
+                          <td className="px-4 py-2.5 font-mono text-[11px]">{t.tool}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap">{t.agentName}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            <Status tone={RISK_TONE[t.risk] ?? "neutral"}>{t.risk}</Status>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <span className="flex flex-wrap gap-1">
+                              {t.taints && <Tag tone="warn">taints</Tag>}
+                              {t.sink && <Tag tone="err">sink</Tag>}
+                              {t.scoped && <Tag>scoped</Tag>}
+                              {!t.taints && !t.sink && !t.scoped && <span className="text-ghost">—</span>}
+                            </span>
+                          </td>
+                          <td className="tnum px-3 py-2.5">{t.calls || <span className="text-ghost">0</span>}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap text-faint">{ago(t.lastUsed)}</td>
+                        </tr>
+                      ))}
+                    {data && tools.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="px-4 py-3 text-faint">
+                          No workflow on this deployment holds a tool yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              </>}
+            </Panel>
+            {/* ── the platform as an MCP server ── */}
+            <Panel
+              id="mcp"
+              {...fold("mcp")}
+              title={TITLES.mcp}
+              caption="Other agents and tools can read this deployment and start its workflows over the Model Context Protocol. Every call needs a key, goes through the policy engine and is written to the journal."
+              meta={<Tag tone="ok" solid>MCP</Tag>}
+            >
+              <div className="grid gap-px bg-line lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+                <div className="flex flex-col bg-surface">
+                  <div className="grid gap-px border-b border-line bg-line sm:grid-cols-3">
+                    {[
+                      { k: "Endpoint", v: mcp?.endpoint ?? MCP_ENDPOINT, mono: true },
+                      { k: "Transport", v: mcp ? "Streamable HTTP · JSON-RPC 2.0" : "—" },
+                      { k: "Authentication", v: "Bearer API key · same keys as ingress" },
+                    ].map((f) => (
+                      <div key={f.k} className="flex flex-col gap-0.5 bg-surface px-4 py-2.5">
+                        <span className="text-[10.5px] text-ghost">{f.k}</span>
+                        <span className={`truncate text-[12px] text-fg ${f.mono ? "font-mono text-[11px]" : ""}`}>{f.v}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">Tools exposed</span>
+                  {(mcp?.tools ?? []).map((t) => (
+                    <span key={t.name} className="flex items-start gap-3 border-b border-line px-4 py-2 last:border-0">
+                      <Mono className="w-[150px] shrink-0 pt-px text-[11px] text-fg">{t.name}</Mono>
+                      <span className="min-w-0 grow text-[11px] leading-[1.5] text-faint">{t.description}</span>
+                      <Tag tone={t.action ? "warn" : "neutral"}>{t.action ? "action" : "read"}</Tag>
+                    </span>
+                  ))}
+                  {!mcp && (QUIET && mcpFailed ? <PanelNote /> : <span className="px-4 py-3 text-[11.5px] text-faint">Reading the server description…</span>)}
+                </div>
+                <div className="flex flex-col bg-surface">
+                  <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">Connect a client</span>
+                  <pre className="m-0 overflow-x-auto px-4 py-3 font-mono text-[10.5px] leading-[1.6] text-dim">
+                    {JSON.stringify((mcp?.client as { claude?: unknown } | undefined)?.claude ?? { mcpServers: { "agent-factory": { type: "http", url: MCP_ENDPOINT, headers: { Authorization: "Bearer <api key>" } } } }, null, 2)}
+                  </pre>
+                  <span className="border-t border-line px-4 py-2.5 text-[11px] leading-[1.55] text-faint">
+                    Reading tools accept any active key. Starting a workflow needs a key scoped to that workflow, exactly as the trigger endpoint does, because the same key is forwarded to it. Until the first key is minted the server refuses every call, like ingress.
                   </span>
-                ))}
+                </div>
               </div>
-            )}
-            {data && data.deployment.egress.length === 0 && (
-              <span className="text-[12px] text-dim">No host is listed for this deployment.</span>
-            )}
-            {data && (
-              <span className="max-w-[92ch] text-[11px] leading-[1.55] text-faint">
-                Beside this list, a request reaches only the host registered for its own path: an approved tool server&rsquo;s URL, a configured peer&rsquo;s, a configured notify
-                transport&rsquo;s. {data.deployment.egress.length === 0 ? "With no host listed, a web fetch or a webhook output reaches nothing. " : ""}The list is the deployment&rsquo;s own setting
-                and is not edited here.
-              </span>
-            )}
-          </div>
-        </Panel>
+            </Panel>
+          </>,
+        )}
 
-        {/* ── third-party agents: attached over the SDK or A2A ── */}
-        <Panel
-          id="agents"
-          folded={Boolean(folded["agents"])}
-          onToggle={() => toggle("agents")}
-          title="Third-party agents"
-          caption="Agents built elsewhere (a client's own, a vendor's, another team's), attached to this control plane so they run under the same journal, cost accounting and guardrails as the deployment's own. Two ways in: the Agent Factory SDK for an agent whose code you own, and A2A for one whose code cannot change, where the factory stands between the agent and everything it reaches."
-          meta={
-            <>
-              <Tag tone="run" solid>SDK</Tag>
-              <Tag tone="queue" solid>A2A</Tag>
-            </>
-          }
-        >
-          <AttachedAgents onLoaded={(agents) => setAttached(agents)} />
-        </Panel>
+        {/* ═══════════════════ connections ═══════════════════ */}
+        {pane(
+          "connections",
+          <>
+            {/* ── sources: the load-bearing table ── */}
+            <Panel
+              id="sources"
+              {...fold("sources")}
+              title={TITLES.sources}
+              caption={
+                data
+                  ? `${rows.length === 1 ? "1 connection" : `${rows.length} connections`} configured in the workflows saved on this deployment, ${used} called at least once · ${data.deployment.runs} runs on record.`
+                  : failed
+                    ? QUIET
+                      ? "The connections configured in the workflows saved on this deployment."
+                      : "not read"
+                    : "reading the workflows…"
+              }
+              howLabel="How to read this table"
+              how="A connection is a named instance of a backend on a tool: the agent holding it knows the verb, never the product. Mode says whether it is offline (a file or folder handed over) or live (read from a system when the run asks). Reaches says whether it returns untrusted content, acts outside the system, or both. Calls and last used are counted from the run journals; there is no health figure, because nothing measures one. Credentials are named in the vault and never held in the workflow."
+            >
+              {data && rows.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2">
+                  <input
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    placeholder="Search by name, kind, tool or workflow"
+                    aria-label="Search connections"
+                    className="focusable h-7 w-64 max-w-full rounded-sm border border-line bg-canvas px-2 text-[11.5px] text-fg placeholder:text-ghost"
+                  />
+                  <span className="grow" />
+                  {workflowPick}
+                  <span className="tnum text-[10.5px] text-faint">{shown.length === rows.length ? `${rows.length} listed` : `showing ${shown.length} of ${rows.length}`}</span>
+                </div>
+              )}
 
-        {/* ── the platform as an MCP server ── */}
-        <Panel
-          id="mcp"
-          folded={Boolean(folded["mcp"])}
-          onToggle={() => toggle("mcp")}
-          title="Agent Factory as an MCP server"
-          caption="The platform exposes itself over the Model Context Protocol, so other agents, Claude, Cursor or a client's own tooling can read the estate and start workflows the same way the platform's agents reach a client's systems: tools behind a key, every call through the policy engine and into the journal."
-          meta={<Tag tone="ok" solid>MCP</Tag>}
-        >
-          <div className="grid gap-px bg-line lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-            <div className="flex flex-col bg-surface">
-              <div className="grid gap-px border-b border-line bg-line sm:grid-cols-3">
+              {!data && !failed && <p className="px-4 py-3 text-[11.5px] text-faint">Reading the workflows&hellip;</p>}
+              {failed && (QUIET ? <PanelNote /> : <p className="px-4 py-3 text-[11.5px] text-faint">The connections could not be read.</p>)}
+              {data && rows.length === 0 && (
+                <p className="px-4 py-6 text-[12px] leading-[1.55] text-dim">
+                  No workflow on this deployment configures a connection yet. A connection appears here once a saved workflow names one.
+                </p>
+              )}
+
+              {data && rows.length > 0 && (
+                <div className="max-h-[560px] overflow-x-auto overflow-y-auto">
+                  <table className="w-full min-w-[980px] border-collapse text-left">
+                    <thead className="sticky top-0 z-10 bg-surface">
+                      <tr className="border-b border-line text-[10.5px] text-faint">
+                        <th className="px-4 py-2.5 font-medium">Source</th>
+                        <th className="px-3 py-2.5 font-medium">Mode</th>
+                        <th className="px-3 py-2.5 font-medium">Tool</th>
+                        <th className="px-3 py-2.5 font-medium">Held by</th>
+                        <th className="px-3 py-2.5 text-right font-medium">Calls</th>
+                        <th className="px-3 py-2.5 font-medium">Last used</th>
+                        <th className="px-3 py-2.5 font-medium">Reaches</th>
+                        <th className="px-3 py-2.5 font-medium">Use</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {shown.map((r) => (
+                        <tr key={r.key} className="border-b border-line align-top transition-colors last:border-0 hover:bg-raise/50">
+                          <td className="max-w-[420px] px-4 py-2.5">
+                            <span className="flex min-w-0 flex-col">
+                              <span className="flex flex-wrap items-baseline gap-2">
+                                <span className="font-mono text-[12px] font-medium text-fg">{r.name}</span>
+                                <span className="text-[11px] text-dim">{r.kindLabel}</span>
+                              </span>
+                              {r.what && <span className="break-words text-[11px] text-faint">{r.what}</span>}
+                              <span className="mt-0.5 break-words font-mono text-[10.5px] leading-[1.5] text-ghost">{r.wiring}</span>
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            {r.mode ? (
+                              <span title={MODE_MEANS[r.mode]}>
+                                <Tag tone={r.mode === "live" ? "run" : "neutral"}>{r.mode === "live" ? "Live" : "Offline"}</Tag>
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-ghost" title="The kind of this source does not say whether it is a file handed over or a connection.">
+                                not stated
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            <span className="flex flex-col gap-0.5">
+                              <span className="font-mono text-[11px] text-dim">{r.tool}</span>
+                              <Status tone={RISK_TONE[r.risk] ?? "neutral"}>{r.risk}</Status>
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 text-[11.5px]">
+                            <span className="flex flex-col">
+                              <span className="text-dim">{r.heldBy}</span>
+                              <span className="font-mono text-[10px] text-ghost">{r.node ? `${r.agent} · ${r.node}` : r.agent}</span>
+                            </span>
+                          </td>
+                          <td className="tnum px-3 py-2.5 text-right font-mono text-[11.5px] text-dim">{r.calls.toLocaleString("en-GB")}</td>
+                          <td className="tnum px-3 py-2.5 whitespace-nowrap text-[11.5px] text-dim">{ago(r.lastUsed)}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            <span className="flex gap-1">
+                              {r.taints && <Tag tone="warn">untrusted content</Tag>}
+                              {r.sink && <Tag tone="err">acts outside</Tag>}
+                              {!r.taints && !r.sink && <span className="text-[11px] text-ghost">inside only</span>}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            <Status tone={r.calls > 0 ? "ok" : "neutral"}>{r.calls > 0 ? "Called" : "Never called"}</Status>
+                          </td>
+                        </tr>
+                      ))}
+                      {shown.length === 0 && (
+                        <tr>
+                          <td colSpan={8} className="px-4 py-3 text-[11.5px] text-faint">
+                            Nothing matches that search.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Panel>
+            {/* ── the peer registry: other parties' agents, admitted the way a tool server is ── */}
+            <Panel
+              id="peers"
+              {...fold("peers")}
+              title={TITLES.peers}
+              caption="Other parties' agents this deployment speaks A2A with. Nothing is sent to a peer, or heard from it, until a person approves its agent card."
+              how="Each peer is admitted the way a tool server is: its agent card is fetched signed and pinned by digest. A card that changes detaches the peer until someone approves it again. Every request both ways is signed under a secret the two sides share, held in the vault and shown here by name only."
+              meta={peers.peers && !peers.error && peerCount.changed > 0 ? <Tag tone="err" solid>{peerCount.changed} changed</Tag> : undefined}
+            >
+              <PeerList peers={peers.peers} twoPerson={peers.twoPerson} me={meOf(session)} error={peers.error} refresh={peers.refresh} bare={bare} />
+            </Panel>
+            {/* ── third-party agents: attached over the SDK or A2A ── */}
+            <Panel
+              id="agents"
+              {...fold("agents")}
+              title={TITLES.agents}
+              caption="Agents built elsewhere, attached so they run under the same journal, cost accounting and guardrails as this deployment's own. Attach over the SDK when you own the agent's code, or over A2A when its code cannot change."
+              meta={
+                <>
+                  <Tag tone="run" solid>SDK</Tag>
+                  <Tag tone="queue" solid>A2A</Tag>
+                </>
+              }
+            >
+              <AttachedAgents onLoaded={(agents) => setAttached(agents)} onQuiet={says.agents} />
+            </Panel>
+            {/* ── egress: the hosts outbound requests may reach (9.6) ── */}
+            <Panel
+              id="egress"
+              {...fold("egress")}
+              title={TITLES.egress}
+              caption="The hosts an outbound request from a run may reach. A request to any other host is refused, and the refusal is recorded."
+              how="An outbound request is a web fetch, a webhook output, a notify transport that calls a URL, an A2A peer, or a tool server spoken to over HTTP. A listed host also covers its subdomains. A refusal is recorded against the egress control, naming the host."
+              meta={data ? <span className="tnum text-[10.5px] font-normal text-faint">{data.deployment.egress.length === 1 ? "1 host" : `${data.deployment.egress.length} hosts`}</span> : undefined}
+            >
+              <div className="flex flex-col gap-2 px-4 py-3">
+                {!data && !failed && <span className="text-[11.5px] text-faint">Reading the deployment&hellip;</span>}
+                {failed && (QUIET ? <QuietNote inline /> : <span className="text-[11.5px] text-faint">The allowlist could not be read.</span>)}
+                {data && data.deployment.egress.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {data.deployment.egress.map((h) => (
+                      <span key={h} className="rounded-sm border border-line bg-raise px-2 py-1 font-mono text-[11px] text-fg">
+                        {h}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {data && data.deployment.egress.length === 0 && (
+                  <span className="text-[12px] text-dim">No host is listed for this deployment.</span>
+                )}
+                {data && (
+                  <span className="max-w-[92ch] text-[11px] leading-[1.55] text-faint">
+                    Beside this list, a request reaches only the host registered for its own path: an approved tool server&rsquo;s URL, a configured peer&rsquo;s, a configured notify
+                    transport&rsquo;s. {data.deployment.egress.length === 0 ? "With no host listed, a web fetch or a webhook output reaches nothing. " : ""}The list is the deployment&rsquo;s own setting
+                    and is not edited here.
+                  </span>
+                )}
+              </div>
+            </Panel>
+          </>,
+        )}
+
+        {/* ═══════════════════ access ═══════════════════ */}
+        {pane(
+          "access",
+          <>
+            {/* ── credentials: the vault ── */}
+            <Panel
+              id="credentials"
+              {...fold("credentials")}
+              title={TITLES.credentials}
+              caption="What the vault holds, by name. A value is pasted here once and shown masked from then on."
+              how="A connector referencing one of these carries the reference in the spec and never the value, which is what makes a workflow safe to export. Only the runtime reads a value, at the moment a tool is called."
+            >
+              <Keys bare={bare} onChanged={changed} onQuiet={says.credentials} />
+            </Panel>
+            {/* ── ingress ── */}
+            <Panel
+              id="ingress"
+              {...fold("ingress")}
+              title={TITLES.ingress}
+              caption="Who may post work to this factory, and what is in the queue. A key scoped to one workflow cannot start another."
+            >
+              {quiet ? <PanelNote /> : <div className="grid gap-px bg-line sm:grid-cols-2">
+                <div className="flex flex-col bg-surface">
+                  <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">API keys</span>
+                  {(data?.apiKeys ?? []).map((k) => (
+                    <span key={k.prefix} className="flex items-center gap-2 border-b border-line px-4 py-2 last:border-0">
+                      <Mono className="text-[10.5px] text-faint">{k.prefix}…</Mono>
+                      <span className="min-w-0 grow truncate text-[11.5px]">{k.name}</span>
+                      <span className="shrink-0 text-[10.5px] text-faint">{k.agent ?? "any workflow"}</span>
+                      {k.revoked_at ? <Status tone="err">revoked</Status> : <Status tone="ok">active</Status>}
+                    </span>
+                  ))}
+                  {data && data.apiKeys.length === 0 && (
+                    <span className="px-4 py-2 text-[11.5px] text-faint">
+                      No keys. Every machine door (trigger, SDK, A2A, MCP server) refuses until the first one is minted.
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-col bg-surface">
+                  <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">Queue</span>
+                  {queueTotals({ all: data?.queue ?? {} }, Object.keys(data?.queue ?? {}).length > 0).map((q) => (
+                    <span key={q.status} className="flex items-center justify-between border-b border-line px-4 py-2 last:border-0" title={JOB_STATUS_META[q.status as keyof typeof JOB_STATUS_META]?.means}>
+                      <span className="text-[11.5px] text-faint">{q.label}</span>
+                      <span className="tnum text-[12px]">{q.count}</span>
+                    </span>
+                  ))}
+                  {data && Object.keys(data.queue).length === 0 && (
+                    <span className="px-4 py-2 text-[11.5px] text-faint">The queue is empty.</span>
+                  )}
+                </div>
+              </div>}
+            </Panel>
+            {/* ── gates ── */}
+            <Panel
+              id="gates"
+              {...fold("gates")}
+              title={TITLES.gates}
+              caption="Per workflow: the risk level at which an action stops and waits for a human, and who may answer. A gate with no approver is refused at parse time, so every line here has a name behind it."
+            >
+              {quiet && <PanelNote />}
+              {(data?.gates ?? []).length === 0 && data && (
+                <p className="px-4 py-3 text-[11.5px] text-faint">
+                  No workflow declares a gate. Every action runs on the agent&rsquo;s own authority.
+                </p>
+              )}
+              {(data?.gates ?? []).map((g, i) => (
+                <div key={`${g.agent}-${i}`} className="flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-0">
+                  <span className="min-w-0 grow text-[12px]">{g.agentName}</span>
+                  <span className="text-[11.5px] text-faint">
+                    gates <Mono className="text-[11px]">{g.atOrAbove}</Mono> and above
+                  </span>
+                  <span className="shrink-0 text-[11px] text-faint">
+                    {g.approvers.length ? g.approvers.join(", ") : "nobody named"}
+                  </span>
+                </div>
+              ))}
+            </Panel>
+          </>,
+        )}
+
+        {/* ═══════════════════ deployment ═══════════════════ */}
+        {pane(
+          "deployment",
+          <>
+            {/* ── deployment ── */}
+            <Panel id="deployment" {...fold("deployment")} title={TITLES.deployment} caption="Where this deployment keeps its records and what it sends model calls to.">
+              {quiet ? <PanelNote /> : <div className="grid gap-px bg-line sm:grid-cols-2 lg:grid-cols-3">
                 {[
-                  { k: "Endpoint", v: mcp?.endpoint ?? MCP_ENDPOINT, mono: true },
-                  { k: "Transport", v: mcp ? "Streamable HTTP · JSON-RPC 2.0" : "—" },
-                  { k: "Authentication", v: "Bearer API key · same keys as ingress" },
+                  { k: "Registry", v: !data ? "—" : data.deployment.registry === "postgres" ? "Postgres" : "Workspace files" },
+                  { k: "Model gateway", v: !data ? "—" : data.deployment.gateway === "not configured" ? "Not configured" : data.deployment.gateway },
+                  { k: "Gateway resource", v: !data ? "—" : data.deployment.endpoint?.replace(/^https:\/\//, "") || "None set", mono: Boolean(data?.deployment.endpoint) },
+                  { k: "Billing feed", v: !data ? "—" : data.deployment.billing ? "Connected" : "Not connected" },
+                  { k: "Workflows", v: !data ? "—" : `${data.deployment.workflows} saved · ${data.deployment.deployed} deployed` },
+                  { k: "Runs on record", v: !data ? "—" : `${data.deployment.runs} · the basis for usage figures` },
                 ].map((f) => (
                   <div key={f.k} className="flex flex-col gap-0.5 bg-surface px-4 py-2.5">
                     <span className="text-[10.5px] text-ghost">{f.k}</span>
                     <span className={`truncate text-[12px] text-fg ${f.mono ? "font-mono text-[11px]" : ""}`}>{f.v}</span>
                   </div>
                 ))}
-              </div>
-              <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">Tools exposed</span>
-              {(mcp?.tools ?? []).map((t) => (
-                <span key={t.name} className="flex items-start gap-3 border-b border-line px-4 py-2 last:border-0">
-                  <Mono className="w-[150px] shrink-0 pt-px text-[11px] text-fg">{t.name}</Mono>
-                  <span className="min-w-0 grow text-[11px] leading-[1.5] text-faint">{t.description}</span>
-                  <Tag tone={t.action ? "warn" : "neutral"}>{t.action ? "action" : "read"}</Tag>
-                </span>
-              ))}
-              {!mcp && (QUIET && mcpFailed ? <PanelNote /> : <span className="px-4 py-3 text-[11.5px] text-faint">Reading the server description…</span>)}
-            </div>
-            <div className="flex flex-col bg-surface">
-              <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">Connect a client</span>
-              <pre className="m-0 overflow-x-auto px-4 py-3 font-mono text-[10.5px] leading-[1.6] text-dim">
-                {JSON.stringify((mcp?.client as { claude?: unknown } | undefined)?.claude ?? { mcpServers: { "agent-factory": { type: "http", url: MCP_ENDPOINT, headers: { Authorization: "Bearer <api key>" } } } }, null, 2)}
-              </pre>
-              <span className="border-t border-line px-4 py-2.5 text-[11px] leading-[1.55] text-faint">
-                Reading tools accept any active key. Starting a workflow needs a key scoped to that workflow, exactly as the trigger endpoint does, because the same key is forwarded to it. Until the first key is minted the server refuses every call, like ingress.
-              </span>
-            </div>
-          </div>
-        </Panel>
+              </div>}
+            </Panel>
+            {/* ── appearance: the console's own look ── */}
+            <Panel
+              id="appearance"
+              {...fold("appearance")}
+              title={TITLES.appearance}
+              caption="How the console looks: one choice for every browser and every person. Card headers carry a colour for their subject, or the console stays on its monochrome base."
+              howLabel="Which colour means what"
+              how="Spend is green, approvals amber, live activity blue, controls red, knowledge violet, identity teal and traces indigo."
+            >
+              <Appearance bare={bare} />
+            </Panel>
+          </>,
+        )}
 
-        {/* ── the MCP registry: tool servers, admitted, pinned and approved ── */}
-        <Panel
-          id="registry"
-          folded={Boolean(folded["registry"])}
-          onToggle={() => toggle("registry")}
-          title="Tool servers"
-          caption="The MCP servers that carry a team's own tools to its agents. Registering is admission, not trust: the server is started once, every tool's name, description and schema is screened, and the tool list is pinned by its digest. Nothing attaches to a run until a person approves the pin, and a rescan that finds a different list marks the server changed and detaches it until someone approves again. Environment and header values stay with the registry; only their names are shown."
-          meta={
-            registry.servers && registry.servers.some((x) => STATUS_META[x.status].alarming) ? (
-              <Tag tone="err" solid>
-                {registry.servers.filter((x) => STATUS_META[x.status].alarming).length} need attention
-              </Tag>
-            ) : (
-              <Tag tone="ok" solid>MCP</Tag>
-            )
-          }
-        >
-          <ToolServers servers={registry.servers} twoPerson={registry.twoPerson} error={registry.error} refresh={registry.refresh} />
-        </Panel>
-
-        {/* ── the peer registry: other parties' agents, admitted the way a tool server is ── */}
-        <Panel
-          id="peers"
-          folded={Boolean(folded["peers"])}
-          onToggle={() => toggle("peers")}
-          title="Peers"
-          caption="Other parties' agents this deployment speaks A2A with. Each is admitted the way a tool server is: its agent card is fetched signed and pinned by digest, and nothing is sent to it, or heard from it, until a person approves the card. A card that changes detaches the peer until someone approves it again. Every request both ways is signed under a secret the two sides share, held in the vault and shown here by name only."
-          meta={peers.peers && !peers.error && peerCount.changed > 0 ? <Tag tone="err" solid>{peerCount.changed} changed</Tag> : undefined}
-        >
-          <PeerList peers={peers.peers} twoPerson={peers.twoPerson} me={meOf(session)} error={peers.error} refresh={peers.refresh} bare={bare} />
-        </Panel>
-
-        {/* ── sources: the load-bearing table ── */}
-        <Panel
-          id="sources"
-          folded={Boolean(folded["sources"])}
-          onToggle={() => toggle("sources")}
-          title="Connected sources"
-          caption={
-            data
-              ? `${rows.length === 1 ? "1 connection" : `${rows.length} connections`} configured in the workflows saved on this deployment, ${used} called at least once · ${data.deployment.runs} runs on record. A connection is a named instance of a backend on a tool: the agent holding it knows the verb, never the product. Mode says whether it is offline (a file or folder handed over) or live (read from a system when the run asks). Reaches says whether it returns untrusted content, acts outside the system, or both. Calls and last used are counted from the run journals; there is no health figure, because nothing measures one. Credentials are named in the vault and never held in the workflow.`
-              : failed
-                ? QUIET
-                  ? "The connections configured in the workflows saved on this deployment. A connection is a named instance of a backend on a tool: the agent holding it knows the verb, never the product."
-                  : "not read"
-                : "reading the workflows…"
-          }
-        >
-          {data && rows.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2">
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search by name, kind, tool or workflow"
-                aria-label="Search connections"
-                className="focusable h-7 w-64 max-w-full rounded-sm border border-line bg-canvas px-2 text-[11.5px] text-fg placeholder:text-ghost"
-              />
-              <span className="grow" />
-              <span className="tnum text-[10.5px] text-faint">{shown.length === rows.length ? `${rows.length} listed` : `showing ${shown.length} of ${rows.length}`}</span>
-            </div>
-          )}
-
-          {!data && !failed && <p className="px-4 py-3 text-[11.5px] text-faint">Reading the workflows&hellip;</p>}
-          {failed && (QUIET ? <PanelNote /> : <p className="px-4 py-3 text-[11.5px] text-faint">The connections could not be read.</p>)}
-          {data && rows.length === 0 && (
-            <p className="px-4 py-6 text-[12px] leading-[1.55] text-dim">
-              No workflow on this deployment configures a connection yet. A connection appears here once a saved workflow names one.
-            </p>
-          )}
-
-          {data && rows.length > 0 && (
-            <div className="max-h-[560px] overflow-x-auto overflow-y-auto">
-              <table className="w-full min-w-[980px] border-collapse text-left">
-                <thead className="sticky top-0 z-10 bg-surface">
-                  <tr className="border-b border-line text-[10.5px] text-faint">
-                    <th className="px-4 py-2.5 font-medium">Source</th>
-                    <th className="px-3 py-2.5 font-medium">Mode</th>
-                    <th className="px-3 py-2.5 font-medium">Tool</th>
-                    <th className="px-3 py-2.5 font-medium">Held by</th>
-                    <th className="px-3 py-2.5 text-right font-medium">Calls</th>
-                    <th className="px-3 py-2.5 font-medium">Last used</th>
-                    <th className="px-3 py-2.5 font-medium">Reaches</th>
-                    <th className="px-3 py-2.5 font-medium">Use</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {shown.map((r) => (
-                    <tr key={r.key} className="border-b border-line align-top transition-colors last:border-0 hover:bg-raise/50">
-                      <td className="max-w-[420px] px-4 py-2.5">
-                        <span className="flex min-w-0 flex-col">
-                          <span className="flex flex-wrap items-baseline gap-2">
-                            <span className="font-mono text-[12px] font-medium text-fg">{r.name}</span>
-                            <span className="text-[11px] text-dim">{r.kindLabel}</span>
-                          </span>
-                          {r.what && <span className="break-words text-[11px] text-faint">{r.what}</span>}
-                          <span className="mt-0.5 break-words font-mono text-[10.5px] leading-[1.5] text-ghost">{r.wiring}</span>
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5 whitespace-nowrap">
-                        {r.mode ? (
-                          <span title={MODE_MEANS[r.mode]}>
-                            <Tag tone={r.mode === "live" ? "run" : "neutral"}>{r.mode === "live" ? "Live" : "Offline"}</Tag>
-                          </span>
-                        ) : (
-                          <span className="text-[11px] text-ghost" title="The kind of this source does not say whether it is a file handed over or a connection.">
-                            not stated
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 whitespace-nowrap">
-                        <span className="flex flex-col gap-0.5">
-                          <span className="font-mono text-[11px] text-dim">{r.tool}</span>
-                          <Status tone={RISK_TONE[r.risk] ?? "neutral"}>{r.risk}</Status>
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5 text-[11.5px]">
-                        <span className="flex flex-col">
-                          <span className="text-dim">{r.heldBy}</span>
-                          <span className="font-mono text-[10px] text-ghost">{r.node ? `${r.agent} · ${r.node}` : r.agent}</span>
-                        </span>
-                      </td>
-                      <td className="tnum px-3 py-2.5 text-right font-mono text-[11.5px] text-dim">{r.calls.toLocaleString("en-GB")}</td>
-                      <td className="tnum px-3 py-2.5 whitespace-nowrap text-[11.5px] text-dim">{ago(r.lastUsed)}</td>
-                      <td className="px-3 py-2.5 whitespace-nowrap">
-                        <span className="flex gap-1">
-                          {r.taints && <Tag tone="warn">untrusted content</Tag>}
-                          {r.sink && <Tag tone="err">acts outside</Tag>}
-                          {!r.taints && !r.sink && <span className="text-[11px] text-ghost">inside only</span>}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5 whitespace-nowrap">
-                        <Status tone={r.calls > 0 ? "ok" : "neutral"}>{r.calls > 0 ? "Called" : "Never called"}</Status>
-                      </td>
-                    </tr>
-                  ))}
-                  {shown.length === 0 && (
-                    <tr>
-                      <td colSpan={8} className="px-4 py-3 text-[11.5px] text-faint">
-                        Nothing matches that search.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Panel>
-
-        {/* ── tools ── */}
-        <Panel
-          id="tools"
-          folded={Boolean(folded["tools"])}
-          onToggle={() => toggle("tools")}
-          title="Tool registry"
-          caption="Every tool granted to a workflow, with the risk it was registered at. Risk is declared on the tool and read as a lookup at call time, never inferred while a run is in flight."
-        >
-          {quiet ? <PanelNote /> : <div className="max-h-[420px] overflow-x-auto overflow-y-auto">
-            <table className="w-full min-w-[820px] border-collapse text-[11.5px]">
-              <thead className="sticky top-0 z-10 bg-surface">
-                <tr className="border-b border-line text-left text-[10.5px] text-faint">
-                  <th className="px-4 py-2 font-medium">Tool</th>
-                  <th className="px-3 py-2 font-medium">Workflow</th>
-                  <th className="px-3 py-2 font-medium">Risk</th>
-                  <th className="px-3 py-2 font-medium">Properties</th>
-                  <th className="px-3 py-2 font-medium">Calls</th>
-                  <th className="px-3 py-2 font-medium">Last used</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tools
-                  .slice()
-                  .sort((a, b) => b.calls - a.calls || a.tool.localeCompare(b.tool))
-                  .map((t, i) => (
-                    <tr key={`${t.agent}-${t.tool}-${i}`} className="border-b border-line last:border-0">
-                      <td className="px-4 py-2.5 font-mono text-[11px]">{t.tool}</td>
-                      <td className="px-3 py-2.5 whitespace-nowrap">{t.agentName}</td>
-                      <td className="px-3 py-2.5 whitespace-nowrap">
-                        <Status tone={RISK_TONE[t.risk] ?? "neutral"}>{t.risk}</Status>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <span className="flex flex-wrap gap-1">
-                          {t.taints && <Tag tone="warn">taints</Tag>}
-                          {t.sink && <Tag tone="err">sink</Tag>}
-                          {t.scoped && <Tag>scoped</Tag>}
-                          {!t.taints && !t.sink && !t.scoped && <span className="text-ghost">—</span>}
-                        </span>
-                      </td>
-                      <td className="tnum px-3 py-2.5">{t.calls || <span className="text-ghost">0</span>}</td>
-                      <td className="px-3 py-2.5 whitespace-nowrap text-faint">{ago(t.lastUsed)}</td>
-                    </tr>
-                  ))}
-                {data && tools.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-3 text-faint">
-                      No workflow on this deployment holds a tool yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>}
-        </Panel>
-
-        {/* ── gates ── */}
-        <Panel
-          id="gates"
-          folded={Boolean(folded["gates"])}
-          onToggle={() => toggle("gates")}
-          title="Where a person signs"
-          caption="Per workflow: the risk level at which an action stops and waits for a human, and who may answer. A gate with no approver is refused at parse time, so every line here has a name behind it."
-        >
-          {quiet && <PanelNote />}
-          {(data?.gates ?? []).length === 0 && data && (
-            <p className="px-4 py-3 text-[11.5px] text-faint">
-              No workflow declares a gate. Every action runs on the agent&rsquo;s own authority.
-            </p>
-          )}
-          {(data?.gates ?? []).map((g, i) => (
-            <div key={`${g.agent}-${i}`} className="flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-0">
-              <span className="min-w-0 grow text-[12px]">{g.agentName}</span>
-              <span className="text-[11.5px] text-faint">
-                gates <Mono className="text-[11px]">{g.atOrAbove}</Mono> and above
-              </span>
-              <span className="shrink-0 text-[11px] text-faint">
-                {g.approvers.length ? g.approvers.join(", ") : "nobody named"}
-              </span>
-            </div>
-          ))}
-        </Panel>
-
-        {/* ── providers: where model calls can go ── */}
-        <Panel
-          id="providers"
-          folded={Boolean(folded["providers"])}
-          onToggle={() => toggle("providers")}
-          title="Providers"
-          caption="Where model calls can go. A provider is a chat-completions endpoint, the name of the vault key that authenticates to it, and whether it is served on your own hardware. Discover what each serves and offer the models you want; the runtime routes every call to the provider its model names, with that provider's credential from the vault. Local providers are priced by the hardware hour, not per token, and the Costs page uses that rate."
-        >
-          {/* What the deployment's own Google identity can see, before any provider is added: the one place it is shown. */}
-          <VertexDetected />
-          <Providers bare={bare} />
-        </Panel>
-
-        {/* ── models: the short list every model choice in the console shows ── */}
-        <Panel
-          id="models"
-          folded={Boolean(folded["models"])}
-          onToggle={() => toggle("models")}
-          title="Models"
-          caption="What teams may pick from, the tier each sits in, and the price cost figures are computed against. Tick what this deployment offers, from what its catalogue lists and what was offered from a provider above: every model choice in the console shows exactly this list, and a workflow names a model, never a provider. Record the price per million tokens beside each offered model; a model with no price makes its runs unpriced rather than free."
-        >
-          <OfferedModels bare={bare} onChanged={changed} />
-        </Panel>
-
-        {/* ── credentials: the vault ── */}
-        <Panel
-          id="credentials"
-          folded={Boolean(folded["credentials"])}
-          onToggle={() => toggle("credentials")}
-          title="Credentials"
-          caption="What the vault holds, by name. A connector referencing one of these carries the reference in the spec and never the value, which is what makes a workflow safe to export. A value is pasted here once and shown masked from then on; only the runtime reads it, at the moment a tool is called."
-        >
-          <Keys bare={bare} onChanged={changed} />
-        </Panel>
-
-        {/* ── ingress ── */}
-        <Panel
-          id="ingress"
-          folded={Boolean(folded["ingress"])}
-          onToggle={() => toggle("ingress")}
-          title="Ingress"
-          caption="Who may post work to this factory, and what is in the queue. A key scoped to one workflow cannot start another."
-        >
-          {quiet ? <PanelNote /> : <div className="grid gap-px bg-line sm:grid-cols-2">
-            <div className="flex flex-col bg-surface">
-              <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">API keys</span>
-              {(data?.apiKeys ?? []).map((k) => (
-                <span key={k.prefix} className="flex items-center gap-2 border-b border-line px-4 py-2 last:border-0">
-                  <Mono className="text-[10.5px] text-faint">{k.prefix}…</Mono>
-                  <span className="min-w-0 grow truncate text-[11.5px]">{k.name}</span>
-                  <span className="shrink-0 text-[10.5px] text-faint">{k.agent ?? "any workflow"}</span>
-                  {k.revoked_at ? <Status tone="err">revoked</Status> : <Status tone="ok">active</Status>}
-                </span>
-              ))}
-              {data && data.apiKeys.length === 0 && (
-                <span className="px-4 py-2 text-[11.5px] text-faint">
-                  No keys. Every machine door (trigger, SDK, A2A, MCP server) refuses until the first one is minted.
-                </span>
-              )}
-            </div>
-            <div className="flex flex-col bg-surface">
-              <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">Queue</span>
-              {queueTotals({ all: data?.queue ?? {} }, Object.keys(data?.queue ?? {}).length > 0).map((q) => (
-                <span key={q.status} className="flex items-center justify-between border-b border-line px-4 py-2 last:border-0" title={JOB_STATUS_META[q.status as keyof typeof JOB_STATUS_META]?.means}>
-                  <span className="text-[11.5px] text-faint">{q.label}</span>
-                  <span className="tnum text-[12px]">{q.count}</span>
-                </span>
-              ))}
-              {data && Object.keys(data.queue).length === 0 && (
-                <span className="px-4 py-2 text-[11.5px] text-faint">The queue is empty.</span>
-              )}
-            </div>
-          </div>}
-        </Panel>
-
-        {/* ── appearance: the console's own look ── */}
-        <Panel
-          id="appearance"
-          folded={Boolean(folded["appearance"])}
-          onToggle={() => toggle("appearance")}
-          title="Appearance"
-          caption="How the console looks: one choice for every browser and every person. Card headers can carry a colour for their subject: spend green, approvals amber, live activity blue, controls red, knowledge violet, identity teal, traces indigo. Or the console can stay on its monochrome base."
-        >
-          <Appearance bare={bare} />
-        </Panel>
         <p className="pb-4 text-[10.5px] text-ghost">{data?.basis ?? ""}</p>
       </div>
     </div>
   );
 }
 
+/**
+ * A folding panel: its heading, one or two sentences on what it is for, and
+ * its body. `how` is what a person needs once (how the mechanism works, how
+ * to read the table): kept behind a small disclosure under the caption.
+ */
 function Panel({
   id,
   title,
   caption,
+  how,
+  howLabel = "How this works",
   children,
   folded = false,
   onToggle,
   meta,
+  className = "",
 }: {
   id: string;
   title: string;
   caption: string;
+  how?: string;
+  howLabel?: string;
   children: React.ReactNode;
   folded?: boolean;
   onToggle?: () => void;
   meta?: React.ReactNode;
+  className?: string;
 }) {
+  const [explained, setExplained] = useState(false);
   return (
-    <section id={id} className="flex scroll-mt-4 flex-col overflow-hidden rounded-md border border-line bg-surface">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={!folded}
-        aria-controls={`${id}-body`}
-        data-hue={hueFor(title)}
-        className={`focusable flex w-full items-start gap-3 bg-raise/55 px-4 py-2.5 text-left transition-colors hover:bg-raise ${folded ? "" : "border-b border-line"}`}
-      >
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className={`mt-0.5 shrink-0 text-faint transition-transform ${folded ? "-rotate-90" : ""}`}>
-          <path d="M6 9l6 6 6-6" />
-        </svg>
-        <span className="flex min-w-0 grow flex-col gap-0.5">
-          <span className="flex items-center gap-2 text-[12px] font-semibold">
-            {title}
-            {meta}
+    <section id={id} className={`flex scroll-mt-4 flex-col overflow-hidden rounded-md border border-line bg-surface ${className}`}>
+      {/* The heading band: the fold, and under the caption the disclosure, which is no part of the fold's button. */}
+      <div data-hue={hueFor(title)} className={`flex flex-col bg-raise/55 transition-colors [&:where(:has(>button:hover))]:bg-raise ${folded ? "" : "border-b border-line"}`}>
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={!folded}
+          aria-controls={`${id}-body`}
+          className="focusable flex w-full items-start gap-3 px-4 py-2.5 text-left"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className={`mt-0.5 shrink-0 text-faint transition-transform ${folded ? "-rotate-90" : ""}`}>
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+          <span className="flex min-w-0 grow flex-col gap-0.5">
+            <span className="flex items-center gap-2 text-[12px] font-semibold">
+              {title}
+              {meta}
+            </span>
+            {!folded && <span className="max-w-[92ch] text-[11px] leading-[1.55] text-faint">{caption}</span>}
           </span>
-          {!folded && <span className="max-w-[92ch] text-[11px] leading-[1.55] text-faint">{caption}</span>}
-        </span>
-        <span className="shrink-0 pt-0.5 text-[10.5px] text-ghost">{folded ? "show" : "hide"}</span>
-      </button>
+          <span className="shrink-0 pt-0.5 text-[10.5px] text-ghost">{folded ? "show" : "hide"}</span>
+        </button>
+        {!folded && how && (
+          <div className="flex flex-col items-start gap-1.5 pr-4 pb-2.5 pl-[42px]">
+            <button
+              type="button"
+              onClick={() => setExplained(!explained)}
+              aria-expanded={explained}
+              aria-controls={`${id}-how`}
+              className="focusable inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-sm border border-line bg-surface px-1.5 text-[10.5px] font-medium text-dim transition-colors hover:bg-raise hover:text-fg"
+            >
+              <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className={`shrink-0 transition-transform ${explained ? "" : "-rotate-90"}`}>
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+              {howLabel}
+            </button>
+            <p id={`${id}-how`} hidden={!explained} className="max-w-[92ch] text-[11px] leading-[1.55] text-faint">
+              {how}
+            </p>
+          </div>
+        )}
+      </div>
       <div id={`${id}-body`} hidden={folded}>
         {children}
       </div>
