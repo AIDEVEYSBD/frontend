@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button, Status, Tag } from "./ui";
 import { Card } from "./identity-shared";
 import { QUIET } from "@/lib/quiet";
+import { roleLabel } from "@/lib/permissions";
 import type { IapAccessAnswer, IapPrincipal } from "@/app/api/auth/access/route";
 
 /**
@@ -88,11 +89,13 @@ export function IapAccess() {
                   <td className="px-3 py-2.5">
                     {p.role ? (
                       <span className="flex flex-wrap items-center gap-1.5">
-                        <Tag>{p.role}</Tag>
+                        <Tag>{p.role.split(", ").map(roleLabel).join(", ")}</Tag>
                         {p.defaulted && <span className="text-[11px] text-faint">by default; the role mapping does not name {p.kind === "domain" ? "this domain" : "this person"}</span>}
                       </span>
                     ) : p.kind === "group" ? (
                       <span className="text-[11.5px] text-faint">set per member at sign-in</span>
+                    ) : p.kind === "person" || p.kind === "domain" ? (
+                      <span className="text-[11.5px] text-faint">none: let in by Google, refused by the console</span>
                     ) : (
                       <span className="text-[11.5px] text-faint">does not sign in to the console</span>
                     )}

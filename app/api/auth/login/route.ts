@@ -1,5 +1,6 @@
 import * as oidc from "openid-client";
-import { CALLBACK_URL, IAP_HEADER, RESOURCE, SCOPE, authEvent, createIapSession, createRowlessIapSession, defaultRole, iapEnabled, loginCookie, provider, sessionCookie, ssoEnabled, verifyIap } from "@/lib/server/auth";
+import { CALLBACK_URL, IAP_HEADER, RESOURCE, SCOPE, authEvent, createIapSession, createRowlessIapSession, defaultRole, iapEnabled, iapRoles, loginCookie, provider, sessionCookie, ssoEnabled, verifyIap } from "@/lib/server/auth";
+import { permissionsFor } from "@/lib/permissions";
 import { dbReady } from "@/lib/server/db";
 
 /**
@@ -34,6 +35,11 @@ async function iapSignIn(req: Request, next: string): Promise<Response> {
   } catch (e) {
     await authEvent("denied", null, null, { stage: "iap", error: String((e as Error).message ?? e).slice(0, 300) });
     return go("/no-access?reason=iap-invalid");
+  }
+  // Signed in by Google, but nothing gives this person a role that can read the console (the access matrix: platform admin and auditor only).
+  if (!permissionsFor(iapRoles(who.email), defaultRole()).includes("view")) {
+    await authEvent("denied", who.sub, who.email || null, { stage: "iap", note: "no role on this console", roles: iapRoles(who.email) });
+    return go("/no-access?reason=unassigned");
   }
   // No registry database (a console deployed on its own): the sign-in keeps no row, and every later request is read from IAP's assertion again.
   if (!(await dbReady())) {

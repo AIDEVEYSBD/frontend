@@ -177,7 +177,7 @@ const stopped = (e: SecEvent) => e.tone === "err";
 export function SecurityEventsView({ ledger, win, now, address, tick, onBusy }: ViewProps) {
   const router = useRouter();
   const { session, loaded, can } = useSession();
-  const mayAudit = loaded && Boolean(session) && can("iam");
+  const mayAudit = loaded && Boolean(session) && can("identity");
   const [data, setData] = useState<Guardrails | null>(null);
   const [error, setError] = useState("");
   const [gates, setGates] = useState<Gate[] | null>(null);

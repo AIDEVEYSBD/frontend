@@ -44,9 +44,9 @@ spec:
             # Switches IAP sign-in on. Filled in after the first deploy (README, step 4):
             # /projects/PROJECT_NUMBER/global/backendServices/BACKEND_SERVICE_ID
             - {name: IAP_AUDIENCE, value: "IAP_AUDIENCE"}
-            # Who holds which role. A key is an address or "@domain"; anyone not named is a viewer.
+            # Who holds which role (platform_admin or auditor). A key is an address or "@domain"; anyone not named has no access.
             - name: IAP_ROLE_MAP
-              value: '{"ADMIN@EXAMPLE.COM": "administrator", "@EXAMPLE.COM": "viewer"}'
+              value: '{"ADMIN@EXAMPLE.COM": "platform_admin", "AUDITOR@EXAMPLE.COM": "auditor"}'
             # Only when the pod cannot work them out itself (it asks the metadata server first).
             # - {name: GCP_PROJECT, value: PROJECT_ID}
             # - {name: REGION, value: europe-west4}

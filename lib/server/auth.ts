@@ -262,14 +262,15 @@ interface SessionRow extends Record<string, unknown> {
 }
 
 /**
- * The role a signed-in person holds when their token names none: viewer,
- * which reads and changes nothing, until an administrator assigns one in the
- * identity provider. AUTH_DEMO_DEFAULT_ROLE raises it for a demo and must be
- * unset on any client deployment. Local mode has its own default
+ * The role a signed-in person holds when nothing names one for them: none.
+ * The access matrix gives this console to the platform admin and the auditor
+ * only, so a person who is signed in but unassigned cannot open it.
+ * AUTH_DEMO_DEFAULT_ROLE names a role for everyone unassigned, for a demo,
+ * and must be unset on any client deployment. Local mode has its own default
  * (AUTH_LOCAL_ROLE, administrator) and is not affected.
  */
 export function defaultRole(): string {
-  return process.env.AUTH_DEMO_DEFAULT_ROLE || "viewer";
+  return process.env.AUTH_DEMO_DEFAULT_ROLE || "";
 }
 
 function toSession(row: SessionRow, reauth = false): Session {

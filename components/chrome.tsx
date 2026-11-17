@@ -14,7 +14,7 @@ import { Assistant } from "./assistant";
 import { applyAccent } from "./appearance";
 import { isOpenPage } from "@/lib/route-policy";
 import { consolePath } from "@/lib/api/client";
-import { PERMISSION_META, type Permission } from "@/lib/permissions";
+import { PERMISSION_META, roleLabel as roleName, type Permission } from "@/lib/permissions";
 
 /**
  * The navigation, grouped by what a person came for: what is running, the
@@ -64,10 +64,10 @@ const NAV: NavItem[] = [
   { href: "/templates", label: "Templates", group: "Agents", icon: "layout-template" },
   { href: "/evals", label: "Quality", group: "Agents", icon: "flask-conical", also: ["/drift", "/acceptance"] },
 
-  { href: "/iam", label: "People and agents", group: "Identity", icon: "users", needs: "iam" },
-  { href: "/sessions", label: "Sessions", group: "Identity", icon: "clock", needs: "iam" },
-  { href: "/authorization", label: "Authorization servers", group: "Identity", icon: "lock", needs: "iam" },
-  { href: "/access", label: "Access log", group: "Identity", icon: "history", needs: "iam" },
+  { href: "/iam", label: "People and agents", group: "Identity", icon: "users", needs: "identity" },
+  { href: "/sessions", label: "Sessions", group: "Identity", icon: "clock", needs: "identity" },
+  { href: "/authorization", label: "Authorization servers", group: "Identity", icon: "lock", needs: "identity" },
+  { href: "/access", label: "Access log", group: "Identity", icon: "history", needs: "identity" },
 
   { href: "/configuration", label: "Configuration", group: "Connections", icon: "sliders-horizontal", also: ["/settings", "/peers"] },
   { href: "/knowledge", label: "Data", group: "Connections", icon: "database", also: ["/datasets"] },
@@ -386,8 +386,24 @@ function NoPermission({ page, needs, roles }: { page: string; needs: Permission;
       <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.01em] text-fg">{page} needs the &ldquo;{needs}&rdquo; permission.</h1>
       <p className="text-[13px] leading-[1.6] text-dim">{PERMISSION_META[needs]}</p>
       <p className="text-[12.5px] leading-[1.6] text-faint">
-        Your roles: {roles.length ? roles.join(", ") : "none assigned"}. An administrator assigns roles; the change applies the next time you sign in.
+        Your roles: {roles.length ? roles.map(roleName).join(", ") : "none assigned"}. An administrator assigns roles; the change applies the next time you sign in.
       </p>
+    </div>
+  );
+}
+
+/** Signed in, but with no role that can read this console: the access matrix gives it to the platform admin and the auditor only. */
+function NoRole({ roles }: { roles: string[] }) {
+  return (
+    <div className="mx-auto flex max-w-[560px] flex-col gap-3 px-6 py-16">
+      <span className="text-[11px] font-medium tracking-[0.08em] text-faint uppercase">Not available to you</span>
+      <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.01em] text-fg">This console is open to the platform admin and the auditor.</h1>
+      <p className="text-[13px] leading-[1.6] text-dim">
+        {roles.length
+          ? `You are signed in as ${roles.map(roleName).join(", ")}. That role works in the consoles of the security workloads, not in this one.`
+          : "You are signed in, but nobody has given you a role on this console."}
+      </p>
+      <p className="text-[12.5px] leading-[1.6] text-faint">A platform admin assigns roles; a change applies the next time you open the console.</p>
     </div>
   );
 }
@@ -436,7 +452,9 @@ export function Chrome({ children }: { children: React.ReactNode }) {
   }, []);
 
   // A page whose permission a person lacks leaves their navigation; opened by its address, it says which permission it needs.
-  const nav = NAV.filter((item) => !item.needs || !loaded || can(item.needs));
+  // A signed-in person with no role that reads the console sees no navigation and no page, only why.
+  const noRole = loaded && Boolean(session) && !can("view");
+  const nav = noRole ? [] : NAV.filter((item) => !item.needs || !loaded || can(item.needs));
   const barred = loaded ? NAV.find((item) => item.needs && !can(item.needs) && reach(item).some((h) => under(pathname, h))) : undefined;
   const groups = groupsOf(nav, pathname);
   const hereGroup = groups.find((g) => g.here);
@@ -455,7 +473,7 @@ export function Chrome({ children }: { children: React.ReactNode }) {
   // opens with a signed link and no session (lib/route-policy.ts OPEN_PAGES).
   if (isOpenPage(pathname)) return <>{children}</>;
   const who = session ?? { name: CURRENT_USER.name, initials: CURRENT_USER.initials, appRoles: [] as string[], sso: false, demoDefaultApplied: false, email: "" };
-  const roleLabel = who.sso ? (who.appRoles.length ? who.appRoles.join(", ") : who.demoDefaultApplied ? "default role (no assignment)" : "no role") : CURRENT_USER.role;
+  const roleLabel = who.sso ? (who.appRoles.length ? who.appRoles.map(roleName).join(", ") : who.demoDefaultApplied && can("view") ? "default role (no assignment)" : "no role") : CURRENT_USER.role;
   const me: Who = { name: who.name, initials: who.initials, email: who.email, role: roleLabel, sso: who.sso && session?.canSignOut !== false, signOut };
   return (
     <div className="flex h-screen bg-canvas">
@@ -482,7 +500,7 @@ export function Chrome({ children }: { children: React.ReactNode }) {
         {/* The app never scrolls the document — pages scroll inside main.
             A canvas page fills it exactly; a prose page scrolls within it. */}
         <main className="min-h-0 grow overflow-y-auto overscroll-contain">
-          {barred?.needs ? <NoPermission page={barred.label} needs={barred.needs} roles={who.appRoles} /> : children}
+          {noRole ? <NoRole roles={who.appRoles} /> : barred?.needs ? <NoPermission page={barred.label} needs={barred.needs} roles={who.appRoles} /> : children}
         </main>
       </div>
 

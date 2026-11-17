@@ -35,7 +35,7 @@ export interface IapPrincipal {
   name: string;
   /** Where the grant sits. */
   level: "service" | "kind" | "project";
-  /** The console role the mapping gives this entry; for a group it is decided per person at sign-in. */
+  /** The console role the mapping gives this entry; null when it gives none (the person is let in by Google and refused by the console), and for a group, where it is decided per person at sign-in. */
   role: string | null;
   /** True when the role is the default because the mapping names no role for this entry. */
   defaulted: boolean;
@@ -81,7 +81,7 @@ function resourcesOf(audience: string): { level: IapPrincipal["level"]; label: s
 let cache: { at: number; value: IapAccessAnswer } | null = null;
 
 export async function GET(req: Request) {
-  { const gate = await permit(req, "iam"); if (gate) return gate; }
+  { const gate = await permit(req, "identity"); if (gate) return gate; }
   const now = new Date().toISOString();
   const empty: IapAccessAnswer = { enabled: iapEnabled(), readable: false, resource: "", levels: [], principals: [], mappedOnly: [], checkedAt: now };
   if (!iapEnabled()) return Response.json(empty);
@@ -134,12 +134,12 @@ export async function GET(req: Request) {
           let defaulted = false;
           if (kind === "person") {
             const mapped = iapRoles(name.toLowerCase()).join(", ");
-            role = mapped || defaultRole();
-            defaulted = !mapped;
+            role = mapped || defaultRole() || null;
+            defaulted = !mapped && Boolean(role);
           } else if (kind === "domain") {
             const mapped = roleOfKey(`@${name.toLowerCase()}`);
-            role = mapped || defaultRole();
-            defaulted = !mapped;
+            role = mapped || defaultRole() || null;
+            defaulted = !mapped && Boolean(role);
           }
           const condition = b.condition?.title || b.condition?.expression;
           principals.push({ member, kind, name: name || member, level: r.level, role, defaulted, ...(condition ? { condition } : {}) });

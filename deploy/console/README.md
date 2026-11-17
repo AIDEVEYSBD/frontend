@@ -146,16 +146,20 @@ Notes:
 IAP says who a person is and nothing about what they may do, so the role comes from `IAP_ROLE_MAP`, a JSON object:
 
 ```
-{"asha.rao@example.com": "administrator", "@example.com": "viewer"}
+{"asha.rao@example.com": "platform_admin", "internal.audit@example.com": "auditor"}
 ```
 
-A key is an email address or `@domain`. An address wins over its domain. Someone the map does not name is a viewer.
+A key is an email address or `@domain`. An address wins over its domain.
+
+The roles follow the GUI access matrix for this console:
 
 | Role | May |
 |---|---|
-| `viewer` | Read every page. |
-| `operator` | Read, start runs, answer approvals. |
-| `administrator` | Everything, including configuration and the Identity pages. |
+| `platform_admin` | Open every screen and take every action: change settings, start and stop runs, deploy, and give second-person approval. |
+| `auditor` | Read every screen, including the identity pages and the audit trail. Changes nothing: every action is shown disabled. |
+| `use_case_reviewer`, `analyst` | Nothing here. They work in the workloads' own consoles. Naming them in the map is allowed and gives no access. |
+
+**Someone the map does not name has no access.** Google signs them in, and the console shows "A role is required". Give `@domain` a role only if every person in that domain should hold it.
 
 A change to the map takes effect when a new revision is deployed.
 
@@ -173,6 +177,7 @@ If something is off:
 |---|---|
 | Google's own "You don't have access" page | The person lacks `roles/iap.httpsResourceAccessor` on the service. |
 | A Cloud Run 403 "Forbidden" page | IAP's service agent lacks `roles/run.invoker` on the service, or IAP is not enabled on it. |
+| "A role is required to access Agent Factory" | Google signed the person in, but `IAP_ROLE_MAP` gives them no role that can open the console (section 4). |
 | "This console is reached through Google sign-in" | The request reached the console without IAP's header: IAP is not enabled on the service. |
 | "Your Google sign-in could not be verified" | `IAP_AUDIENCE` does not match the service (project number, region and service name must be exact), or the service cannot reach Google's keys (see `IAP_JWKS_URL`). |
 | The console opens with "Local operator, Sign-in is off" | `IAP_AUDIENCE` or `AUTH_SECRET` is not set on the service, so sign-in is off. |
