@@ -61,6 +61,7 @@ export const PAGE_GROUPS = {
     tabs: [
       { id: "knowledge", label: "Knowledge", href: "/knowledge" },
       { id: "datasets", label: "Datasets", href: "/datasets" },
+      { id: "retrieval", label: "Retrieval access", href: "/retrieval-access" },
     ],
   },
   resilience: {
@@ -87,6 +88,7 @@ export const PAGE_GROUPS = {
       { id: "catalogue", label: "Catalogue", href: "/guardrails" },
       { id: "inforce", label: "In force", href: "/observability/controls" },
       { id: "policy", label: "Policy", href: "/policy" },
+      { id: "compliance", label: "Compliance", href: "/compliance" },
     ],
   },
   assurance: {

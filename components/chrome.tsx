@@ -70,10 +70,10 @@ const NAV: NavItem[] = [
   { href: "/access", label: "Access log", group: "Identity", icon: "history", needs: "identity" },
 
   { href: "/configuration", label: "Configuration", group: "Connections", icon: "sliders-horizontal", also: ["/settings", "/peers"] },
-  { href: "/knowledge", label: "Data", group: "Connections", icon: "database", also: ["/datasets"] },
+  { href: "/knowledge", label: "Data", group: "Connections", icon: "database", also: ["/datasets", "/retrieval-access"] },
   { href: "/dependencies", label: "Resilience", group: "Connections", icon: "network", also: ["/breakers"] },
 
-  { href: "/guardrails", label: "Controls", group: "Security and Policy", icon: "shield", also: ["/observability/controls", "/policy"] },
+  { href: "/guardrails", label: "Controls", group: "Security and Policy", icon: "shield", also: ["/observability/controls", "/policy", "/compliance"] },
   { href: "/guardian", label: "Guardian", group: "Security and Policy", icon: "shield-check" },
   { href: "/evidence", label: "Assurance", group: "Security and Policy", icon: "badge-check", also: ["/attestations", "/ledger", "/frameworks"] },
 

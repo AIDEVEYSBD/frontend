@@ -75,6 +75,22 @@ export const DOORS = {
   authServerAdd: { method: "POST", path: "/api/authorization-servers", purpose: "Adding an authorization server", rows: ["1.4", "7.1"] },
   authServerRemove: { method: "DELETE", path: "/api/authorization-servers/{id}", purpose: "Removing an authorization server", rows: ["1.4", "7.1"] },
   authServerProbe: { method: "POST", path: "/api/authorization-servers/probe", purpose: "Reading the metadata an issuer publishes, before it is added", rows: ["1.4", "7.1"] },
+
+  /* ── retrieval access: the RAG kill switch (GUI access matrix 1.3) ── */
+  retrievalAccess: { method: "GET", path: "/api/retrieval/access", purpose: "Which agent may read, write or delete in which knowledge store, whether retrieval from each store is on, and the history of every revocation", rows: ["GUI 1.3"] },
+  retrievalRevoke: { method: "POST", path: "/api/retrieval/access/revoke", purpose: "Revoking an agent's read, write or delete access to a knowledge store, or to all of them", rows: ["GUI 1.3"] },
+  retrievalRestore: { method: "POST", path: "/api/retrieval/access/restore", purpose: "Restoring access that was revoked", rows: ["GUI 1.3"] },
+  retrieverDisable: { method: "POST", path: "/api/retrieval/stores/{id}/disable", purpose: "Switching retrieval from a data store off for every agent", rows: ["GUI 1.3"] },
+  retrieverEnable: { method: "POST", path: "/api/retrieval/stores/{id}/enable", purpose: "Switching retrieval from a data store back on", rows: ["GUI 1.3"] },
+
+  /* ── a run paused at its budget (GUI access matrix 1.12) ── */
+  budgetHolds: { method: "GET", path: "/api/budget/holds", purpose: "Runs paused because they reached their budget, waiting for a person to decide whether they continue or stop", rows: ["GUI 1.12"] },
+  budgetHoldDecide: { method: "POST", path: "/api/budget/holds/{id}/decide", purpose: "Deciding a run paused at its budget: continue with a raised budget, or stop", rows: ["GUI 1.12"] },
+
+  /* ── compliance view: the catalogue against ABB's own control list (GUI access matrix 1.18) ── */
+  compliance: { method: "GET", path: "/api/compliance", purpose: "The ABB ICL as loaded, which of its controls each catalogue control answers, and what this deployment has changed about a control", rows: ["GUI 1.18"] },
+  complianceSave: { method: "PUT", path: "/api/compliance", purpose: "Saving the ICL mapping and the changes to controls", rows: ["GUI 1.18"] },
+  iclLoad: { method: "POST", path: "/api/compliance/icl", purpose: "Loading ABB's control list (multipart: one field, `file`, a CSV of id, title, domain; the list takes its name from the file's)", rows: ["GUI 1.18"] },
 } as const satisfies Record<string, Door>;
 
 /* ═══════════════════ shapes ═══════════════════ */
@@ -472,6 +488,145 @@ export interface AuthServerAdd {
   subjects?: string[];
 }
 export type AuthServerAdded = AuthServer | { server: AuthServer };
+
+/* ═══════════════════ retrieval access (GUI access matrix 1.3) ═══════════════════ */
+
+export type RetrievalRight = "read" | "write" | "delete";
+export const RETRIEVAL_RIGHTS: RetrievalRight[] = ["read", "write", "delete"];
+
+/** A knowledge store or data store an agent retrieves from. */
+export interface RetrievalStore {
+  id: string;
+  name: string;
+  /** What it is, in the deployment's words: a knowledge namespace, a vector store, a data store. */
+  kind: string;
+  data_class?: DataClass;
+  /** Whether any agent may retrieve from it at all. */
+  retrieval: "enabled" | "disabled";
+  disabled_by?: Owner;
+  disabled_at?: string;
+  reason?: string;
+}
+
+/** What one agent holds in one store, and what of it has been revoked. */
+export interface RetrievalGrant {
+  agent: string;
+  agent_name?: string;
+  store: string;
+  /** What its definition grants it. */
+  rights: RetrievalRight[];
+  /** What of that is revoked now. */
+  revoked: RetrievalRight[];
+  revoked_by?: Owner;
+  revoked_at?: string;
+  reason?: string;
+}
+
+export interface RetrievalEvent {
+  at: string;
+  who: Owner;
+  action: "revoked" | "restored" | "disabled" | "enabled";
+  agent?: string;
+  store?: string;
+  rights?: RetrievalRight[];
+  reason?: string;
+}
+
+/** GET /api/retrieval/access */
+export interface RetrievalAccess {
+  stores: RetrievalStore[];
+  grants: RetrievalGrant[];
+  history: RetrievalEvent[];
+}
+
+/** POST /api/retrieval/access/revoke and /restore. With no `store`, every store the agent holds. */
+export interface RetrievalChange {
+  agent: string;
+  store?: string;
+  rights: RetrievalRight[];
+  reason: string;
+}
+
+/** POST /api/retrieval/stores/{id}/disable and /enable. */
+export interface RetrieverSwitch {
+  reason: string;
+}
+
+/* ═══════════════════ a run paused at its budget (GUI access matrix 1.12) ═══════════════════ */
+
+export type BudgetMeasure = "tool_calls" | "tokens" | "cost_usd" | "wall_clock_s";
+
+export interface BudgetHold {
+  id: string;
+  run: string;
+  agent: string;
+  agent_name?: string;
+  use_case?: string;
+  /** Who started the run. */
+  owner?: Owner;
+  /** Which ceiling it reached. */
+  measure: BudgetMeasure;
+  limit: number;
+  used: number;
+  paused_at: string;
+  state: "waiting" | "continued" | "stopped" | "expired";
+  /** When the hold ends by itself; the run then stops. */
+  expires_at?: string;
+  decided_by?: Owner;
+  decided_at?: string;
+  /** The new ceiling, when it continued. */
+  raised_to?: number;
+  reason?: string;
+}
+
+/** GET /api/budget/holds?state= */
+export interface BudgetHoldList {
+  holds: BudgetHold[];
+}
+
+/** POST /api/budget/holds/{id}/decide. `raise_to` is required to continue and must be above what was used. */
+export interface BudgetHoldDecision {
+  decision: "continue" | "stop";
+  raise_to?: number;
+  reason: string;
+}
+
+/* ═══════════════════ compliance view (GUI access matrix 1.18) ═══════════════════ */
+
+/** One control of ABB's own control list, as loaded. */
+export interface IclControl {
+  id: string;
+  title: string;
+  domain?: string;
+  text?: string;
+}
+
+/** What this deployment has changed about a catalogue control. */
+export interface ControlCustom {
+  /** False when the deployment has recorded that the control does not apply to it. */
+  applies: boolean;
+  /** Why, or how it is met differently. */
+  note?: string;
+  /** Who answers for the control here. */
+  owner?: string;
+}
+
+/** GET /api/compliance */
+export interface Compliance {
+  /** The list as loaded; null until one is. */
+  icl: { name: string; version?: string; loaded_at?: string; loaded_by?: Owner; controls: IclControl[] } | null;
+  /** Catalogue control id (lib/guardrails.ts) to the ICL controls it answers. */
+  mapping: Record<string, string[]>;
+  custom: Record<string, ControlCustom>;
+  updated_at?: string;
+  updated_by?: Owner;
+}
+
+/** PUT /api/compliance: only the parts sent are replaced. */
+export interface ComplianceSave {
+  mapping?: Record<string, string[]>;
+  custom?: Record<string, ControlCustom>;
+}
 
 /* ═══════════════════ asking ═══════════════════ */
 

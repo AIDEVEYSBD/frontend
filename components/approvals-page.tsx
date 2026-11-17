@@ -11,12 +11,15 @@ import { Chips, FilterBar, SearchBox, type Chip } from "./filters";
 import { Figures, PageHeader, Section } from "./section";
 import { WindowPick, winMs, type Win } from "./window-pick";
 import { ApproveDialog } from "./approve";
+import { BudgetHolds, holdsOf } from "./budget-holds";
+import { useDoor } from "./pending";
 import { Deadline, ShapeTag, useNow } from "./gate-form";
 import { listGates, type Gate } from "@/lib/api/l5";
 import { getEvidence, type SignedDecision } from "@/lib/api/l9";
 import { batchable, chainOf, countdown, escalationPath, gateAccess, type Who } from "@/lib/gates";
 import { useSession } from "@/lib/use-session";
 import { soon } from "@/lib/soon";
+import type { BudgetHoldList } from "@/lib/api/pending";
 
 /**
  * Approvals: the gates waiting for a person, and the gates answered.
@@ -31,6 +34,11 @@ import { soon } from "@/lib/soon";
  * Answered gates are the signed decisions the evidence door returns for the
  * gate control (`GET /api/evidence?control=gate`): who answered, how, when,
  * and the note they left.
+ *
+ * Beside the gates, the runs paused at their budget (components/budget-holds.tsx):
+ * a second queue for a person, decided with the same permission. Its door is
+ * ahead of the backend (`budgetHolds` in lib/api/pending.ts); the page reads
+ * it once, for the figure and for the section.
  */
 
 /** How long ago, short: `40s`, `12m`, `3h 5m`, `2d 4h`. */
@@ -110,6 +118,16 @@ export function ApprovalsView() {
     };
   }, [load]);
 
+  /* ── paused at budget: read here once, for the figure and the section; read again while it answers ── */
+  const { answer: holds, reload: reloadHolds } = useDoor<BudgetHoldList>("budgetHolds");
+  const holdsOk = holds?.state === "ok";
+  useEffect(() => {
+    if (!holdsOk) return;
+    const id = setInterval(reloadHolds, 15_000);
+    return () => clearInterval(id);
+  }, [holdsOk, reloadHolds]);
+  const holdsWaiting = holdsOf(holds).filter((h) => h.state === "waiting").length;
+
   /* ── answered: the signed decisions of the gate control, over a window ── */
   const [win, setWin] = useState<Win>("30d");
   const [tick, setTick] = useState(0);
@@ -163,8 +181,8 @@ export function ApprovalsView() {
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
       <PageHeader title="Approvals">
-        Gates waiting for a person, the most urgent first. Open one to read what the run asks and the evidence it shows, and to answer it; the answer is signed with your sign-in. Below, the gates answered recently, with who
-        answered and how.
+        Gates waiting for a person, the most urgent first. Open one to read what the run asks and the evidence it shows, and to answer it; the answer is signed with your sign-in. Runs paused at their budget wait
+        here too, for a decision to continue or stop. Below, the gates answered recently, with who answered and how.
       </PageHeader>
 
       {error && (
@@ -179,6 +197,7 @@ export function ApprovalsView() {
           { k: "Overdue", v: gates ? all.filter(overdue).length : inboxOff ? off : "—" },
           { k: "Due within the hour", v: gates ? dueSoon : inboxOff ? off : "—" },
           { k: "Mine to answer", v: gates && who ? all.filter((g) => mayAnswer(g).ok).length : inboxOff ? off : "—" },
+          { k: "Paused at budget", v: holdsOk ? holdsWaiting : holds?.state === "pending" || (QUIET && holds?.state === "error") ? off : "—" },
           { k: `Answered · ${win === "all" ? "all time" : win}`, v: answeredNow && !answeredNow.error ? answeredNow.decisions.length : QUIET && answeredNow?.error ? off : "—" },
         ]}
       />
@@ -333,6 +352,9 @@ export function ApprovalsView() {
           </div>
         )}
       </Section>
+
+      {/* A quiet console whose inbox has not been read keeps this section to its heading and one line. */}
+      <BudgetHolds answer={holds} reload={reloadHolds} now={now} calm={QUIET && gates === null} />
 
       <Section
         title="Answered"
