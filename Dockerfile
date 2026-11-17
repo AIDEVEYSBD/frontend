@@ -32,7 +32,8 @@ ARG NEXT_PUBLIC_ORIGIN
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=8080 HOSTNAME=0.0.0.0 \
     PUBLIC_ORIGIN=$NEXT_PUBLIC_ORIGIN \
     AGENTFACTORY_DB=off AGENTFACTORY_RUNTIME_ROOT=/data/runtime
-RUN mkdir -p /data/runtime && chown -R node:node /data
+# The runtime folder exists and is empty, and the console cannot write to it: a console on its own keeps nothing.
+RUN mkdir -p /data/runtime
 USER node
 EXPOSE 8080
 CMD ["sh", "-c", "exec node node_modules/next/dist/bin/next start -p \"$PORT\" -H 0.0.0.0"]
