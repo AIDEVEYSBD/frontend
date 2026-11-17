@@ -64,6 +64,17 @@ export const DOORS = {
 
   /* ── chat ── */
   chatStart: { method: "POST", path: "/api/chat/requests", purpose: "Submitting a request to a workload from chat, under the person's own permissions", rows: ["2.3"] },
+
+  /* ── sessions ── */
+  sessions: { method: "GET", path: "/api/sessions", purpose: "Every live connection to this deployment: people signed in to the console, agents holding a key or a workload sign-in, and the connections held open to tool servers on their behalf", rows: ["1.1", "1.4"] },
+  sessionEnd: { method: "POST", path: "/api/sessions/{id}/end", purpose: "Ending one session", rows: ["1.1", "1.4"] },
+  sessionsEnd: { method: "POST", path: "/api/sessions/end", purpose: "Ending several sessions at once, or a client's registration and every session issued to it", rows: ["1.1", "1.4"] },
+
+  /* ── authorization servers ── */
+  authServers: { method: "GET", path: "/api/authorization-servers", purpose: "The outside issuers this deployment trusts: for a per-person token to a tool, and for the tokens an agent or worker exchanges for a short session", rows: ["1.4", "7.1"] },
+  authServerAdd: { method: "POST", path: "/api/authorization-servers", purpose: "Adding an authorization server", rows: ["1.4", "7.1"] },
+  authServerRemove: { method: "DELETE", path: "/api/authorization-servers/{id}", purpose: "Removing an authorization server", rows: ["1.4", "7.1"] },
+  authServerProbe: { method: "POST", path: "/api/authorization-servers/probe", purpose: "Reading the metadata an issuer publishes, before it is added", rows: ["1.4", "7.1"] },
 } as const satisfies Record<string, Door>;
 
 /* ═══════════════════ shapes ═══════════════════ */
@@ -326,6 +337,141 @@ export interface ChatRequestAnswer {
   /** Inputs the workload takes that the message did not give. */
   missing?: string[];
 }
+
+export type SessionKind = "person" | "agent" | "tool_server";
+export const SESSION_KINDS: SessionKind[] = ["person", "agent", "tool_server"];
+export type SessionState = "active" | "idle" | "expired" | "revoked";
+export const SESSION_STATES: SessionState[] = ["active", "idle", "expired", "revoked"];
+
+/**
+ * GET /api/sessions → { sessions, counts }: the live sessions, and those that ended lately
+ * (expired, revoked) for as long as the control plane keeps them.
+ *
+ * `person`: someone signed in to the console. `agent`: an agent holding a key or a workload
+ * sign-in. `tool_server`: a connection the platform holds open to a tool server on behalf of
+ * a person or an agent.
+ */
+export interface Session {
+  id: string;
+  kind: SessionKind;
+  /**
+   * Who is behind it, by the id the identity register knows them by (a person's subject, an
+   * agent's id). For a tool server connection: the person or agent it is held for, and `kind`
+   * says which.
+   */
+  principal: { id: string; name: string; email?: string; kind?: "person" | "agent" };
+  /** The person who answers for an agent. */
+  owner?: Owner;
+  /**
+   * What they connected with: a browser, an SDK, a tool client, the platform itself. `kind` is
+   * a short word the door chooses (`browser`, `api_key`, `workload`, `sdk`, `mcp_client`,
+   * `platform`). `registration` is the id of the client's registration when it has one: ending
+   * that ends every session issued to it.
+   */
+  client: { name: string; kind: string; registration?: string };
+  /** What it is connected to: the console, the model gateway, a tool server. */
+  target: { id: string; name: string; kind: "console" | "gateway" | "tool_server" | string };
+  started_at: string;
+  last_seen_at?: string | null;
+  /** When it must be renewed; absent or null for one that does not lapse. */
+  expires_at?: string | null;
+  state: SessionState;
+  /** The sign-in or authorization server that issued it; `server` is its id on the authorization servers door when it is one of those. */
+  issued_by: { name: string; server?: string };
+  ip?: string;
+  /** What it did lately, newest first, when the door keeps it. */
+  activity?: { at: string; action: string; detail?: string }[];
+}
+export interface SessionList {
+  sessions: Session[];
+  /** How many of each kind the control plane holds, which may be more than the rows it sent. */
+  counts?: Partial<Record<SessionKind, number>>;
+}
+/** POST /api/sessions/end: the sessions to end, or a client's registration to end with every session issued to it. */
+export type SessionsEnd = { ids: string[] } | { client: string };
+/** What POST /api/sessions/{id}/end and POST /api/sessions/end answer: the ids of the sessions that ended. */
+export interface SessionsEnded {
+  ended: string[];
+}
+
+/** Upstream: gives a per-person token for a tool. Workload: its tokens are exchanged by an agent or worker for a short session. */
+export type AuthServerPurpose = "upstream" | "workload";
+/** How this deployment is registered with an upstream issuer: it registered itself, it is known by a metadata document it hosts, or a person entered a client id. */
+export type AuthServerRegistration = "dynamic" | "metadata" | "manual";
+export type AuthServerActsAs = "person" | "service_account";
+export type AuthServerState = "connected" | "expired" | "unreachable";
+
+/** GET /api/authorization-servers → { servers }. Who signs people in to the console is not one of these: the session door says that. */
+export interface AuthServer {
+  id: string;
+  name: string;
+  /** The issuer's address, as its metadata names it. */
+  issuer: string;
+  purpose: AuthServerPurpose;
+  state: AuthServerState;
+  /** Upstream only. */
+  registration?: AuthServerRegistration;
+  /** Upstream only: whether a tool is called as each person or as one service account. */
+  acts_as?: AuthServerActsAs;
+  /** Upstream only: the client id this deployment holds with the issuer. */
+  client_id?: string;
+  /** Upstream only: the tool servers that get their tokens from it. */
+  tool_servers?: { id: string; name: string }[];
+  /** Upstream only: the PKCE methods the issuer advertises (`code_challenge_methods_supported`); `S256` is the one expected. */
+  pkce_methods?: string[];
+  /** Workload only: the subjects admitted, each exact or a prefix ending in `*`. */
+  subjects?: string[];
+  /** Sessions it has issued that are still live. */
+  sessions?: number;
+  /** When the issuer was last reached. */
+  checked_at?: string;
+  added_at?: string;
+  added_by?: Owner;
+}
+export interface AuthServerList {
+  servers: AuthServer[];
+}
+
+/**
+ * POST /api/authorization-servers/probe with { issuer }: what the issuer publishes at its
+ * well-known addresses, under the names it publishes them by (RFC 8414, OpenID Connect
+ * Discovery). Nothing is stored.
+ */
+export interface AuthServerProbe {
+  issuer: string;
+}
+export interface AuthServerMetadata {
+  issuer: string;
+  /** The address the metadata was read from. */
+  metadata_url?: string;
+  authorization_endpoint?: string;
+  token_endpoint?: string;
+  /** Present when the issuer lets a client register itself. */
+  registration_endpoint?: string;
+  jwks_uri?: string;
+  code_challenge_methods_supported?: string[];
+  grant_types_supported?: string[];
+  scopes_supported?: string[];
+  /** Whether the issuer accepts a client known by a metadata document the client hosts. */
+  client_id_metadata_document_supported?: boolean;
+}
+
+/** POST /api/authorization-servers answers the new server, bare or as `{server}`. */
+export interface AuthServerAdd {
+  issuer: string;
+  /** Taken from the issuer's address when blank. */
+  name?: string;
+  purpose: AuthServerPurpose;
+  /** Upstream only. */
+  registration?: AuthServerRegistration;
+  acts_as?: AuthServerActsAs;
+  /** Manual registration: the client id the issuer gave, and the vault reference (`${secret:name}`) of its secret when it has one. */
+  client_id?: string;
+  client_secret?: string;
+  /** Workload only. */
+  subjects?: string[];
+}
+export type AuthServerAdded = AuthServer | { server: AuthServer };
 
 /* ═══════════════════ asking ═══════════════════ */
 

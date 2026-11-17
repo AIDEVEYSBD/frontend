@@ -1,7 +1,7 @@
 import { LifecycleView } from "@/components/lifecycle";
 
 export const metadata = {
-  title: "Lifecycle — Agent Factory",
+  title: "Agent versions — Agent Factory",
   description: "Each agent from design to retirement: reviews, the promotion gate, deployments per environment, rollback and retirement, each stage lit only by its own record.",
 };
 

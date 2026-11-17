@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Status, Tag } from "./ui";
 import { QuietNote } from "./overlays";
 import { QUIET } from "@/lib/quiet";
+import { GroupHeader } from "./page-tabs";
 import { hueFor } from "@/lib/hue";
 import { DoorError } from "@/lib/api/l5";
 import { candidatesOf, getBlastRadius, getDependencies, type BlastRadius, type DepEdge, type DepMap, type DepNode } from "@/lib/api/l7";
@@ -106,37 +107,35 @@ function DependenciesInner() {
 
   return (
     <div className="mx-auto w-full max-w-[1520px] px-5 py-7" data-hue="indigo">
-      <header className="flex flex-wrap items-end gap-4">
-        <div className="flex max-w-[86ch] flex-col gap-1.5">
-          <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">Dependencies</h1>
-          <p className="text-[12.5px] leading-[1.6] text-dim">
-            What every agent depends on, declared by its spec and seen in its runs: the tools it calls and the servers that serve them, the sub-agents it
-            invokes, the peers it hands work to, the models it uses, and the applications built on them. Pick a node for its blast radius: everything that
-            fails if it does.
-          </p>
-        </div>
-        <span className="grow" />
-        <span className="flex items-center gap-2">
-          <span className="text-[10.5px] text-faint">Journals read from the last</span>
-          <span role="radiogroup" aria-label="Window" className="inline-flex items-center gap-px rounded-sm border border-line bg-canvas p-px">
-            {WINDOWS.map((w) => (
-              <button
-                key={w}
-                type="button"
-                role="radio"
-                aria-checked={win === w}
-                onClick={() => setWin(w)}
-                className={`focusable rounded-[3px] px-1.5 py-0.5 font-mono text-[10px] transition-colors ${win === w ? "bg-ink text-on-ink" : "bg-surface text-faint hover:text-fg"}`}
-              >
-                {w}
-              </button>
-            ))}
-          </span>
-          <Button size="sm" variant="solid" tone="neutral" loading={loading} onClick={load}>
-            Read again
-          </Button>
-        </span>
-      </header>
+      <GroupHeader
+        group="resilience"
+        tab="dependencies"
+        actions={
+          <>
+            <span className="text-[10.5px] text-faint">Journals read from the last</span>
+            <span role="radiogroup" aria-label="Window" className="inline-flex items-center gap-px rounded-sm border border-line bg-canvas p-px">
+              {WINDOWS.map((w) => (
+                <button
+                  key={w}
+                  type="button"
+                  role="radio"
+                  aria-checked={win === w}
+                  onClick={() => setWin(w)}
+                  className={`focusable rounded-[3px] px-1.5 py-0.5 font-mono text-[10px] transition-colors ${win === w ? "bg-ink text-on-ink" : "bg-surface text-faint hover:text-fg"}`}
+                >
+                  {w}
+                </button>
+              ))}
+            </span>
+            <Button size="sm" variant="solid" tone="neutral" loading={loading} onClick={load}>
+              Read again
+            </Button>
+          </>
+        }
+      >
+        What every agent depends on, declared by its spec and seen in its runs: the tools it calls and the servers that serve them, the sub-agents it invokes, the peers it hands work to, the
+        models it uses, and the applications built on them. Pick a node for its blast radius: everything that fails if it does.
+      </GroupHeader>
 
       {quiet && (
         <div className="mt-5">

@@ -14,14 +14,15 @@ import { QUIET } from "@/lib/quiet";
 import { WINDOWS, WindowPick, winMs, type Win } from "./window-pick";
 
 /**
- * What the Observability pages share: the run ledger, a bounded read of run
- * journals, and the fold from a journal to tool calls and run events.
+ * What the views of Explore (components/explore.tsx) share: the run ledger,
+ * a bounded read of run journals, and the fold from a journal to tool calls
+ * and run events.
  *
  * The ledger (`GET /api/runs`) lists every run with its counts. A tool call's
  * outcome, a gate or a refusal is only in the run's own journal
  * (`GET /api/runs/{id}`), and a journal is large, so journals are read for a
  * bounded number of runs at a time (RUN_BATCH, newest first inside the
- * window) and a page says how many it has read. What is shown from a journal
+ * window) and a view says how many it has read. What is shown from a journal
  * is the entry's own words (tool name, step, the engine's sentence for a
  * refusal or a failure), passed through lib/redact.ts; arguments, prompts and
  * returned values are never read into a row.
@@ -70,7 +71,7 @@ export const agentOf = (r: RunRow): string => r.agent || (r as unknown as { syst
 
 /* ═══════════════════ the window ═══════════════════ */
 
-/** The narrowest window that holds the most recent run, so a page does not open on an empty cut. */
+/** The narrowest window that holds the most recent run, so the page does not open on an empty cut. */
 export function narrowestWindow(rows: readonly RunRow[], now: number): Win {
   const newest = Math.max(0, ...rows.map(lastActive));
   if (!newest) return "7d";
@@ -78,16 +79,6 @@ export function narrowestWindow(rows: readonly RunRow[], now: number): Win {
 }
 
 export const inWindow = (r: RunRow, win: Win, now: number): boolean => win === "all" || now - lastActive(r) <= winMs(win);
-
-/**
- * A page's window: what the person picked, else the narrowest window with a
- * run in it. `auto` says the page chose it, so the page can say so.
- */
-export function useWindow(rows: readonly RunRow[] | null, now: number): { win: Win; auto: boolean; pick: (w: Win) => void } {
-  const [picked, setPicked] = useState<Win | null>(null);
-  const fitted = useMemo(() => narrowestWindow(rows ?? [], now), [rows, now]);
-  return { win: picked ?? fitted, auto: picked === null && rows !== null && rows.length > 0, pick: setPicked };
-}
 
 export const windowWords = (w: Win): string => (w === "all" ? "all time" : w === "24h" ? "the last 24 hours" : `the last ${w.replace("d", " days")}`);
 
@@ -396,7 +387,7 @@ function read(row: RunRow): Promise<void> {
 
 /**
  * The journals of `rows`, read a few at a time and kept for the session, so
- * widening a window or moving between pages reads only what is new.
+ * widening a window or moving between views reads only what is new.
  */
 export function useDigests(rows: readonly RunRow[]): { digests: RunDigest[]; failed: { id: string; message: string }[]; pending: number } {
   const [version, setVersion] = useState(0);
@@ -445,7 +436,7 @@ export function useReadLimit(win: Win): { limit: number; more: () => void } {
 
 /* ═══════════════════ shared pieces ═══════════════════ */
 
-/** The page frame's right-hand side: the window and a re-read. */
+/** The page header's right-hand side: the window and a re-read. `auto` says the page chose the window, so it says which and why. */
 export function WindowBar({ win, auto, onPick, onReload, loading }: { win: Win; auto: boolean; onPick: (w: Win) => void; onReload: () => void; loading: boolean }) {
   return (
     <span className="flex flex-wrap items-center gap-2">
@@ -487,31 +478,38 @@ export interface Tile {
   onPick?: () => void;
 }
 
-/** The band of counts above a table. A tile with `onPick` filters the table below it. */
+/**
+ * The band of counts above a table. A tile with `onPick` filters the table below it.
+ * The band sits beside a filter rail, so it folds by its own width, not the screen's:
+ * one row once every tile has room for its words, else three across, else two.
+ */
 export function Tiles({ tiles }: { tiles: Tile[] }) {
+  const row = tiles.length > 5 ? "@[1040px]:grid-flow-col @[1040px]:auto-cols-fr @[1040px]:grid-cols-none" : "@[820px]:grid-flow-col @[820px]:auto-cols-fr @[820px]:grid-cols-none";
   return (
-    <div className="grid grid-cols-2 overflow-hidden rounded-md border border-line bg-surface sm:grid-cols-3 lg:grid-flow-col lg:auto-cols-fr lg:grid-cols-none">
-      {tiles.map((t) => {
-        const body = (
-          <>
-            <span className="truncate text-[10.5px] text-faint">{t.label}</span>
-            <span className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]" style={t.tone ? { color: `var(--color-${t.tone})` } : undefined}>
-              {t.value}
-            </span>
-            <span className="truncate text-[10px] text-ghost">{t.sub}</span>
-          </>
-        );
-        const frame = "-mr-px -mb-px flex min-w-0 flex-col gap-1 border-r border-b border-line px-3 py-2.5 text-left";
-        return t.onPick ? (
-          <button key={t.id} type="button" onClick={t.onPick} aria-pressed={Boolean(t.active)} className={`focusable cursor-pointer transition-colors ${frame} ${t.active ? "bg-raise/80" : "hover:bg-raise/50"}`}>
-            {body}
-          </button>
-        ) : (
-          <div key={t.id} className={frame}>
-            {body}
-          </div>
-        );
-      })}
+    <div className="@container">
+      <div className={`grid grid-cols-2 overflow-hidden rounded-md border border-line bg-surface @[520px]:grid-cols-3 ${row}`}>
+        {tiles.map((t) => {
+          const body = (
+            <>
+              <span className="truncate text-[10.5px] text-faint">{t.label}</span>
+              <span className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]" style={t.tone ? { color: `var(--color-${t.tone})` } : undefined}>
+                {t.value}
+              </span>
+              <span className="truncate text-[10px] text-ghost">{t.sub}</span>
+            </>
+          );
+          const frame = "-mr-px -mb-px flex min-w-0 flex-col gap-1 border-r border-b border-line px-3 py-2.5 text-left";
+          return t.onPick ? (
+            <button key={t.id} type="button" onClick={t.onPick} aria-pressed={Boolean(t.active)} className={`focusable cursor-pointer transition-colors ${frame} ${t.active ? "bg-raise/80" : "hover:bg-raise/50"}`}>
+              {body}
+            </button>
+          ) : (
+            <div key={t.id} className={frame}>
+              {body}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

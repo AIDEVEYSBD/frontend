@@ -1,7 +1,7 @@
 "use client";
 
 import { VertexDetected } from "./vertex-detected";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Mono, Status, Tag } from "./ui";
 import { usePageFacts } from "./assistant";
 import { MCP_ENDPOINT } from "@/lib/site";
@@ -17,6 +17,12 @@ import type { AttachedAgent } from "@/lib/attached";
 import { JOB_STATUS_META, queueTotals } from "@/lib/queue";
 import { QuietNote } from "./overlays";
 import { QUIET } from "@/lib/quiet";
+import { PanelNote, Providers, useConfigChanges } from "./providers";
+import { Keys, OfferedModels } from "./settings";
+import { PeerList, meOf, usePeers } from "./peers";
+import { useSession } from "@/lib/use-session";
+import { Appearance } from "./appearance";
+import { peerCounts } from "@/lib/peers";
 
 /**
  * Configuration: everything this deployment is set up with, in one place.
@@ -25,10 +31,19 @@ import { QUIET } from "@/lib/quiet";
  * shows only what exists on this deployment: the connections the saved
  * workflows configure (read from their documents by /api/configuration,
  * with usage counted from the run journals), the registered tool servers,
- * the attached agents, the models offered, the vault's names and the
- * ingress keys. Nothing here comes from a catalogue: a deployment with no
- * workflow shows no connection, and a read that fails shows an error and
- * no rows.
+ * the attached agents, the peers, the providers and the models offered, the
+ * vault's keys and the ingress keys. Nothing here comes from a catalogue: a
+ * deployment with no workflow shows no connection, and a read that fails
+ * shows an error and no rows.
+ *
+ * Most panels are read. Four are where their subject is managed, and each
+ * reads and writes its own door: Providers and Models (components/
+ * providers.tsx, components/settings.tsx), Credentials (the vault) and Peers
+ * (components/peers.tsx). Appearance is the console's own setting. The old
+ * Settings and Peers pages are these panels; their addresses redirect here.
+ *
+ * A panel is addressed by its id after `#`, which opens it and brings it
+ * into view; `#peer-<id>` is one row of Peers.
  *
  * A figure appears only when it was measured. A connection that is
  * configured and never called says "never called"; there is no health or
@@ -89,28 +104,35 @@ interface Data {
   connected?: boolean;
 }
 
-/** One calm line for a panel whose record was not read (a quiet console, lib/quiet.ts). */
-function PanelNote() {
-  return (
-    <div className="px-4 py-3">
-      <QuietNote inline />
-    </div>
-  );
-}
-
 const SECTIONS = [
   { id: "deployment", label: "Deployment" },
   { id: "egress", label: "Egress allowlist" },
   { id: "agents", label: "Third-party agents" },
   { id: "mcp", label: "MCP server" },
   { id: "registry", label: "Tool servers" },
+  { id: "peers", label: "Peers" },
   { id: "sources", label: "Connected sources" },
   { id: "tools", label: "Tool registry" },
   { id: "gates", label: "Where a person signs" },
+  { id: "providers", label: "Providers" },
   { id: "models", label: "Models" },
   { id: "credentials", label: "Credentials" },
   { id: "ingress", label: "Ingress" },
+  { id: "appearance", label: "Appearance" },
 ];
+
+/** What an address names after `#`: the element to bring into view, and the panel that holds it. A row of Peers is `peer-<id>`. */
+function hashTarget(): { id: string; panel: string } | null {
+  let id = window.location.hash.slice(1);
+  try {
+    id = decodeURIComponent(id);
+  } catch {
+    /* as written */
+  }
+  if (SECTIONS.some((s) => s.id === id)) return { id, panel: id };
+  if (id.startsWith("peer-")) return { id, panel: "peers" };
+  return null;
+}
 
 /**
  * Whether a source is offline or live, from its kind (7.4): a file or a
@@ -154,10 +176,23 @@ export function Configuration() {
   const [mcp, setMcp] = useState<{ endpoint: string; transport: string; auth: string; tools: { name: string; description: string; action: boolean }[]; client: Record<string, unknown> } | null>(null);
   const [folded, setFolded] = useState<Record<string, boolean>>({});
   const [attached, setAttached] = useState<AttachedAgent[]>([]);
+  /** The element an address named after `#`, kept in view while the page above it fills in. */
+  const [arrival, setArrival] = useState<{ id: string; panel: string } | null>(null);
+  const frame = useRef<HTMLDivElement>(null);
   // The MCP registry is the backend's (phase L6); read once for the panel and the page facts.
   const registry = useMcp();
+  // The peer registry (phase L7): read here so the panel's heading and the page facts carry its counts.
+  const peers = usePeers();
+  const { session } = useSession();
 
   useEffect(() => {
+    // An address that names a panel opens it, whatever fold is remembered for it, and brings it into view.
+    const arrive = () => {
+      const to = hashTarget();
+      if (!to) return;
+      setFolded((f) => (f[to.panel] ? { ...f, [to.panel]: false } : f));
+      setArrival(to);
+    };
     // The remembered folds are read after the first paint, so the server and
     // the client render the same page and the folds settle a tick later.
     const cancel = soon(() => {
@@ -167,10 +202,41 @@ export function Configuration() {
       } catch {
         /* fresh */
       }
+      arrive();
     });
+    window.addEventListener("hashchange", arrive);
     fetch("/api/mcp/server").then((r) => r.json()).then(setMcp).catch(() => setMcpFailed(true));
-    return cancel;
+    return () => {
+      cancel();
+      window.removeEventListener("hashchange", arrive);
+    };
   }, []);
+
+  useEffect(() => {
+    if (!arrival || !frame.current) return;
+    // The panels above the one asked for grow as their records arrive, so it is
+    // brought back to the top each time the page changes height, for a few
+    // seconds or until the person scrolls, types or clicks.
+    let live = true;
+    const bring = () => {
+      if (live) (document.getElementById(arrival.id) ?? document.getElementById(arrival.panel))?.scrollIntoView({ block: "start" });
+    };
+    const settle = () => {
+      live = false;
+      watch.disconnect();
+    };
+    const watch = new ResizeObserver(bring);
+    watch.observe(frame.current);
+    bring();
+    const timer = setTimeout(settle, 6000);
+    const acts = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
+    acts.forEach((a) => window.addEventListener(a, settle, { passive: true }));
+    return () => {
+      settle();
+      clearTimeout(timer);
+      acts.forEach((a) => window.removeEventListener(a, settle));
+    };
+  }, [arrival]);
   const toggle = (id: string) => {
     setFolded((f) => {
       const next = { ...f, [id]: !f[id] };
@@ -184,23 +250,40 @@ export function Configuration() {
   };
   const expand = (id: string) => setFolded((f) => (f[id] ? { ...f, [id]: false } : f));
 
-  useEffect(() => {
+  /** Read the record. Read again after a panel below wrote something, a failure leaves the record already shown as it is. */
+  const read = useCallback((again: boolean) => {
     let stop = false;
     fetch("/api/configuration")
       .then(async (r) => {
         const d = await r.json().catch(() => null);
         if (stop) return;
         // A refusal or a fault answers without the record: say so, and show no rows.
-        if (!r.ok || !d || !Array.isArray(d.sources)) setFailed(true);
+        if (!r.ok || !d || !Array.isArray(d.sources)) return void (again || setFailed(true));
         // Quiet (lib/quiet.ts): a record assembled with nothing behind the console is not read as zeros and empty lists.
-        else if (QUIET && d.connected === false) setFailed(true);
-        else setData(d);
+        if (QUIET && d.connected === false) return void (again || setFailed(true));
+        setData(d);
+        setFailed(false);
       })
-      .catch(() => !stop && setFailed(true));
+      .catch(() => !stop && !again && setFailed(true));
     return () => {
       stop = true;
     };
   }, []);
+  useEffect(() => read(false), [read]);
+  // The Providers, Models and Credentials panels write through their own doors; the strip and the
+  // page facts are this record's, so it is read again shortly after the last change.
+  const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const changed = useCallback(() => {
+    if (pending.current) clearTimeout(pending.current);
+    pending.current = setTimeout(() => read(true), 700);
+  }, [read]);
+  useConfigChanges(changed);
+  useEffect(
+    () => () => {
+      if (pending.current) clearTimeout(pending.current);
+    },
+    [],
+  );
 
   const agents = useMemo(
     () => [...new Set((data?.sources ?? []).map((s) => s.agent))].sort(),
@@ -211,6 +294,9 @@ export function Configuration() {
   const used = sources.filter((s) => s.calls > 0).length;
   /** Quiet (lib/quiet.ts): the record was not read; each panel that depends on it says so in one line, without the reason. */
   const quiet = QUIET && failed;
+  /** For the panels that read their own doors: whether the console has nothing behind it (null until the record answers). */
+  const bare = data ? false : failed ? QUIET : null;
+  const peerCount = peerCounts(peers.peers ?? []);
 
   /* The connections the saved workflows configure, as the record lists them:
      a named instance of a backend on a tool binding, with the calls the run
@@ -259,6 +345,8 @@ export function Configuration() {
                 servers: registry.servers.map((s) => ({ id: s.id, label: s.label, status: STATUS_META[s.status].label, tools: s.pin?.tools.length ?? 0, pin: s.pin?.digest ?? null, lastScan: s.last_scan?.at ?? null, hits: s.last_scan?.hits.length ?? 0 })),
               }
             : "reading the registry",
+          // As the peer registry answers: the other parties' agents this deployment may call, and may hear from.
+          peers: peers.peers && !peers.error ? { registered: peers.peers.length, ...peerCount, twoPersonApproval: peers.twoPerson, list: peers.peers.map((p) => ({ id: p.id, label: p.label, status: p.status })) } : "not read",
           // As the attached-agents door answers: the figures are the backend's, measured from the run record.
           thirdPartyAgents: {
             total: attached.length,
@@ -277,13 +365,14 @@ export function Configuration() {
   return (
     <div className="min-h-full">
       {/* The same frame as the control pane: full width to the same cap, the same gutter, so the two pages line up at every size. */}
-      <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7">
+      <div ref={frame} className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7">
         <header className="flex flex-col gap-1.5">
           <h1 className="text-[22px] font-semibold tracking-[-0.02em]">Configuration</h1>
           <p className="max-w-[80ch] text-[12.5px] leading-[1.6] text-faint">
             The systems, tools and services this deployment&rsquo;s workflows are set up with: what each
-            reaches, at what risk, and whether it has been called. Everything here is read from the saved
-            workflows, the run records and the registries; credential values are never displayed.
+            reaches, at what risk, and whether it has been called. Providers, models, credentials and peers
+            are managed here; the rest is read from the saved workflows, the run records and the registries.
+            A credential&rsquo;s value is never shown in full.
           </p>
         </header>
 
@@ -330,7 +419,7 @@ export function Configuration() {
 
         {failed && !QUIET && (
           <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">
-            The configuration could not be read, so the deployment, connections, tools, gates, models, credentials and ingress below show nothing.
+            The configuration could not be read, so the deployment, connections, tools, gates and ingress below show nothing.
           </p>
         )}
 
@@ -465,6 +554,18 @@ export function Configuration() {
           }
         >
           <ToolServers servers={registry.servers} twoPerson={registry.twoPerson} error={registry.error} refresh={registry.refresh} />
+        </Panel>
+
+        {/* ── the peer registry: other parties' agents, admitted the way a tool server is ── */}
+        <Panel
+          id="peers"
+          folded={Boolean(folded["peers"])}
+          onToggle={() => toggle("peers")}
+          title="Peers"
+          caption="Other parties' agents this deployment speaks A2A with. Each is admitted the way a tool server is: its agent card is fetched signed and pinned by digest, and nothing is sent to it, or heard from it, until a person approves the card. A card that changes detaches the peer until someone approves it again. Every request both ways is signed under a secret the two sides share, held in the vault and shown here by name only."
+          meta={peers.peers && !peers.error && peerCount.changed > 0 ? <Tag tone="err" solid>{peerCount.changed} changed</Tag> : undefined}
+        >
+          <PeerList peers={peers.peers} twoPerson={peers.twoPerson} me={meOf(session)} error={peers.error} refresh={peers.refresh} bare={bare} />
         </Panel>
 
         {/* ── sources: the load-bearing table ── */}
@@ -665,89 +766,39 @@ export function Configuration() {
           ))}
         </Panel>
 
-        {/* ── models ── */}
+        {/* ── providers: where model calls can go ── */}
+        <Panel
+          id="providers"
+          folded={Boolean(folded["providers"])}
+          onToggle={() => toggle("providers")}
+          title="Providers"
+          caption="Where model calls can go. A provider is a chat-completions endpoint, the name of the vault key that authenticates to it, and whether it is served on your own hardware. Discover what each serves and offer the models you want; the runtime routes every call to the provider its model names, with that provider's credential from the vault. Local providers are priced by the hardware hour, not per token, and the Costs page uses that rate."
+        >
+          {/* What the deployment's own Google identity can see, before any provider is added: the one place it is shown. */}
+          <VertexDetected />
+          <Providers bare={bare} />
+        </Panel>
+
+        {/* ── models: the short list every model choice in the console shows ── */}
         <Panel
           id="models"
           folded={Boolean(folded["models"])}
           onToggle={() => toggle("models")}
           title="Models"
-          caption="What teams may pick from, the tier each sits in, and the price cost figures are computed against. A model with no price makes its runs unpriced rather than free."
+          caption="What teams may pick from, the tier each sits in, and the price cost figures are computed against. Tick what this deployment offers, from what its catalogue lists and what was offered from a provider above: every model choice in the console shows exactly this list, and a workflow names a model, never a provider. Record the price per million tokens beside each offered model; a model with no price makes its runs unpriced rather than free."
         >
-          <VertexDetected />
-          {/* Quiet: the offered models were not read. The line shows only when nothing else is in the panel (no detected connection above it). */}
-          {quiet && (
-            <div className="hidden px-4 py-3 only:block">
-              <QuietNote inline />
-            </div>
-          )}
-          {!quiet && <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] border-collapse text-[11.5px]">
-              <thead>
-                <tr className="border-b border-line text-left text-[10.5px] text-faint">
-                  <th className="px-4 py-2 font-medium">Model</th>
-                  <th className="px-3 py-2 font-medium">Tier</th>
-                  <th className="px-3 py-2 font-medium">In · $/M</th>
-                  <th className="px-3 py-2 font-medium">Out · $/M</th>
-                  <th className="px-3 py-2 font-medium">Role</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data?.models ?? []).map((m) => {
-                  const tiers = Object.entries(data?.classDefaults ?? {})
-                    .filter(([, id]) => id === m.id)
-                    .map(([t]) => t);
-                  return (
-                    <tr key={m.id} className="border-b border-line last:border-0">
-                      <td className="px-4 py-2.5">
-                        <span className="flex flex-col">
-                          <span className="text-[12px] text-fg">{m.label}</span>
-                          <span className="font-mono text-[10px] text-faint">{m.id}</span>
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5 whitespace-nowrap">{m.class ?? <span className="text-ghost">unassigned</span>}</td>
-                      <td className="tnum px-3 py-2.5">{m.price_in ?? <span className="text-ghost">unpriced</span>}</td>
-                      <td className="tnum px-3 py-2.5">{m.price_out ?? <span className="text-ghost">unpriced</span>}</td>
-                      <td className="px-3 py-2.5 whitespace-nowrap">
-                        <span className="flex flex-wrap gap-1">
-                          {m.id === data?.defaultModel && <Tag tone="ok">run default</Tag>}
-                          {tiers.map((t) => (
-                            <Tag key={t}>{t} tier</Tag>
-                          ))}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              {data && data.models.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-3 text-faint">
-                      No model is offered on this deployment yet. Models are offered on Settings.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>}
+          <OfferedModels bare={bare} onChanged={changed} />
         </Panel>
 
-        {/* ── credentials ── */}
+        {/* ── credentials: the vault ── */}
         <Panel
           id="credentials"
           folded={Boolean(folded["credentials"])}
           onToggle={() => toggle("credentials")}
           title="Credentials"
-          caption="What the vault holds, by name. A connector referencing one of these carries the reference in the spec and never the value, which is what makes a workflow safe to export."
+          caption="What the vault holds, by name. A connector referencing one of these carries the reference in the spec and never the value, which is what makes a workflow safe to export. A value is pasted here once and shown masked from then on; only the runtime reads it, at the moment a tool is called."
         >
-          {quiet ? <PanelNote /> : <div className="flex flex-wrap gap-1.5 px-4 py-3">
-            {(data?.vaultKeys ?? []).map((k) => (
-              <span key={k} className="rounded-sm border border-line bg-raise px-2 py-1 font-mono text-[11px] text-fg">
-                {k}
-              </span>
-            ))}
-            {data && data.vaultKeys.length === 0 && (
-              <span className="text-[11.5px] text-faint">The vault is empty.</span>
-            )}
-          </div>}
+          <Keys bare={bare} onChanged={changed} />
         </Panel>
 
         {/* ── ingress ── */}
@@ -788,6 +839,17 @@ export function Configuration() {
               )}
             </div>
           </div>}
+        </Panel>
+
+        {/* ── appearance: the console's own look ── */}
+        <Panel
+          id="appearance"
+          folded={Boolean(folded["appearance"])}
+          onToggle={() => toggle("appearance")}
+          title="Appearance"
+          caption="How the console looks: one choice for every browser and every person. Card headers can carry a colour for their subject: spend green, approvals amber, live activity blue, controls red, knowledge violet, identity teal, traces indigo. Or the console can stay on its monochrome base."
+        >
+          <Appearance bare={bare} />
         </Panel>
         <p className="pb-4 text-[10.5px] text-ghost">{data?.basis ?? ""}</p>
       </div>

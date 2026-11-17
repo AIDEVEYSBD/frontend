@@ -23,15 +23,16 @@ export const PAGES: Record<string, PageInfo> = {
     suggested: ["What requires attention?", "What does a control denial mean?", "How is spend calculated?"],
   },
   "/finops": {
-    title: "FinOps",
+    title: "Costs",
     shows:
       "Model spend by provider, workflow and step, computed from every journalled model call at the configured price, over a selectable window with per-card overrides. It shows hand-off candidates (steps whose call profile and eval evidence suit a smaller or local model), a calculator that replays the workload on any model, per-step model routing that outranks the spec, the providers the deployment can reach (Foundry, Vertex, Bedrock, vLLM, Ollama, LM Studio) and billing against budget.",
     suggested: ["Which steps could move to a local model?", "What would this month cost on a smaller model?", "How does routing precedence work?"],
   },
-  "/workflows": {
-    title: "Workflows",
-    shows: "The registry of saved workflow specifications, including their versions, digests, model requirements and permitted tools.",
-    suggested: ["What is a spec digest and why does it matter?", "How does a workflow get deployed?"],
+  "/agents": {
+    title: "Agents",
+    shows:
+      "The one list of the agents saved on this deployment: what each does, its kind and owner, whether production runs it (deployed, not deployed, paused, blocked or retired), its version and last run. Opening a row shows the steps inside the agent with their purpose, permitted tools, execution pattern, derived autonomy and recent activity. Each agent opens to its Configuration, Versions and Bill of materials tabs.",
+    suggested: ["How does an agent get deployed?", "How is a step's autonomy derived?", "What is the difference between deleting and retiring an agent?"],
   },
   "/lifecycle": {
     title: "Lifecycle",
@@ -87,11 +88,6 @@ export const PAGES: Record<string, PageInfo> = {
       "An agent's AI bill of materials: its models with deployment and route, its tools with their data classes and sinks' limits, the servers behind them with their names, versions and pinned tool-list digests, its peers with their card digests, the template it was cut from and its digests. It downloads as CycloneDX.",
     suggested: ["What does a data class do?", "Which servers does this agent depend on?", "How do I export this for a vendor review?"],
   },
-  "/roster": {
-    title: "Roster",
-    shows: "The agents within each deployed workflow, including their purpose, execution pattern, permitted tools, derived autonomy and recent activity.",
-    suggested: ["How do agents authenticate to each other?"],
-  },
   "/runs": {
     title: "Runs",
     shows:
@@ -115,12 +111,6 @@ export const PAGES: Record<string, PageInfo> = {
     shows:
       "The guardian: a supervisory model that reads each covered run's trajectory against the run's goal and a rubric. Its limits are a person's, changed through a reviewed policy change: which agents it watches, whether it may hold a run at its next gate or block it, an hourly cap, a confidence floor, its model and cadence. Outside its limits it only raises attention. The page lists every verdict it acted on or raised, with the reason and the model.",
     suggested: ["What may the guardian do on its own?", "Why was a verdict only raised for a person?", "How is the hourly cap counted?"],
-  },
-  "/peers": {
-    title: "Peers",
-    shows:
-      "The A2A peer registry: other parties' agents this factory hands tasks to and hears tasks from. Registering fetches the peer's agent card signed under a secret the two sides share and pins it by digest; the peer stays pending, neither spoken to nor heard, until a person approves the card (a second person when two-person approval is on). A rescan that finds another card marks the peer changed and refuses it both ways until someone approves again, showing the approved digest against the new one and the skills that moved. A card that could not be fetched is kept with the fetch's error. The secret is shown by its vault name only.",
-    suggested: ["Why is this peer refused?", "What changed on this peer's card?", "How do two factories register each other?"],
   },
   "/breakers": {
     title: "Breakers",
@@ -148,13 +138,28 @@ export const PAGES: Record<string, PageInfo> = {
   "/configuration": {
     title: "Configuration",
     shows:
-      "The current configuration of systems, tools, models, credentials and interfaces available to deployed workflows. It presents declared risk, scope and ownership alongside observed health and use, without displaying protected credential values.",
-    suggested: ["Which connectors can act outside the platform?", "How are credentials resolved at runtime?", "What does an untrusted-content designation mean?"],
+      "Everything this deployment is set up with, in folding panels, each addressed by its id after # in the address. Read from the saved workflows, the run records and the registries: the deployment and its egress allowlist, third-party agents, the platform's own MCP server, the registered tool servers, the connections and tools the workflows hold with their declared risk, scope and observed use, where a person signs, and ingress keys with the queue. Managed here: the providers model calls can go to, the models offered with their tier, prices, the run default and each tier's default, the vault's credentials (referenced from specs by name, values shown masked), and the console's appearance. The Peers panel is the A2A peer registry: other parties' agents this deployment hands tasks to and hears tasks from. Registering fetches the peer's agent card signed under a secret the two sides share and pins it by digest; the peer stays pending, neither spoken to nor heard, until a person approves the card (a second person when two-person approval is on). A rescan that finds another card marks the peer changed and refuses it both ways until someone approves again, showing the approved digest against the new one and the skills that moved. A card that could not be fetched is kept with the fetch's error. The secret is shown by its vault name only.",
+    suggested: ["Which connectors can act outside the platform?", "Which model is the default and why?", "Why is this peer refused?"],
   },
-  "/settings": {
-    title: "Settings",
-    shows: "Deployment settings for the model gateway, approved models, routing defaults, prices, protected credentials and operator preferences.",
-    suggested: ["Which model is the default and why?"],
+  "/explore": {
+    title: "Explore",
+    shows: "Everything the platform recorded, in three views: tool calls, agent activity and security events. A timeline narrows the window, a filter rail narrows by agent, tool, status, kind of event and person, and each row opens the run entry it came from.",
+    suggested: ["Which tools fail most often?", "What did this agent do in the last day?", "Which calls were refused, and by what?"],
+  },
+  "/dashboards": {
+    title: "Dashboards",
+    shows: "Three fixed boards drawn from the same records as the pages they link to: security posture (approvals waiting, refusals, kills, lockdown, controls that fired), cost (spend over time, by agent and by model, budget use) and workload results (findings by severity and workload).",
+    suggested: ["What needs a security lead's attention?", "Where is spend concentrated?", "How many findings are still open?"],
+  },
+  "/sessions": {
+    title: "Sessions",
+    shows: "Every live connection and who is behind it: people signed in to the console, agents holding a key or a workload sign-in, and connections held open to tool servers. An administrator can end a session or a client's registration.",
+    suggested: ["Who is connected right now?", "What stops working when a session is ended?", "When does a session have to be renewed?"],
+  },
+  "/authorization": {
+    title: "Authorization servers",
+    shows: "The outside issuers this deployment trusts: how people sign in to the console, the services trusted to issue a per-person token for a tool, and the issuers whose tokens an agent or worker may exchange for a short session without a stored key.",
+    suggested: ["How do people sign in here?", "Why call a tool as the person and not with a shared key?", "What happens when trust in an issuer is withdrawn?"],
   },
   "/iam": {
     title: "Identity and access",

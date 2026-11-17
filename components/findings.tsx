@@ -10,7 +10,7 @@ import { Field, Textarea } from "./forms";
 import { Pick } from "./select";
 import { ActiveFilters, SearchBox } from "./filters";
 import { DrillModal } from "./drill";
-import { PageHeader } from "./section";
+import { GroupHeader } from "./page-tabs";
 import { NotConnected, NotConnectedNote, useDoor } from "./pending";
 import { FindingDetail, hasFindingDetail } from "./finding-detail";
 import {
@@ -415,10 +415,10 @@ function FindingsPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7" data-hue="red">
-      <PageHeader title="Findings">
+      <GroupHeader group="results" tab="findings">
         What the security workloads reported: each finding with its severity, its status, the agent and the run it came from. Open one to read its evidence in the run&rsquo;s journal and to change
         its status.
-      </PageHeader>
+      </GroupHeader>
 
       <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface px-4 py-3 elev-1">
         <div className="flex flex-wrap items-end gap-x-4 gap-y-3">

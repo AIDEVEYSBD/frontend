@@ -10,7 +10,8 @@ import { Field, Switch, Textarea } from "./forms";
 import { Pick } from "./select";
 import { DigestChip } from "./digest-chip";
 import { SpecDiffView } from "./versions";
-import { Figures, PageHeader, Section } from "./section";
+import { Figures, Section } from "./section";
+import { GroupHeader } from "./page-tabs";
 import { soon } from "@/lib/soon";
 import { useSession } from "@/lib/use-session";
 import { api, errorText } from "@/lib/api/client";
@@ -232,9 +233,9 @@ function AttestationsPage() {
   const quietDown = QUIET && Boolean(error) && !standings;
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
-      <PageHeader title="Attestations">
+      <GroupHeader group="assurance" tab="attestations">
         Each deployed agent&rsquo;s owner says, on a schedule, that it still does what was approved. The record carries what changed in its spec since the last time, and an overdue attestation is raised as attention.
-      </PageHeader>
+      </GroupHeader>
       {error && (
         <Banner tone="err" title="Could not read the attestations">
           {error}

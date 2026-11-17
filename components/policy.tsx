@@ -11,7 +11,8 @@ import { Pick } from "./select";
 import { ChipEditor } from "./gate-form";
 import { ControlMark } from "./control-ref";
 import { TextDialog } from "./text-dialog";
-import { Figures, JsonDetails, PageHeader, Section } from "./section";
+import { Figures, JsonDetails, Section } from "./section";
+import { GroupHeader } from "./page-tabs";
 import { soon } from "@/lib/soon";
 import { useSession } from "@/lib/use-session";
 import { agentDocument, listAgents, listAttached, type AgentSummary } from "@/lib/api/l2";
@@ -813,10 +814,10 @@ function PolicyPage() {
   const quietDown = QUIET && Boolean(error) && !list && !targets;
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
-      <PageHeader title="Policy">
-        The rules that decide what runs may do change here: proposed with a diff in their own vocabulary, approved by someone other than the proposer, applied at their effective time, and rolled back at once
-        when it is an emergency. A spec&rsquo;s own policy keeps its path through versions, reviews and the promotion gate; simulate it here first.
-      </PageHeader>
+      <GroupHeader group="controls" tab="policy">
+        The rules that decide what runs may do change here: proposed with a diff, approved by someone other than the proposer, applied at their effective time, and rolled back at once in an emergency. A
+        spec&rsquo;s own policy keeps its path through versions and reviews; simulate it here first.
+      </GroupHeader>
       {error && (
         <Banner tone="err" title="Could not read the policy door">
           {error}

@@ -20,15 +20,15 @@ interface Stage {
 }
 
 const STAGES: Stage[] = [
-  { by: "A person", title: "Request and dataset", text: "Someone permitted to run a workload starts it and hands over the dataset it will work on." },
-  { by: "The agent", title: "Steps", text: "Each step uses an approved model, admitted knowledge and only the tools granted to that step.", bounded: true },
-  { by: "A named role", title: "Gate", text: "The work waits. The role named on the gate approves and it continues, or refuses and it stops.", gate: true },
-  { by: "Output", title: "Findings", text: "Each finding is linked to the evidence beneath it and to the steps that produced it." },
-  { by: "Output", title: "Report", text: "The workload's report, kept as a record with its state and history." },
+  { by: "01 / Define", title: "Scope and inputs", text: "An authorised user selects the workload and provides the approved data and scope." },
+  { by: "02 / Execute", title: "Controlled analysis", text: "The agent uses approved models, knowledge and tools within defined execution limits.", bounded: true },
+  { by: "03 / Approve", title: "Human review", text: "At each approval gate, the designated role decides whether the work can proceed.", gate: true },
+  { by: "04 / Assess", title: "Findings and evidence", text: "Review findings alongside the supporting evidence and the steps that produced them." },
+  { by: "05 / Report", title: "Documented outcomes", text: "Retain the assessment report with its review status and history." },
 ];
 
-const LIMITS = "Limits enforced outside the model: budget, step limit, stop control, emergency stop";
-const JOURNAL = "Every step, tool call and decision is written as it happens, in order. The record can be verified afterwards.";
+const LIMITS = "Independent controls: budgets, step limits and emergency stop";
+const JOURNAL = "A chronological record of execution, tool activity and decisions, available for verification and review.";
 
 /** Three steps in a row: the agent's work is a sequence, not one act. */
 function StepMarks() {
@@ -46,7 +46,7 @@ function StepMarks() {
 
 function Box({ s, children }: { s: Stage; children?: ReactNode }) {
   return (
-    <div className={`flex h-full flex-col gap-2 rounded-sm border bg-surface p-4 ${s.gate ? "border-line-strong border-t-[3px] border-t-brand pt-[14px]" : "border-line-strong"}`}>
+    <div data-reveal className={`flex h-full flex-col gap-2 rounded-sm border bg-surface p-4 ${s.gate ? "border-line-strong border-t-[3px] border-t-brand pt-[14px]" : "border-line-strong"}`}>
       <span className="flex items-center justify-between gap-2 text-[11.5px] font-medium text-faint">
         {s.by}
         {s.bounded && <StepMarks />}
@@ -107,15 +107,15 @@ export function WorkFlow() {
         </div>
         {/* The band keeps the stages' columns, so its words sit under the boxes' own. */}
         <div className={`${COLS} items-baseline rounded-sm bg-ink py-4 text-on-ink`}>
-          <span className="pl-[17px] text-[15.5px] font-semibold tracking-[-0.01em]">Journal</span>
+          <span className="pl-[17px] text-[15.5px] font-semibold tracking-[-0.01em]">Execution journal</span>
           <span className="col-start-3 col-end-10 px-[17px] text-[13.5px] leading-[1.55] opacity-80">{JOURNAL}</span>
         </div>
       </div>
 
       {/* Narrow: the journal is the rail down the left, and every stage hangs from it. */}
       <div className="lg:hidden">
-        <ol className="relative flex flex-col gap-4 pb-6 pl-9">
-          <span aria-hidden className="absolute top-0 bottom-0 left-[5px] w-[2px] bg-ink" />
+        <ol className="relative flex flex-col gap-4 border-l-2 border-ink pb-6 pl-9">
+
           {STAGES.map((s) => (
             <li key={s.title} className="relative">
               <span aria-hidden className={`absolute top-5 -left-9 size-3 ${s.gate ? "bg-brand" : "bg-ink"}`} />
@@ -125,7 +125,7 @@ export function WorkFlow() {
           ))}
         </ol>
         <div className="flex flex-col gap-1.5 rounded-sm bg-ink px-5 py-4 text-on-ink">
-          <span className="text-[15.5px] font-semibold tracking-[-0.01em]">Journal</span>
+          <span className="text-[15.5px] font-semibold tracking-[-0.01em]">Execution journal</span>
           <span className="text-[13.5px] leading-[1.55] opacity-80">{JOURNAL}</span>
         </div>
       </div>

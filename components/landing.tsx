@@ -1,220 +1,124 @@
+import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { BrandLockup } from "./brand";
 import { NavIcon, type NavIconName } from "./nav-icons";
 import { WorkFlow } from "./landing-flow";
-
-/**
- * The page in front of the console.
- *
- * It says what the console is for and how work in it is controlled, and
- * nothing about what has happened in it: no figures, no results, no cases.
- * Every link goes to a page of the console. Drawn the way ABB draws a page:
- * white ground, black type, space, and red only for the wordmark, the rule
- * above a headline and the one action.
- */
-
-const CONSOLE = "/overview";
-
-/* ═══════════════════ Pieces ═══════════════════ */
+import "./landing.css";
 
 const WRAP = "mx-auto w-full max-w-[1240px] px-6 sm:px-10";
+const PHOTO_SOURCE = "https://new.abb.com/news/detail/133078/abb-introduces-automation-extended-enabling-industrial-innovation-with-continuity";
 
-/** The short red rule that sits above a headline. */
 function Rule() {
-  return <span aria-hidden className="block h-[3px] w-10 bg-brand" />;
+  return <span aria-hidden className="landing-rule block h-[3px] w-10 bg-brand" />;
 }
 
-/** The page's one action. `primary` is the red one; the header carries the ink one. */
 function OpenConsole({ primary = false, size = "lg" }: { primary?: boolean; size?: "sm" | "lg" }) {
   return (
-    <Link
-      href={CONSOLE}
-      className={`focusable inline-flex w-fit items-center justify-center rounded-sm font-medium whitespace-nowrap transition-[filter] duration-100 hover:brightness-[1.08] active:brightness-95 ${
-        size === "lg" ? "h-12 gap-2.5 px-6 text-[15px]" : "h-9 gap-2 px-4 text-[13px]"
-      } ${primary ? "bg-brand text-on-brand" : "bg-ink text-on-ink"}`}
-    >
-      Open console
-      <NavIcon name="arrow-right" size={size === "lg" ? 16 : 14} />
+    <Link href="/overview" className={`landing-action focusable inline-flex w-fit shrink-0 items-center justify-center gap-2.5 rounded-sm font-medium whitespace-nowrap transition-[filter] hover:brightness-110 ${size === "lg" ? "min-h-12 px-6 text-[15px]" : "min-h-11 px-3 sm:px-4 text-[13px]"} ${primary ? "bg-brand text-on-brand" : "bg-ink text-on-ink"}`}>
+      Open console <NavIcon name="arrow-right" size={16} />
     </Link>
   );
 }
 
-/** A section's headline on the left and what it introduces on the right. */
 function Head({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="grid gap-x-10 gap-y-5 lg:grid-cols-12 lg:items-end">
-      <div className="flex flex-col gap-6 lg:col-span-6">
+    <div data-reveal className="grid gap-x-12 gap-y-6 lg:grid-cols-2 lg:items-end">
+      <div className="flex flex-col gap-6">
         <Rule />
-        <h2 className="max-w-[18ch] text-[30px] leading-[1.08] font-semibold tracking-[-0.028em] text-fg sm:text-[38px]">{title}</h2>
+        <h2 className="max-w-[21ch] text-[32px] leading-[1.1] font-semibold tracking-[-0.03em] text-fg sm:text-[42px]">{title}</h2>
       </div>
-      <p className="max-w-[58ch] text-[15.5px] leading-[1.6] text-dim lg:col-span-6">{children}</p>
+      <p className="max-w-[58ch] text-[16px] leading-[1.7] text-dim">{children}</p>
     </div>
   );
 }
 
-/* ═══════════════════ Header ═══════════════════ */
-
 export function LandingHeader() {
   return (
-    <header className="sticky top-0 z-40 border-b border-line bg-surface">
-      <div className={`${WRAP} flex h-16 items-center gap-4`}>
-        <Link href="/" aria-label="Agent Factory" className="focusable rounded-sm">
-          <BrandLockup height={22} />
-        </Link>
-        <span className="grow" />
+    <header className="sticky top-0 z-40 border-b border-line bg-surface/95 backdrop-blur-md">
+      <a href="#main-content" className="focusable sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-4 focus:z-50 focus:bg-surface focus:p-4">Skip to content</a>
+      <div className={`${WRAP} flex h-20 items-center justify-between gap-3`}>
+        <Link href="/" aria-label="ABB Agent Factory home" className="focusable min-w-0 rounded-sm"><BrandLockup height={22} /></Link>
+        <nav aria-label="On this page" className="hidden items-center gap-7 text-[13px] font-medium text-dim lg:flex">
+          <a className="focusable py-3 hover:text-fg" href="#workloads">Security workloads</a>
+          <a className="focusable py-3 hover:text-fg" href="#controls">Platform controls</a>
+          <a className="focusable py-3 hover:text-fg" href="#passage">How it works</a>
+        </nav>
         <OpenConsole size="sm" />
       </div>
     </header>
   );
 }
 
-/* ═══════════════════ Hero ═══════════════════ */
-
 export function Hero() {
   return (
     <section className="bg-surface">
-      <div className={`${WRAP} flex flex-col pt-20 pb-20 sm:pt-28 sm:pb-24 lg:pt-36 lg:pb-32`}>
-        <Rule />
-        <h1 className="mt-9 text-[42px] leading-[1.02] font-semibold tracking-[-0.035em] text-fg sm:text-[58px] lg:text-[76px]">
-          <span className="block">Four security workloads.</span>
-          <span className="block">One set of controls.</span>
-        </h1>
-        <p className="mt-9 max-w-[60ch] text-[17px] leading-[1.6] text-dim lg:text-[19px]">
-          Agent Factory is the console for static code analysis, penetration testing, firewall rule review and threat hunting carried out by
-          agents, each on a dataset a person hands over. Every one of them works behind the same controls: approval by named roles, limits
-          enforced outside the model, and a journal of every decision that can be verified.
-        </p>
-        <div className="mt-11">
-          <OpenConsole primary />
+      <div className={`${WRAP} grid gap-10 pt-12 pb-12 sm:pt-16 lg:grid-cols-[1.12fr_1fr] lg:items-center lg:gap-12 lg:pt-20 lg:pb-20`}>
+        <div data-reveal>
+          <div className="flex items-center gap-4"><Rule /><p className="text-[12px] font-semibold tracking-[0.12em] text-dim uppercase">AI for security operations</p></div>
+          <h1 className="mt-8 text-[44px] leading-[1.04] font-semibold tracking-[-0.045em] text-fg sm:text-[62px] lg:text-[68px]">
+            AI-powered security.<br /><span className="text-dim">Human-led control.</span>
+          </h1>
+          <p className="mt-7 max-w-[47ch] text-[17px] leading-[1.65] text-dim">
+            Bring AI to security operations with clear accountability. Agent Factory brings four security workloads together, with defined approvals, controlled execution and traceable evidence.
+          </p>
+          <div className="mt-9 flex flex-wrap items-center gap-x-7 gap-y-5">
+            <OpenConsole primary />
+            <a href="#workloads" className="landing-action focusable inline-flex min-h-11 items-center gap-2 text-[14px] font-medium text-fg">Explore workloads <NavIcon name="arrow-right" size={16} /></a>
+          </div>
+        </div>
+        <figure data-reveal data-reveal-delay="120" className="min-w-0">
+          <div className="landing-photo relative aspect-[5/4] overflow-hidden bg-canvas lg:aspect-[4/5]">
+            <Image src="/images/landing/control-room.webp" alt="Two ABB specialists reviewing information in an industrial control room" fill sizes="(min-width: 1240px) 500px, (min-width: 1024px) 44vw, (min-width: 640px) calc(100vw - 80px), calc(100vw - 48px)" loading="eager" fetchPriority="high" className="object-cover object-[58%_center]" />
+            <span aria-hidden className="absolute bottom-0 left-0 h-1 w-20 bg-brand" />
+          </div>
+          <figcaption className="mt-3 flex justify-between gap-4 text-[11px] text-faint"><span>Industrial expertise. Digital capability.</span><a href={PHOTO_SOURCE} className="focusable underline-offset-4 hover:underline">Image: ABB</a></figcaption>
+        </figure>
+      </div>
+      <div className="border-t border-line">
+        <div className={`${WRAP} grid gap-6 py-7 sm:grid-cols-3 sm:gap-8`}>
+          {[
+            ["Defined scope", "Approved data, tools and targets."],
+            ["Human oversight", "Decisions at defined approval gates."],
+            ["Traceable execution", "Evidence connected to every finding."],
+          ].map(([title, text], i) => <div key={title} data-reveal data-reveal-delay={i * 80} className="flex gap-4"><span aria-hidden className="pt-1 font-mono text-[11px] text-faint">0{i + 1}</span><div><h2 className="text-[15px] font-semibold text-fg">{title}</h2><p className="mt-1 text-[13px] leading-relaxed text-dim">{text}</p></div></div>)}
         </div>
       </div>
     </section>
   );
 }
 
-/* ═══════════════════ The four workloads ═══════════════════ */
-
-interface Workload {
-  name: string;
-  icon: NavIconName;
-  /** What a person hands over. */
-  given: string;
-  /** What the agent does with it. */
-  does: string;
-  /** Where a person decides. */
-  decides: string;
-  /** What comes out. */
-  out: string;
-}
-
+interface Workload { name: string; icon: NavIconName; summary: string; input: string; review: string; output: string }
 const WORKLOADS: Workload[] = [
-  {
-    name: "Static code analysis",
-    icon: "file-code",
-    given: "The source code to be analysed.",
-    does: "Reads the code for vulnerabilities and traces the paths by which each could be reached.",
-    decides: "A reviewer confirms a finding or sets it aside as a false positive.",
-    out: "Findings in order of priority, each with remediation guidance, and a report.",
-  },
-  {
-    name: "Penetration testing",
-    icon: "crosshair",
-    given: "Signed rules of engagement, the permitted targets, the test window and an inventory of assets.",
-    does: "Tests the permitted targets one at a time and keeps the evidence for what it finds.",
-    decides: "Scope and methods are approved before testing starts. The report is signed off when it ends.",
-    out: "A report ranked by risk, with guidance on remediation, rollback and retest.",
-  },
-  {
-    name: "Firewall rule review",
-    icon: "brick-wall",
-    given: "Exports of the rules, objects, address translation and topology.",
-    does: "Works out the effective policy and marks the rules that carry risk, with the evidence for each.",
-    decides: "The owner of a rule and a security approver accept or refuse each proposed change.",
-    out: "Proposals to narrow a rule or limit it in time, each with rollback guidance.",
-  },
-  {
-    name: "Threat hunting",
-    icon: "radar",
-    given: "Security telemetry and threat intelligence, as an offline extract or from an approved live source.",
-    does: "Investigates suspicious activity in the telemetry and writes an assessment of what it found.",
-    decides: "A reviewer accepts or rejects each assessment before it is reported.",
-    out: "Assessments linked to the telemetry beneath them, and a report.",
-  },
+  { name: "Static code analysis", icon: "file-code", summary: "Identify vulnerabilities in source code and assess potential attack paths.", input: "Source code submitted for analysis.", review: "Validate findings and resolve false positives.", output: "Prioritised findings with remediation guidance." },
+  { name: "Penetration testing", icon: "crosshair", summary: "Assess security exposure within an explicitly approved scope.", input: "Rules of engagement, approved targets and test windows.", review: "Approve scope and methods before execution.", output: "Risk-ranked findings with test evidence and retest guidance." },
+  { name: "Firewall rule review", icon: "brick-wall", summary: "Understand effective policy and identify rules that introduce risk.", input: "Rule sets, network objects, NAT and topology exports.", review: "Route proposed changes to owners and security approvers.", output: "Targeted rule changes with rollback guidance." },
+  { name: "Threat hunting", icon: "radar", summary: "Investigate suspicious activity using telemetry and threat intelligence.", input: "Offline datasets or approved live sources.", review: "Validate assessments before reporting.", output: "Evidence-linked assessments and investigation reports." },
 ];
-
-const FACETS: { key: keyof Pick<Workload, "given" | "does" | "decides" | "out">; label: string }[] = [
-  { key: "given", label: "A person hands over" },
-  { key: "does", label: "The agent" },
-  { key: "decides", label: "A person decides" },
-  { key: "out", label: "What comes out" },
-];
-
-function WorkloadName({ w }: { w: Workload }) {
-  return (
-    <Link href="/workloads" className="focusable group flex w-fit items-center gap-3 self-start rounded-sm text-fg">
-      <span className="grid size-9 shrink-0 place-items-center border border-line-strong bg-surface">
-        <NavIcon name={w.icon} size={17} />
-      </span>
-      <span className="text-[16px] leading-tight font-semibold tracking-[-0.01em] underline-offset-4 group-hover:underline">{w.name}</span>
-      <NavIcon name="arrow-right" size={14} className="text-faint transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-fg" />
-    </Link>
-  );
-}
 
 export function Workloads() {
   return (
-    <section id="workloads" className="scroll-mt-16 border-t border-line bg-surface">
-      <div className={`${WRAP} flex flex-col gap-14 py-20 lg:py-28`}>
-        <Head title="The four workloads">
-          Each workload is an agent the console runs on a dataset a person hands over, with its own approvals, findings and report. Where a
-          workload is not yet connected on a deployment, its screens say so and show no records.
-        </Head>
-
-        {/* Wide: a table, one workload to a row. */}
-        <div className="hidden lg:block">
-          <div className="grid grid-cols-[1.15fr_1fr_1fr_1fr_1fr] gap-x-8 border-t-2 border-fg py-3.5 text-[12px] font-medium text-faint">
-            <span>Workload</span>
-            {FACETS.map((f) => (
-              <span key={f.key}>{f.label}</span>
-            ))}
-          </div>
-          {WORKLOADS.map((w) => (
-            <div key={w.name} className="grid grid-cols-[1.15fr_1fr_1fr_1fr_1fr] gap-x-8 border-t border-line py-8">
-              <WorkloadName w={w} />
-              {FACETS.map((f) => (
-                <p key={f.key} className="pt-[7px] text-[14px] leading-[1.55] text-mist">
-                  {w[f.key]}
-                </p>
-              ))}
-            </div>
-          ))}
-          <div className="border-t border-line" />
-        </div>
-
-        {/* Narrow: the same four facts under each workload. */}
-        <div className="flex flex-col lg:hidden">
-          {WORKLOADS.map((w) => (
-            <div key={w.name} className="flex flex-col gap-6 border-t-2 border-fg py-8">
-              <WorkloadName w={w} />
-              <dl className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
-                {FACETS.map((f) => (
-                  <div key={f.key} className="flex flex-col gap-1.5">
-                    <dt className="text-[12px] font-medium text-faint">{f.label}</dt>
-                    <dd className="text-[14px] leading-[1.55] text-mist">{w[f.key]}</dd>
-                  </div>
-                ))}
+    <section id="workloads" className="border-t border-line bg-surface">
+      <div className={`${WRAP} flex flex-col gap-12 py-20 lg:py-24`}>
+        <Head title="Four workloads. One coordinated approach.">From code analysis to threat hunting, bring security assessments into a shared operating model. Define the scope, review the findings and retain the evidence in one place.</Head>
+        <div className="grid gap-5 md:grid-cols-2">
+          {WORKLOADS.map((w, i) => (
+            <article key={w.name} data-reveal data-reveal-delay={i % 2 * 90} className="landing-workload flex flex-col border border-line p-6 sm:p-8">
+              <div className="mb-7 flex items-center justify-between"><NavIcon name={w.icon} size={28} /><span aria-hidden className="font-mono text-[12px] text-faint">0{i + 1}</span></div>
+              <h3 className="text-[24px] leading-tight font-semibold tracking-[-0.025em] text-fg">{w.name}</h3>
+              <p className="mt-3 max-w-[44ch] text-[15px] leading-[1.65] text-dim">{w.summary}</p>
+              <dl className="mt-7 flex flex-col gap-4 border-t border-line pt-6">
+                {[["Inputs", w.input], ["Human oversight", w.review], ["Deliverables", w.output]].map(([label, text]) => <div key={label} className="grid gap-1 sm:grid-cols-[120px_1fr] sm:gap-4"><dt className="text-[12px] font-semibold text-fg">{label}</dt><dd className="text-[13px] leading-[1.6] text-dim">{text}</dd></div>)}
               </dl>
-            </div>
+              <Link href="/workloads" aria-label={`Explore ${w.name.toLowerCase()}`} className="landing-action focusable mt-7 flex min-h-11 w-fit items-center gap-3 text-[13px] font-semibold text-fg">Explore workload <NavIcon name="arrow-right" size={16} /></Link>
+            </article>
           ))}
         </div>
+        <p className="-mt-5 text-[12px] leading-relaxed text-faint">Workload availability depends on your deployment. The console identifies services that are not yet connected.</p>
       </div>
     </section>
   );
 }
-
-/* ═══════════════════ How work is controlled ═══════════════════
-   Grouped as the console's navigation is, each line a page of it. */
 
 interface Area {
   group: string;
@@ -226,85 +130,84 @@ interface Area {
 const AREAS: Area[] = [
   {
     group: "Operations",
-    line: "What is running, and what is waiting for a person.",
+    line: "Keep operations in view.",
     pages: [
-      { href: "/overview", label: "Overview", what: "Runs, spend and the items that need a person, over one period." },
-      { href: "/runs", label: "Runs", what: "Each run step by step, with its limits and the control that stops it." },
-      { href: "/approvals", label: "Approvals", what: "The gates where a named role decides before a consequential step." },
+      { href: "/overview", label: "Overview", what: "Monitor runs, expenditure and outstanding actions in one view." },
+      { href: "/runs", label: "Runs", what: "Follow execution, review limits and inspect individual steps." },
+      { href: "/approvals", label: "Approvals", what: "Review and authorise actions at defined approval gates." },
     ],
   },
   {
     group: "Agents",
-    line: "What each agent is permitted to do.",
+    line: "Configure agents with clear boundaries.",
     pages: [
-      { href: "/workloads", label: "Workloads", what: "The four workloads, each with its set-up, findings and report." },
-      { href: "/workflows", label: "Workflows", what: "An agent's steps, its gates and their approvers, its step limit and its budget." },
-      { href: "/evals", label: "Evals", what: "Evaluation of an agent on recorded runs, before a version is released." },
-      { href: "/acceptance", label: "Acceptance", what: "The acceptance record of each workload: criteria, results and sign-off by role." },
+      { href: "/workloads", label: "Workloads", what: "Configure security workloads and access their findings and reports." },
+      { href: "/agents", label: "Agents", what: "Define execution steps, approval roles and resource limits." },
+      { href: "/evals", label: "Evaluations", what: "Assess agent performance against recorded runs before release." },
+      { href: "/acceptance", label: "Acceptance", what: "Review acceptance criteria, results and accountable sign-off." },
     ],
   },
   {
     group: "Identity",
-    line: "Who may do what.",
-    pages: [{ href: "/iam", label: "People and agents", what: "Sign-in with roles. A role carries permissions, and an action a role lacks is refused." }],
+    line: "Assign access. Establish accountability.",
+    pages: [
+      { href: "/iam", label: "People and agents", what: "Manage role-based access for people and agents." },
+      { href: "/sessions", label: "Sessions", what: "See every live connection, who is behind it, and end it when needed." },
+      { href: "/authorization", label: "Authorization servers", what: "Decide which outside sign-in services the platform trusts." },
+    ],
   },
   {
     group: "Connections",
-    line: "What an agent can reach.",
+    line: "Connect approved tools and information.",
     pages: [
-      { href: "/configuration", label: "Configuration", what: "The approved tool catalogue, the grants for each step and the routing to approved models." },
-      { href: "/knowledge", label: "Knowledge", what: "Curated sources, each admitted by a person before an agent can read it." },
-      { href: "/datasets", label: "Datasets", what: "What a person hands over to a workload: uploads and approved datasets." },
+      { href: "/configuration", label: "Configuration", what: "Manage approved tools, step-level permissions and model routing." },
+      { href: "/knowledge", label: "Knowledge", what: "Give agents access to reviewed and approved knowledge sources." },
+      { href: "/datasets", label: "Datasets", what: "Manage the uploads and approved datasets used by each workload." },
     ],
   },
   {
     group: "Security and Policy",
-    line: "The rules, and the record that they held.",
+    line: "Apply policy. Retain the evidence.",
     pages: [
-      { href: "/guardrails", label: "Controls", what: "The controls applied to every agent, enforced outside the model." },
-      { href: "/policy", label: "Policy", what: "Policy changed by review: proposed, approved by someone else, then applied." },
-      { href: "/findings", label: "Findings", what: "Each finding with the journal entries and evidence beneath it." },
-      { href: "/evidence", label: "Evidence", what: "The journal assembled for an assessor, with the verification of each run cited." },
+      { href: "/guardrails", label: "Controls", what: "Inspect the controls enforced independently of the model." },
+      { href: "/policy", label: "Policy", what: "Review and independently approve policy changes before application." },
+      { href: "/findings", label: "Findings", what: "Review findings alongside supporting evidence and execution records." },
+      { href: "/evidence", label: "Evidence", what: "Access evidence packs and run verification records for assessment." },
     ],
   },
   {
     group: "Observability",
-    line: "What was used, and what it cost.",
+    line: "Understand activity and resource use.",
     pages: [
-      { href: "/finops", label: "FinOps", what: "Model spend by provider, agent and step, against the budgets set." },
-      { href: "/observability/tools", label: "Tool calls", what: "Every tool call: when, by which agent, at which step, and how it ended." },
+      { href: "/finops", label: "Costs", what: "Track model expenditure by person, team, agent and step against budgets." },
+      { href: "/explore", label: "Explore", what: "Filter and read every recorded tool call, agent action and security event." },
+      { href: "/dashboards", label: "Dashboards", what: "Read security posture, cost and workload results on fixed boards." },
     ],
   },
 ];
 
 export function Controls() {
   return (
-    <section id="controls" className="scroll-mt-16 border-t border-line bg-surface">
-      <div className={`${WRAP} flex flex-col gap-14 py-20 lg:py-28`}>
-        <Head title="How work is controlled">
-          The same controls stand around every workload. They are set out here as the console sets them out, and each line opens the page
-          that holds it.
-        </Head>
-
-        {/* Columns, so the groups keep the navigation's order reading down and no group leaves a hole beside a longer one. */}
-        <div className="-mb-14 gap-x-10 sm:columns-2 lg:columns-3">
-          {AREAS.map((a) => (
-            <div key={a.group} className="mb-14 flex break-inside-avoid flex-col border-t-2 border-fg pt-5">
-              <h3 className="text-[17px] font-semibold tracking-[-0.015em] text-fg">{a.group}</h3>
-              <p className="mt-1.5 mb-5 text-[13.5px] text-faint">{a.line}</p>
-              <ul className="flex flex-col">
-                {a.pages.map((p) => (
-                  <li key={p.href} className="border-t border-line">
-                    <Link href={p.href} className="focusable group flex flex-col gap-1 rounded-sm py-4">
-                      <span className="flex items-center gap-2 text-[14.5px] font-medium text-fg">
-                        <span className="underline-offset-4 group-hover:underline">{p.label}</span>
-                        <NavIcon name="arrow-right" size={13} className="text-faint transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-fg" />
-                      </span>
-                      <span className="text-[13.5px] leading-[1.55] text-dim">{p.what}</span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+    <section id="controls" className="border-t border-line bg-canvas">
+      <div className={`${WRAP} flex flex-col gap-12 py-20 lg:py-24`}>
+        <Head title="Control at every stage.">Give teams a common framework for operating AI agents. Manage access, set execution limits and review decisions through controls enforced independently of the model.</Head>
+        <div data-reveal className="grid overflow-hidden border border-line bg-surface lg:grid-cols-2">
+          <figure className="flex min-w-0 flex-col">
+            <div className="landing-photo relative min-h-60 grow overflow-hidden sm:min-h-72"><Image src="/images/landing/industrial-operations.webp" alt="ABB illustration of an industrial automation environment with connected control systems" fill sizes="(min-width: 1240px) 580px, (min-width: 1024px) 46vw, 100vw" className="object-cover" /></div>
+            <figcaption className="px-5 py-3 text-[11px] text-faint">Industrial automation environment. <a href={PHOTO_SOURCE} className="focusable underline-offset-4 hover:underline">Image: ABB</a></figcaption>
+          </figure>
+          <div className="flex flex-col justify-center gap-5 p-7 sm:p-10">
+            <Rule /><h3 className="max-w-[22ch] text-[28px] leading-[1.15] font-semibold tracking-[-0.025em] text-fg">Empower your people.<br />Keep decisions accountable.</h3>
+            <p className="max-w-[48ch] text-[15px] leading-[1.7] text-dim">AI supports the assessment. Your teams define the scope, approve consequential actions and review the results. Budgets, permissions and stop controls establish the boundaries for execution.</p>
+            <Link href="/approvals" className="landing-action focusable inline-flex min-h-11 w-fit items-center gap-3 text-[14px] font-semibold text-fg">Explore approvals <NavIcon name="arrow-right" size={16} /></Link>
+          </div>
+        </div>
+        <div className="grid gap-x-10 gap-y-12 md:grid-cols-2 lg:grid-cols-3">
+          {AREAS.map((a, i) => (
+            <div key={a.group} data-reveal data-reveal-delay={i % 3 * 70} className="border-t-2 border-fg pt-5">
+              <h3 className="text-[19px] font-semibold tracking-[-0.015em] text-fg">{a.group}</h3>
+              <p className="mt-2 mb-5 text-[13px] leading-relaxed text-dim">{a.line}</p>
+              <ul>{a.pages.map((p) => <li key={p.href} className="border-t border-line"><Link href={p.href} className="landing-action focusable group flex flex-col gap-1.5 rounded-sm py-4"><span className="flex items-center justify-between gap-2 text-[14px] font-medium text-fg"><span className="underline-offset-4 group-hover:underline">{p.label}</span><NavIcon name="arrow-right" size={14} /></span><span className="text-[13px] leading-[1.6] text-dim">{p.what}</span></Link></li>)}</ul>
             </div>
           ))}
         </div>
@@ -313,60 +216,35 @@ export function Controls() {
   );
 }
 
-/* ═══════════════════ How a piece of work moves ═══════════════════ */
-
 export function Passage() {
   return (
-    <section id="passage" className="scroll-mt-16 border-t border-line bg-canvas">
-      <div className={`${WRAP} flex flex-col gap-14 py-20 lg:py-28`}>
-        <Head title="How a piece of work moves through it">
-          The same passage for every workload: a request with its dataset, the agent&rsquo;s steps, a gate where a named role decides, then the
-          findings and the report. The journal runs beneath all of it.
-        </Head>
+    <section id="passage" className="border-t border-line bg-surface">
+      <div className={`${WRAP} flex flex-col gap-12 py-20 lg:py-24`}>
+        <Head title="From assessment to action.">Follow a consistent process from the initial request to the final report. Defined approval gates keep people involved, while the execution journal preserves the record for review.</Head>
         <WorkFlow />
       </div>
     </section>
   );
 }
 
-/* ═══════════════════ Closing ═══════════════════ */
-
 export function Closing() {
   return (
-    <section className="border-t border-line bg-surface">
-      <div className={`${WRAP} flex flex-col gap-10 py-24 lg:flex-row lg:items-end lg:gap-16 lg:py-32`}>
-        <div className="flex flex-col gap-7">
-          <Rule />
-          <p className="text-[32px] leading-[1.08] font-semibold tracking-[-0.03em] text-fg sm:text-[44px]">The console starts empty.</p>
-          <p className="-mt-2 max-w-[44ch] text-[17px] leading-[1.6] text-dim lg:text-[19px]">It shows what was done in it, and nothing else.</p>
-        </div>
-        <span className="grow" />
+    <section className="border-t border-line bg-canvas">
+      <div data-reveal className={`${WRAP} flex flex-col gap-9 py-20 lg:flex-row lg:items-end lg:justify-between lg:gap-16 lg:py-24`}>
+        <div className="flex flex-col gap-6"><Rule /><h2 className="max-w-[23ch] text-[36px] leading-[1.1] font-semibold tracking-[-0.035em] text-fg sm:text-[48px]">Bring clarity to your security operations.</h2><p className="max-w-[48ch] text-[17px] leading-[1.65] text-dim">Access your workloads, review decisions and follow the evidence. All through one console.</p></div>
         <OpenConsole primary />
       </div>
     </section>
   );
 }
 
-/* ═══════════════════ Footer ═══════════════════ */
-
 export function LandingFooter() {
   return (
-    <footer className="border-t border-line bg-canvas">
-      <div className={`${WRAP} flex flex-col gap-12 py-14 lg:flex-row lg:gap-16`}>
-        <div className="shrink-0 lg:w-[220px]">
-          <BrandLockup height={22} />
-        </div>
-        <nav aria-label="The console" className="grid grow grid-cols-2 gap-x-8 gap-y-10 sm:grid-cols-3 lg:grid-cols-6">
-          {AREAS.map((a) => (
-            <div key={a.group} className="flex flex-col gap-3">
-              <span className="text-[12px] font-semibold text-fg">{a.group}</span>
-              {a.pages.map((p) => (
-                <Link key={p.href} href={p.href} className="focusable w-fit rounded-sm text-[13px] text-dim underline-offset-4 hover:text-fg hover:underline">
-                  {p.label}
-                </Link>
-              ))}
-            </div>
-          ))}
+    <footer className="border-t border-line bg-surface">
+      <div className={`${WRAP} flex flex-col gap-10 py-12`}>
+        <div className="flex flex-wrap items-center justify-between gap-5"><BrandLockup height={24} /><p className="text-[13px] text-dim">AI-powered security. Human-led control.</p></div>
+        <nav aria-label="The console" className="grid grid-cols-2 gap-x-8 gap-y-9 border-t border-line pt-9 sm:grid-cols-3 lg:grid-cols-6">
+          {AREAS.map((a) => <div key={a.group} className="flex flex-col gap-3"><span className="text-[12px] font-semibold text-fg">{a.group}</span>{a.pages.map((p) => <Link key={p.href} href={p.href} className="focusable w-fit rounded-sm py-1 text-[13px] text-dim underline-offset-4 hover:text-fg hover:underline">{p.label}</Link>)}</div>)}
         </nav>
       </div>
     </footer>

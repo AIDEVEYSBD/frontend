@@ -1,15 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Mono, Status } from "./ui";
 import { EmptyState, QuietNote } from "./overlays";
-import { PageHeader } from "./section";
-import { Chips, FilterBar, SearchBox } from "./filters";
 import { ControlMark } from "./control-ref";
 import { Skeleton } from "./loaders";
 import { WATCH_LABEL, type WatchEvent } from "@/lib/guardrails-watch";
+import { explainControl } from "@/lib/guardrails";
 import { redactText } from "@/lib/redact";
 import { getLockdown, listGates, type Gate, type LockdownState } from "@/lib/api/l5";
 import { readUsers } from "@/lib/api/l2";
@@ -17,7 +16,10 @@ import type { RunRow } from "@/lib/api/client";
 import { useSession } from "@/lib/use-session";
 import { soon } from "@/lib/soon";
 import { QUIET } from "@/lib/quiet";
-import { Card, ErrorLine, MoreRow, RUN_BATCH, ROW_BATCH, RunLink, Tiles, agentOf, ago, clockText, count, lastActive, runHref, useDigests, useLedger, type RunDigest, type RunEvent } from "./observability-shared";
+import { winMs } from "./window-pick";
+import { Card, ErrorLine, MoreRow, RUN_BATCH, ROW_BATCH, RunLink, Tiles, agentOf, ago, clockText, count, lastActive, runHref, useDigests, windowWords, type RunDigest, type RunEvent } from "./observability-shared";
+import { ExploreFrame, Timeline, domainOf, fill, narrow, pageChips, type FacetDef } from "./explore-parts";
+import type { ViewProps } from "./explore";
 
 /**
  * Security events: one stream, newest first.
@@ -33,6 +35,9 @@ import { Card, ErrorLine, MoreRow, RUN_BATCH, ROW_BATCH, RunLink, Tiles, agentOf
  * operator actions from the audit trail for those allowed to read it.
  * Nothing here shows a prompt, an argument or a returned value: only the
  * control's own words and the redacted excerpt.
+ *
+ * The stream is what the doors hold, whatever the window; the window, the
+ * rail and the timeline then cut it.
  */
 
 type Group = "refusal" | "screening" | "breach" | "marked" | "gate" | "kill" | "lockdown" | "operator";
@@ -156,12 +161,23 @@ function fromAudit(e: AuditEvent): SecEvent | null {
   return null;
 }
 
-export function SecurityEventsView() {
+
+const FACETS: FacetDef<SecEvent>[] = [
+  { id: "kind", label: "Kind of event", of: (e) => [e.group], name: (v) => GROUP[v as Group]?.label ?? v, order: GROUPS },
+  { id: "subject", label: "Agent or application", of: (e) => (e.subject ? [e.subject] : []) },
+  { id: "control", label: "What fired", of: (e) => (e.control ? [e.control] : []), name: (v) => explainControl(v).name },
+  { id: "person", label: "Person", of: (e) => (e.who ? [e.who] : []) },
+];
+
+const when = (e: SecEvent) => e.at;
+const words = (e: SecEvent) => `${e.label} ${e.control} ${e.subject} ${e.node} ${e.run} ${e.what} ${e.detail} ${e.who}`;
+/** A control or a person stopped something: a refusal, a block, a breach, a kill, a lockdown. */
+const stopped = (e: SecEvent) => e.tone === "err";
+
+export function SecurityEventsView({ ledger, win, now, address, tick, onBusy }: ViewProps) {
   const router = useRouter();
-  const [now] = useState(() => Date.now());
   const { session, loaded, can } = useSession();
   const mayAudit = loaded && Boolean(session) && can("iam");
-  const ledger = useLedger();
   const [data, setData] = useState<Guardrails | null>(null);
   const [error, setError] = useState("");
   const [gates, setGates] = useState<Gate[] | null>(null);
@@ -170,12 +186,10 @@ export function SecurityEventsView() {
   const [lockdownError, setLockdownError] = useState("");
   const [audit, setAudit] = useState<AuditEvent[] | null>(null);
   const [auditError, setAuditError] = useState("");
-  const [busy, setBusy] = useState(true);
-  const [tick, setTick] = useState(0);
+  /** The re-read the three doors last finished answering. */
+  const [answered, setAnswered] = useState(-1);
+  const busy = answered !== tick;
 
-  const [groups, setGroups] = useState<Set<string>>(new Set());
-  const [subjects, setSubjects] = useState<Set<string>>(new Set());
-  const [q, setQ] = useState("");
   const [shown, setShown] = useState(ROW_BATCH);
   const [limit, setLimit] = useState(RUN_BATCH);
 
@@ -185,7 +199,7 @@ export function SecurityEventsView() {
         let left = 3;
         const done = () => {
           left -= 1;
-          if (left === 0) setBusy(false);
+          if (left === 0) setAnswered(tick);
         };
         fetch("/api/guardrails", { cache: "no-store" })
           .then(async (r) => {
@@ -224,12 +238,11 @@ export function SecurityEventsView() {
         .catch((e) => setAuditError((e as Error).message));
     });
   }, [mayAudit, tick]);
-
-  const reload = useCallback(() => {
-    setBusy(true);
-    ledger.reload();
-    setTick((t) => t + 1);
-  }, [ledger]);
+  // The page's "Read again" turns while this view's own doors are being read.
+  useEffect(() => {
+    onBusy(busy);
+    return () => onBusy(false);
+  }, [busy, onBusy]);
 
   /* The runs the door names, newest first: their journals give each firing its entry. */
   const named = useMemo(() => {
@@ -316,198 +329,224 @@ export function SecurityEventsView() {
     return out.sort((a, b) => b.at - a.at);
   }, [data, gates, lockdown, audit, journals.digests]);
 
-  const needle = q.trim().toLowerCase();
-  const matches = (e: SecEvent, skip?: "group" | "subject") =>
-    (skip === "group" || !groups.size || groups.has(e.group)) &&
-    (skip === "subject" || !subjects.size || subjects.has(e.subject)) &&
-    (!needle || `${e.label} ${e.control} ${e.subject} ${e.node} ${e.run} ${e.what} ${e.detail} ${e.who}`.toLowerCase().includes(needle));
-  const filtered = stream.filter((e) => matches(e));
-  const bySubject = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const e of stream) if (e.subject) m.set(e.subject, (m.get(e.subject) ?? 0) + 1);
-    return [...m.entries()].sort((a, b) => b[1] - a[1]);
-  }, [stream]);
-  const tally = (g: Group) => stream.filter((e) => e.group === g).length;
-  const toggle = (set: (f: (s: Set<string>) => Set<string>) => void) => (v: string) =>
-    set((s) => {
-      const n = new Set(s);
-      if (n.has(v)) n.delete(v);
-      else n.add(v);
-      return n;
-    });
-  const only = (g: Group) => setGroups((s) => (s.size === 1 && s.has(g) ? new Set() : new Set([g])));
-  const is = (g: Group) => groups.size === 1 && groups.has(g);
-  const filterCount = groups.size + subjects.size + (needle ? 1 : 0);
-  const clear = () => {
-    setGroups(new Set());
-    setSubjects(new Set());
-    setQ("");
-  };
+  // The window cuts the stream by when each event happened; one with no recorded time shows under all time only.
+  const inWin = useMemo(() => (win === "all" ? stream : stream.filter((e) => e.at > 0 && now - e.at <= winMs(win))), [stream, win, now]);
+  const cut = useMemo(() => narrow(inWin, FACETS, address, when, words), [inWin, address]);
+  const domain = useMemo(() => domainOf(win, now, inWin.map(when)), [win, now, inWin]);
+  const buckets = useMemo(() => (domain ? fill(domain, cut.timeline, when, stopped) : []), [domain, cut.timeline]);
+  const untimed = cut.timeline.filter((e) => !e.at).length;
+
+  const filtered = cut.list;
+  const kinds = address.all("kind");
+  const tally = (g: Group) => cut.facets.find((f) => f.id === "kind")?.values.find((v) => v.value === g)?.count ?? 0;
+  const only = (g: Group) => address.set("kind", kinds.length === 1 && kinds[0] === g ? [] : [g]);
+  const is = (g: Group) => kinds.length === 1 && kinds[0] === g;
+  const chips = [...cut.chips, ...pageChips(address)];
 
   const ready = data !== null || Boolean(error);
   const nothing = ready && !busy && stream.length === 0;
   const unread = named.length - journals.digests.length - journals.pending - journals.failed.length;
   // No record, no count: a figure that could not be read is unknown, never zero.
-  const dash = busy && !ready ? "…" : error && !data ? "unknown" : null;
+  const dash = error && !data ? "unknown" : null;
   // A quiet console (lib/quiet.ts) says once that it is not connected, whichever of the reads failed, and prints no reason.
   // With nothing read into the stream there are no figures to show either: a count of zero would say nothing happened.
   const quietGap = QUIET && Boolean(error || data?.error || gatesError || lockdownError || auditError || ledger.error);
   const quietDown = quietGap && stream.length === 0;
 
-  return (
-    <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
-      <PageHeader
-        title="Security events"
-        action={
-          <Button size="sm" variant="solid" tone="neutral" loading={busy} onClick={reload}>
-            Read again
-          </Button>
-        }
-      >
-        What the controls did and what people did about it, newest first: refusals, screening blocks and flags, gates opened and answered, operator kills and lockdown changes. Each row names what fired and on which run, and opens the run at that entry.
-      </PageHeader>
+  const tiles = (
+    <Tiles
+      tiles={[
+        { id: "all", label: "Events listed", value: dash ?? count(cut.except("kind").length), sub: data ? `across ${count(data.runs)} run${data.runs === 1 ? "" : "s"} on record` : "the record was not read", onPick: () => address.set("kind", []) },
+        { id: "refusal", label: "Refusals", value: dash ?? count(tally("refusal")), sub: data ? `${count(data.runsWithARefusal)} run${data.runsWithARefusal === 1 ? "" : "s"} with a refusal` : "calls a control stopped", tone: tally("refusal") ? "err" : undefined, onPick: () => only("refusal"), active: is("refusal") },
+        { id: "screening", label: "Screening", value: dash ?? count(tally("screening")), sub: "prompts and responses blocked or flagged", tone: tally("screening") ? "err" : undefined, onPick: () => only("screening"), active: is("screening") },
+        { id: "gate", label: "Gate events", value: count(tally("gate")), sub: gates ? `${count(gates.length)} waiting now` : "opened and answered", tone: gates?.length ? "warn" : undefined, onPick: () => only("gate"), active: is("gate") },
+        { id: "kill", label: "Operator kills", value: dash ?? count(tally("kill")), sub: "runs stopped by a person", tone: tally("kill") ? "err" : undefined, onPick: () => only("kill"), active: is("kill") },
+        { id: "lockdown", label: "Lockdown", value: lockdown ? (lockdown.on ? "On" : "Off") : lockdownError ? "unknown" : "…", sub: lockdown?.at ? `${lockdown.on ? "set" : "lifted"} ${ago(ms(lockdown.at), now)}${lockdown.by ? ` by ${lockdown.by}` : ""}` : lockdown ? "never switched on this deployment" : "", tone: lockdown?.on ? "err" : undefined, onPick: () => only("lockdown"), active: is("lockdown") },
+      ]}
+    />
+  );
 
+  const notes = (
+    <>
       {quietGap && <QuietNote />}
       {!QUIET && error && <ErrorLine what="The record of what the controls did could not be read" message={error} />}
       {!QUIET && data?.error && <ErrorLine what="The record of what the controls did is incomplete" message={data.error} />}
       {!QUIET && gatesError && <ErrorLine what="The approvals inbox did not answer, so gates still waiting are missing" message={gatesError} />}
       {!QUIET && lockdownError && <ErrorLine what="The lockdown door did not answer, so its state is missing" message={lockdownError} />}
       {!QUIET && auditError && <ErrorLine what="The audit trail could not be read, so kills and lockdown changes made outside a run are missing" message={auditError} />}
+    </>
+  );
 
-      {!quietDown && <Tiles
-        tiles={[
-          { id: "all", label: "Events listed", value: dash ?? count(stream.length), sub: data ? `across ${count(data.runs)} run${data.runs === 1 ? "" : "s"} on record` : "reading the record", onPick: () => setGroups(new Set()) },
-          { id: "refusal", label: "Refusals", value: dash ?? count(tally("refusal")), sub: data ? `${count(data.runsWithARefusal)} run${data.runsWithARefusal === 1 ? "" : "s"} with a refusal` : "calls a control stopped", tone: tally("refusal") ? "err" : undefined, onPick: () => only("refusal"), active: is("refusal") },
-          { id: "screening", label: "Screening blocks and flags", value: dash ?? count(tally("screening")), sub: "prompts and responses the screener matched", tone: tally("screening") ? "err" : undefined, onPick: () => only("screening"), active: is("screening") },
-          { id: "gate", label: "Gate events", value: (busy && !ready ? "…" : null) ?? count(tally("gate")), sub: gates ? `${count(gates.length)} waiting now` : "opened and answered", tone: gates?.length ? "warn" : undefined, onPick: () => only("gate"), active: is("gate") },
-          { id: "kill", label: "Operator kills", value: dash ?? count(tally("kill")), sub: "runs stopped by a person", tone: tally("kill") ? "err" : undefined, onPick: () => only("kill"), active: is("kill") },
-          { id: "lockdown", label: "Lockdown", value: lockdown ? (lockdown.on ? "On" : "Off") : lockdownError ? "unknown" : "…", sub: lockdown?.at ? `${lockdown.on ? "set" : "lifted"} ${ago(ms(lockdown.at), now)}${lockdown.by ? ` by ${lockdown.by}` : ""}` : lockdown ? "never switched on this deployment" : "", tone: lockdown?.on ? "err" : undefined, onPick: () => only("lockdown"), active: is("lockdown") },
-        ]}
-      />}
+  // Nothing could be read on a quiet console: the note has said so, and there is nothing true to draw under it.
+  if (quietDown) return notes;
 
-      {quietDown ? null : nothing && !error ? (
-        <EmptyState
-          title="No security events yet"
-          detail={data && data.runs > 0 ? `${count(data.runs)} run${data.runs === 1 ? "" : "s"} are on record and no control has refused, screened, gated or stopped anything on them.` : "Nothing has run on this deployment, so no control has fired. Events are listed here as runs are recorded."}
-          action={<Button size="sm" variant="solid" tone="ink" href="/guardrails">Open controls</Button>}
-        />
-      ) : (
-        <>
-          <section className="flex flex-col gap-2 rounded-lg border border-line bg-surface px-4 py-3 elev-1">
-            <FilterBar count={filterCount} onClear={clear}>
-              <Chips label="Kind" items={GROUPS.map((g) => ({ value: g, label: GROUP[g].label, count: stream.filter((e) => matches(e, "group") && e.group === g).length, active: groups.has(g) }))} onToggle={toggle(setGroups)} />
-              {bySubject.length > 0 && <Chips label="Agent or application" items={bySubject.slice(0, 8).map(([s, n]) => ({ value: s, label: s, count: n, active: subjects.has(s) }))} onToggle={toggle(setSubjects)} />}
-              <SearchBox value={q} onChange={setQ} placeholder="Search control, run, step or text" width="w-[280px]" />
-            </FilterBar>
-          </section>
+  if (!ready) {
+    return (
+      <Card title="Security events" hue="control" meta="reading what the controls did…">
+        <div className="p-4">
+          <Skeleton lines={4} />
+        </div>
+      </Card>
+    );
+  }
 
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-line bg-surface px-3 py-2">
-            <span className="min-w-0 grow text-[11.5px] leading-[1.5] text-faint">
-              The door answers its 40 most recent firings and 300 most recent watch events; the ledger adds the runs it marks killed or refused. Journals are read for <span className="tnum font-medium text-fg">{count(journals.digests.length)}</span> of the{" "}
-              <span className="tnum font-medium text-fg">{count(named.length)}</span> run{named.length === 1 ? "" : "s"} they name, {RUN_BATCH} at a time, to give each firing its entry and to find gate answers and kills.
-              {journals.pending > 0 ? ` Reading ${count(journals.pending)} more…` : ""}
-              {journals.failed.length > 0 && !QUIET && <span className="text-err"> {count(journals.failed.length)} did not read: {journals.failed[0].message}</span>}
-              {!mayAudit && loaded ? " Kills and lockdown changes made outside a run are on the audit trail, which needs the iam permission to read." : ""}
-            </span>
-            {unread > 0 && (
-              <Button size="sm" variant="solid" tone="neutral" disabled={journals.pending > 0} onClick={() => setLimit((n) => n + RUN_BATCH)}>
-                Read {Math.min(RUN_BATCH, unread)} more run{Math.min(RUN_BATCH, unread) === 1 ? "" : "s"}
-              </Button>
+  if (stream.length === 0 || inWin.length === 0 || !domain) {
+    const newest = Math.max(0, ...stream.map(when));
+    return (
+      <>
+        {notes}
+        {/* Zeros beside a note that a door did not answer would read as "nothing happened": the figures wait for every door. */}
+        {!quietGap && tiles}
+        {nothing && !error && (
+          <EmptyState
+            title="No security events yet"
+            detail={data && data.runs > 0 ? `${count(data.runs)} run${data.runs === 1 ? "" : "s"} are on record and no control has refused, screened, gated or stopped anything on them.` : "Nothing has run on this deployment, so no control has fired. Events are listed here as runs are recorded."}
+            action={<Button size="sm" variant="solid" tone="ink" href="/guardrails">Open controls</Button>}
+          />
+        )}
+        {stream.length > 0 && (
+          <EmptyState
+            title={`No security events in ${windowWords(win)}`}
+            detail={`The record holds ${count(stream.length)} event${stream.length === 1 ? "" : "s"} outside it${newest ? `; the most recent was ${ago(newest, now)}` : ""}. Widen the window to read ${stream.length === 1 ? "it" : "them"}.`}
+            action={<Button size="sm" variant="solid" tone="ink" onClick={() => address.window("all")}>Show all time</Button>}
+          />
+        )}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {notes}
+      <ExploreFrame
+        timeline={<Timeline title={`Security events, ${windowWords(win)}`} buckets={buckets} step={domain.step} span={address.span} onSpan={address.setSpan} nouns={["event", "events"]} flagNoun="refused, blocked or stopped" untimed={untimed} />}
+        sections={[{ facets: cut.facets }]}
+        address={address}
+        chips={chips}
+        placeholder="Search control, run, step or text"
+        shown={`${count(filtered.length)} event${filtered.length === 1 ? "" : "s"}`}
+      >
+        {tiles}
+
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-line bg-surface px-3 py-2">
+          <span className="min-w-0 grow text-[11.5px] leading-[1.5] text-faint">
+            The door answers its 40 most recent firings and 300 most recent watch events; the ledger adds the runs it marks killed or refused. Journals are read for <span className="tnum font-medium text-fg">{count(journals.digests.length)}</span> of the{" "}
+            <span className="tnum font-medium text-fg">{count(named.length)}</span> run{named.length === 1 ? "" : "s"} they name, {RUN_BATCH} at a time, to give each firing its entry and to find gate answers and kills.
+            {journals.pending > 0 ? ` Reading ${count(journals.pending)} more…` : ""}
+            {journals.failed.length > 0 && !QUIET && (
+              <span className="text-err">
+                {" "}
+                {count(journals.failed.length)} did not read: {journals.failed[0].message}
+              </span>
             )}
-          </div>
+            {!mayAudit && loaded ? " Kills and lockdown changes made outside a run are on the audit trail, which needs the iam permission to read." : ""}
+          </span>
+          {unread > 0 && (
+            <Button size="sm" variant="solid" tone="neutral" disabled={journals.pending > 0} onClick={() => setLimit((n) => n + RUN_BATCH)}>
+              Read {Math.min(RUN_BATCH, unread)} more run{Math.min(RUN_BATCH, unread) === 1 ? "" : "s"}
+            </Button>
+          )}
+        </div>
 
-          <Card title="Events" hue="control" meta={`${count(filtered.length)} of ${count(stream.length)} · newest first · text is redacted of secrets`}>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] border-collapse text-[11.5px]">
-                <thead>
-                  <tr className="border-b border-line text-left text-[10.5px] text-faint">
-                    <th className="px-4 py-2 font-medium">When</th>
-                    <th className="px-3 py-2 font-medium">Event</th>
-                    <th className="px-3 py-2 font-medium">What fired</th>
-                    <th className="px-3 py-2 font-medium">Agent or application</th>
-                    <th className="px-3 py-2 font-medium">What it said</th>
-                    <th className="px-3 py-2 font-medium">Run</th>
+        <Card title="Events" hue="control" meta={`${count(filtered.length)} of ${count(inWin.length)} · newest first · text is redacted of secrets`}>
+          <div className="overflow-x-auto">
+            {/* Beside the rail the table has less room: under 960 of it, what fired sits under the event and the run under what it said. */}
+            <table className="w-full min-w-[640px] border-collapse text-[11.5px]">
+              <thead>
+                <tr className="border-b border-line text-left text-[10.5px] text-faint">
+                  <th className="px-4 py-2 font-medium">When</th>
+                  <th className="px-3 py-2 font-medium">
+                    Event<span className="@[960px]:hidden"> and what fired</span>
+                  </th>
+                  <th className="hidden px-3 py-2 font-medium @[960px]:table-cell">What fired</th>
+                  <th className="px-3 py-2 font-medium">Agent or application</th>
+                  <th className="px-3 py-2 font-medium">
+                    What it said<span className="@[960px]:hidden">, and where</span>
+                  </th>
+                  <th className="hidden px-3 py-2 font-medium @[960px]:table-cell">Run</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.slice(0, shown).map((e) => {
+                  const href = e.run ? runHref(e.run, e.entry || undefined) : e.href;
+                  const fired = e.control ? <ControlMark control={e.control} /> : <span className="text-ghost">no control named</span>;
+                  const where = e.run ? (
+                    <>
+                      <RunLink run={e.run} entry={e.entry || undefined} />
+                      <Link href={href} onClick={(ev) => ev.stopPropagation()} className="focusable w-fit rounded-sm text-[10.5px] font-medium whitespace-nowrap text-fg underline">
+                        {e.entry ? "Open at this entry" : "Open run"}
+                      </Link>
+                    </>
+                  ) : href ? (
+                    <Link href={href} onClick={(ev) => ev.stopPropagation()} className="focusable w-fit rounded-sm text-[10.5px] font-medium whitespace-nowrap text-fg underline">
+                      {e.href === "/control" ? "Open control" : "Open audit trail"}
+                    </Link>
+                  ) : null;
+                  return (
+                    <tr key={e.key} onClick={href ? () => router.push(href) : undefined} className={`border-b border-line last:border-0 hover:bg-raise/50 ${href ? "cursor-pointer" : ""}`}>
+                      <td className="px-4 py-2 align-top whitespace-nowrap">
+                        <span className="tnum text-fg">{e.at ? clockText(e.at) : "unknown"}</span>
+                        <span className="block text-[10px] text-ghost">{e.at ? ago(e.at, now) : ""}</span>
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <Status tone={e.tone}>{e.label}</Status>
+                        {e.who && (
+                          <span className="block max-w-[26ch] truncate text-[10px] text-ghost" title={e.who}>
+                            by {e.who}
+                          </span>
+                        )}
+                        <span className="mt-1 block @[960px]:hidden">{fired}</span>
+                      </td>
+                      <td className="hidden px-3 py-2 align-top @[960px]:table-cell">{fired}</td>
+                      <td className="px-3 py-2 align-top">
+                        {e.subject ? (
+                          <span className="flex flex-col">
+                            <span className="text-[12px] font-medium whitespace-nowrap text-fg">{e.subject}</span>
+                            {e.node && <Mono className="text-[10px] text-faint">{e.node}</Mono>}
+                          </span>
+                        ) : (
+                          <span className="text-ghost">the estate</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <span className="block max-w-[52ch] text-[11.5px] leading-[1.5] text-mist">{e.what}</span>
+                        {e.detail && e.detail !== e.what && (
+                          <span className="line-clamp-2 max-w-[52ch] font-mono text-[10.5px] leading-[1.5] [overflow-wrap:anywhere] text-faint" title={e.detail}>
+                            {e.detail}
+                          </span>
+                        )}
+                        <span className="block text-[10px] text-ghost">{e.source}</span>
+                        {where && <span className="mt-1 flex max-w-[260px] flex-col gap-0.5 @[960px]:hidden">{where}</span>}
+                      </td>
+                      <td className="hidden px-3 py-2 align-top @[960px]:table-cell">{where && <span className="flex w-[150px] flex-col gap-0.5">{where}</span>}</td>
+                    </tr>
+                  );
+                })}
+                {filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-[11.5px] text-faint">
+                      No event matches these filters.
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {filtered.slice(0, shown).map((e) => {
-                    const href = e.run ? runHref(e.run, e.entry || undefined) : e.href;
-                    return (
-                      <tr key={e.key} onClick={href ? () => router.push(href) : undefined} className={`border-b border-line last:border-0 hover:bg-raise/50 ${href ? "cursor-pointer" : ""}`}>
-                        <td className="px-4 py-2 align-top whitespace-nowrap">
-                          <span className="tnum text-fg">{e.at ? clockText(e.at) : "unknown"}</span>
-                          <span className="block text-[10px] text-ghost">{e.at ? ago(e.at, now) : ""}</span>
-                        </td>
-                        <td className="px-3 py-2 align-top">
-                          <Status tone={e.tone}>{e.label}</Status>
-                          {e.who && <span className="block max-w-[26ch] truncate text-[10px] text-ghost" title={e.who}>by {e.who}</span>}
-                        </td>
-                        <td className="px-3 py-2 align-top">{e.control ? <ControlMark control={e.control} /> : <span className="text-ghost">no control named</span>}</td>
-                        <td className="px-3 py-2 align-top">
-                          {e.subject ? (
-                            <span className="flex flex-col">
-                              <span className="text-[12px] font-medium whitespace-nowrap text-fg">{e.subject}</span>
-                              {e.node && <Mono className="text-[10px] text-faint">{e.node}</Mono>}
-                            </span>
-                          ) : (
-                            <span className="text-ghost">the estate</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 align-top">
-                          <span className="block max-w-[52ch] text-[11.5px] leading-[1.5] text-mist">{e.what}</span>
-                          {e.detail && e.detail !== e.what && <span className="line-clamp-2 max-w-[52ch] font-mono text-[10.5px] leading-[1.5] text-faint" title={e.detail}>{e.detail}</span>}
-                          <span className="block text-[10px] text-ghost">{e.source}</span>
-                        </td>
-                        <td className="max-w-[220px] px-3 py-2 align-top">
-                          {e.run ? (
-                            <span className="flex flex-col gap-0.5">
-                              <RunLink run={e.run} entry={e.entry || undefined} />
-                              <Link href={href} onClick={(ev) => ev.stopPropagation()} className="focusable w-fit rounded-sm text-[10.5px] font-medium text-fg underline">
-                                {e.entry ? "Open at this entry" : "Open run"}
-                              </Link>
-                            </span>
-                          ) : href ? (
-                            <Link href={href} onClick={(ev) => ev.stopPropagation()} className="focusable w-fit rounded-sm text-[10.5px] font-medium text-fg underline">
-                              {e.href === "/control" ? "Open control" : "Open audit trail"}
-                            </Link>
-                          ) : null}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {!ready && (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-4">
-                        <Skeleton lines={4} />
-                      </td>
-                    </tr>
-                  )}
-                  {ready && filtered.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-[11.5px] text-faint">
-                        {stream.length ? "No event matches these filters." : error ? (QUIET ? "Not connected on this deployment." : "Nothing to list: the record could not be read.") : "Reading…"}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            {filtered.length > 0 && (
-              <MoreRow
-                action={
-                  filtered.length > shown ? (
-                    <Button size="sm" variant="solid" tone="neutral" onClick={() => setShown((n) => n + ROW_BATCH)}>
-                      Show {Math.min(ROW_BATCH, filtered.length - shown)} more
-                    </Button>
-                  ) : undefined
-                }
-              >
-                Showing {count(Math.min(shown, filtered.length))} of {count(filtered.length)} event{filtered.length === 1 ? "" : "s"}. The table draws {ROW_BATCH} rows at a time.
-              </MoreRow>
-            )}
-          </Card>
-        </>
-      )}
-    </div>
+                )}
+              </tbody>
+            </table>
+          </div>
+          {filtered.length > 0 && (
+            <MoreRow
+              action={
+                filtered.length > shown ? (
+                  <Button size="sm" variant="solid" tone="neutral" onClick={() => setShown((n) => n + ROW_BATCH)}>
+                    Show {Math.min(ROW_BATCH, filtered.length - shown)} more
+                  </Button>
+                ) : undefined
+              }
+            >
+              Showing {count(Math.min(shown, filtered.length))} of {count(filtered.length)} event{filtered.length === 1 ? "" : "s"}. The table draws {ROW_BATCH} rows at a time.
+            </MoreRow>
+          )}
+        </Card>
+      </ExploreFrame>
+    </>
   );
 }

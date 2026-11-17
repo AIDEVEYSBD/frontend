@@ -106,7 +106,7 @@ describe("the gate's override", () => {
     expect(itemLine({ verdict: "approved", by: "Rui", at: "", note: "" })).toBe("approved by Rui");
     expect(itemLine({ kind: "drift", ref: "drift:triage", detail: "tool mix moved" })).toBe("drift drift:triage: tool mix moved");
     expect(itemLine({ id: "x-1" })).toBe("x-1");
-    expect([findingHref({ kind: "drift", ref: "drift:x" }), findingHref({ kind: "peer", ref: "" }), findingHref({ kind: "nothing" })]).toEqual(["/drift", "/peers", null]);
+    expect([findingHref({ kind: "drift", ref: "drift:x" }), findingHref({ kind: "peer", ref: "" }), findingHref({ kind: "nothing" })]).toEqual(["/drift", "/configuration#peers", null]);
   });
 });
 

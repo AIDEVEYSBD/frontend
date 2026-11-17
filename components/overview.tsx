@@ -252,7 +252,7 @@ function Overview() {
             footer={
               <>
                 <FootNote>{agents.top.length ? `${agents.top.length} of ${plural(agents.of, "agent")}` : "By runs or spend"}</FootNote>
-                <Button size="sm" href="/workflows">
+                <Button size="sm" href="/agents">
                   View all
                 </Button>
               </>

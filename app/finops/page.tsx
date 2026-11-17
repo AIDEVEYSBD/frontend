@@ -1,7 +1,7 @@
 import { FinOps } from "@/components/finops";
 
 export const metadata = {
-  title: "FinOps — Agent Factory",
+  title: "Costs — Agent Factory",
   description: "Model spend by provider, workflow and step, with routing, hand-off candidates and a cost calculator.",
 };
 

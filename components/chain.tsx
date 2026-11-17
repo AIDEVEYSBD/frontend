@@ -9,7 +9,8 @@ import { QUIET } from "@/lib/quiet";
 import { Field, Input } from "./forms";
 import { Pick } from "./select";
 import { DigestChip } from "./digest-chip";
-import { Figures, PageHeader, Section } from "./section";
+import { Figures, Section } from "./section";
+import { GroupHeader } from "./page-tabs";
 import { soon } from "@/lib/soon";
 import { listAgents, type AgentSummary } from "@/lib/api/l2";
 import { CHAIN_STATES, getRetention, verifyLedger, verifyRun, type ChainState, type LedgerVerification, type RetentionView, type RunVerification } from "@/lib/api/l9";
@@ -241,9 +242,9 @@ function LedgerPage() {
   const quietDown = QUIET && Boolean(error) && !ledger;
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
-      <PageHeader title="Ledger">
+      <GroupHeader group="assurance" tab="ledger">
         Every run&rsquo;s journal is hash-chained, and its last hash is anchored here in order, each run&rsquo;s first entry naming the anchor before it. Walking the ledger verifies every run and shows any record that is not what was written.
-      </PageHeader>
+      </GroupHeader>
       {error && (
         <Banner tone="err" title="Could not walk the ledger">
           {error}

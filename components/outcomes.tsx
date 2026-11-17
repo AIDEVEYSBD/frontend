@@ -1,19 +1,19 @@
 "use client";
 
 import { QUIET } from "@/lib/quiet";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Button, Status } from "./ui";
 import { Banner } from "./overlays";
-import { PageHeader } from "./section";
+import { GroupHeader } from "./page-tabs";
 import { WindowPick, type Win } from "./window-pick";
 import { NotConnected, useDoor } from "./pending";
 import { FINDING_STATUSES, FindingStatusMark, RunLink, SEVERITIES, SeverityBar, count, runStateMeta, shortWhen } from "./finding-marks";
 import { hueFor } from "@/lib/hue";
-import { WORKLOADS, type FindingsSummary } from "@/lib/api/pending";
+import { WORKLOADS, type Answer, type FindingsSummary } from "@/lib/api/pending";
 
 /**
- * The outcome dashboard (feature 2.4): each security workload over a time
+ * The Results summary (feature 2.4): each security workload over a time
  * window. One card per workload: how many runs, the last run and how it
  * ended, the findings by severity as one bar with its figures, the findings
  * by status, and links to the Findings page filtered to what a figure counts.
@@ -23,6 +23,10 @@ import { WORKLOADS, type FindingsSummary } from "@/lib/api/pending";
  * workload the summary names and this console does not know gets a card too,
  * under the id it came with. The figures are `GET /api/findings/summary`'s
  * and nothing is derived beyond adding a card's severities into its total.
+ *
+ * The body (`OutcomesBody`) is drawn twice: as the Summary tab of Results,
+ * and as the Workload results board on Dashboards. It reads the door itself,
+ * so both show the same figures for the same window.
  */
 
 type Entry = FindingsSummary["workloads"][number];
@@ -130,8 +134,12 @@ function WorkloadCard({ id, name, line, entry, state, win }: { id: string; name:
   );
 }
 
-export function OutcomesView() {
-  const [win, setWin] = useState<Win>("7d");
+/**
+ * The summary over one window: the note when the door is not there or did not
+ * answer, then a card per workload. `figures` is drawn between the two from
+ * the same answer (the Dashboards board puts its row of figures there).
+ */
+export function OutcomesBody({ win, figures, compact = false }: { win: Win; figures?: (answer: Answer<FindingsSummary> | null) => ReactNode; /** The smaller form of the not-connected note. */ compact?: boolean }) {
   const { answer, reload } = useDoor<FindingsSummary>("findingsSummary", { query: { window: win } });
   const entries: Entry[] = answer?.state === "ok" && Array.isArray(answer.data?.workloads) ? answer.data.workloads : [];
   const state = answer === null ? "reading" : answer.state;
@@ -139,25 +147,15 @@ export function OutcomesView() {
   const others = entries.filter((e) => e && typeof e.workload === "string" && !known.has(e.workload));
 
   return (
-    <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7" data-hue="red">
-      <PageHeader
-        title="Outcomes"
-        action={
-          <span className="flex items-center gap-2">
-            <span className="text-[11px] font-medium text-faint">Window</span>
-            <WindowPick value={win} onChange={setWin} />
-          </span>
-        }
-      >
-        What each security workload produced over the window: its runs, how the last one ended, and its findings by severity and by status. A figure opens the findings it counts.
-      </PageHeader>
-
-      {answer?.state === "pending" && <NotConnected door={answer.door} />}
+    <>
+      {answer?.state === "pending" && <NotConnected door={answer.door} compact={compact} />}
       {answer?.state === "error" && (
         <Banner tone="err" title="Could not read the summary" action={<Button size="sm" variant="solid" tone="neutral" onClick={reload}>Try again</Button>}>
           {answer.message}
         </Banner>
       )}
+
+      {figures?.(answer)}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {WORKLOADS.map((w) => (
@@ -167,6 +165,29 @@ export function OutcomesView() {
           <WorkloadCard key={e.workload} id={e.workload} name={e.workload} line="" entry={e} state={state} win={win} />
         ))}
       </div>
+    </>
+  );
+}
+
+export function OutcomesView() {
+  const [win, setWin] = useState<Win>("7d");
+
+  return (
+    <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7" data-hue="red">
+      <GroupHeader
+        group="results"
+        tab="outcomes"
+        actions={
+          <span className="flex items-center gap-2">
+            <span className="text-[11px] font-medium text-faint">Window</span>
+            <WindowPick value={win} onChange={setWin} />
+          </span>
+        }
+      >
+        What each security workload produced over the window: its runs, how the last one ended, and its findings by severity and by status. A figure opens the findings it counts.
+      </GroupHeader>
+
+      <OutcomesBody win={win} />
     </div>
   );
 }

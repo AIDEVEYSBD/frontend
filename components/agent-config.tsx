@@ -1,21 +1,19 @@
 "use client";
 
 import { ControlsInForce } from "./controls-in-force";
+import { AgentHeader, AgentStatus } from "./agent-header";
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Mono, Status, Tag, type Tone } from "./ui";
 import { Banner, QuietNote } from "./overlays";
 import { QUIET } from "@/lib/quiet";
 import { Section } from "./section";
 import { Pick } from "./select";
 import { DigestChip } from "./digest-chip";
-import { agentHref } from "@/lib/agent-link";
 import { useSession } from "@/lib/use-session";
 import { HARNESS, RISK, RISK_ORDER, type HarnessKind, type Risk } from "@/lib/spec";
 import { DATA_CLASS_TONE } from "@/lib/bom";
 import { retiredLine } from "@/lib/lifecycle";
-import { listAgents, type AgentSummary } from "@/lib/api/l2";
 import { editableDocument, retiredRefusalOf, saveAgent, type AgentSaved, type EditableDocument } from "@/lib/api/l8";
 import {
   NEW_GATE,
@@ -46,7 +44,8 @@ import {
  * all of it; with the deploy permission the limits, bounds and gate fields
  * can be changed, and Save writes a new version through the agents door
  * (`POST /api/agents`, lib/api/l8.ts `saveAgent`). A save is never a
- * deploy: the page says so and points at Lifecycle, where the gate is.
+ * deploy: the page says so and points at the Versions tab (/lifecycle),
+ * where the gate is.
  *
  * The form holds only what was typed (`edits`, keyed by field) beside the
  * document as loaded; what is saved is a copy of that document with the
@@ -512,6 +511,9 @@ function Fallbacks({ steps }: { steps: StepRow[] }) {
 
 /* ═══════════════════ the page for one agent ═══════════════════ */
 
+/** What the Configuration tab is, under the agent's header. */
+const ABOUT = "What one run may spend, how far each step may go, where a person decides, and the tools each step was granted. A change is saved as a new version and deployed from the Versions tab.";
+
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex min-w-0 flex-col gap-1 bg-surface px-4 py-2.5">
@@ -580,27 +582,34 @@ function AgentForm({ edit, saved, onSaved }: { edit: EditableDocument; saved: Ag
   const meta = obj(doc.metadata);
   return (
     <>
-      <header className="flex flex-wrap items-end gap-3">
-        <div className="flex max-w-[86ch] min-w-0 flex-col gap-1.5">
-          <span className="text-[11px] font-medium text-faint">Agent configuration</span>
-          <h1 className="text-[24px] font-semibold tracking-[-0.02em]">{a.name}</h1>
-          {a.description && (
-            <p className="line-clamp-3 text-[13.5px] leading-relaxed text-dim" title={a.description}>
-              {a.description}
-            </p>
-          )}
-        </div>
-        <span className="grow" />
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="solid" tone="ink" href={`/runs?agent=${enc}`} permission="run" disabled={Boolean(a.retired)}>
-            Run
-          </Button>
-          <Button href={`/lifecycle?agent=${enc}`}>Lifecycle</Button>
-          <Button href={`/evals?agent=${enc}`}>Evals</Button>
-        </div>
-      </header>
+      <AgentHeader
+        tab="configuration"
+        id={a.id}
+        agent={a}
+        actions={
+          <>
+            <Button size="sm" variant="solid" tone="neutral" href={`/evals?agent=${enc}`}>
+              Evaluate
+            </Button>
+            <Button size="sm" variant="solid" tone="ink" href={`/runs?agent=${enc}`} permission="run" disabled={Boolean(a.retired)}>
+              Run
+            </Button>
+          </>
+        }
+      >
+        {ABOUT}
+      </AgentHeader>
+
 
       <div className="grid gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-2 xl:grid-cols-4">
+        {a.description && (
+          <div className="flex min-w-0 flex-col gap-1 bg-surface px-4 py-2.5 sm:col-span-2 xl:col-span-4">
+            <span className="text-[10.5px] text-faint">What it does</span>
+            <p className="line-clamp-3 max-w-[130ch] text-[12.5px] leading-[1.6] text-dim" title={a.description}>
+              {a.description}
+            </p>
+          </div>
+        )}
         <Fact label="Agent id">
           <Mono className="break-all text-fg">{a.id}</Mono>
           {str(meta.owner) && <span className="text-[11px] font-normal text-faint">owner {str(meta.owner)}</span>}
@@ -620,7 +629,7 @@ function AgentForm({ edit, saved, onSaved }: { edit: EditableDocument; saved: Ag
           )}
         </Fact>
         <Fact label="State">
-          {a.retired ? <Status tone="err">Retired</Status> : a.deployed_version !== null ? <Status tone="ok">Deployed</Status> : <Status tone="neutral">Not deployed</Status>}
+          <AgentStatus agent={a} />
           {str(meta.autonomy) && <span className="text-[11px] font-normal text-faint">autonomy {str(meta.autonomy)}</span>}
         </Fact>
       </div>
@@ -632,7 +641,7 @@ function AgentForm({ edit, saved, onSaved }: { edit: EditableDocument; saved: Ag
       )}
       {edit.draft && (
         <Banner tone="neutral" title={`This page shows draft version ${edit.version ?? "?"}, the latest save`}>
-          Production runs version {a.deployed_version ?? "?"}. A save here adds another draft; nothing production runs changes until a version passes the deploy gate on Lifecycle.
+          Production runs version {a.deployed_version ?? "?"}. A save here adds another draft; nothing production runs changes until a version passes the deploy gate on the Versions tab.
         </Banner>
       )}
       {loaded && !canEdit && <p className="rounded-md border border-line bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-faint">Read only. Changing the limits, bounds and gates needs the &ldquo;deploy&rdquo; permission.</p>}
@@ -658,10 +667,10 @@ function AgentForm({ edit, saved, onSaved }: { edit: EditableDocument; saved: Ag
           {!dirty && saved && !refusal && (
             <div className="flex flex-wrap items-center gap-3">
               <Status tone="queue">Saved, not deployed</Status>
-              <span className="min-w-0 text-[12.5px] leading-[1.55] text-dim">{savedText(saved, a.deployed_version)} The deploy gate is on Lifecycle.</span>
+              <span className="min-w-0 text-[12.5px] leading-[1.55] text-dim">{savedText(saved, a.deployed_version)} The deploy gate is on the Versions tab.</span>
               <span className="grow" />
               <Button size="sm" variant="solid" tone="ink" href={`/lifecycle?agent=${enc}`}>
-                Open Lifecycle
+                Open Versions
               </Button>
             </div>
           )}
@@ -719,14 +728,11 @@ function AgentConfig({ id }: { id: string }) {
   if (!state) {
     return (
       <>
-        <header className="flex flex-col gap-1.5">
-          <span className="text-[11px] font-medium text-faint">Agent configuration</span>
-          <h1 className="text-[24px] font-semibold tracking-[-0.02em]">
-            <Mono className="text-[20px] text-fg">{id}</Mono>
-          </h1>
-        </header>
+        <AgentHeader tab="configuration" id={id} agent={null}>
+          {ABOUT}
+        </AgentHeader>
         {error ? (
-          <Banner tone="err" title="This agent could not be read" action={<Button size="sm" href="/agent">Every agent</Button>}>
+          <Banner tone="err" title="This agent could not be read" action={<Button size="sm" variant="solid" tone="neutral" href="/agents">All agents</Button>}>
             {error}
           </Banner>
         ) : (
@@ -756,76 +762,20 @@ function AgentConfig({ id }: { id: string }) {
   );
 }
 
-/* ═══════════════════ no agent named: the list ═══════════════════ */
-
-function AgentIndex() {
-  const [agents, setAgents] = useState<AgentSummary[] | null>(null);
-  const [error, setError] = useState("");
+/** With no agent named the address is a redirect to the list (app/agent/page.tsx); a link that drops the id mid-session goes the same way. */
+function ToTheList() {
+  const router = useRouter();
   useEffect(() => {
-    let live = true;
-    listAgents()
-      .then((rows) => live && setAgents(rows))
-      .catch((e: Error) => {
-        if (!live) return;
-        setAgents([]);
-        setError(e.message);
-      });
-    return () => {
-      live = false;
-    };
-  }, []);
-  return (
-    <>
-      <header className="flex max-w-[86ch] flex-col gap-1.5">
-        <h1 className="text-[24px] font-semibold tracking-[-0.02em]">Agent configuration</h1>
-        <p className="text-[13.5px] leading-relaxed text-dim">The limits, bounds and gates of each agent, with the tools each step was granted. Pick an agent to read or change them.</p>
-      </header>
-      {error && !QUIET && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>}
-      {/* A quiet console (lib/quiet.ts) says the list is not connected; it does not print the reason or count a failed read as "0 agents". */}
-      {error && QUIET ? <QuietNote /> : (
-      <Section title="Agents" meta={agents ? plural(agents.length, "agent") : "reading the registry"}>
-        {agents === null && <p className="text-[12px] text-faint">Reading the registry&hellip;</p>}
-        {agents && agents.length === 0 && !error && <p className="text-[12.5px] text-dim">No agent is saved on this deployment yet.</p>}
-        {agents && agents.length > 0 && (
-          <div className="overflow-x-auto rounded-md border border-line">
-            <table className="w-full min-w-[640px] border-collapse text-[11.5px]">
-              <thead>
-                <tr className="border-b border-line text-left text-[10.5px] text-faint">
-                  <th className="px-4 py-2 font-medium">Agent</th>
-                  <th className="px-3 py-2 font-medium">Latest saved</th>
-                  <th className="px-3 py-2 font-medium">Production runs</th>
-                  <th className="px-3 py-2 font-medium">State</th>
-                </tr>
-              </thead>
-              <tbody>
-                {agents.map((x) => (
-                  <tr key={x.id} className="border-b border-line last:border-0 hover:bg-raise/50">
-                    <td className="px-4 py-2">
-                      <Link href={agentHref(x.id)} className="focusable flex flex-col rounded-sm">
-                        <span className="text-[12px] font-medium text-fg">{x.name}</span>
-                        <span className="font-mono text-[10.5px] text-faint">{x.id}</span>
-                      </Link>
-                    </td>
-                    <td className="tnum px-3 py-2 text-dim">{typeof x.version === "number" ? `Version ${x.version}` : "No version number"}</td>
-                    <td className="tnum px-3 py-2 text-dim">{typeof x.deployed_version === "number" ? `Version ${x.deployed_version}` : "Nothing deployed"}</td>
-                    <td className="px-3 py-2">{x.retired ? <Status tone="err">Retired</Status> : typeof x.deployed_version === "number" ? <Status tone="ok">Deployed</Status> : <Status tone="neutral">Not deployed</Status>}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Section>
-      )}
-    </>
-  );
+    router.replace("/agents");
+  }, [router]);
+  return null;
 }
 
 function AgentPage() {
   const id = useSearchParams().get("id");
   return (
     <div className="min-h-full" data-hue="blue">
-      <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7">{id ? <AgentConfig key={id} id={id} /> : <AgentIndex />}</div>
+      <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7">{id ? <AgentConfig key={id} id={id} /> : <ToTheList />}</div>
     </div>
   );
 }

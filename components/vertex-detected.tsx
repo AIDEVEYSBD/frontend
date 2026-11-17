@@ -50,8 +50,8 @@ const SOURCE: Record<string, string> = {
   token: "a token handed to this server",
 };
 
-/** `framed` draws its own card (Settings); unframed it sits inside a panel that already has one (Configuration). */
-export function VertexDetected({ framed = false }: { framed?: boolean }) {
+/** Drawn inside a panel that already has a card: the Providers panel on Configuration. */
+export function VertexDetected() {
   const { answer, busy, reload } = useVertex();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string>("");
@@ -71,7 +71,7 @@ export function VertexDetected({ framed = false }: { framed?: boolean }) {
     const line = answer.source
       ? `This server has a Google identity${answer.account ? ` (${answer.account})` : ""}, but Vertex AI did not list any model to it${refused?.error ? `: ${refused.error}` : ""}.`
       : "This server has no Google identity, so nothing is detected from Vertex AI.";
-    return <p className={`text-[11.5px] leading-[1.55] text-faint ${framed ? "" : "border-b border-line px-4 py-3"}`}>{line}</p>;
+    return <p className="border-b border-line px-4 py-3 text-[11.5px] leading-[1.55] text-faint">{line}</p>;
   }
 
   const total = groups.reduce((n, g) => n + g.models.length, 0);
@@ -161,12 +161,7 @@ export function VertexDetected({ framed = false }: { framed?: boolean }) {
     </div>
   );
 
-  if (!framed) return <div className="border-b border-line">{body}</div>;
-  return (
-    <section id="vertex" className="flex scroll-mt-4 flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
-      {body}
-    </section>
-  );
+  return <div className="border-b border-line">{body}</div>;
 }
 
 function Fact({ term, value, title }: { term: string; value: string; title?: string }) {

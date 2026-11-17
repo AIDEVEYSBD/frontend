@@ -417,7 +417,7 @@ describe("the kill reaches the tasks a tree handed peers", () => {
     for (const s of ["Kill reached 5", "task t-77", "answered canceled", "task t-80", "answered without a state", "task not found", "is not in the registry", "last seen working", "the cancel could not be delivered, or the peer said no"]) {
       expect(text, s).toContain(s);
     }
-    expect(hrefs(html)).toEqual([`/runs?id=${RUN}`, "/peers#peer-soc-stub", "/peers#peer-ghost-peer", "/peers#peer-soc-stub", "/peers#peer-soc-stub"]);
+    expect(hrefs(html)).toEqual([`/runs?id=${RUN}`, "/configuration#peer-soc-stub", "/configuration#peer-ghost-peer", "/configuration#peer-soc-stub", "/configuration#peer-soc-stub"]);
   });
 
   it("a second kill while the run is still stopping: 202 delivered `tree`, the run listed as already stopping, only what was not confirmed asked again", async () => {
@@ -534,7 +534,7 @@ describe("the estate's breakers", () => {
       expect(text, s).toContain(s);
     }
     expect(hrefs(html)).toEqual(
-      expect.arrayContaining(["/peers#peer-soc-stub", "/runs?id=notifier-2026-10-21T11-52-04-a5fc2e", "/runs?id=notifier-2026-10-21T11-52-04-14e690"]),
+      expect.arrayContaining(["/configuration#peer-soc-stub", "/runs?id=notifier-2026-10-21T11-52-04-a5fc2e", "/runs?id=notifier-2026-10-21T11-52-04-14e690"]),
     );
   });
 

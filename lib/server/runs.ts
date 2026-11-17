@@ -54,12 +54,24 @@ export interface RunRow {
   calls: CallRow[];
   /** `sdk` or `a2a` when an attached agent opened the run (the record's `reported_by.mode`); "" for the platform's own. */
   source: string;
+  /** Who started the run and the team they belong to, when the record names them (`Owner`, lib/api/pending.ts); null until the control plane stamps runs with it. */
+  owner: { sub: string; name: string; email?: string; team?: string } | null;
   /**
    * A canary's shadow run (phase L8, second round: the record's `shadow:
    * true`): the candidate mirrored a production run in shadow mode. Listed,
    * marked, and left out of every production figure (lib/production.ts).
    */
   shadow: boolean;
+}
+
+/** The record's owner as written, or null when it names nobody. Nothing is guessed from other fields. */
+function ownerOf(o: unknown): RunRow["owner"] {
+  if (!o || typeof o !== "object") return null;
+  const r = o as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : "");
+  const sub = str(r.sub) || str(r.email) || str(r.name);
+  if (!sub) return null;
+  return { sub, name: str(r.name) || str(r.email) || sub, ...(str(r.email) ? { email: str(r.email) } : {}), ...(str(r.team) ? { team: str(r.team) } : {}) };
 }
 
 export function costOf(model: string, tk: { in: number; out: number }, sheet: Sheet | null): number {
@@ -154,6 +166,7 @@ export async function readRuns(sheet: Sheet | null): Promise<RunRow[]> {
         byModel,
         calls,
         source: String(run?.source ?? run?.reported_by?.mode ?? ""),
+        owner: ownerOf(run?.owner),
         shadow: run?.shadow === true,
       });
     } catch {

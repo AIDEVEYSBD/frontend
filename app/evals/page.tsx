@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { Evals } from "@/components/evals";
 
 export const metadata = {
-  title: "Evals — Agent Factory",
+  title: "Evaluations — Agent Factory",
   description: "Evaluate workflow quality, cost and execution time using representative, fully recorded runs.",
 };
 

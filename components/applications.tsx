@@ -22,8 +22,10 @@ import {
   type Policy,
 } from "@/lib/api/l4";
 import { api, errorText } from "@/lib/api/client";
+import { agentHref } from "@/lib/agent-link";
 import { QUIET } from "@/lib/quiet";
 import { QuietNote } from "./overlays";
+import { GroupHeader } from "./page-tabs";
 import { Button, Mono, Status, Tag } from "./ui";
 import { Pick } from "./select";
 import { Code, CopyButton } from "./code";
@@ -41,7 +43,7 @@ import { useModels } from "@/lib/use-models";
  * Chatbots and RAG apps connect here: a row is created, a scoped key is
  * minted once, and the snippet on screen is the one to paste, pointing an
  * OpenAI SDK at the gateway. Agents and multi-agent systems arrive from
- * the Workflows register and the attached-agents panel on Configuration;
+ * the Agents list (/agents) and the attached-agents panel on Configuration;
  * this page lists them and sends a reader there to change them. The
  * activity beside a row (last seen, cost, controls fired over 30 days) is
  * read from the row's own metrics and conversations doors.
@@ -153,18 +155,9 @@ export function Applications() {
   return (
     <div className="min-h-full" data-hue="blue">
       <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7">
-        <header className="flex flex-wrap items-end gap-4">
-          <div className="flex flex-col gap-1.5">
-            <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">Applications</h1>
-            <p className="max-w-[72ch] text-[12.5px] leading-[1.55] text-dim">
-              Every AI application this control plane governs, across the four classes. A chatbot or RAG app connects by pointing its OpenAI SDK at the
-              gateway with the key minted here; the gateway screens every prompt and response, journals every completion and enforces the policy on the row.
-              Agents and multi-agent systems are listed from the Workflows register and the attached agents.
-            </p>
-          </div>
-          <span className="grow" />
-          <Button variant="solid" tone="ink" permission="configure" onClick={() => setConnecting(true)}>Connect an application</Button>
-        </header>
+        <GroupHeader group="agents" tab="applications" actions={<Button size="sm" variant="solid" tone="ink" permission="configure" onClick={() => setConnecting(true)}>Connect an application</Button>}>
+          Every AI application this control plane governs, across the four classes. A chatbot or RAG app connects by pointing its OpenAI SDK at the gateway with the key minted here; the gateway screens every prompt and response, records every completion and enforces the policy on the row. Agents and multi-agent systems are listed from the Agents tab and the attached agents.
+        </GroupHeader>
 
         {error && !QUIET && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>}
         {error && QUIET && (unread ? <QuietNote /> : <QuietNote inline />)}
@@ -274,8 +267,8 @@ export function Applications() {
                               {a.blocked ? "Unblock" : "Block"}
                             </Button>
                           ) : (
-                            <Button size="sm" variant="quiet" href={a.source === "attached" ? "/configuration#agents" : `/workflows?id=${encodeURIComponent(a.id)}`}>
-                              {a.source === "attached" ? "Attached agents" : "Workflow"}
+                            <Button size="sm" variant="quiet" href={a.source === "attached" ? "/configuration#agents" : agentHref(a.id)}>
+                              {a.source === "attached" ? "Attached agents" : "Agent"}
                             </Button>
                           )}
                         </span>
@@ -286,7 +279,7 @@ export function Applications() {
                 {apps && shown.length === 0 && (
                   <tr>
                     <td colSpan={11} className="px-4 py-8 text-center text-[11.5px] text-faint">
-                      {apps.length ? "Nothing matches." : "Nothing is registered yet. Connect a chatbot or RAG app above; agents appear from the Workflows register once deployed."}
+                      {apps.length ? "Nothing matches." : "Nothing is registered yet. Connect a chatbot or RAG app above; agents appear from the Agents tab once deployed."}
                     </td>
                   </tr>
                 )}
@@ -307,7 +300,7 @@ export function Applications() {
               attached on the Configuration page, where its grants, gate risk and injection mode are set; the SDK and A2A doors keep serving it.
             </span>
             <span className="grow" />
-            <Button size="sm" variant="quiet" href="/workflows">Workflows</Button>
+            <Button size="sm" variant="quiet" href="/agents">Agents</Button>
             <Button size="sm" variant="quiet" href="/configuration#agents">Attached agents</Button>
           </div>
         </section>

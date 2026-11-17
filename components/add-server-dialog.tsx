@@ -575,8 +575,8 @@ export function AddServerDialog({
                                 ? "The vault holds no secret yet. Name the one you will store; the registry refuses a reference nothing holds."
                                 : "Referenced by name; the value never leaves the vault."}{" "}
                             Secrets are stored under{" "}
-                            <a href="/settings" target="_blank" rel="noreferrer" className="focusable underline decoration-line-strong underline-offset-2 hover:decoration-fg">
-                              Settings, Keys
+                            <a href="/configuration#credentials" target="_blank" rel="noreferrer" className="focusable underline decoration-line-strong underline-offset-2 hover:decoration-fg">
+                              Configuration, Credentials
                             </a>
                             .
                           </span>

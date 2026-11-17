@@ -9,6 +9,7 @@ import { useModels } from "@/lib/use-models";
 import { Pick, PickMany } from "./select";
 import { Field, Input, Switch, Textarea } from "./forms";
 import { Banner, QuietNote } from "./overlays";
+import { GroupHeader } from "./page-tabs";
 import { QUIET } from "@/lib/quiet";
 import { fromDocument, inputKeysOf, type Kind } from "@/lib/spec";
 import { derive, labeledTemplate, INVALID, type Labels, type Matrix, type Reducer } from "@/lib/metrics";
@@ -404,22 +405,19 @@ export function Evals() {
 
   return (
     <div className="mx-auto w-full max-w-[1520px] px-5 py-7" data-hue="indigo">
-      <div className="flex flex-wrap items-end gap-4">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">Evals</h1>
-          <p className="max-w-[66ch] text-[12.5px] leading-[1.55] text-dim">
-            Evaluate workflow quality using representative cases executed through the production
-            runtime and controls. Results are graded deterministically and linked to the exact
-            workflow specification assessed.
-          </p>
-        </div>
-        <span className="grow" />
-        {!building && (
-          <Button variant="solid" tone="ink" size="sm" onClick={() => setBuilding("new")}>
-            New benchmark
-          </Button>
-        )}
-      </div>
+      <GroupHeader
+        group="quality"
+        tab="evals"
+        actions={
+          !building ? (
+            <Button variant="solid" tone="ink" size="sm" onClick={() => setBuilding("new")}>
+              New benchmark
+            </Button>
+          ) : undefined
+        }
+      >
+        Evaluate an agent on representative cases, run through the production runtime and its controls. Results are graded by fixed checks and tied to the exact version assessed.
+      </GroupHeader>
 
       {building && (
         <SetBuilder

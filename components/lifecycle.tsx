@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { AgentHeader, ChooseAgentHeader } from "./agent-header";
 import { Button, Mono, Status, Tag } from "./ui";
 import { Banner, QuietNote } from "./overlays";
 import { QUIET } from "@/lib/quiet";
@@ -587,40 +588,38 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
 
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex flex-wrap items-end gap-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          <Link href="/lifecycle" className="focusable w-fit rounded-sm text-[11.5px] text-faint hover:text-fg">
-            Lifecycle
-          </Link>
-          <span className="flex items-center gap-2">
-            <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">{data?.detail?.name ?? agent}</h1>
-            <Mono className="text-[11px] text-faint">{agent}</Mono>
-            {retired && <Status tone="neutral">Retired</Status>}
+      <AgentHeader
+        tab="versions"
+        id={agent}
+        agent={data?.detail ? { ...data.detail, retired } : null}
+        actions={
+          <Button size="sm" variant="solid" tone="ink" permission="deploy" disabled={Boolean(retired) || latest === null} onClick={() => setDeployAsk(true)}>
+            Deploy version {latest ?? "?"}…
+          </Button>
+        }
+      >
+        This agent from design to retirement: each stage lit only by its own record, with its reviews, the deploy gate, deployments, rollback and retirement.
+      </AgentHeader>
+
+      {/* What the header's buttons were: the pages that hold this agent's other records. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        {data?.detail && (
+          <span className="text-[11.5px] text-dim">
+            Latest save version {data.detail.version ?? "?"} ({shortDigest(data.detail.digest)}) ·{" "}
+            {data.detail.deployed_version !== null ? `production runs version ${data.detail.deployed_version} (${shortDigest(data.detail.deployed_digest)})` : "nothing deployed to production"}
           </span>
-          {data?.detail && (
-            <span className="text-[11.5px] text-dim">
-              latest save version {data.detail.version ?? "?"} ({shortDigest(data.detail.digest)}) ·{" "}
-              {data.detail.deployed_version !== null ? `production runs version ${data.detail.deployed_version} (${shortDigest(data.detail.deployed_digest)})` : "nothing deployed to production"}
-            </span>
-          )}
-        </div>
+        )}
         <span className="grow" />
         <Button size="sm" variant="solid" tone="neutral" href={`/evals?agent=${encodeURIComponent(agent)}`}>
-          Evals
+          Evaluations
         </Button>
         <Button size="sm" variant="solid" tone="neutral" href={`/attestations?agent=${encodeURIComponent(agent)}`}>
           Attestations
         </Button>
-        <Button size="sm" variant="solid" tone="neutral" href={`/bom?agent=${encodeURIComponent(agent)}`}>
-          AI-BOM
-        </Button>
         <Button size="sm" variant="solid" tone="neutral" href={`/policy?simulate=${encodeURIComponent(agent)}#simulate`}>
           Simulate policy
         </Button>
-        <Button size="sm" variant="solid" tone="ink" permission="deploy" disabled={Boolean(retired) || latest === null} onClick={() => setDeployAsk(true)}>
-          Deploy version {latest ?? "?"}…
-        </Button>
-      </header>
+      </div>
 
       {deployAsk && latest !== null && (
         <DeployDialog
@@ -770,13 +769,9 @@ function LifecycleIndex() {
   }, []);
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex flex-col gap-1.5">
-        <h1 className="text-[24px] font-semibold tracking-[-0.02em]">Lifecycle</h1>
-        <p className="max-w-[720px] text-[13.5px] leading-relaxed text-dim">
-          Each agent from design to retirement: designed, reviewed, approved, canary, deployed, retired, every stage lit only by its own record. A deploy to production
-          passes the promotion gate on those records, or an administrator&rsquo;s override with a reason.
-        </p>
-      </header>
+      <ChooseAgentHeader title="Versions">
+        Choose an agent to open its versions: each one from design to retirement (designed, reviewed, approved, canary, deployed, retired), every stage lit only by its own record. A deploy to production passes the promotion gate on those records, or an administrator&rsquo;s override with a reason.
+      </ChooseAgentHeader>
       {error && (
         <Banner tone="err" title="Could not read the registry">
           {error}

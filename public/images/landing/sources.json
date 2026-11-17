@@ -1,0 +1,15 @@
+{
+  "credit": "ABB",
+  "context": "ABB editorial imagery illustrating industrial operations; not screenshots of Agent Factory.",
+  "sourcePage": "https://new.abb.com/news/detail/133078/abb-introduces-automation-extended-enabling-industrial-innovation-with-continuity",
+  "assets": [
+    {
+      "file": "control-room.webp",
+      "original": "https://resources.news.e.abb.com/images/2026/1/30/0/Control_room_environment_-_industrial_site._Image_ABB.jpg"
+    },
+    {
+      "file": "industrial-operations.webp",
+      "original": "https://resources.news.e.abb.com/images/2026/1/30/0/Automation_Extended_helps_industries_modernize_distributed_control_systems_without_disruption._Image_ABB.png"
+    }
+  ]
+}

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Mono, Status, Tag } from "./ui";
 import { Banner, QuietNote } from "./overlays";
+import { GroupHeader } from "./page-tabs";
 import { QUIET } from "@/lib/quiet";
 import { Field, Input } from "./forms";
 import { Pick } from "./select";
@@ -396,14 +397,11 @@ function DeliverablesPage() {
   );
 
   return (
-    <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7" data-hue="violet">
-      <header className="flex flex-col gap-1.5">
-        <h1 className="text-[24px] font-semibold tracking-[-0.02em]">Deliverables</h1>
-        <p className="max-w-[760px] text-[13.5px] leading-relaxed text-dim">
-          What runs write, as records: each document with its state (draft, reviewed at the report gate, published through the sink the gate held, or withdrawn), its
-          history, and its file; and the registers a records backend wrote to. A reviewer approves a deliverable by answering its report gate in the inbox.
-        </p>
-      </header>
+    <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7" data-hue="violet">
+      <GroupHeader group="results" tab="deliverables">
+        What runs write, as records: each document with its state (draft, reviewed, published or withdrawn), its history and its file, and the registers a records backend wrote to. A reviewer
+        approves a deliverable by answering its report gate in the approvals inbox.
+      </GroupHeader>
       {error && (
         <Banner tone="err" title="Could not read the deliverables">
           {error}

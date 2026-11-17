@@ -8,7 +8,7 @@ import { QUIET } from "@/lib/quiet";
 import { Field, Textarea } from "./forms";
 import { Pick } from "./select";
 import { Chips } from "./filters";
-import { PageHeader } from "./section";
+import { GroupHeader } from "./page-tabs";
 import { NotConnected, NotConnectedNote, useDoor } from "./pending";
 import { SeverityTag, acceptanceStatusMeta, count, shortWhen, workloadName } from "./finding-marks";
 import { hueFor } from "@/lib/hue";
@@ -301,10 +301,9 @@ export function AcceptanceView() {
 
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7" data-hue="amber">
-      <PageHeader title="Acceptance">
-        The acceptance record of each use case: its criteria with the result of each, the eval run the results came from, the issues still outstanding and the sign-offs by role. This page
-        reports the record; a use case is accepted when its record says so.
-      </PageHeader>
+      <GroupHeader group="quality" tab="acceptance">
+        The acceptance record of each use case: its criteria with the result of each, the evaluation run the results came from, the issues still outstanding and the sign-offs by role. A use case is accepted when its record says so.
+      </GroupHeader>
 
       {answer === null && <p className="text-[12px] text-faint">Reading the acceptance records…</p>}
 

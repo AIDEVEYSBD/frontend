@@ -29,7 +29,9 @@ function niceTicks(max: number, count = 4) {
   const raw = max / count;
   const mag = Math.pow(10, Math.floor(Math.log10(raw)));
   const step = Math.ceil(raw / mag) * mag;
-  return Array.from({ length: count + 1 }, (_, i) => i * step);
+  // Rounded to the step's own precision, so a tick reads 0.6 and never 0.6000000000000001.
+  const places = mag > 0 && Number.isFinite(mag) ? Math.min(12, Math.max(0, -Math.floor(Math.log10(mag)))) : -1;
+  return Array.from({ length: count + 1 }, (_, i) => (places < 0 ? i * step : Number((i * step).toFixed(places))));
 }
 
 export function Legend({

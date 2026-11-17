@@ -27,8 +27,8 @@ import { PERMISSION_META, type Permission } from "@/lib/permissions";
  * There is no Builder here: this console runs and configures the agents it
  * is given, and does not design them.
  */
-type Group = "Overview" | "Operations" | "Agents" | "Identity" | "Connections" | "Security and Policy" | "Observability" | "Settings";
-const GROUPS: Group[] = ["Overview", "Operations", "Agents", "Identity", "Connections", "Security and Policy", "Observability", "Settings"];
+type Group = "Overview" | "Operations" | "Agents" | "Identity" | "Connections" | "Security and Policy" | "Observability";
+const GROUPS: Group[] = ["Overview", "Operations", "Agents", "Identity", "Connections", "Security and Policy", "Observability"];
 const GROUP_ICON: Record<Group, NavIconName> = {
   Overview: "house",
   Operations: "list-checks",
@@ -37,7 +37,6 @@ const GROUP_ICON: Record<Group, NavIconName> = {
   "Connections": "plug",
   "Security and Policy": "shield",
   Observability: "activity",
-  Settings: "settings",
 };
 
 interface NavItem {
@@ -47,59 +46,51 @@ interface NavItem {
   icon: NavIconName;
   /** The permission the page needs beyond reading; without it the page leaves the navigation and says so when opened. */
   needs?: Permission;
-  /** A page that is thin, or ahead of the door it reads. */
-  tag?: "preview";
+  /** Other addresses this entry stands for: the tabs of a grouped page, and addresses retired into it. */
+  also?: string[];
 }
 
 const NAV: NavItem[] = [
   { href: "/overview", label: "Overview", group: "Overview", icon: "house" },
 
-  { href: "/workloads", label: "Workloads", group: "Operations", icon: "target", tag: "preview" },
-  { href: "/control", label: "Control", group: "Operations", icon: "layout-dashboard" },
+  { href: "/workloads", label: "Workloads", group: "Operations", icon: "target" },
+  { href: "/control", label: "Control", group: "Operations", icon: "gauge" },
   { href: "/runs", label: "Runs", group: "Operations", icon: "list-checks" },
   { href: "/approvals", label: "Approvals", group: "Operations", icon: "inbox" },
-  { href: "/findings", label: "Findings", group: "Operations", icon: "search", tag: "preview" },
-  { href: "/outcomes", label: "Outcomes", group: "Operations", icon: "chart-column", tag: "preview" },
-  { href: "/deliverables", label: "Deliverables", group: "Operations", icon: "file-check" },
+  { href: "/outcomes", label: "Results", group: "Operations", icon: "file-check", also: ["/findings", "/deliverables"] },
   { href: "/chat", label: "Chat", group: "Operations", icon: "message-square" },
 
-  { href: "/workflows", label: "Workflows", group: "Agents", icon: "workflow" },
-  { href: "/roster", label: "Roster", group: "Agents", icon: "bot" },
+  { href: "/agents", label: "Agents", group: "Agents", icon: "bot", also: ["/applications", "/agent", "/lifecycle", "/bom", "/workflows", "/roster"] },
   { href: "/templates", label: "Templates", group: "Agents", icon: "layout-template" },
-  { href: "/applications", label: "Applications", group: "Agents", icon: "app-window" },
-  { href: "/lifecycle", label: "Lifecycle", group: "Agents", icon: "milestone" },
-  { href: "/evals", label: "Evals", group: "Agents", icon: "flask-conical" },
-  { href: "/acceptance", label: "Acceptance", group: "Agents", icon: "clipboard-check", tag: "preview" },
+  { href: "/evals", label: "Quality", group: "Agents", icon: "flask-conical", also: ["/drift", "/acceptance"] },
 
   { href: "/iam", label: "People and agents", group: "Identity", icon: "users", needs: "iam" },
-  { href: "/access", label: "Access log", group: "Identity", icon: "history", needs: "iam", tag: "preview" },
+  { href: "/sessions", label: "Sessions", group: "Identity", icon: "clock", needs: "iam" },
+  { href: "/authorization", label: "Authorization servers", group: "Identity", icon: "lock", needs: "iam" },
+  { href: "/access", label: "Access log", group: "Identity", icon: "history", needs: "iam" },
 
-  { href: "/configuration", label: "Configuration", group: "Connections", icon: "sliders-horizontal" },
-  { href: "/knowledge", label: "Knowledge", group: "Connections", icon: "book-open" },
-  { href: "/datasets", label: "Datasets", group: "Connections", icon: "database", tag: "preview" },
-  { href: "/peers", label: "Peers", group: "Connections", icon: "waypoints" },
-  { href: "/dependencies", label: "Dependencies", group: "Connections", icon: "network" },
-  { href: "/breakers", label: "Breakers", group: "Connections", icon: "zap-off" },
+  { href: "/configuration", label: "Configuration", group: "Connections", icon: "sliders-horizontal", also: ["/settings", "/peers"] },
+  { href: "/knowledge", label: "Data", group: "Connections", icon: "database", also: ["/datasets"] },
+  { href: "/dependencies", label: "Resilience", group: "Connections", icon: "network", also: ["/breakers"] },
 
-  { href: "/guardrails", label: "Controls", group: "Security and Policy", icon: "shield" },
-  { href: "/policy", label: "Policy", group: "Security and Policy", icon: "book-open-check" },
-  { href: "/observability/controls", label: "Controls in force", group: "Security and Policy", icon: "clipboard-check" },
-  { href: "/guardian", label: "Guardian", group: "Security and Policy", icon: "shield-check", tag: "preview" },
-  { href: "/evidence", label: "Evidence", group: "Security and Policy", icon: "folder-check" },
-  { href: "/attestations", label: "Attestations", group: "Security and Policy", icon: "badge-check" },
-  { href: "/frameworks", label: "Frameworks", group: "Security and Policy", icon: "layers", tag: "preview" },
-  { href: "/ledger", label: "Ledger", group: "Security and Policy", icon: "scroll-text" },
-  { href: "/bom", label: "AI-BOM", group: "Security and Policy", icon: "package" },
+  { href: "/guardrails", label: "Controls", group: "Security and Policy", icon: "shield", also: ["/observability/controls", "/policy"] },
+  { href: "/guardian", label: "Guardian", group: "Security and Policy", icon: "shield-check" },
+  { href: "/evidence", label: "Assurance", group: "Security and Policy", icon: "badge-check", also: ["/attestations", "/ledger", "/frameworks"] },
 
-  { href: "/finops", label: "FinOps", group: "Observability", icon: "wallet" },
-  { href: "/observability/tools", label: "Tool calls", group: "Observability", icon: "list-tree" },
-  { href: "/observability/activity", label: "Agent activity", group: "Observability", icon: "activity" },
-  { href: "/observability/security", label: "Security events", group: "Observability", icon: "shield-alert" },
-  { href: "/drift", label: "Drift", group: "Observability", icon: "git-compare" },
-
-  { href: "/settings", label: "Settings", group: "Settings", icon: "settings" },
+  { href: "/finops", label: "Costs", group: "Observability", icon: "wallet" },
+  { href: "/explore", label: "Explore", group: "Observability", icon: "scan-search", also: ["/observability/tools", "/observability/activity", "/observability/security"] },
+  { href: "/dashboards", label: "Dashboards", group: "Observability", icon: "layout-dashboard" },
   // The design page (/design) is a workbench for this codebase, reached by URL, never from the nav.
 ];
+
+/** Whether a path is this address or beneath it ("/agent" is not "/agents"). */
+function under(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+/** The addresses an entry answers for: its own, and the tabs and retired addresses it holds (lib/page-groups.ts). */
+function reach(n: NavItem): string[] {
+  return [n.href, ...(n.also ?? [])];
+}
 
 
 /* What the sidebar remembers, per browser: collapsed or not, and which groups are shut.
@@ -150,7 +141,9 @@ interface NavGroup {
 
 function groupsOf(items: NavItem[], pathname: string): NavGroup[] {
   // The longest matching href wins, so a nested route lights its own entry only.
-  const best = items.filter((n) => pathname.startsWith(n.href)).sort((x, y) => y.href.length - x.href.length)[0];
+  const best = items
+    .flatMap((n) => reach(n).filter((h) => under(pathname, h)).map((h) => ({ n, len: h.length })))
+    .sort((x, y) => y.len - x.len)[0]?.n;
   return GROUPS.map((label) => {
     const mine = items.filter((n) => n.group === label);
     return { label, items: mine, here: mine.find((n) => n.href === best?.href) };
@@ -165,15 +158,6 @@ const SUB = "relative flex items-center rounded-md px-2.5 py-1.5 text-[13px] whi
 const subOnSide = (active: boolean) => (active ? "bg-white/10 font-semibold text-white" : "font-medium text-white/65 hover:bg-white/8 hover:text-white");
 const subOnSurface = (active: boolean) => (active ? "bg-raise font-semibold text-fg" : "font-medium text-dim hover:bg-raise/60 hover:text-fg");
 const ROW = "flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] font-semibold transition-colors duration-100";
-
-/** The small mark beside a page that is thin or ahead of its door. */
-function Preview({ onSide }: { onSide: boolean }) {
-  return (
-    <span className={`ml-auto shrink-0 rounded-[3px] border px-1 py-px text-[9px] leading-none font-medium tracking-[0.06em] uppercase ${onSide ? "border-white/20 text-white/55" : "border-line-strong text-faint"}`}>
-      Preview
-    </span>
-  );
-}
 
 /**
  * The navigation as groups that open into sub-menus: the sidebar at full
@@ -200,7 +184,6 @@ function NavGroups({ groups, auto, onAuto, onNavigate }: { groups: NavGroup[]; a
               {active && <span aria-hidden className="absolute inset-y-2 -left-2.5 w-[3px] rounded-r-[2px] bg-brand" />}
               <NavIcon name={GROUP_ICON[g.label]} />
               <span className="grow truncate">{g.label}</span>
-              {only.tag && <Preview onSide />}
             </Link>
           );
         }
@@ -231,7 +214,6 @@ function NavGroups({ groups, auto, onAuto, onNavigate }: { groups: NavGroup[]; a
                     <Link key={item.href} href={item.href} onClick={onNavigate} aria-current={active ? "page" : undefined} className={`${SIDE_FOCUS} ${SUB} ${subOnSide(active)}`}>
                       {active && <span aria-hidden className="absolute inset-y-1.5 -left-[9px] w-[2px] rounded-full bg-brand" />}
                       <span className="truncate">{item.label}</span>
-                      {item.tag && <Preview onSide />}
                     </Link>
                   );
                 })}
@@ -284,7 +266,6 @@ function RailGroup({ g }: { g: NavGroup }) {
               <Link key={item.href} role="menuitem" href={item.href} onClick={close} aria-current={active ? "page" : undefined} className={`focusable ${SUB} gap-2.5 ${subOnSurface(active)}`}>
                 <NavIcon name={item.icon} />
                 <span className="truncate">{item.label}</span>
-                {item.tag && <Preview onSide={false} />}
               </Link>
             );
           })}
@@ -384,7 +365,7 @@ function Sidebar({ groups, auto, onAuto, who }: { groups: NavGroup[]; auto: Grou
     );
   }
   return (
-    <aside className={`relative z-30 hidden w-[224px] shrink-0 flex-col lg:flex ${SIDE}`} data-sidebar="full">
+    <aside className={`relative z-30 hidden w-[232px] shrink-0 flex-col lg:flex ${SIDE}`} data-sidebar="full">
       <Link href="/" aria-label="Agent Factory, home" className={`${SIDE_FOCUS} flex h-16 shrink-0 items-center border-b border-white/10 px-4`}>
         <BrandLockup onDark />
       </Link>
@@ -456,7 +437,7 @@ export function Chrome({ children }: { children: React.ReactNode }) {
 
   // A page whose permission a person lacks leaves their navigation; opened by its address, it says which permission it needs.
   const nav = NAV.filter((item) => !item.needs || !loaded || can(item.needs));
-  const barred = loaded ? NAV.find((item) => item.needs && !can(item.needs) && pathname.startsWith(item.href)) : undefined;
+  const barred = loaded ? NAV.find((item) => item.needs && !can(item.needs) && reach(item).some((h) => under(pathname, h))) : undefined;
   const groups = groupsOf(nav, pathname);
   const hereGroup = groups.find((g) => g.here);
   const here = hereGroup?.here;
@@ -495,7 +476,6 @@ export function Chrome({ children }: { children: React.ReactNode }) {
           </button>
           <Link href="/" aria-label="Agent Factory, home" className="focusable flex shrink-0"><ABBWordmark height={13} /></Link>
           <span className="truncate text-[13px] font-semibold text-fg">{hereGroup && hereGroup.items.length === 1 ? here?.group : here?.label}</span>
-          {here?.tag && <Preview onSide={false} />}
         </header>
         <Assistant />
 

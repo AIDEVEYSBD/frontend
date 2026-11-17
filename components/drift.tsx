@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Status, Tag } from "./ui";
 import { Checkbox } from "./forms";
 import { QuietNote } from "./overlays";
+import { GroupHeader } from "./page-tabs";
 import { QUIET } from "@/lib/quiet";
 import { hueFor } from "@/lib/hue";
 import { getDrift, type AgentDrift, type DriftMeasure, type DriftReport } from "@/lib/api/l7";
@@ -65,29 +66,31 @@ function DriftInner() {
 
   return (
     <div className="mx-auto w-full max-w-[1520px] px-5 py-7" data-hue="amber">
-      <header className="flex flex-wrap items-end gap-4">
-        <div className="flex max-w-[86ch] flex-col gap-1.5">
-          <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">Drift{agent ? ` · ${agent}` : ""}</h1>
-          <p className="text-[12.5px] leading-[1.6] text-dim">
-            Whether an agent still behaves as it did: its last {report?.windows.recent_h ?? 24} hours of finished runs against the{" "}
-            {report?.windows.baseline_d ?? 30} days before, on how runs end, the confidence they report, what a run costs, which tools it calls and how
-            often it meets a refusal. A shift past its threshold is raised in the attention queue.
-          </p>
-        </div>
-        <span className="grow" />
-        <span className="flex flex-wrap items-center gap-2">
-          {agent ? (
-            <Button size="sm" variant="solid" tone="neutral" onClick={() => router.replace("/drift", { scroll: false })}>
-              All agents
+      <GroupHeader
+        group="quality"
+        tab="drift"
+        actions={
+          <>
+            {agent ? (
+              <Button size="sm" variant="solid" tone="neutral" onClick={() => router.replace("/drift", { scroll: false })}>
+                All agents
+              </Button>
+            ) : (
+              <Checkbox label="Only drifted" checked={onlyDrifted} onChange={setOnlyDrifted} />
+            )}
+            <Button size="sm" variant="solid" tone="neutral" loading={loading} onClick={load}>
+              Read again
             </Button>
-          ) : (
-            <Checkbox label="Only drifted" checked={onlyDrifted} onChange={setOnlyDrifted} />
-          )}
-          <Button size="sm" variant="solid" tone="neutral" loading={loading} onClick={load}>
-            Read again
-          </Button>
-        </span>
-      </header>
+          </>
+        }
+      >
+        {agent && (
+          <>
+            Showing <span className="font-mono text-[11.5px] text-fg">{agent}</span> only.{" "}
+          </>
+        )}
+        Whether an agent still behaves as it did: its last {report?.windows.recent_h ?? 24} hours of finished runs against the {report?.windows.baseline_d ?? 30} days before, on how runs end, the confidence they report, what a run costs, which tools it calls and how often it meets a refusal. A shift past its threshold is raised in the attention queue.
+      </GroupHeader>
 
       {quietDown && (
         <div className="mt-5">

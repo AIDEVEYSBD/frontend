@@ -1,10 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button, Tag } from "./ui";
 import { Banner, QuietNote } from "./overlays";
 import { QUIET } from "@/lib/quiet";
-import { Icon } from "./builder/icons";
 import { Pick } from "./select";
 import { Text } from "./builder/controls";
 import { Checkbox } from "./forms";
@@ -20,7 +19,7 @@ import { DATA_CLASSES, type DataClass } from "@/lib/api/pending";
  * offered list, and the runtime then routes each call to the provider its
  * model names. Credentials never appear here: a provider records the name
  * of a vault key, and only the runtime reads the value, at the moment of
- * the call. A deployment starts with no provider, and the card says so.
+ * the call. A deployment starts with no provider, and the panel says so.
  */
 
 /** The permitted data class a provider or a model will carry (5.3): read when the door answers one. */
@@ -71,32 +70,31 @@ export function PermittedClassNote({ short = false }: { short?: boolean }) {
   );
 }
 
-/**
- * Whether the console has nothing behind it: no database, no backend, no
- * runtime files (app/api/configuration/route.ts says so). Asked only in a
- * quiet console (lib/quiet.ts), where an empty configuration read from
- * nowhere is shown as not connected and not as "none configured"; otherwise
- * nothing is asked and this is always false.
- */
-let bareAsked: Promise<boolean> | null = null;
-export function useBare(): boolean {
-  const [bare, setBare] = useState(false);
-  useEffect(() => {
-    if (!QUIET) return;
-    let live = true;
-    bareAsked ??= fetch("/api/configuration", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: { connected?: boolean } | null) => d?.connected === false)
-      .catch(() => false);
-    void bareAsked.then((b) => live && setBare(b));
-    return () => {
-      live = false;
-    };
-  }, []);
-  return bare;
+/** One calm line for a Configuration panel whose record was not read (a quiet console, lib/quiet.ts). */
+export function PanelNote() {
+  return (
+    <div className="px-4 py-3">
+      <QuietNote inline />
+    </div>
+  );
 }
 
-/** Tell the other settings cards the configuration changed under them. */
+/** A read or a write that failed inside a Configuration panel: its plain reason, or the one calm line in a quiet console. */
+export function PanelFailure({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <p className="border-b border-line px-4 py-2.5 text-[11.5px] leading-[1.5] whitespace-pre-wrap text-err last:border-b-0">
+      {QUIET ? (
+        <QuietNote inline />
+      ) : (
+        <>
+          <span className="font-medium">{title}.</span> {children}
+        </>
+      )}
+    </p>
+  );
+}
+
+/** Tell the other configuration panels the configuration changed under them. */
 const CONFIG_EVENT = "af:config";
 export function announceConfig() {
   window.dispatchEvent(new CustomEvent(CONFIG_EVENT));
@@ -108,10 +106,20 @@ export function useConfigChanges(refresh: () => void) {
   }, [refresh]);
 }
 
-export function Providers() {
+/**
+ * The body of Configuration's Providers panel (components/configuration.tsx).
+ *
+ * `bare` is what the page knows about the console itself: true when it has
+ * nothing behind it (no database, no backend, no runtime files), null while
+ * that is still being read. A quiet console with nothing behind it shows
+ * the one calm line, never "no provider is configured" read from nowhere.
+ */
+export function Providers({ bare = false }: { bare?: boolean | null }) {
   const [config, setConfig] = useState<Config | null>(null);
   const [keys, setKeys] = useState<string[]>([]);
   const [error, setError] = useState("");
+  /** A write this page would not send, with the reason: said as it is, in a quiet console too. */
+  const [guard, setGuard] = useState("");
   const [adding, setAdding] = useState(false);
   const [saved, setSaved] = useState(false);
   const [discoverFor, setDiscoverFor] = useState<string | null>(null);
@@ -135,6 +143,7 @@ export function Providers() {
 
   const write = useCallback(async (patch: Partial<Config>) => {
     setError("");
+    setGuard("");
     const res = await fetch("/api/config", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
     const d = await res.json().catch(() => ({}));
     if (!res.ok || d.error) {
@@ -148,15 +157,16 @@ export function Providers() {
     return true;
   }, []);
 
-  // Quiet, with nothing behind the console: the providers were not read from anywhere, so the card does not say there are none.
-  const bare = useBare() && (config?.providers.length ?? 0) === 0;
+  const none = (config?.providers ?? []).length === 0;
+  // Quiet: nothing was read from anywhere (the console is bare, or the read failed), so the panel does not say there are none.
+  const unread = none && !adding && (bare === true || (QUIET && Boolean(error) && !config));
   const modelsOf = (id: string) => (config?.models ?? []).filter((m) => (m.provider ?? FOUNDRY_ID) === id);
 
   const remove = async (p: Provider) => {
     if (!config) return;
     const keep = config.models.filter((m) => (m.provider ?? FOUNDRY_ID) !== p.id);
     if (!keep.length) {
-      setError("Removing this provider would leave no offered model. Offer a model from another provider first.");
+      setGuard("Removing this provider would leave no offered model. Offer a model from another provider first.");
       return;
     }
     await write({ providers: config.providers.filter((x) => x.id !== p.id), models: keep });
@@ -173,40 +183,42 @@ export function Providers() {
     await write({ providers: config.providers.map((x) => (x.id === p.id ? { ...x, max_data_class: v || undefined } : x)) });
   };
 
+  // The one line shows only when nothing else is in the panel (no detected connection above it).
+  if (unread) {
+    return (
+      <div className="hidden px-4 py-3 only:block">
+        <QuietNote inline />
+      </div>
+    );
+  }
+  // Not known yet whether anything is behind the console: no "none configured" in the meantime.
+  if (!config || (none && bare === null && !adding)) {
+    return error && config === null ? <PanelFailure title="The providers could not be read">{error}</PanelFailure> : <p className="px-4 py-3 text-[11.5px] text-faint">Reading the configuration&hellip;</p>;
+  }
+
   return (
-    <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
-      <header className="flex items-center gap-2.5 border-b border-line px-4 py-3">
-        <Icon name="server" size={15} className="text-dim" />
-        <h2 className="text-[14px] font-semibold">Providers</h2>
-        {!bare && <span className="tnum font-mono text-[11px] text-faint">{config ? `${config.providers.length} endpoint${config.providers.length === 1 ? "" : "s"}` : QUIET && error ? "" : "…"}</span>}
-        <span className="grow" />
+    <>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-4 py-2 last:border-b-0">
+        {none ? (
+          <span className="min-w-0 max-w-[92ch] text-[12px] leading-[1.55] text-dim">
+            No provider is configured. This deployment has no endpoint to send model calls to yet: add a provider, then offer the models it serves.
+          </span>
+        ) : (
+          <span className="tnum text-[11px] text-faint">{`${config.providers.length} endpoint${config.providers.length === 1 ? "" : "s"}`}</span>
+        )}
         <span className={`text-[11px] transition-opacity ${saved ? "text-ok opacity-100" : "opacity-0"}`}>saved</span>
+        <span className="grow" />
         {!adding && (
-          <Button size="sm" variant="solid" permission="configure" onClick={() => setAdding(true)}>
+          <Button size="sm" variant="solid" tone="ink" permission="configure" onClick={() => setAdding(true)}>
             Add provider
           </Button>
         )}
-      </header>
-
-      <div className="flex flex-col gap-2 border-b border-line px-4 py-3">
-        <p className="text-[11.5px] leading-[1.55] text-faint">
-          Where model calls can go. A provider is a chat-completions endpoint, the name of the vault key that authenticates to it, and whether it is served
-          on your own hardware. Discover what each serves and offer the models you want; the runtime routes every call to the provider its model names, with
-          that provider&rsquo;s credential from the vault. Local providers are priced by the hardware hour, not per token, and the FinOps page uses that
-          rate.
-        </p>
-        <PermittedClassNote />
       </div>
 
-      {error && (
-        <div className="border-b border-line px-4 py-2.5">
-          <Banner tone="err" title="Providers">
-            {error}
-          </Banner>
-        </div>
-      )}
+      {error && <PanelFailure title="The change was not saved">{error}</PanelFailure>}
+      {guard && <p className="border-b border-line px-4 py-2.5 text-[11.5px] leading-[1.5] text-warn">{guard}</p>}
 
-      {adding && config && (
+      {adding && (
         <AddProvider
           keys={keys}
           existing={config.providers.map((p) => p.id)}
@@ -222,87 +234,77 @@ export function Providers() {
         />
       )}
 
-      <div className="flex flex-col">
-        {!config && !error && <p className="px-4 py-4 text-[12px] text-faint">Reading the configuration&hellip;</p>}
-        {bare && !adding && (
-          <p className="px-4 py-4">
-            <QuietNote inline />
-          </p>
-        )}
-        {config && config.providers.length === 0 && !adding && !bare && (
-          <div className="flex flex-col gap-1 px-4 py-6">
-            <span className="text-[13px] font-medium text-fg">No provider is configured</span>
-            <span className="max-w-[64ch] text-[12.5px] leading-[1.55] text-dim">
-              This deployment has no endpoint to send model calls to yet. Add a provider, then offer the models it serves.
-            </span>
-          </div>
-        )}
-        {(config?.providers ?? []).map((p) => {
-          const models = modelsOf(p.id);
-          const builtin = p.id === FOUNDRY_ID;
-          return (
-            <div key={p.id} className="flex flex-col gap-2 border-b border-line px-4 py-3 last:border-b-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[12.5px] font-medium text-fg">{p.label}</span>
-                <Tag tone={p.local ? "ok" : "neutral"}>{p.local ? "local" : "cloud"}</Tag>
-                <span className="text-[10.5px] text-faint">{kindOf(p.kind).label}</span>
-                {builtin && <span className="text-[10.5px] text-ghost">· from the environment</span>}
-                <span className="grow" />
-                <span className="tnum text-[11px] text-dim">{models.length} model{models.length === 1 ? "" : "s"} offered</span>
-                <Button size="sm" variant="quiet" permission="configure" onClick={() => setDiscoverFor(discoverFor === p.id ? null : p.id)}>
-                  {discoverFor === p.id ? "Close" : "Discover models"}
+      {config.providers.map((p) => {
+        const models = modelsOf(p.id);
+        const builtin = p.id === FOUNDRY_ID;
+        return (
+          <div key={p.id} className="flex flex-col gap-2 border-b border-line px-4 py-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[12.5px] font-medium text-fg">{p.label}</span>
+              <Tag tone={p.local ? "ok" : "neutral"}>{p.local ? "local" : "cloud"}</Tag>
+              <span className="text-[10.5px] text-faint">{kindOf(p.kind).label}</span>
+              {builtin && <span className="text-[10.5px] text-ghost">· from the environment</span>}
+              <span className="grow" />
+              <span className="tnum text-[11px] text-dim">{models.length} model{models.length === 1 ? "" : "s"} offered</span>
+              <Button size="sm" variant="quiet" permission="configure" onClick={() => setDiscoverFor(discoverFor === p.id ? null : p.id)}>
+                {discoverFor === p.id ? "Close" : "Discover models"}
+              </Button>
+              {!builtin && (
+                <Button size="sm" variant="solid" tone="err" permission="configure" onClick={() => remove(p)}>
+                  Remove
                 </Button>
-                {!builtin && (
-                  <Button size="sm" variant="solid" tone="err" permission="configure" onClick={() => remove(p)}>
-                    Remove
-                  </Button>
-                )}
-              </div>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10.5px] text-faint">
-                <span className="truncate font-mono" title={p.endpoint}>{p.endpoint || "endpoint not set"}</span>
-                <span>key: <code className="font-mono">{p.key_ref || "none"}</code></span>
-                {p.local && (
-                  <label className="flex items-center gap-1">
-                    hardware $/hour
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.05"
-                      defaultValue={p.hourly_usd ?? ""}
-                      placeholder="?"
-                      onBlur={(e) => setHourly(p, e.target.value)}
-                      className="focusable h-6 w-16 rounded-md border border-line-strong bg-field px-1.5 font-mono text-[10.5px] text-fg placeholder:text-ghost"
-                    />
-                  </label>
-                )}
-                <PermittedClass value={p.max_data_class} onChange={(v) => setDataClass(p, v)} label={`Permitted data class of ${p.label}`} />
-              </div>
-              {models.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {models.map((m) => (
-                    <span key={m.id} className="rounded-sm border border-line px-1.5 py-px font-mono text-[9.5px] text-dim" title={m.label}>
-                      {m.id}
-                      {m.class && <span className="ml-1 text-ghost">{m.class}</span>}
-                      {m.max_data_class && <span className="ml-1 text-ghost">up to {m.max_data_class}</span>}
-                    </span>
-                  ))}
-                </div>
-              )}
-              {discoverFor === p.id && (
-                <Discover
-                  provider={p}
-                  already={new Set(models.map((m) => m.id))}
-                  onOffer={async (rows) => {
-                    const ok = await write({ models: [...config!.models, ...rows.map((m) => ({ id: m.id, label: m.label, ...(builtin ? {} : { provider: p.id }) }))] });
-                    if (ok) setDiscoverFor(null);
-                  }}
-                />
               )}
             </div>
-          );
-        })}
-      </div>
-    </section>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10.5px] text-faint">
+              <span className="truncate font-mono" title={p.endpoint}>{p.endpoint || "endpoint not set"}</span>
+              <span>key: <code className="font-mono">{p.key_ref || "none"}</code></span>
+              {p.local && (
+                <label className="flex items-center gap-1">
+                  hardware $/hour
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.05"
+                    defaultValue={p.hourly_usd ?? ""}
+                    placeholder="?"
+                    onBlur={(e) => setHourly(p, e.target.value)}
+                    className="focusable h-6 w-16 rounded-md border border-line-strong bg-field px-1.5 font-mono text-[10.5px] text-fg placeholder:text-ghost"
+                  />
+                </label>
+              )}
+              <PermittedClass value={p.max_data_class} onChange={(v) => setDataClass(p, v)} label={`Permitted data class of ${p.label}`} />
+            </div>
+            {models.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {models.map((m) => (
+                  <span key={m.id} className="rounded-sm border border-line px-1.5 py-px font-mono text-[9.5px] text-dim" title={m.label}>
+                    {m.id}
+                    {m.class && <span className="ml-1 text-ghost">{m.class}</span>}
+                    {m.max_data_class && <span className="ml-1 text-ghost">up to {m.max_data_class}</span>}
+                  </span>
+                ))}
+              </div>
+            )}
+            {discoverFor === p.id && (
+              <Discover
+                provider={p}
+                already={new Set(models.map((m) => m.id))}
+                onOffer={async (rows) => {
+                  const ok = await write({ models: [...config.models, ...rows.map((m) => ({ id: m.id, label: m.label, ...(builtin ? {} : { provider: p.id }) }))] });
+                  if (ok) setDiscoverFor(null);
+                }}
+              />
+            )}
+          </div>
+        );
+      })}
+      {/* What the field on each row is, and that nothing keeps it yet: said once, under the rows that show it. */}
+      {!none && (
+        <p className="flex px-4 py-2.5">
+          <PermittedClassNote />
+        </p>
+      )}
+    </>
   );
 }
 
@@ -436,7 +438,7 @@ function AddProvider({ keys, existing, needsModel, onCancel, onSave }: { keys: s
   };
 
   return (
-    <div className="flex flex-col gap-3 border-b border-line bg-canvas px-4 py-3">
+    <div className="flex flex-col gap-3 border-b border-line bg-canvas px-4 py-3 last:border-b-0">
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <label className="flex flex-col gap-1 text-[11px] text-faint">
           Kind
@@ -455,7 +457,7 @@ function AddProvider({ keys, existing, needsModel, onCancel, onSave }: { keys: s
         <label className="flex flex-col gap-1 text-[11px] text-faint">
           Credential (vault key)
           <Pick value={keyRef} onChange={setKeyRef} options={[{ value: "", label: local ? "none: open local endpoint" : "none" }, ...keys.map((k) => ({ value: k, label: k }))]} />
-          <span className="text-[10px] text-ghost">Add the key under Keys first; only its name is stored here.</span>
+          <span className="text-[10px] text-ghost">Add the key under Credentials first; only its name is stored here.</span>
         </label>
         <div className="flex flex-col gap-1 text-[11px] text-faint">
           Pricing
@@ -469,7 +471,7 @@ function AddProvider({ keys, existing, needsModel, onCancel, onSave }: { keys: s
               <input type="number" min={0} step="0.05" value={hourly} onChange={(e) => setHourly(e.target.value)} placeholder="$ per hour" className="focusable h-7 w-24 rounded-md border border-line-strong bg-field px-1.5 font-mono text-[11px] text-fg placeholder:text-ghost" />
             </label>
           )}
-          {!local && <span className="text-[10px] text-ghost">Record $/M tokens beside each offered model in the Models card.</span>}
+          {!local && <span className="text-[10px] text-ghost">Record $/M tokens beside each offered model in the Models panel.</span>}
         </div>
         <div className="flex flex-col gap-1 text-[11px] text-faint md:col-span-2">
           <PermittedClass label="Permitted data class of the new provider" />

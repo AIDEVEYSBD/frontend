@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Mono, Tag } from "./ui";
 import { Banner, Dialog, EmptyState, QuietNote } from "./overlays";
 import { QUIET } from "@/lib/quiet";
-import { PageHeader } from "./section";
+import { GroupHeader } from "./page-tabs";
 import { Chips, FilterBar, SearchBox } from "./filters";
 import { DigestChip } from "./digest-chip";
 import { NotConnected, NotConnectedNote, useDoor } from "./pending";
@@ -80,9 +80,10 @@ function DatasetsPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
-      <PageHeader
-        title="Datasets"
-        action={
+      <GroupHeader
+        group="data"
+        tab="datasets"
+        actions={
           <span title={pending ? "Not connected on this deployment" : undefined}>
             <Button variant="solid" tone="ink" permission="run" disabled={!connected} onClick={() => setUploading(true)}>
               Upload a dataset
@@ -92,7 +93,7 @@ function DatasetsPage() {
       >
         What a security workload is run on: a code snapshot, a firewall export, a telemetry extract or a document. A file handed over is offline; a dataset read from a connection when a run asks
         for it is live.
-      </PageHeader>
+      </GroupHeader>
 
       {answer?.state === "error" && (
         <Banner tone="err" title="Could not read the datasets" action={<Button size="sm" variant="solid" tone="neutral" onClick={reload}>Try again</Button>}>

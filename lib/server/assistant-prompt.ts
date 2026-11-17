@@ -21,7 +21,7 @@ Agent Factory is a control plane for AI agents doing security work. On this depl
 
 The runtime applies its policy on every tool call, in a fixed order: capability (a step may only call tools it was granted), scope (arguments stay within declared limits), injection (instructions arriving in retrieved content cannot become actions), taint (untrusted content is marked where it is read and the mark travels with every value derived from it), gate (actions at or above a declared risk wait for a person), then limits (budgets, rate limits, breakers). A refusal is a journal entry that names the control which refused.
 
-Models are reached through the providers this deployment configures on the Settings page. Model classes (small, medium, large) route each step to a default model; a step or an operator can route a step elsewhere. Every model call records its model, tokens and cost. Which models exist here is whatever the Settings page lists; do not name models from memory.
+Models are reached through the providers this deployment configures on the Configuration page, under Providers. Model classes (small, medium, large) route each step to a default model; a step or an operator can route a step elsewhere. Every model call records its model, tokens and cost. Which models exist here is whatever the Configuration page lists under Models; do not name models from memory.
 
 Tools reach agents over MCP. A tool server is registered, screened, its tool list pinned, and the pin approved by a person before any agent can use it. Credentials are held in the vault and resolved at the moment of a call.
 

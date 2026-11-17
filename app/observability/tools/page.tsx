@@ -1,10 +1,11 @@
-import { ToolCallsView } from "@/components/observability-tools";
+import { redirect } from "next/navigation";
 
-export const metadata = {
-  title: "Tool calls — Agent Factory",
-  description: "Every tool call across runs in a time window: when, run, agent, step, tool, outcome and duration.",
-};
-
-export default function ToolCallsPage() {
-  return <ToolCallsView />;
+/** A retired address: Tool calls is now a view of Explore. The rest of the query string is kept. */
+export default async function RetiredPage({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
+  const query = new URLSearchParams({ view: "tools" });
+  for (const [key, value] of Object.entries(await searchParams)) {
+    if (key === "view") continue;
+    for (const v of Array.isArray(value) ? value : value === undefined ? [] : [value]) query.append(key, v);
+  }
+  redirect(`/explore?${query.toString()}`);
 }

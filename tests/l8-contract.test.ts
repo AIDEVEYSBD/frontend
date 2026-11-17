@@ -588,7 +588,7 @@ describe("the promotion gate on a deploy to production", () => {
     const items = findings.unmet[2].items;
     expect(items.map((i) => [i.kind, findingHref(i)])).toEqual([
       ["server", "/configuration"],
-      ["peer", "/peers#peer-vendor-bot"],
+      ["peer", "/configuration#peer-vendor-bot"],
       ["guardian", "/guardian"],
       ["side_channel", null],
       ["breaker", "/breakers"],
@@ -596,7 +596,7 @@ describe("the promotion gate on a deploy to production", () => {
     expect(itemLine(items[0])).toBe("server crm: tool server crm is pending, not approved");
     expect(findings.unmet[0].detail).toBe("spec.evals.dataset names the eval set 'triage-bench', which does not exist");
     const html = render(createElement(GatePanel, { refusal: findings, agent: "triage", admin: true, busy: false, error: "", onOverride: () => {} })).html;
-    expect(hrefs(html)).toEqual(expect.arrayContaining(["/configuration", "/peers#peer-vendor-bot", "/guardian", "/breakers"]));
+    expect(hrefs(html)).toEqual(expect.arrayContaining(["/configuration", "/configuration#peer-vendor-bot", "/guardian", "/breakers"]));
     const bare = l8.gateRefusalOf(await refused(l8.deploy("bare")))!;
     expect(bare.unmet[0].detail).toBe("the spec declares no eval suite: set spec.evals.dataset to the eval set it is measured on, and spec.evals.threshold");
     const lost = l8.gateRefusalOf(await refused(l8.deploy("lost")))!;

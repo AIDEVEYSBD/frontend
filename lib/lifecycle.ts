@@ -236,7 +236,7 @@ export function findingHref(item: Record<string, unknown>): string | null {
   const ref = s_(item.ref);
   switch (s_(item.kind)) {
     case "peer":
-      return ref ? `/peers#peer-${encodeURIComponent(ref)}` : "/peers";
+      return ref ? `/configuration#peer-${encodeURIComponent(ref)}` : "/configuration#peers";
     case "breaker":
       return "/breakers";
     case "guardian":

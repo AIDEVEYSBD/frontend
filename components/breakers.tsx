@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button, Mono, Status, Tag } from "./ui";
 import { QuietNote } from "./overlays";
 import { QUIET } from "@/lib/quiet";
+import { GroupHeader } from "./page-tabs";
 import { RunSourceTag } from "./run-source";
 import { useNow } from "./gate-form";
 import { hueFor } from "@/lib/hue";
@@ -48,7 +49,7 @@ function TargetTag({ name }: { name: string }) {
     <span className="inline-flex min-w-0 items-center gap-1.5">
       <Tag tone={t.kind === "peer" ? "run" : "neutral"}>{t.kind === "peer" ? "peer" : "sink tool"}</Tag>
       {t.kind === "peer" ? (
-        <Link href={`/peers#peer-${encodeURIComponent(t.label)}`} className="focusable min-w-0 truncate rounded-sm font-mono text-[12px] font-semibold text-fg hover:underline" title={`${t.label} in the peer registry`}>
+        <Link href={`/configuration#peer-${encodeURIComponent(t.label)}`} className="focusable min-w-0 truncate rounded-sm font-mono text-[12px] font-semibold text-fg hover:underline" title={`${t.label} in the peer registry`}>
           {t.label}
         </Link>
       ) : (
@@ -254,19 +255,10 @@ export function Breakers() {
   const open = view ? Object.keys(view.open).length : 0;
   return (
     <div className="mx-auto w-full max-w-[1520px] px-5 py-7" data-hue="red">
-      <header className="flex flex-wrap items-end gap-4">
-        <div className="flex max-w-[86ch] flex-col gap-1.5">
-          <span className="flex items-center gap-3">
-            <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">Breakers</h1>
-            {view && <Status tone={open ? "err" : "ok"}>{open ? `${open} open` : "none open"}</Status>}
-          </span>
-          <p className="text-[12.5px] leading-[1.6] text-dim">
-            Circuit breakers the control plane trips from what it hears across every run, per sink tool and per peer: too many calls across the estate in the
-            window, or failures in a row, and the breaker opens for its cooldown. While it is open every worker is served it and every run is refused the call;
-            then it lets one call through. A person may close one by hand once the downstream is mended.
-          </p>
-        </div>
-      </header>
+      <GroupHeader group="resilience" tab="breakers" meta={view && <Status tone={open ? "err" : "ok"}>{open ? `${open} open` : "none open"}</Status>}>
+        Circuit breakers the control plane trips across every run, per sink tool and per peer: too many calls in the window, or failures in a row, and the breaker opens for its cooldown. While
+        it is open every run is refused the call; then it lets one call through. A person may close one by hand once the downstream is mended.
+      </GroupHeader>
       {error && !QUIET && <p className="mt-4 text-[12.5px] text-err">{error}</p>}
       {notice && <p className="mt-4 text-[12px] text-ok">{notice}</p>}
       <div className="mt-5">

@@ -4,7 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type React
 import { Button, Meter, Status, Tag } from "./ui";
 import { Pick } from "./select";
 import { Field, Input } from "./forms";
-import { PageHeader } from "./section";
+import { GroupHeader } from "./page-tabs";
 import { CURRENT_USER } from "@/lib/user";
 import { useSession, signerName } from "@/lib/use-session";
 import { soon } from "@/lib/soon";
@@ -354,22 +354,23 @@ export function Knowledge() {
     <div className="min-h-full" data-hue="violet">
       <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7">
         {/* ── header ── */}
-        <PageHeader
-          title="Knowledge"
-          action={
-            <span className="flex flex-wrap items-center gap-2">
+        <GroupHeader
+          group="data"
+          tab="knowledge"
+          actions={
+            <>
               <Button variant="solid" tone="neutral" permission="configure" onClick={() => setUploading(true)}>
                 Upload a document
               </Button>
               <Button variant="solid" tone="ink" permission="configure" onClick={() => setAdding(true)}>
                 Add a source
               </Button>
-            </span>
+            </>
           }
         >
           The sources agents on this deployment may retrieve from. A person adds a source, a copy of it is fetched, and a person admits that copy before any of it can be retrieved. Each
-          engagement has its own corpus; the one open here is <span className="font-mono text-[12.5px] text-fg">{ns}</span>.
-        </PageHeader>
+          engagement has its own corpus; the one open here is <span className="font-mono text-[11.5px] text-fg">{ns}</span>.
+        </GroupHeader>
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-4 py-2.5 elev-1">
           <NamespacePicker value={ns} options={namespaces} loading={!namespace} onChange={pickNamespace} />
           <span className="text-[11.5px] leading-[1.5] text-faint">Everything below is this corpus&rsquo;s and no other&rsquo;s.</span>

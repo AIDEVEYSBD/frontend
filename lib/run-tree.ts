@@ -262,7 +262,7 @@ export function answerOf(r: Pick<Reached, "delivery" | "state" | "answered_state
 /**
  * A peer task's line: the peer and its task, what the peer answered and the
  * state this side last saw it in, and why the cancel did not reach it when
- * it did not. The peer's id is the registry's, so the Peers page names the
+ * it did not. The peer's id is the registry's, so the Peers panel of Configuration names the
  * same one.
  */
 export function peerTaskLine(r: Pick<Reached, "kind" | "delivery" | "agent" | "peer" | "task_id" | "error" | "state" | "answered_state">): string {

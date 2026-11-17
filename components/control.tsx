@@ -1245,7 +1245,7 @@ export function Control() {
           {(data?.peers ?? []).map((p) => {
             const st = partnerStatus(p);
             return (
-              <Link key={`${p.name}@${p.url}`} href={`/peers#peer-${encodeURIComponent(p.name)}`} className="focusable flex items-center gap-2.5 border-b border-line px-3 py-2.5 transition-colors last:border-b-0 hover:bg-raise/50">
+              <Link key={`${p.name}@${p.url}`} href={`/configuration#peer-${encodeURIComponent(p.name)}`} className="focusable flex items-center gap-2.5 border-b border-line px-3 py-2.5 transition-colors last:border-b-0 hover:bg-raise/50">
                 <span className={`size-2 shrink-0 rounded-full ${st.tone === "ok" ? "bg-ok" : st.tone === "warn" ? "bg-warn" : st.tone === "err" ? "bg-err" : "bg-line-strong"}`} aria-hidden />
                 <span className="flex min-w-0 grow flex-col">
                   <span className="truncate text-[12px] font-medium text-fg">{p.title}</span>
@@ -1258,10 +1258,10 @@ export function Control() {
               </Link>
             );
           })}
-          {regOff && (data?.peers.length ?? 0) === 0 && <p className="px-3 py-4 text-[12px] leading-[1.55] text-faint">Peers registered on the Peers page are listed here with their state.</p>}
+          {regOff && (data?.peers.length ?? 0) === 0 && <p className="px-3 py-4 text-[12px] leading-[1.55] text-faint">Peers registered on Configuration, under Peers, are listed here with their state.</p>}
           {data && !regOff && data.peers.length === 0 && (
             <p className="px-3 py-4 text-[12px] leading-[1.55] text-faint">
-              No peer is registered or named by a workflow. Register one on the Peers page: its card is pinned and nothing is sent to it until a person
+              No peer is registered or named by a workflow. Register one on Configuration, under Peers: its card is pinned and nothing is sent to it until a person
               approves it.
             </p>
           )}
@@ -1476,7 +1476,7 @@ function FinOpsPanel({
   return (
     <section className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">
       <PanelHead
-        title="FinOps"
+        title="Costs"
         meta={azure?.configured ? `Azure billed · ${azure.scope === "resource" ? "Foundry resource" : "subscription"} · burn vs budget` : "journalled burn vs budget"}
       />
       {off && <p className="border-b border-line px-3 py-3 text-[12px] text-faint">What was billed and what the journals priced show here, beside the budget.</p>}

@@ -96,7 +96,7 @@ export async function budgetGate(): Promise<{ error: string; budget: BudgetState
   const s = await budgetState();
   if (!s.exceeded) return null;
   return {
-    error: `budget exhausted: $${s.spent.toFixed(2)} of $${(s.budget_usd ?? 0).toFixed(2)} spent in the last ${s.period === "day" ? "24 hours" : s.period === "week" ? "7 days" : "30 days"}. Runs resume when the rolling ${s.period} falls under the budget, or when it is raised on the Control or FinOps page.`,
+    error: `budget exhausted: $${s.spent.toFixed(2)} of $${(s.budget_usd ?? 0).toFixed(2)} spent in the last ${s.period === "day" ? "24 hours" : s.period === "week" ? "7 days" : "30 days"}. Runs resume when the rolling ${s.period} falls under the budget, or when it is raised on the Control or Costs page.`,
     budget: s,
   };
 }

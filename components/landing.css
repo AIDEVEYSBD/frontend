@@ -1,0 +1,19 @@
+/* Landing-only motion. No timers, continuous animation or hidden content. */
+.landing-page section[id] { scroll-margin-top: 100px; }
+.landing-page .landing-photo img { transition: transform 800ms cubic-bezier(.2,.65,.3,1); }
+.landing-page .landing-workload { transition: border-color 200ms, background-color 200ms; }
+.landing-page .landing-workload:hover { border-color: var(--t-fg); background-color: var(--t-canvas); }
+.landing-page .landing-action svg { transition: transform 200ms; }
+.landing-page .landing-action:hover svg { transform: translateX(4px); }
+.landing-page .landing-rule { transform-origin: left; animation: landing-rule-in 700ms ease-out both; }
+@keyframes landing-rule-in { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .landing-page .landing-photo:hover img { transform: scale(1.025); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .landing-page *, .landing-page *::before, .landing-page *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

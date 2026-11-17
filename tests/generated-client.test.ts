@@ -22,7 +22,7 @@ import { consolePath } from "@/lib/api/client";
  * runs, queue, approvals, agents, keys, attached agents, IAM and vault pages.
  *
  * The first half reads the source of the pages that used to call the
- * backend by hand (the Workflows page, IAM, the attached agents panel, the
+ * backend by hand (the Agents list, IAM, the attached agents panel, the
  * vault on Settings and in the providers' key picker, the queue and deploy
  * on Control) and fails if any of them calls `fetch` on a path the backend
  * owns. The second half calls each door those pages now use (lib/api/l2.ts)
@@ -32,7 +32,8 @@ import { consolePath } from "@/lib/api/client";
  */
 
 const PAGES = [
-  "components/workflows.tsx",
+  // The Agents list: what the Workflows page and the roster were, as one page.
+  "components/agents-list.tsx",
   "components/iam.tsx",
   "components/attached-agents.tsx",
   "components/settings.tsx",

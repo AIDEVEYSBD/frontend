@@ -34,7 +34,9 @@ interface Offered { id: string; label: string; class?: ModelClass; price_in?: nu
 interface Config { models: Offered[]; default_model: string; class_defaults: Partial<Record<ModelClass, string>>; providers: Provider[]; node_routes: Record<string, string> }
 interface NodeSpec { id: string; harness: string; model: string; model_class: string; purpose: string; tools: number; risk: string; sinks: number; structured: boolean }
 interface AgentSpec { id: string; name: string; deployed: boolean; gated: boolean; nodes: NodeSpec[] }
-interface Run { id: string; system: string; state: string; at: string; ms: number; cost: number | null; tokens: { in: number; out: number }; denials: number; modelCalls: number }
+/** Who started a run and their team, when the record names them (`Owner`, lib/api/pending.ts). */
+interface RunOwner { sub: string; name: string; email?: string; team?: string }
+interface Run { id: string; system: string; state: string; at: string; ms: number; cost: number | null; tokens: { in: number; out: number }; denials: number; modelCalls: number; owner?: RunOwner | null }
 interface Call { run: string; system: string; at: string; state: string; node: string; model: string; in: number; out: number; ms: number; cost: number | null; estimated?: boolean; tools: number }
 interface Eval { id: string; agent: string; model: string; passed: number; total: number; at: string; batch_id: string; compare: boolean; forced: boolean; incumbent: string | null; cost_per_case: number | null; cost_total: number | null; avg_ms: number | null }
 interface Azure { configured: boolean; currency: string | null; mtd: number | null; last7d: number | null; error: string | null }
@@ -134,6 +136,8 @@ export function FinOps() {
         // A page (a proxy's 502, Next's own 404) is no ledger and no message: the status alone is the reason.
         const d = (await r.json().catch(() => null)) as Data | null;
         if (!d) throw new Error(`the server answered ${r.status}`);
+        // A refusal with an empty body, or an answer without the ledger's shape, is a failed read, never a ledger to draw.
+        if (!(d as unknown as { error?: string }).error && (!r.ok || !d.config)) throw new Error(`the server answered ${r.status}`);
         return d;
       })
       .then((d: Data) => {
@@ -283,6 +287,43 @@ export function FinOps() {
       .map(([model, a]) => ({ model, ...a, runs: a.runs.size, share: total ? (a.cost ?? 0) / total : 0, info: book.get(model) ?? null }))
       .sort((x, y) => (y.cost ?? 0) - (x.cost ?? 0) || y.calls - x.calls);
   }, [modelCalls, book]);
+
+  /* ── by person and by team ──
+     Split from the run records, only as far as they say: a run counts for the
+     person its record names as owner and for that person's team. A run that
+     names nobody is counted beside the list, never guessed at. */
+  const whoWin = winFor("people");
+  const teamWin = winFor("teams");
+  const splitBy = useCallback(
+    (w: Win, keyOf: (o: RunOwner) => { key: string; label: string } | null) => {
+      const rows = runsIn(w);
+      const agg = new Map<string, { label: string; cost: number | null; runs: number }>();
+      let unnamed = 0;
+      let unnamedCost = 0;
+      for (const r of rows) {
+        const k = r.owner ? keyOf(r.owner) : null;
+        if (!k) {
+          unnamed += 1;
+          unnamedCost += r.cost ?? 0;
+          continue;
+        }
+        const a = agg.get(k.key) ?? { label: k.label, cost: 0, runs: 0 };
+        a.runs += 1;
+        a.cost = a.cost === null || r.cost === null ? null : a.cost + r.cost;
+        agg.set(k.key, a);
+      }
+      const list = [...agg.entries()]
+        .map(([key, a]) => ({ key, label: a.label, cost: a.cost, runs: a.runs, perRun: a.cost === null ? null : a.cost / Math.max(1, a.runs) }))
+        .sort((x, y) => (y.cost ?? 0) - (x.cost ?? 0) || y.runs - x.runs);
+      return { list, unnamed, unnamedCost, total: rows.length };
+    },
+    [runsIn],
+  );
+  const byPerson = useMemo(() => splitBy(whoWin, (o) => ({ key: o.sub, label: o.name || o.email || o.sub })), [splitBy, whoWin]);
+  const byTeam = useMemo(() => splitBy(teamWin, (o) => (o.team ? { key: o.team, label: o.team } : null)), [splitBy, teamWin]);
+  /** Whether any run on record names its owner, or a team: what decides between "nothing in this window" and "the records do not say". */
+  const recordsNameOwner = useMemo(() => (data?.runs ?? []).some((r) => r.owner), [data]);
+  const recordsNameTeam = useMemo(() => (data?.runs ?? []).some((r) => r.owner?.team), [data]);
 
   /* ── by workflow ── */
   const wfWin = winFor("workflows");
@@ -533,7 +574,7 @@ export function FinOps() {
       <div className="min-h-full" data-hue="green">
         <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7">
           <header className="flex flex-col gap-1.5">
-            <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">FinOps</h1>
+            <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">Costs</h1>
             <p className="max-w-[72ch] text-[12.5px] leading-[1.55] text-dim">
               Model spend by provider, workflow and step, computed from every journalled model call at the configured price. Replay the same workload on
               another model, see which steps are candidates for a smaller or local model, and route them without touching a spec.
@@ -551,7 +592,7 @@ export function FinOps() {
         {/* ── Header ── */}
         <header className="flex flex-wrap items-end gap-4">
           <div className="flex flex-col gap-1.5">
-            <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">FinOps</h1>
+            <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">Costs</h1>
             <p className="max-w-[72ch] text-[12.5px] leading-[1.55] text-dim">
               Model spend by provider, workflow and step, computed from every journalled model call at the configured price. Replay the same workload on
               another model, see which steps are candidates for a smaller or local model, and route them without touching a spec.
@@ -681,6 +722,69 @@ export function FinOps() {
                   {!byModel.length && <tr><td colSpan={8} className="px-3 py-5 text-center text-faint">No model calls in this window.</td></tr>}
                 </tbody>
               </table>
+            </div>
+          </Section>
+        </div>
+
+        {/* ── Row: by person + by team ── */}
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+          <Section id="people" title="Spend by person" caption="What each person's runs cost: a run counts for the person its record names as the one who started it. Click for their runs." folded={folds.people} onToggle={() => toggleFold("people")}
+            meta={<WindowPick value={whoWin} onChange={(w) => setCardWin("people", w)} inherited={!overrides.people} />}>
+            <div className="p-3">
+              {byPerson.list.length ? (
+                <>
+                  <RankBar
+                    data={byPerson.list.map((w, i) => ({ label: w.label, value: w.cost ?? 0, color: CAT[i % CAT.length], meta: `${fmtCost(w.cost)} · ${w.runs} run${w.runs === 1 ? "" : "s"}` }))}
+                    onPick={(label) => {
+                      const w = byPerson.list.find((x) => x.label === label);
+                      if (w) setDrill({ kind: "runs", title: w.label, subtitle: `${w.runs} run${w.runs === 1 ? "" : "s"} started in the window.`, rows: runsIn(whoWin).filter((r) => r.owner?.sub === w.key) });
+                    }}
+                  />
+                  {byPerson.unnamed > 0 && (
+                    <p className="px-1 pt-2 text-[11.5px] text-faint">
+                      {byPerson.unnamed} run{byPerson.unnamed === 1 ? "" : "s"} ({fmtCost(byPerson.unnamedCost)}) name no person, so they are in no row above.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="mx-auto max-w-[56ch] py-6 text-center text-[12px] leading-[1.55] text-faint">
+                  {!recordsNameOwner
+                    ? "Run records do not say who started a run yet. Once they do, spend is split by person here."
+                    : byPerson.total
+                      ? "No run in this window names the person who started it."
+                      : "No spend in this window."}
+                </p>
+              )}
+            </div>
+          </Section>
+
+          <Section id="teams" title="Spend by team" caption="The same spend by the team each person belongs to, as the run record states it. Click for the team's runs." folded={folds.teams} onToggle={() => toggleFold("teams")}
+            meta={<WindowPick value={teamWin} onChange={(w) => setCardWin("teams", w)} inherited={!overrides.teams} />}>
+            <div className="p-3">
+              {byTeam.list.length ? (
+                <>
+                  <RankBar
+                    data={byTeam.list.map((w, i) => ({ label: w.label, value: w.cost ?? 0, color: CAT[i % CAT.length], meta: `${fmtCost(w.cost)} · ${w.runs} run${w.runs === 1 ? "" : "s"}` }))}
+                    onPick={(label) => {
+                      const w = byTeam.list.find((x) => x.label === label);
+                      if (w) setDrill({ kind: "runs", title: w.label, subtitle: `${w.runs} run${w.runs === 1 ? "" : "s"} started by this team in the window.`, rows: runsIn(teamWin).filter((r) => r.owner?.team === w.key) });
+                    }}
+                  />
+                  {byTeam.unnamed > 0 && (
+                    <p className="px-1 pt-2 text-[11.5px] text-faint">
+                      {byTeam.unnamed} run{byTeam.unnamed === 1 ? "" : "s"} ({fmtCost(byTeam.unnamedCost)}) name no team, so they are in no row above.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="mx-auto max-w-[56ch] py-6 text-center text-[12px] leading-[1.55] text-faint">
+                  {!recordsNameTeam
+                    ? "Run records do not say which team a run belongs to yet. Once they do, spend is split by team here."
+                    : byTeam.total
+                      ? "No run in this window names a team."
+                      : "No spend in this window."}
+                </p>
+              )}
             </div>
           </Section>
         </div>
@@ -921,7 +1025,7 @@ export function FinOps() {
               <span key={c}>{c}: <Mono>{data?.config.class_defaults?.[c] || "—"}</Mono></span>
             ))}
             <span className="grow" />
-            <Link href="/settings" className="underline">Manage models and providers</Link>
+            <Link href="/configuration#models" className="underline">Manage models and providers in Configuration</Link>
           </div>
         </Section>
 
@@ -954,9 +1058,9 @@ export function FinOps() {
                   </button>
                 );
               })}
-              <Link href="/settings" className="focusable flex min-h-[96px] flex-col items-center justify-center gap-1 rounded-md border border-dashed border-line-strong p-3 text-[11.5px] text-dim hover:bg-raise/40">
+              <Link href="/configuration#models" className="focusable flex min-h-[96px] flex-col items-center justify-center gap-1 rounded-md border border-dashed border-line-strong p-3 text-[11.5px] text-dim hover:bg-raise/40">
                 <span className="text-[18px] leading-none">+</span>
-                Add a provider in Settings
+                Add a provider in Configuration
                 <span className="text-[10px] text-faint">Foundry, Vertex, Bedrock, vLLM, Ollama, LM Studio…</span>
               </Link>
             </div>

@@ -9,7 +9,8 @@ import { QUIET } from "@/lib/quiet";
 import { Field, Input } from "./forms";
 import { Pick } from "./select";
 import { ControlRef } from "./control-ref";
-import { Figures, PageHeader, Section } from "./section";
+import { Figures, Section } from "./section";
+import { GroupHeader } from "./page-tabs";
 import { soon } from "@/lib/soon";
 import { listAgents, type AgentSummary } from "@/lib/api/l2";
 import { OBLIGATION_STATUSES, getFrameworkView, listFrameworks, type AgentObligation, type FrameworkAgent, type FrameworkInfo, type RegulatoryView } from "@/lib/api/l9";
@@ -173,9 +174,9 @@ function FrameworksPage() {
   const quietDown = QUIET && Boolean(error) && !frameworks;
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
-      <PageHeader title="Frameworks">
+      <GroupHeader group="assurance" tab="frameworks">
         The estate through one framework or regulation: each agent against its obligations, with the evidence that meets each. Where no clause has been mapped to a control, this says so rather than showing an empty pass.
-      </PageHeader>
+      </GroupHeader>
       {error && (
         <Banner tone="err" title="Could not read the framework">
           {error}
@@ -184,6 +185,7 @@ function FrameworksPage() {
       {!quietDown && <div className="grid items-start gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
         <Section title="Frameworks and regulations" hue="control">
           {frameworks === null && <p className="text-[12px] text-faint">Reading the catalogue…</p>}
+          {frameworks?.length === 0 && <p className="text-[12px] text-faint">No framework or regulation is in the catalogue.</p>}
           {groups.map((g) =>
             g.rows.length ? (
               <div key={g.title} className="flex flex-col gap-1">
@@ -209,7 +211,7 @@ function FrameworksPage() {
         <Section
           title={view?.framework.short ?? "View"}
           hue="control"
-          meta={view ? `${view.count} agent${view.count === 1 ? "" : "s"}` : QUIET && error ? undefined : "reading…"}
+          meta={view ? `${view.count} agent${view.count === 1 ? "" : "s"}` : (QUIET && error) || frameworks?.length === 0 ? undefined : "reading…"}
           action={
             name ? (
               <Button size="sm" variant="solid" tone="neutral" disabled={!view || isUnmapped(view.framework)} href={`/evidence?framework=${encodeURIComponent(name)}`}>

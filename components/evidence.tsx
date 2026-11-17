@@ -10,7 +10,8 @@ import { Field, Input } from "./forms";
 import { Pick } from "./select";
 import { ControlMark, ControlRef } from "./control-ref";
 import { DigestChip } from "./digest-chip";
-import { PageHeader, Section } from "./section";
+import { Section } from "./section";
+import { GroupHeader } from "./page-tabs";
 import { ChainStatus } from "./chain";
 import { soon } from "@/lib/soon";
 import { listAgents, type AgentSummary } from "@/lib/api/l2";
@@ -330,9 +331,9 @@ function EvidencePage() {
   const quietDown = QUIET && Boolean(loadError) && !catalogue;
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
-      <PageHeader title="Evidence">
+      <GroupHeader group="assurance" tab="evidence">
         An assessor&rsquo;s pack for a control or a framework over a period: what fired, the signed decisions, the policy in force, who acted, and the chain verification of every run cited. It downloads as a zip with a SHA-256 for each file.
-      </PageHeader>
+      </GroupHeader>
       {loadError && (
         <Banner tone="err" title="Could not read the controls catalogue">
           {loadError}

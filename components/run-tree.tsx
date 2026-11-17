@@ -176,7 +176,7 @@ function ReachedRow({ r }: { r: Reached }) {
     <li className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b border-line/70 px-4 py-1.5 last:border-b-0" style={{ paddingLeft: 16 + Math.min(6, r.depth) * 16 }}>
       <Tag tone={r.kind === "sub_run" ? "queue" : r.kind === "job" ? "warn" : peerTask ? (r.delivery === "a2a" ? "run" : "err") : "neutral"}>{reachedKindLabel(r)}</Tag>
       {peerTask && peer ? (
-        <Link href={`/peers#peer-${encodeURIComponent(peer)}`} className="focusable rounded-sm text-[12px] font-medium text-fg hover:underline" title={`${peer} in the peer registry`}>
+        <Link href={`/configuration#peer-${encodeURIComponent(peer)}`} className="focusable rounded-sm text-[12px] font-medium text-fg hover:underline" title={`${peer} in the peer registry`}>
           {peer}
         </Link>
       ) : (
@@ -210,7 +210,7 @@ function ReachedRow({ r }: { r: Reached }) {
 /**
  * Whom a kill reached and how: the receipt `POST /api/runs/{id}/kill`
  * answers. A task a run in the tree handed a peer is a row of its own
- * (`peer_task`): the peer by its registry id, linked to the Peers page, the
+ * (`peer_task`): the peer by its registry id, linked to its row on Configuration, the
  * task's id at the peer, and, when the signed cancel did not reach it, why.
  * What an earlier kill is still stopping (`already`) is listed apart, with
  * that kill: nothing was thrown at it again.

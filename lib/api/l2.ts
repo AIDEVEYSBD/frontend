@@ -7,7 +7,7 @@ import { api, errorText, type RunRow, type Schemas } from "./client";
  * run ledger beside each card), the IAM page (the identity register, people,
  * API keys, an attached agent's block and gate, a server's disconnection, a
  * vault credential's removal), the attached agents panel, the vault (the
- * Keys section on Settings, the providers' key picker) and the queue on
+ * Credentials panel on Configuration, the providers' key picker) and the queue on
  * Control. Each call is `api.GET(...)`/`api.POST(...)` on a path typed by
  * lib/api/backend.d.ts, which `npm run gen:api` writes from
  * backend/openapi.json; a refusal is an Error carrying the backend's own

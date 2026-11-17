@@ -13,6 +13,7 @@ import type { WatchEvent } from "@/lib/guardrails-watch";
 import { GuardrailsWatch } from "./guardrails-watch";
 import { QuietNote } from "./overlays";
 import { QUIET } from "@/lib/quiet";
+import { GroupHeader } from "./page-tabs";
 
 /**
  * The control register, and the framework it is assessed against.
@@ -149,15 +150,16 @@ export function Guardrails() {
 
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7" data-hue="indigo">
-      {/* ── hero ── */}
-      <header className="flex flex-col gap-3">
-        <span className="flex flex-wrap items-center gap-3">
-          <span className="text-[11px] font-medium tracking-[0.08em] text-faint uppercase">Controls</span>
-          <span className="flex items-center rounded-md border border-line bg-canvas p-0.5">
+      <GroupHeader
+        group="controls"
+        tab="catalogue"
+        actions={
+          <span className="flex flex-wrap items-center rounded-md border border-line bg-canvas p-0.5" role="group" aria-label="Catalogue view">
             {(["register", "framework", "watch"] as const).map((v) => (
               <button
                 key={v}
                 type="button"
+                aria-pressed={view === v}
                 onClick={() => { setView(v); setOpen(null); }}
                 className={`focusable rounded-[5px] px-2.5 py-1 text-[11.5px] font-medium transition-colors ${view === v ? "bg-surface text-fg elev-1" : "text-faint hover:text-fg"}`}
               >
@@ -166,38 +168,14 @@ export function Guardrails() {
               </button>
             ))}
           </span>
-        </span>
-        {view === "watch" ? (
-          <>
-            <h1 className="max-w-[26ch] text-[26px] leading-[1.15] font-semibold tracking-[-0.02em]">
-              What the screener caught, and what the taint rules stopped.
-            </h1>
-            <p className="max-w-[78ch] text-[13px] leading-[1.6] text-faint">
-              Every prompt or response the screener matched, every call where untrusted content reached a tool that acts outside the box, and every
-              host the egress policy refused, read from the journals of every application and agent. Excerpts are redacted of every secret this
-              deployment holds. Open an event for its lineage: what the content came from, and what it fed.
-            </p>
-          </>
-        ) : view === "register" ? (
-          <>
-            <h1 className="max-w-[24ch] text-[26px] leading-[1.15] font-semibold tracking-[-0.02em]">
-              Controls applied across every workflow.
-            </h1>
-            <p className="max-w-[78ch] text-[13px] leading-[1.6] text-faint">
-              Agent Factory applies {CONTROLS.length} platform controls to workflow execution. Each
-              control documents its implementation, the evidence it produces and the recognized
-              standards it references; control decisions are retained in the run record.
-            </p>
-          </>
-        ) : (
-          <>
-            <h1 className="max-w-[26ch] text-[26px] leading-[1.15] font-semibold tracking-[-0.02em]">
-              Understand the framework used to assess data security.
-            </h1>
-            <p className="max-w-[78ch] text-[13px] leading-[1.6] text-faint">{CORE_PRINCIPLE}</p>
-          </>
-        )}
-      </header>
+        }
+      >
+        {view === "watch"
+          ? "What the screener caught and what the taint rules stopped: every prompt or response the screener matched, every call where untrusted content reached a tool that acts outside the box, and every host the egress policy refused, read from the run journals with secrets redacted. Open an event for its lineage."
+          : view === "register"
+            ? `The ${CONTROLS.length} platform controls applied to every workflow. Each documents its implementation, the evidence it produces and the standards it references; control decisions are kept in the run record.`
+            : `The framework used to assess data security. ${CORE_PRINCIPLE}`}
+      </GroupHeader>
 
       {view === "register" && (
         <>

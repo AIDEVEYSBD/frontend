@@ -24,7 +24,8 @@ export function applyAccent(on: boolean) {
   }
 }
 
-export function Appearance() {
+/** The body of Configuration's Appearance panel (components/configuration.tsx). `bare`: the console has nothing behind it, so nothing keeps the choice. */
+export function Appearance({ bare = false }: { bare?: boolean | null }) {
   const [accent, setAccent] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -50,23 +51,24 @@ export function Appearance() {
     }
   };
 
-  return (
-    <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
-      <div className="flex items-center gap-2 border-b border-line bg-raise/55 px-4 py-2.5">
-        <span className="text-[12px] font-semibold">Console appearance</span>
-        <span className="text-[11px] text-faint">one choice for every browser and every person</span>
-        <span className="grow" />
-        {accent !== null && <Status tone="neutral" dot={false}>{accent ? "subject colours" : "monochrome"}</Status>}
+  // The one calm line of a panel whose record was not read (PanelNote in components/providers.tsx, kept out of this file because the chrome imports it).
+  if (bare === true) {
+    return (
+      <div className="px-4 py-3">
+        <QuietNote inline />
       </div>
-      <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-        <span className="max-w-[60ch] text-[12px] leading-[1.55] text-faint">
-          Card headers can carry a colour for their subject: spend green, approvals amber, live activity blue, controls red, knowledge violet, identity teal, traces indigo. Or the console can stay on its monochrome base.
-        </span>
+    );
+  }
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5">
+        <span className="text-[11.5px] text-faint">In use</span>
+        {accent !== null && <Status tone="neutral" dot={false}>{accent ? "subject colours" : "monochrome"}</Status>}
         <span className="grow" />
         <Button size="sm" variant="solid" tone={accent ? "ink" : "neutral"} permission="configure" loading={busy && accent === false} disabled={accent === null || accent === true} onClick={() => choose(true)}>Subject colours</Button>
         <Button size="sm" variant="solid" tone={accent === false ? "ink" : "neutral"} permission="configure" loading={busy && accent === true} disabled={accent === null || accent === false} onClick={() => choose(false)}>Monochrome</Button>
       </div>
       {error && (QUIET ? <p className="border-t border-line px-4 py-2"><QuietNote inline /></p> : <p className="border-t border-line px-4 py-2 text-[11.5px] text-err">{error}</p>)}
-    </section>
+    </>
   );
 }

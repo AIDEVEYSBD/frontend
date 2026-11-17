@@ -4,14 +4,13 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Button, Mono, Status, Tag } from "./ui";
 import { QuietNote } from "./overlays";
+import { PanelNote } from "./providers";
 import { QUIET } from "@/lib/quiet";
 import { Pick } from "./select";
 import { ControlRef } from "./control-ref";
 import { DigestChip } from "./digest-chip";
 import { dataClassChoices } from "@/lib/bom";
-import { hueFor } from "@/lib/hue";
 import { soon } from "@/lib/soon";
-import { useSession } from "@/lib/use-session";
 import { controlLabel } from "@/lib/guardrails";
 import { DoorError } from "@/lib/api/l5";
 import { addPeer, approvePeer, deletePeer, listPeers, peerOfRefusal, rescanPeer, type Peer } from "@/lib/api/l7b";
@@ -52,6 +51,9 @@ import {
  * register each other before either can answer. The secret is shown by its
  * vault name only; the value never leaves the vault. Every action needs the
  * configure permission, so a viewer reads all of this and changes none of it.
+ *
+ * It is a panel of Configuration (components/configuration.tsx): this file
+ * holds the panel's body and the registry's read.
  */
 
 function ago(iso: string): string {
@@ -71,12 +73,12 @@ function who(by: string): string {
   return by.replace(/\s*<[^>]*>\s*$/, "").trim() || by || "unknown";
 }
 
-function meOf(session: { name: string; email: string; sub: string } | null): Me | null {
+export function meOf(session: { name: string; email: string; sub: string } | null): Me | null {
   return session ? { name: session.name, email: session.email, sub: session.sub } : null;
 }
 
 /** A status as a chip: a changed card is solid red, so it stops a reader scanning the list. */
-export function PeerStatusTag({ status }: { status: Peer["status"] }) {
+function PeerStatusTag({ status }: { status: Peer["status"] }) {
   const meta = PEER_STATUS_META[status];
   return (
     <span title={meta.means}>
@@ -120,7 +122,7 @@ const INPUT = "focusable h-8 w-full rounded-md border border-line-strong bg-fiel
  * share. The card is fetched at once; a fetch that fails is no refusal (the
  * peer is kept, without a card, until a rescan pins one).
  */
-export function RegisterPeerForm({ onAdded, onCancel }: { onAdded: (p: Peer) => void; onCancel: () => void }) {
+function RegisterPeerForm({ onAdded, onCancel }: { onAdded: (p: Peer) => void; onCancel: () => void }) {
   const [form, setForm] = useState<PeerForm>(EMPTY_PEER_FORM);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -193,7 +195,7 @@ export function RegisterPeerForm({ onAdded, onCancel }: { onAdded: (p: Peer) => 
         </label>
       </div>
       <p className="text-[10.5px] leading-[1.5] text-faint">
-        Store the secret in the vault first (Settings, Keys) and give its name here, or <Mono className="text-[10px]">{"${secret:name}"}</Mono>; a value pasted where the name belongs is refused, and one name signs for one caller only.
+        Store the secret in the vault first (Credentials, on this page) and give its name here, or <Mono className="text-[10px]">{"${secret:name}"}</Mono>; a value pasted where the name belongs is refused, and one name signs for one caller only.
       </p>
       {error && <Refusal error={error} />}
       <div className="flex flex-wrap items-center gap-2">
@@ -399,30 +401,67 @@ export function PeerRow({ peer: p, twoPerson, me, onChanged }: { peer: Peer; two
   );
 }
 
-/* ═══════════════════ the list ═══════════════════ */
+/* ═══════════════════ the panel ═══════════════════ */
 
-export function PeerList({ peers, twoPerson, me, error, refresh }: { peers: Peer[] | null; twoPerson: boolean; me: Me | null; error: string; refresh: () => void }) {
+export function usePeers() {
+  const [peers, setPeers] = useState<Peer[] | null>(null);
+  const [twoPerson, setTwoPerson] = useState(false);
+  const [error, setError] = useState("");
+  const refresh = useCallback(async () => {
+    try {
+      const r = await listPeers();
+      setPeers(r.peers);
+      setTwoPerson(r.two_person);
+      setError("");
+    } catch (e) {
+      setPeers((p) => p ?? []);
+      setError((e as Error).message);
+    }
+  }, []);
+  useEffect(() => soon(refresh), [refresh]);
+  return { peers, twoPerson, error, refresh };
+}
+
+/**
+ * The body of Configuration's Peers panel (components/configuration.tsx):
+ * the counts, the register form, then one row per peer. The page reads the
+ * registry (`usePeers`) so the panel's heading can say a card changed, and
+ * names the signed-in person (`meOf`) for the two-person rule. A row
+ * is addressed as `#peer-<id>`: a kill receipt, a breaker and a finding link
+ * a peer to its row.
+ */
+export function PeerList({ peers, twoPerson, me, error, refresh, bare = false }: { peers: Peer[] | null; twoPerson: boolean; me: Me | null; error: string; refresh: () => void; /** The console has nothing behind it (null: not known yet). */ bare?: boolean | null }) {
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState<Peer | null>(null);
   const counts = peerCounts(peers ?? []);
   const shown = orderPeers(peers ?? []);
+  const none = shown.length === 0;
+  const approvalRule = twoPerson ? "Two-person approval is on: whoever registers a peer cannot approve its card." : "One approval admits a peer; two-person approval is off on this deployment.";
+
+  // Quiet (lib/quiet.ts): a registry that could not be read is not shown as an empty one with zero counts.
+  if (none && !adding && (bare === true || (QUIET && Boolean(error)))) return <PanelNote />;
+  // Not known yet whether anything is behind the console: no "no peer is registered" in the meantime.
+  if (peers === null || (none && bare === null && !adding && !error)) return <p className="px-4 py-3 text-[11.5px] text-faint">Reading the registry&hellip;</p>;
+
   return (
-    <section className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">
-      <div data-hue={hueFor("peer registry")} className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-raise/55 px-4 py-2.5">
-        <span className="text-[12px] font-semibold">Registered peers</span>
-        {peers === null ? (
-          <span className="text-[11px] text-faint">Reading the registry…</span>
-        ) : (
-          <span className="flex flex-wrap items-center gap-3">
-            <Status tone="ok">{counts.approved} approved</Status>
-            <Status tone="warn">{counts.pending} pending</Status>
-            <Status tone={counts.changed ? "err" : "neutral"}>{counts.changed} changed</Status>
-            {counts.no_card > 0 && <Status tone="warn">{counts.no_card} without a card</Status>}
+    <>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-2 last:border-b-0">
+        {none && !error ? (
+          <span className="min-w-0 max-w-[92ch] text-[12px] leading-[1.55] text-dim">
+            No peer is registered. A spec&rsquo;s peer step reaches another party&rsquo;s agent only once that agent is registered here and its card approved; until then the runtime refuses it,
+            whatever URL the spec carries. {approvalRule}
           </span>
+        ) : (
+          <>
+            <span className="flex flex-wrap items-center gap-3">
+              <Status tone="ok">{counts.approved} approved</Status>
+              <Status tone="warn">{counts.pending} pending</Status>
+              <Status tone={counts.changed ? "err" : "neutral"}>{counts.changed} changed</Status>
+              {counts.no_card > 0 && <Status tone="warn">{counts.no_card} without a card</Status>}
+            </span>
+            <span className="min-w-0 max-w-[70ch] text-[11px] leading-[1.5] text-faint">{approvalRule}</span>
+          </>
         )}
-        <span className="min-w-0 max-w-[70ch] text-[11px] leading-[1.5] text-faint">
-          {twoPerson ? "Two-person approval is on: whoever registers a peer cannot approve its card." : "One approval admits a peer; two-person approval is off on this deployment."}
-        </span>
         <span className="grow" />
         {!adding && (
           <Button size="sm" variant="solid" tone="ink" permission="configure" onClick={() => setAdding(true)}>
@@ -464,64 +503,6 @@ export function PeerList({ peers, twoPerson, me, error, refresh }: { peers: Peer
       {shown.map((p) => (
         <PeerRow key={p.id} peer={p} twoPerson={twoPerson} me={me} onChanged={refresh} />
       ))}
-      {peers?.length === 0 && !error && (
-        <p className="px-4 py-3 text-[11.5px] text-faint">
-          No peer is registered. A spec&rsquo;s peer step reaches another party&rsquo;s agent only once that agent is registered here and its card approved; until then the runtime refuses it, whatever URL the spec carries.
-        </p>
-      )}
-    </section>
-  );
-}
-
-/* ═══════════════════ the page ═══════════════════ */
-
-export function usePeers() {
-  const [peers, setPeers] = useState<Peer[] | null>(null);
-  const [twoPerson, setTwoPerson] = useState(false);
-  const [error, setError] = useState("");
-  const refresh = useCallback(async () => {
-    try {
-      const r = await listPeers();
-      setPeers(r.peers);
-      setTwoPerson(r.two_person);
-      setError("");
-    } catch (e) {
-      setPeers((p) => p ?? []);
-      setError((e as Error).message);
-    }
-  }, []);
-  useEffect(() => soon(refresh), [refresh]);
-  return { peers, twoPerson, error, refresh };
-}
-
-export function Peers() {
-  const { session } = useSession();
-  const { peers, twoPerson, error, refresh } = usePeers();
-  // A kill receipt links a peer task to its peer's row (`#peer-<id>`).
-  useEffect(() => {
-    if (!peers?.length || typeof window === "undefined" || !window.location.hash.startsWith("#peer-")) return;
-    document.getElementById(decodeURIComponent(window.location.hash.slice(1)))?.scrollIntoView({ block: "start" });
-  }, [peers]);
-  const counts = peerCounts(peers ?? []);
-  return (
-    <div className="mx-auto w-full max-w-[1520px] px-5 py-7" data-hue="indigo">
-      <header className="flex flex-wrap items-end gap-4">
-        <div className="flex max-w-[86ch] flex-col gap-1.5">
-          <span className="flex items-center gap-3">
-            <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">Peers</h1>
-            {peers && counts.changed > 0 && <Status tone="err">{counts.changed} changed</Status>}
-          </span>
-          <p className="text-[12.5px] leading-[1.6] text-dim">
-            Other parties&rsquo; agents this factory speaks A2A with. Each is admitted the way a tool server is: its agent card is fetched signed and pinned by
-            digest, and nothing is sent to it, or heard from it, until a person approves the card. A card that changes detaches the peer until someone approves it
-            again. Every request both ways is signed under a secret the two sides share, held in the vault and shown here by name only.
-          </p>
-        </div>
-      </header>
-      <div className="mt-5">
-        {/* Quiet (lib/quiet.ts): a registry that could not be read is not shown as an empty one with zero counts. */}
-        {QUIET && error && !peers?.length ? <QuietNote /> : <PeerList peers={peers} twoPerson={twoPerson} me={meOf(session)} error={error} refresh={refresh} />}
-      </div>
-    </div>
+    </>
   );
 }

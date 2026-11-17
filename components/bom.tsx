@@ -9,7 +9,8 @@ import { QUIET } from "@/lib/quiet";
 import { Field } from "./forms";
 import { Pick } from "./select";
 import { DigestChip } from "./digest-chip";
-import { Figures, JsonDetails, PageHeader, Section } from "./section";
+import { Figures, JsonDetails, Section } from "./section";
+import { AgentHeader, ChooseAgentHeader } from "./agent-header";
 import { soon } from "@/lib/soon";
 import { api, errorText } from "@/lib/api/client";
 import { listAgents, type AgentSummary } from "@/lib/api/l2";
@@ -239,7 +240,8 @@ function BomPage() {
   const [bom, setBom] = useState<AiBom | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const agent = params.get("agent") ?? agents?.[0]?.id ?? "";
+  /** The agent this tab is open on; with none named the page offers the choice and reads nothing. */
+  const agent = params.get("agent") ?? "";
   const version = params.get("version");
   const versionNumber = version ? Number(version) : undefined;
   const load = useCallback(() => {
@@ -279,13 +281,42 @@ function BomPage() {
     };
   }, [agent]);
   const go = (a: string, v?: string) => router.push(`/bom?agent=${encodeURIComponent(a)}${v ? `&version=${encodeURIComponent(v)}` : ""}`);
-  const quietDown = QUIET && agentsDown && !bom;
   const versionOptions = useMemo(() => [{ value: "", label: "Latest, or what production runs" }, ...[...versions].reverse().map((v) => ({ value: String(v.version), label: `Version ${v.version}${v.deployed ? " (production)" : ""}` }))], [versions]);
+
+  if (!agent) {
+    return (
+      <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
+        <ChooseAgentHeader title="Bill of materials">
+          Choose an agent to read what it is made of: its models and routes, its tools with their data classes, the servers and peers behind them, and the digest of each.
+        </ChooseAgentHeader>
+        {agentsDown ? (
+          QUIET ? (
+            <QuietNote />
+          ) : (
+            <p className="text-[12.5px] text-err">The agents could not be read.</p>
+          )
+        ) : (
+          <>
+            <div className="max-w-[320px]">
+              <Field label="Agent">
+                <Pick value="" onChange={(a) => a && go(a)} options={[{ value: "", label: "Choose an agent" }, ...(agents ?? []).map((a) => ({ value: a.id, label: a.name }))]} disabled={!agents?.length} loading={agents === null} />
+              </Field>
+            </div>
+            {agents?.length === 0 && <p className="text-[12px] text-faint">No agent is saved yet.</p>}
+          </>
+        )}
+      </div>
+    );
+  }
+
+  const quietDown = QUIET && agentsDown && !bom;
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
-      <PageHeader
-        title="AI-BOM"
-        action={
+      <AgentHeader
+        tab="bom"
+        id={agent}
+        agent={agents?.find((a) => a.id === agent) ?? null}
+        actions={
           <Button
             size="sm"
             variant="solid"
@@ -307,27 +338,23 @@ function BomPage() {
           </Button>
         }
       >
-        What an agent is made of: its models and routes, its tools with their data classes, the servers and peers behind them, and the digest of each.
-      </PageHeader>
+        What this agent is made of: its models and routes, its tools with their data classes, the servers and peers behind them, and the digest of each.
+      </AgentHeader>
       {quietDown && <QuietNote />}
       {!quietDown && (
-      <>
-      <div className="grid max-w-[640px] gap-3 md:grid-cols-2">
-        <Field label="Agent">
-          <Pick value={agent} onChange={(a) => go(a)} options={(agents ?? []).map((a) => ({ value: a.id, label: a.name }))} disabled={!agents?.length} loading={agents === null} />
-        </Field>
-        <Field label="Version">
-          <Pick value={version ?? ""} onChange={(v) => go(agent, v)} options={versionOptions} disabled={!versions.length} />
-        </Field>
-      </div>
-      {error && (
-        <Banner tone="err" title="Could not read the bill of materials">
-          {error}
-        </Banner>
-      )}
-      {agents?.length === 0 && <p className="text-[12px] text-faint">No agent is saved yet.</p>}
-      {bom && <BomView bom={bom} />}
-      </>
+        <>
+          <div className="max-w-[320px]">
+            <Field label="Version">
+              <Pick value={version ?? ""} onChange={(v) => go(agent, v)} options={versionOptions} disabled={!versions.length} />
+            </Field>
+          </div>
+          {error && (
+            <Banner tone="err" title="Could not read the bill of materials">
+              {error}
+            </Banner>
+          )}
+          {bom && <BomView bom={bom} />}
+        </>
       )}
     </div>
   );

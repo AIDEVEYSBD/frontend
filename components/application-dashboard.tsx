@@ -322,8 +322,8 @@ export function ApplicationDashboard({ id }: { id: string }) {
               {app.blocked ? "Unblock" : "Block"}
             </Button>
           ) : (
-            <Button variant="solid" tone="ink" href={app.source === "attached" ? "/configuration#agents" : `/workflows?id=${encodeURIComponent(app.id)}`}>
-              {app.source === "attached" ? "Attached-agent policy" : "Open workflow"}
+            <Button variant="solid" tone="ink" href={app.source === "attached" ? "/configuration#agents" : `/agent?id=${encodeURIComponent(app.id)}`}>
+              {app.source === "attached" ? "Attached-agent policy" : "Open agent"}
             </Button>
           )}
         </header>
