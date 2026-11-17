@@ -1,5 +1,6 @@
 "use client";
 
+import { useConsoleLinks } from "@/lib/use-links";
 import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -63,6 +64,9 @@ function WorkloadCard({ profile, reading }: { profile: WorkloadProfile; reading:
   // The door's own words once it names the inputs and gates; the product's until then.
   const handsOver = form.from === "door" ? form.inputs.map((i) => i.label) : profile.handsOver;
   const decides = gates.from === "door" && gates.gates.length ? gates.gates.map((g) => [g.name, g.role].filter(Boolean).join(": ")) : profile.decides;
+  // The workload's own console, where a run is set up; absent until the deployment gives its address.
+  const links = useConsoleLinks();
+  const url = links?.workloads[profile.id] ?? "";
 
   return (
     <section className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1" data-workload={profile.id}>
@@ -83,18 +87,27 @@ function WorkloadCard({ profile, reading }: { profile: WorkloadProfile; reading:
       </div>
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line px-4 py-3">
-        <span className="flex min-w-0 grow basis-[55%] flex-wrap items-baseline gap-x-1.5 text-[12px] leading-[1.5] text-dim">
+        <span className="flex min-w-0 grow basis-[45%] flex-wrap items-baseline gap-x-1.5 text-[12px] leading-[1.5] text-dim">
           {reading.state === "available" ? (
             <>
               Run by <AgentLink agent={reading.agent} />
             </>
+          ) : links && !url ? (
+            "A run is set up in this workload's own console, which is not live yet."
           ) : (
             reading.short
           )}
         </span>
-        <Button size="sm" variant="solid" tone="ink" href={workloadHref(profile.id)}>
-          Set up a run
+        <Button size="sm" variant="solid" tone="neutral" href={workloadHref(profile.id, { tab: "findings" })}>
+          Findings and report
         </Button>
+        {/* A run is set up in the workload's own console, which this one opens and does not embed. Until a deployment names its address, it is not live. */}
+        <span className="flex items-center gap-2" title={url ? undefined : `The ${profile.name.toLowerCase()} console is not live yet.`}>
+          <Button size="sm" variant="solid" tone="ink" disabled={!url} onClick={() => url && window.open(url, "_blank", "noopener,noreferrer")}>
+            Set up a run
+            {url && <NavIcon name="external-link" size={12} className="ml-1.5" />}
+          </Button>
+        </span>
       </div>
     </section>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import { IapAccess } from "./iap-access";
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button, Mono, Status, Tag, type Tone } from "./ui";
@@ -275,6 +276,7 @@ export function AuthorizationView() {
       )}
 
       <ConsoleSignIn now={now} />
+      <IapAccess />
 
       {/* ── upstream services ── */}
       <Card title="Upstream services" meta={count(upstream.length)}>

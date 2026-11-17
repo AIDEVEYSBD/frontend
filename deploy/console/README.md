@@ -85,6 +85,22 @@ gcloud secrets add-iam-policy-binding $SERVICE-auth-secret --project $PROJECT_ID
 
 `roles/aiplatform.user` (Vertex AI User) is the role this was written against. The narrowest permission that allows listing Model Garden's models was not confirmed; if policy calls for a custom role, start from that one and read the service log (section 5).
 
+### Optional: let the console list who has access
+
+The Identity pages can show who Google lets through to the console, read from IAP's own access list. For that the same service account needs to read the IAP policy. A custom role with three read permissions is enough; it cannot change who has access:
+
+```
+gcloud iam roles create agentfactoryIapPolicyReader --project $PROJECT_ID \
+  --title "IAP policy reader" \
+  --permissions iap.web.getIamPolicy,iap.webTypes.getIamPolicy,iap.webServices.getIamPolicy
+
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member "serviceAccount:$SA" \
+  --role projects/$PROJECT_ID/roles/agentfactoryIapPolicyReader
+```
+
+Without it the console still works; the "Who can open this console" card is simply not shown. A group or a domain on the list appears as one entry; the console does not list a group's members.
+
 ## 3. Deploy
 
 Edit `deploy/console/env.cloudrun.yaml`: put the `IAP_AUDIENCE` string from above in it, and the people and roles in `IAP_ROLE_MAP` (section 4). Then:
@@ -160,6 +176,7 @@ If something is off:
 | "This console is reached through Google sign-in" | The request reached the console without IAP's header: IAP is not enabled on the service. |
 | "Your Google sign-in could not be verified" | `IAP_AUDIENCE` does not match the service (project number, region and service name must be exact), or the service cannot reach Google's keys (see `IAP_JWKS_URL`). |
 | The console opens with "Local operator, Sign-in is off" | `IAP_AUDIENCE` or `AUTH_SECRET` is not set on the service, so sign-in is off. |
+| No "Who can open this console" card on Identity | The service account cannot read the IAP policy (see the optional step in section 2). The log has a line starting `[iap-access]`. |
 | No Vertex AI block on Configuration | The service could not list models. Its log has a line starting `[vertex]` with the reason: no identity, or the status Vertex AI answered for each list. |
 | The model list is for the wrong region | The console uses the region the service runs in. Set `REGION` to the region Vertex AI is used in. |
 | A page shows a red error | The image was probably built with `NEXT_PUBLIC_CONSOLE_QUIET=0`. |
@@ -176,6 +193,7 @@ If something is off:
 | `AUTH_SECRET` | run | Signs the session cookie. Required. From Secret Manager. |
 | `IAP_AUDIENCE` | run | Switches IAP sign-in on. Required. |
 | `IAP_ROLE_MAP` | run | Roles by address or domain. |
+| `WORKLOAD_URLS` | run | Optional. JSON giving the address of each workload's own console (`sast`, `pentest`, `firewall`, `threat_hunt`). The "Set up a run" button on Workloads opens it in a new tab; a workload left out is shown as not live yet. |
 | `IAP_SIGNOUT_URL` | run | Optional. Shows a sign-out button. |
 | `IAP_JWKS_URL` | run | Optional. A mirror of Google's IAP keys. |
 | `GCP_PROJECT`, `REGION` | run | Optional. Override what the metadata server says. |
@@ -197,5 +215,6 @@ Not part of this deployment; listed so the names are known. When the backend is 
 
 - The image was built and run locally, and every page was opened in it. It was also run the way Cloud Run runs it: on a port given in `PORT`, with a stand-in for the metadata server supplying the service account, project and region.
 - Sign-in was exercised end to end against a stand-in for IAP that signs assertions the way Google documents them, including the Cloud Run audience format. It has not run behind a real IAP.
+- The list of who has access was exercised against a stand-in for IAP's policy call. It has not read a real IAP policy.
 - The model list was exercised against a stand-in for Vertex AI's list calls, written from Google's published API description. It has not listed models from a real project, on Cloud Run or anywhere else.
 - The commands on this page were written from Google's documentation. They have not been run against a project.

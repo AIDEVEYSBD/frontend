@@ -61,7 +61,7 @@ const AUTH_SECRET = process.env.AUTH_SECRET ?? "";
 const INTERNAL_HEADER = "x-internal-auth";
 // Behind Google IAP the person is already signed in when the request arrives: a page without a console session goes straight to the door that reads IAP's header, not to a sign-in page.
 const IAP = Boolean(process.env.IAP_AUDIENCE);
-const PUBLIC_ORIGIN = (process.env.NEXT_PUBLIC_ORIGIN ?? process.env.PUBLIC_ORIGIN ?? "https://agentfactory.autogrc.cloud").replace(/\/+$/, "");
+const PUBLIC_ORIGIN = (process.env.NEXT_PUBLIC_ORIGIN ?? process.env.PUBLIC_ORIGIN ?? "https://agent-factory.example.com").replace(/\/+$/, "");
 
 // The doors a machine opens with an API key (or, for a webhook, the spec's
 // own secret; for the external answer door, the signed link token; for the

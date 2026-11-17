@@ -1,5 +1,6 @@
 "use client";
 
+import { PolicyBaseline } from "./policy-baseline";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -818,6 +819,10 @@ function PolicyPage() {
         The rules that decide what runs may do change here: proposed with a diff, approved by someone other than the proposer, applied at their effective time, and rolled back at once in an emergency. A
         spec&rsquo;s own policy keeps its path through versions and reviews; simulate it here first.
       </GroupHeader>
+
+      {/* What the platform does before any change: shown whether or not the policy door answers. */}
+      <PolicyBaseline />
+
       {error && (
         <Banner tone="err" title="Could not read the policy door">
           {error}

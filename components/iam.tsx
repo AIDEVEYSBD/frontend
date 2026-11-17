@@ -1,5 +1,6 @@
 "use client";
 
+import { IapAccess } from "./iap-access";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { agentHref } from "@/lib/agent-link";
@@ -377,6 +378,9 @@ function IamPage() {
           </p>
         )}
       </header>
+
+      {/* Who the proxy lets in: read from Google IAP itself, so it stands whether or not the control plane is connected. */}
+      <IapAccess />
 
       {noReg && noPeople ? (
         <>
