@@ -9,7 +9,7 @@ steps:
     args: ["build", "-t", "${_IMAGE}", "--build-arg", "NEXT_PUBLIC_ORIGIN=${_ORIGIN}", "--build-arg", "NEXT_PUBLIC_CONSOLE_QUIET=${_QUIET}", "."]
 images: ["${_IMAGE}"]
 substitutions:
-  _QUIET: "1"
+  _QUIET: "0"
 options:
   machineType: E2_HIGHCPU_8
 timeout: 1800s

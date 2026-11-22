@@ -184,7 +184,7 @@ If something is off:
 | No "Who can open this console" card on Identity | The service account cannot read the IAP policy (see the optional step in section 2). The log has a line starting `[iap-access]`. |
 | No Vertex AI block on Configuration | The service could not list models. Its log has a line starting `[vertex]` with the reason: no identity, or the status Vertex AI answered for each list. |
 | The model list is for the wrong region | The console uses the region the service runs in. Set `REGION` to the region Vertex AI is used in. |
-| A page shows a red error | The image was probably built with `NEXT_PUBLIC_CONSOLE_QUIET=0`. |
+| A page shows a red error | That is the platform's own reason for a failure, shown on purpose. Read it; `python -m agentfactory preflight` on the platform says what is missing. |
 | A button answers "cross-origin writes are refused" | The image was built with an `ORIGIN` that is not the address being used. Rebuild with the right one. |
 
 ## Settings
@@ -194,7 +194,7 @@ If something is off:
 | Variable | When | Meaning |
 |---|---|---|
 | `NEXT_PUBLIC_ORIGIN` | build | The public address. Required. |
-| `NEXT_PUBLIC_CONSOLE_QUIET` | build | `1` (default): failures read as "not connected". `0` once a backend is behind the console. |
+| `NEXT_PUBLIC_CONSOLE_QUIET` | build | `0` (default): a failure is shown as a failure, with its reason. `1` turns every failure into a quiet "not connected" note; use it only for a console shown with nothing behind it. |
 | `AUTH_SECRET` | run | Signs the session cookie. Required. From Secret Manager. |
 | `IAP_AUDIENCE` | run | Switches IAP sign-in on. Required. |
 | `IAP_ROLE_MAP` | run | Roles by address or domain. |

@@ -18,7 +18,7 @@ COPY . .
 # The address people open the console at, in full, with no trailing slash.
 ARG NEXT_PUBLIC_ORIGIN
 # 1: a panel that cannot read its data says "not connected" and prints no failure (lib/quiet.ts). 0 once a control plane is behind it.
-ARG NEXT_PUBLIC_CONSOLE_QUIET=1
+ARG NEXT_PUBLIC_CONSOLE_QUIET=0
 RUN test -n "$NEXT_PUBLIC_ORIGIN" || (echo "Set --build-arg NEXT_PUBLIC_ORIGIN=https://the-address-people-will-use" >&2; exit 1)
 ENV NEXT_TELEMETRY_DISABLED=1 NODE_ENV=production \
     NEXT_PUBLIC_ORIGIN=$NEXT_PUBLIC_ORIGIN NEXT_PUBLIC_CONSOLE_QUIET=$NEXT_PUBLIC_CONSOLE_QUIET
