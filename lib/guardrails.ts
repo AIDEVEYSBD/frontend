@@ -689,6 +689,10 @@ const ALIASES: Record<string, string> = {
 const PREFIX_ALIASES: [string, string][] = [
   ["poisoning.", "AF-DP-04"],
   ["modelarmor.tool", "AF-DP-04"],
+  // A screener's verdict on what a tool returned, before a model reads it (phase2-contract.md §4 step 33):
+  // content screening of a result, the same register row as the definition's own patterns on it.
+  ["classifier.result", "AF-DP-04"],
+  ["modelarmor.result", "AF-DP-04"],
 ];
 
 /**
@@ -717,12 +721,52 @@ export const CONTROL_LABELS: Record<string, string> = {
   a2a_auth: "A2A request not signed by the caller it names",
   replay: "A2A request replayed: its nonce was seen before",
   breaker: "A circuit breaker is open on that tool or peer",
+  "poisoning.jailbreak": "Tool text tries to talk the model out of its rules",
+  /*
+   * Strings the engine writes on a run's entries that name no register row
+   * (phase2-contract.md §1, "unknown to the console"). Each gets a line in
+   * plain words, so a refusal, a hold or a note never shows a bare key.
+   */
+  lockdown: "The estate is locked down: a call that writes or acts outside waits for a person",
+  "operator.hold": "An operator asked that the next call that writes wait for a person",
+  "operator.guidance": "An operator's guidance for the next step",
+  "operator.model": "An operator changed the model for the next call",
+  "operator.steer": "An operator steered the run",
+  "gate.escalated": "A gate went unanswered and moved to the next approver",
+  rate_limit: "A rate limit refused the call",
+  retired: "The agent called is retired",
+  side_channel: "A value another agent wrote was read",
+  isolation: "Isolated execution refused the job",
+  "classifier.prompt": "The screener judged what a model was about to read",
+  "classifier.response": "The screener judged a model's reply",
+  "classifier.sink": "The screener judged what a tool acting outside was to be sent",
+  "classifier.credential": "The screener found a credential in a reply",
+  "classifier.result": "The screener judged what a tool returned",
+  stale: "A gate was closed because what it was asked about changed",
+  "model.request": "A model call was made",
+  "worker.takeover": "Another worker took the run over",
+  "worker.interrupted": "The worker stopped before a call's answer was recorded",
+  "worker.abandoned": "No worker carried the run on",
+  not_available: "A service the run needed did not answer",
+  // The tool-server registry's refusal of an approval by someone who is not a platform admin.
+  role: "Only a platform admin may do this",
+};
+
+/** Model Armor's questions, as its verdict keys name them: `modelarmor.<question>.<filter>`. */
+const ARMOR_QUESTION: Record<string, string> = {
+  tool: "tool text",
+  prompt: "what a model was about to read",
+  response: "a model's reply",
+  sink: "what a tool acting outside was to be sent",
+  result: "what a tool returned",
 };
 
 export function controlLabel(key: string): string {
   if (Object.hasOwn(CONTROL_LABELS, key)) return CONTROL_LABELS[key];
-  // Model Armor names the filter that matched: `modelarmor.tool.pi_and_jailbreak`.
-  const armor = /^modelarmor\.tool\.(.+)$/.exec(key);
-  if (armor) return `Model Armor flagged tool text (${armor[1].replace(/_/g, " ")})`;
+  // Model Armor names the question and the filter that matched: `modelarmor.tool.pi_and_jailbreak`.
+  const armor = /^modelarmor\.(tool|prompt|response|sink|result)(?:\.(.+))?$/.exec(key);
+  if (armor) return `Model Armor flagged ${ARMOR_QUESTION[armor[1]]}${armor[2] ? ` (${armor[2].replace(/_/g, " ")})` : ""}`;
+  // An operator's action the list above does not name.
+  if (key.startsWith("operator.")) return `An operator's action (${key.slice("operator.".length).replace(/[._]/g, " ")})`;
   return explainControl(key).name;
 }

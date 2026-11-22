@@ -20,11 +20,13 @@ import type { RunRowL5 } from "./l5";
  * it to the backend, less the platform's own MCP server at
  * `/api/mcp/server`, which stays on the console (lib/route-policy.ts).
  *
- * Registering is admission, not trust: a server is started once, every tool
- * is screened, the tool list is pinned by digest, and nothing attaches to a
- * run until a person approves the pin. Env and header values never come
- * back from the backend; a server carries their names only, and so does
- * everything the console shows.
+ * Registering is admission, not trust: a server is asked for its tool list
+ * once, every tool is screened, the list is pinned by digest, and nothing
+ * attaches to a run until a platform admin approves the pin and sets each
+ * tool's risk (`POST /api/mcp/{id}/approve` with `{risks, max_data_class}`).
+ * A tool whose risk was not set, or was set for another pin, is destructive.
+ * Only remote servers over HTTP are registered; header values reference the
+ * vault (`${secret:<name>}`) and never come back, only their names.
  */
 
 /* ═══════════════════ the registry's shapes ═══════════════════ */
@@ -43,6 +45,10 @@ export type PinnedTool = {
   annotations?: Record<string, unknown>;
   /** A display title, when the server gave one. */
   title?: string;
+  /** The risk the approving platform admin set for this pin; null or absent when none was set (the tool is then destructive). */
+  risk?: string | null;
+  /** The risk the server's own hints suggest, as the platform reads them; shown beside the setting, never used. */
+  risk_from_hints?: string;
 };
 
 /** The tool list a person approves, by its SHA-256 digest (`sha256:…`). */
@@ -74,6 +80,8 @@ export type Scan = {
   hits: ScreenHit[];
   /** The server's own name and version, when it reported them. */
   server?: ServerInfo;
+  /** Tools the server listed that were left out of the pin, each with the reason. */
+  excluded?: { tool: string; reason: string }[];
 };
 
 export type Approval = {
@@ -116,9 +124,29 @@ export type McpServer = {
   isolate: Isolation | null;
 };
 
+/**
+ * What the tools-and-enforcement registry adds to a server row
+ * (agentfactory tools/servers/admission.py `view`). Kept apart from
+ * `McpServer`, which is held field by field to the generated schema of the
+ * registry it was written against (tests/l6-contract.test.ts).
+ */
+export type ServerExtras = {
+  /** Seconds one call may take; null when the registry does not say. */
+  timeout_s: number | null;
+  /** The most sensitive class of data the server may be sent, set at approval; "" when not said. */
+  max_data_class: string;
+  /** The MCP revision the server answered with at its last discovery. */
+  protocol: string;
+  /** The vault names its headers reference. */
+  credentials: string[];
+};
+
+/** A server row as the console holds it: the registry's fields and the additions. */
+export type RegisteredServer = McpServer & ServerExtras;
+
 /** `GET /api/mcp` */
 export type Registry = {
-  servers: McpServer[];
+  servers: RegisteredServer[];
   count: number;
   /** Approval needs a second person: whoever registered a server may not approve it. */
   two_person: boolean;
@@ -141,7 +169,7 @@ export type NewServer = {
 
 /** `POST /api/mcp/{id}/rescan` */
 export type Rescan = {
-  server: McpServer;
+  server: RegisteredServer;
   /** The list found is not the one the server was pinned on: a clean one leaves it `changed` and detached until approved again; a poisoned one, `refused`. */
   changed: boolean;
 };
@@ -164,6 +192,8 @@ export function toolOf(v: unknown): PinnedTool | null {
     inputSchema: Object.keys(obj(t.inputSchema)).length ? obj(t.inputSchema) : { type: "object" },
     ...(Object.keys(annotations).length ? { annotations } : {}),
     ...(typeof t.title === "string" && t.title ? { title: t.title } : {}),
+    risk: typeof t.risk === "string" && t.risk ? t.risk : null,
+    risk_from_hints: str(t.risk_from_hints),
   };
 }
 
@@ -188,7 +218,8 @@ export function scanOf(v: unknown): Scan | null {
   const s = obj(v);
   const info = obj(s.server);
   const server = str(info.name) || str(info.version) ? { server: { name: str(info.name), version: str(info.version) } } : {};
-  return { at: str(s.at), by: str(s.by), digest: str(s.digest), hits: (Array.isArray(s.hits) ? s.hits : []).map(hitOf), ...server };
+  const excluded = (Array.isArray(s.excluded) ? s.excluded : []).map(obj).map((x) => ({ tool: str(x.tool), reason: str(x.reason) })).filter((x) => x.tool || x.reason);
+  return { at: str(s.at), by: str(s.by), digest: str(s.digest), hits: (Array.isArray(s.hits) ? s.hits : []).map(hitOf), excluded, ...server };
 }
 
 function approvalOf(v: unknown): Approval {
@@ -214,7 +245,7 @@ export function isolationOf(v: unknown): Isolation | null {
  * the backend omits is defaulted here. A value that arrives under `env` or
  * `headers` is never kept, only its name.
  */
-export function serverOf(v: unknown): McpServer {
+export function serverOf(v: unknown): RegisteredServer {
   const s = obj(v);
   const status = SERVER_STATUSES.find((x) => x === s.status) ?? "pending";
   const transport: Transport = s.transport === "http" || (!s.command && typeof s.url === "string" && s.url) ? "http" : "stdio";
@@ -238,6 +269,10 @@ export function serverOf(v: unknown): McpServer {
     added_at: str(s.added_at),
     adopted: adoptionOf(s.adopted),
     isolate: isolationOf(s.isolate),
+    timeout_s: typeof s.timeout_s === "number" ? s.timeout_s : null,
+    max_data_class: str(s.max_data_class),
+    protocol: str(s.protocol),
+    credentials: strs(s.credentials),
   };
 }
 
@@ -270,7 +305,7 @@ export interface AddForm {
   network: string;
 }
 
-export const EMPTY_FORM: AddForm = { label: "", id: "", transport: "stdio", command: "", url: "", env: "", headers: "", version: "", image: "", network: "" };
+export const EMPTY_FORM: AddForm = { label: "", id: "", transport: "http", command: "", url: "", env: "", headers: "", version: "", image: "", network: "" };
 
 /**
  * KEY=VALUE lines as a map. Blank lines and `#` comments are skipped; a line
@@ -295,26 +330,18 @@ export function kvLines(text: string, separators = "="): Record<string, string> 
 }
 
 /**
- * The contract's `POST /api/mcp` body from the form. A stdio server sends
- * its command line, its environment and, when asked, the container it runs
- * in; an HTTP server its URL and its headers. Blank optional fields are
- * left out rather than sent empty.
+ * The `POST /api/mcp` body from the form: a remote server by its address and
+ * the headers it is sent, each value naming a vault credential. The platform
+ * registers no server it would have to start itself, so a command, an
+ * environment or a container is never sent. Blank optional fields are left
+ * out rather than sent empty.
  */
 export function addBody(f: AddForm): NewServer {
   const body: NewServer = { label: f.label.trim() };
   if (f.id.trim()) body.id = f.id.trim();
-  if (f.transport === "stdio") {
-    body.command = f.command.trim();
-    const env = kvLines(f.env);
-    if (Object.keys(env).length) body.env = env;
-    const image = f.image.trim();
-    const network = f.network.trim();
-    if (image || network) body.isolate = { ...(image ? { image } : {}), ...(network ? { network } : {}) };
-  } else {
-    body.url = f.url.trim();
-    const headers = kvLines(f.headers, ":=");
-    if (Object.keys(headers).length) body.headers = headers;
-  }
+  body.url = f.url.trim();
+  const headers = kvLines(f.headers, ":=");
+  if (Object.keys(headers).length) body.headers = headers;
   if (f.version.trim()) body.version = f.version.trim();
   return body;
 }
@@ -334,7 +361,7 @@ const at = (id: string) => `/api/mcp/${encodeURIComponent(id)}`;
 export const REGISTRY = {
   list: (): RegistryRequest => ({ method: "GET", path: "/api/mcp" }),
   add: (body: NewServer): RegistryRequest => ({ method: "POST", path: "/api/mcp", body }),
-  approve: (id: string): RegistryRequest => ({ method: "POST", path: `${at(id)}/approve` }),
+  approve: (id: string, body?: ApproveBody): RegistryRequest => ({ method: "POST", path: `${at(id)}/approve`, ...(body ? { body } : {}) }),
   rescan: (id: string): RegistryRequest => ({ method: "POST", path: `${at(id)}/rescan` }),
   remove: (id: string): RegistryRequest => ({ method: "DELETE", path: at(id) }),
 };
@@ -415,13 +442,21 @@ export async function listServers(): Promise<Registry> {
 }
 
 /** `POST /api/mcp`: 201 with the server, left `pending`; a 422 carries the screener's hits and the server stored as refused, a 502 the discovery error, a 503 a screener that could not judge. */
-export async function addServer(body: NewServer): Promise<McpServer> {
+export async function addServer(body: NewServer): Promise<RegisteredServer> {
   return call(REGISTRY.add(body), (j) => serverOf(obj(j).server ?? j));
 }
 
-/** `POST /api/mcp/{id}/approve`: the pin is approved and the server attaches to runs. An adopted entry is screened first: a 422 and it is refused. */
-export async function approveServer(id: string): Promise<McpServer> {
-  return call(REGISTRY.approve(id), (j) => serverOf(obj(j).server ?? j));
+/** What a platform admin sends with an approval: each pinned tool's risk, and the most sensitive class of data the server may be sent. */
+export type ApproveBody = { risks: Record<string, string>; max_data_class?: string };
+
+/**
+ * `POST /api/mcp/{id}/approve`: the pin is approved with the risks the
+ * platform admin set, and the server attaches to runs. A 403 names `role`
+ * (not a platform admin) or `two_person` (the registrant); a 409 a refused
+ * server or one with no pin.
+ */
+export async function approveServer(id: string, body?: ApproveBody): Promise<RegisteredServer> {
+  return call(REGISTRY.approve(id, body), (j) => serverOf(obj(j).server ?? j));
 }
 
 /** `POST /api/mcp/{id}/rescan`: discovers again; `changed` when the list no longer matches the pin. */

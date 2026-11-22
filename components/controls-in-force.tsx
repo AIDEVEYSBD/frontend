@@ -16,6 +16,7 @@ import { getFleet, type FleetState } from "@/lib/api/l5";
 import { getAutonomyTiers, listPolicyTargets, type AutonomyTiers, type TargetKind, type TargetKinds } from "@/lib/api/l9";
 import { requirementLabel, requirementState, tierLine } from "@/lib/autonomy";
 import { targetLabel } from "@/lib/policy";
+import { enforcementOf, useControls, type ControlsRead } from "@/lib/controls-status";
 
 /**
  * What governs one agent, in one panel.
@@ -24,9 +25,11 @@ import { targetLabel } from "@/lib/policy";
  * granted, and its limits. From the estate: the rules that apply to it now
  * (the policy targets the Policy page lists under "The rules now"), a pause
  * or a lockdown, and its autonomy tier with what the tier requires. And the
- * register controls those declarations bring into force, with how often each
- * has fired on this agent (counted by `GET /api/guardrails`, as the Controls
- * page reads it). Every block links to the page where the rule is kept.
+ * register controls those declarations bring into force, each with whether
+ * this deployment enforces it now (`GET /api/controls`) and how often it has
+ * fired on this agent (counted by `GET /api/guardrails`, as the Controls page
+ * reads it). Nothing here says a control is or is not applied unless one of
+ * those answers says so. Every block links to the page where the rule is kept.
  * Each door is read on its own, so one that fails says so in its own block
  * and the rest still read.
  */
@@ -174,11 +177,29 @@ export function declaredControls(g: Governed): { control: string; why: string }[
   if (people) out.push({ control: "AF-HO-01", why: `${people} gate${people === 1 ? " waits" : "s wait"} for a person` });
   if (g.typed) out.push({ control: "AF-IN-01", why: `${g.typed} step${g.typed === 1 ? " declares what it emits" : "s declare what they emit"}; an output that does not match is a breach` });
   for (const [k] of g.extra) {
-    if (k === "budget") out.push({ control: "AF-RS-01", why: "the policy sets a budget; tokens, cost and wall-clock time are checked, tool calls are not counted" });
+    if (k === "budget") out.push({ control: "AF-RS-01", why: "the policy sets a budget" });
     if (k === "limits") out.push({ control: "AF-AC-05", why: "the policy declares argument limits" });
     if (k === "mass_action") out.push({ control: "AF-RS-04", why: "the policy declares a mass-action gate" });
   }
   return out.filter((x) => resolveControl(x.control));
+}
+
+/**
+ * What the platform says about one control on this deployment, in a clause:
+ * "enforced now", "not enforced now: <why>", "unknown: <why>", or, while
+ * `GET /api/controls` does not answer, that it is not reported.
+ */
+function enforcementClause(read: ControlsRead | null, id: string): string {
+  if (!read) return "whether this deployment enforces it is being read";
+  if (read.state === "pending") return "whether this deployment enforces it is not reported: GET /api/controls is not built";
+  if (read.state === "error") return "whether this deployment enforces it could not be read";
+  const e = enforcementOf(read, id)!;
+  const why = e.why ? `: ${e.why}` : "";
+  if (e.state === "enforced") return `this deployment enforces it now${why}`;
+  if (e.state === "partly") return `this deployment enforces it in part${why}`;
+  if (e.state === "not_enforced") return `this deployment does not enforce it now${why}`;
+  if (e.state === null) return `whether this deployment enforces it is unknown${why}`;
+  return "the platform's answer does not list it";
 }
 
 /* ═══════════════════ pieces ═══════════════════ */
@@ -290,6 +311,9 @@ export function ControlsInForce({ agent, bare = false }: { agent: string; /** Qu
     "fired",
   );
   const fired = bare ? IDLE : firedRead;
+  /** Whether this deployment enforces each control now (GET /api/controls), shared with the Controls pages. */
+  const controlsRead = useControls();
+  const status = bare ? null : controlsRead;
 
   const g = spec.state === "ok" ? spec.data : null;
   const tier = tiers.state === "ok" ? tiers.data.agent : null;
@@ -462,12 +486,12 @@ export function ControlsInForce({ agent, bare = false }: { agent: string; /** Qu
                   ))}
                   <Line>
                     <span className="w-full font-medium text-fg sm:w-[150px] sm:shrink-0">Sink protection</span>
-                    <span className="min-w-0 grow basis-[240px]">{g.blockTaintedSinks ? "Declared in the spec and not applied: this deployment runs no tool steps and does not track untrusted content." : "Not declared. This deployment does not track untrusted content."}</span>
+                    <span className="min-w-0 grow basis-[240px]">{g.blockTaintedSinks ? `Declared in the spec; ${enforcementClause(status, "AF-DP-02")}.` : "Not declared in the spec."}</span>
                   </Line>
                   <Line>
                     <span className="w-full font-medium text-fg sm:w-[150px] sm:shrink-0">Screening</span>
                     <span className="min-w-0 grow basis-[240px]">
-                      {g.injection ? `${g.injection.patterns} block phrase${g.injection.patterns === 1 ? "" : "s"} and ${g.injection.prohibited} prohibited action${g.injection.prohibited === 1 ? "" : "s"} declared in the spec and not applied: no prompt or response screening runs on this deployment.` : "No prompt or response screening runs on this deployment."}
+                      {g.injection ? `${g.injection.patterns} block phrase${g.injection.patterns === 1 ? "" : "s"} and ${g.injection.prohibited} prohibited action${g.injection.prohibited === 1 ? "" : "s"} declared in the spec; content screening: ${enforcementClause(status, "AF-DP-04")}.` : `None declared in the spec; the deployment's content screening: ${enforcementClause(status, "AF-DP-04")}.`}
                     </span>
                   </Line>
                   {g.extra.map(([k, v]) => (
@@ -541,7 +565,17 @@ export function ControlsInForce({ agent, bare = false }: { agent: string; /** Qu
                     <span className="w-full sm:w-[230px] sm:shrink-0">
                       <ControlRef control={d.control} />
                     </span>
-                    <span className="min-w-0 grow basis-[200px]">{d.why}</span>
+                    <span className="min-w-0 grow basis-[200px]">
+                      {d.why}
+                      {(() => {
+                        const e = enforcementOf(status, d.control);
+                        return e ? (
+                          <span title={e.why || undefined} className="ml-1.5 inline-flex align-middle">
+                            <Tag tone={e.tone}>{e.label}</Tag>
+                          </span>
+                        ) : null;
+                      })()}
+                    </span>
                     {fired.state === "ok" &&
                       (n > 0 ? (
                         <Link href={evidence(d.control)} className="focusable tnum rounded-sm text-[11px] font-medium whitespace-nowrap text-fg underline">
@@ -558,7 +592,17 @@ export function ControlsInForce({ agent, bare = false }: { agent: string; /** Qu
                   <span className="w-full sm:w-[230px] sm:shrink-0">
                     <ControlMark control={k} />
                   </span>
-                  <span className="min-w-0 grow basis-[200px]">Fired on this agent&rsquo;s runs; no declaration in the current spec names it.</span>
+                  <span className="min-w-0 grow basis-[200px]">
+                    Fired on this agent&rsquo;s runs; no declaration in the current spec names it.
+                    {(() => {
+                      const e = resolveControl(k) ? enforcementOf(status, resolveControl(k)!.id) : null;
+                      return e ? (
+                        <span title={e.why || undefined} className="ml-1.5 inline-flex align-middle">
+                          <Tag tone={e.tone}>{e.label}</Tag>
+                        </span>
+                      ) : null;
+                    })()}
+                  </span>
                   <Link href={resolveControl(k) ? evidence(k) : `/evidence?agent=${encodeURIComponent(agent)}`} className="focusable tnum rounded-sm text-[11px] font-medium whitespace-nowrap text-fg underline">
                     fired {(firings.get(k) ?? 0).toLocaleString("en-GB")}
                   </Link>
@@ -566,7 +610,14 @@ export function ControlsInForce({ agent, bare = false }: { agent: string; /** Qu
               ))}
             </List>
           )}
-          <p className="text-[10.5px] leading-[1.5] text-ghost">A control is listed because the spec declares it; declaring is not enforcing. This deployment carries out model steps, approval waits, output contracts and the token, cost and time budget; tool grants, scopes, screening, sink protection and argument limits are recorded and not applied. Firings are counted from run journals, across every version of the agent.</p>
+          {status && status.state !== "ok" && (
+            <p>
+              <Failure inline what="Whether each control is enforced could not be read" message={status.state === "pending" ? notBuiltText(status.door.method, status.door.path) : status.message} />
+            </p>
+          )}
+          <p className="text-[10.5px] leading-[1.5] text-ghost">
+            A control is listed because the spec declares it; declaring is not enforcing. {status?.state === "ok" ? "Whether this deployment enforces each one now is the platform's answer (GET /api/controls)." : "Until the platform reports which controls it enforces, nothing here says one is applied."} Firings are counted from run journals, across every version of the agent.
+          </p>
         </Block>
         </div>
       </div>

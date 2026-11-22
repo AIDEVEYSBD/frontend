@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CONTROLS, FAMILIES, explainControl } from "@/lib/guardrails";
+import { CONTROLS, FAMILIES, controlLabel, explainControl } from "@/lib/guardrails";
 
 /**
  * A reference to a control in the register, wherever a control fired.
@@ -54,10 +54,10 @@ export function ControlRef({ control, size = "sm" }: { control: string; size?: "
 export function ControlMark({ control }: { control: string }) {
   if (!control) return null;
   if (resolveControl(control)) return <ControlRef control={control} />;
-  const why = explainControl(control);
+  // No register row: the key's own line in words (lib/guardrails.ts CONTROL_LABELS), with the key itself on hover.
   return (
-    <span title={why.decides || undefined} className="inline-flex items-center rounded-sm border border-line bg-surface px-1.5 py-px text-[10px] font-medium text-fg">
-      {why.name}
+    <span title={control} className="inline-flex items-center rounded-sm border border-line bg-surface px-1.5 py-px text-[10px] font-medium text-fg">
+      {controlLabel(control)}
     </span>
   );
 }

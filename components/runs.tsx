@@ -2,6 +2,7 @@
 
 import { CURRENT_USER } from "@/lib/user";
 import { useSession, signerName } from "@/lib/use-session";
+import { roleLabel } from "@/lib/permissions";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { soon } from "@/lib/soon";
@@ -21,8 +22,9 @@ import { runBlockers, unsupportedOf, unsupportedReason, type UnsupportedPart } f
 import { notBuilt, readRunRowsNotBuilt } from "@/lib/not-built";
 import { UnsupportedParts } from "./unsupported";
 import { SpanDetail, Waterfall, useTrace, type Span } from "./waterfall";
-import { explainControl } from "@/lib/guardrails";
-import { ControlRef, KILL_CONTROL } from "./control-ref";
+import { controlLabel, explainControl } from "@/lib/guardrails";
+import { ControlMark, ControlRef, KILL_CONTROL } from "./control-ref";
+import { callOfEntry, callOutcomes, callStateLabel, type CallOutcome } from "@/lib/tool-calls";
 import { RunBoard, ViewSwitch, useRunView, type BoardEdge } from "./run-board";
 import { api, errorText, subscribeRunEvents, type RunEnd, type Schemas } from "@/lib/api/client";
 import { artefactsZipUrl, gateFromSuspension, listGates, lockdownRefusalOf, lockdownRefusalText, operatorOf, type Gate } from "@/lib/api/l5";
@@ -2494,16 +2496,17 @@ function TheaterTranscript({ entries, all, live, runId = "", jump = null }: { en
     setFilter(jump?.filter ?? "all");
   }
   const linked = jump?.entry ?? "";
+  /** How each tool call ended, paired through `because` (lib/tool-calls.ts). */
+  const outcomes = useMemo(() => callOutcomes(entries), [entries]);
   /** The row that shows the linked entry: itself, or for a tool's result the call whose card it is drawn in. */
   const target = useMemo(() => {
     if (!linked) return "";
     const hit = entries.find((x) => x.id === linked);
     if (!hit) return "";
     if (hit.kind !== "tool.result") return hit.id;
-    const tool = hit.data?.tool;
-    const nth = entries.filter((x) => x.kind === "tool.result" && x.data?.tool === tool).indexOf(hit);
-    return entries.filter((x) => x.kind === "tool.call" && x.data?.tool === tool)[nth]?.id ?? "";
-  }, [entries, linked]);
+    // A result has no row of its own: the call it closes is the row that shows it.
+    return callOfEntry(outcomes, hit.id);
+  }, [entries, linked, outcomes]);
   const absent = linked !== "" && !(all ?? entries).some((x) => x.id === linked);
   /** The entry whose lineage is open: what it was derived from, what it fed. */
   const [lineage, setLineage] = useState<string | null>(null);
@@ -2602,7 +2605,7 @@ function TheaterTranscript({ entries, all, live, runId = "", jump = null }: { en
                   <Mono className="text-[10px] text-faint">{linked}</Mono>
                 </span>
               )}
-              <JournalRow e={e} entries={entries} located={marked} onLineage={setLineage} onProvenance={setProvenance} />
+              <JournalRow e={e} entries={entries} outcomes={outcomes} live={live} located={marked} onLineage={setLineage} onProvenance={setProvenance} />
             </div>
           );
         })}
@@ -2714,7 +2717,7 @@ function parseJsonText(text: string): [string, string][] | null {
   return out.length ? out : null;
 }
 
-function JournalRow({ e, entries, located = false, onLineage, onProvenance }: { e: Entry; entries: Entry[]; /** A link points at this row: a tool card opens on what it holds. */ located?: boolean; onLineage?: (id: string) => void; onProvenance?: (id: string) => void }) {
+function JournalRow({ e, entries, outcomes, live = false, located = false, onLineage, onProvenance }: { e: Entry; entries: Entry[]; /** How each tool call ended (lib/tool-calls.ts). */ outcomes: Map<string, CallOutcome<Entry>>; /** The run is still going: an open call is in flight, not unanswered. */ live?: boolean; /** A link points at this row: a tool card opens on what it holds. */ located?: boolean; onLineage?: (id: string) => void; onProvenance?: (id: string) => void }) {
   const [open, setOpen] = useState(located && e.kind === "tool.call");
   const lineageButton = onLineage && e.id ? (
     <Button size="sm" variant="quiet" onClick={() => onLineage(e.id)}>Lineage</Button>
@@ -2782,18 +2785,19 @@ function JournalRow({ e, entries, located = false, onLineage, onProvenance }: { 
     );
   }
 
-  /* Tool calls: the raised card, expandable to the exact request/response.
-     Pairing is positional — the nth call of a tool owns the nth result — so
-     two back-to-back calls of the same tool never share a response. */
+  /* Tool calls: the raised card, expandable to the arguments and the answer.
+     A call is closed by the entry that cites it (lib/tool-calls.ts): its
+     result, a refusal after the call was recorded, or a failure. A call
+     nothing closed says why: in flight, waiting for a person, outcome
+     unknown, or no outcome on record. */
   if (e.kind === "tool.call") {
-    const myIndex = entries.filter(
-      (x) => x.kind === "tool.call" && x.data?.tool === e.data?.tool && x.t <= e.t,
-    ).length;
-    const response = entries.filter(
-      (x) => x.kind === "tool.result" && x.data?.tool === e.data?.tool,
-    )[myIndex - 1];
-    // `sandbox.execute` under an isolator (phase L6): the isolator, the exit,
-    // the time, the truncation and the manifest digest come before the output.
+    const o: CallOutcome<Entry> = outcomes.get(e.id) ?? { state: "open" };
+    const response = o.state === "returned" ? o.closing : undefined;
+    const state = callStateLabel(o.state, live);
+    const risk = typeof e.data?.risk === "string" ? e.data.risk : "";
+    const sink = e.data?.sink === true;
+    const taintedBy = strList(e.data?.tainted_by);
+    // `sandbox.execute` under an isolator: the isolator, the exit, the time, the truncation and the manifest digest come before the output.
     const sandbox = response && e.data?.tool === SANDBOX_TOOL ? sandboxRunOf(response.data?.value) : null;
     // A retrieval call: the sources consulted and the passages returned, not the generic card.
     const retrieval = response ? retrievalOf(String(e.data?.tool ?? ""), response.data?.value) : null;
@@ -2808,7 +2812,7 @@ function JournalRow({ e, entries, located = false, onLineage, onProvenance }: { 
             actions={provenanceButton}
             raw={
               <>
-                <CurlBlock tool={String(e.data?.tool ?? "")} args={e.data?.args ?? {}} />
+                <ArgsBlock tool={String(e.data?.tool ?? e.title ?? "")} args={e.data?.args ?? {}} />
                 <ResponseBlock value={response.data?.value} />
               </>
             }
@@ -2816,23 +2820,28 @@ function JournalRow({ e, entries, located = false, onLineage, onProvenance }: { 
         </div>
       );
     }
+    const closingControl = o.closing && o.closing.kind === "denied" ? String(o.closing.data?.control ?? "") : "";
+    const tone = state.tone === "ok" ? "text-ok" : state.tone === "err" ? "text-err" : state.tone === "warn" ? "text-warn" : "text-faint";
     return (
       <div className="flex gap-3">
         <Mono className="w-9 shrink-0 pt-2 text-[10.5px] text-ghost">{clock(e.t)}</Mono>
-        <div className="min-w-0 grow rounded-md border border-line bg-raise">
+        <div className={`min-w-0 grow rounded-md border bg-raise ${o.state === "refused" || o.state === "failed" ? "border-err/40" : o.state === "unknown" || o.state === "held" ? "border-warn/40" : "border-line"}`}>
           <button
             onClick={() => setOpen(!open)}
             className="focusable flex w-full cursor-pointer flex-col gap-0.5 px-3 py-2 text-left"
           >
             <span className="flex items-center justify-between gap-3">
-              <Mono className="truncate text-[11.5px] text-mist">{String(e.data?.tool ?? e.title)}</Mono>
+              <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                <Mono className="truncate text-[11.5px] text-mist">{String(e.data?.tool ?? e.title)}</Mono>
+                {risk && risk !== "read" && <Tag tone={risk === "destructive" ? "err" : risk === "risky" ? "warn" : "neutral"}>{risk}</Tag>}
+                {sink && <Tag tone="warn">acts outside</Tag>}
+                {taintedBy.length > 0 && <Tag tone="warn">untrusted arguments</Tag>}
+              </span>
               <span className="flex shrink-0 items-center gap-2">
                 {sandbox ? (
                   <Mono className={`text-[10.5px] ${sandbox.exit === 0 ? "text-ok" : "text-err"}`}>{exitText(sandbox)}</Mono>
-                ) : response ? (
-                  <Mono className="text-[10.5px] text-ok">returned</Mono>
                 ) : (
-                  <Mono className="text-[10.5px] text-faint">…</Mono>
+                  <Mono className={`text-[10.5px] ${tone}`}>{o.state === "refused" ? "refused" : state.text}</Mono>
                 )}
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={`text-ghost transition-transform ${open ? "rotate-90" : ""}`} aria-hidden>
                   <path d="M9 6l6 6-6 6" />
@@ -2843,10 +2852,23 @@ function JournalRow({ e, entries, located = false, onLineage, onProvenance }: { 
             {response && !open && summarise(response.data?.value) && (
               <span className="truncate text-[11.5px] text-faint">→ {summarise(response.data?.value)}</span>
             )}
+            {(o.state === "refused" || o.state === "failed") && o.closing && (
+              <span className="text-[11.5px] leading-[1.5] text-err">
+                → {o.state === "refused" ? `${closingControl ? controlLabel(closingControl) : "Refused"}${o.closing.detail ? `: ${o.closing.detail}` : ""}` : o.closing.detail || o.closing.title}
+              </span>
+            )}
+            {o.state === "unknown" && (
+              <span className="text-[11.5px] leading-[1.5] text-warn">
+                → {o.gate ? "The worker stopped before the answer was recorded; the run waits for a person to say whether the call happened." : o.interrupted?.detail || "The worker stopped before the answer was recorded."}
+              </span>
+            )}
+            {o.state === "held" && o.gate && <span className="text-[11.5px] leading-[1.5] text-warn">→ {o.gate.title || "Held for a person"}{o.gate.detail ? `: ${o.gate.detail}` : ""}</span>}
+            {o.state === "open" && !live && <span className="text-[11.5px] leading-[1.5] text-faint">→ The run is not live and nothing in the journal closes this call.</span>}
           </button>
           {open && (
             <div className="flex flex-col gap-2 border-t border-line px-3 py-2.5">
-              <CurlBlock tool={String(e.data?.tool ?? "")} args={e.data?.args ?? {}} />
+              <ArgsBlock tool={String(e.data?.tool ?? e.title ?? "")} args={e.data?.args ?? {}} />
+              {taintedBy.length > 0 && <span className="text-[11px] leading-[1.5] text-faint">Arguments derive from untrusted content via {taintedBy.join(", ")}.</span>}
               {sandbox ? <SandboxOutput run={sandbox} /> : response && <ResponseBlock value={response.data?.value} />}
               {provenanceButton && <span className="self-start">{provenanceButton}</span>}
             </div>
@@ -2861,15 +2883,30 @@ function JournalRow({ e, entries, located = false, onLineage, onProvenance }: { 
   /* A guardrail firing is the one entry a reviewer must never have to decode.
      It says which control refused, the rule in that control's own words, what
      was attempted, and why the control exists — because "refused" on its own
-     reads as a malfunction rather than the system working. */
+     reads as a malfunction rather than the system working. A gate says who
+     must answer, the rule that held the call and every other rule that would
+     have, its condition, and its deadline. */
   if (e.kind === "denied" || e.kind === "contract.breach" || e.kind === "taint" || e.kind === "gate.open") {
-    const control = String(e.data?.control ?? (e.kind === "contract.breach" ? "contract.breach" : e.kind));
+    // An entry that names no control is read by its kind: a refusal by capability (as the firing record counts it), a gate by `gate`.
+    const control = String(e.data?.control ?? (e.kind === "contract.breach" ? "contract.breach" : e.kind === "gate.open" ? "gate" : e.kind));
     const why = explainControl(control);
+    // A key with no register row reads as its own line (lib/guardrails.ts CONTROL_LABELS), never as a bare word.
+    const name = why.id ? why.name : controlLabel(control);
     const refused = e.kind === "denied" || e.kind === "contract.breach";
     const tool = e.data?.tool ? String(e.data.tool) : "";
-    // A gate opening is shown as the gate itself (who may answer, its deadline), never as a catalogue sentence.
     const gate = e.kind === "gate.open";
-    const approvers = Array.isArray(e.data?.approvers) ? (e.data!.approvers as unknown[]).map(String) : [];
+    const unknownOutcome = gate && (e.data?.outcome === "unknown" || control === "worker.interrupted");
+    const approvers = strList(e.data?.approvers);
+    const also = strList(e.data?.also).filter((c) => c !== control);
+    const risk = typeof e.data?.risk === "string" ? e.data.risk : "";
+    const problems = strList(e.data?.problems);
+    const reasons = strList(e.data?.reasons);
+    const where = typeof e.data?.where === "string" ? e.data.where : "";
+    const sources = strList(e.data?.sources);
+    const when = typeof e.data?.when === "string" ? e.data.when : "";
+    const conditionError = typeof e.data?.condition_error === "string" ? e.data.condition_error : "";
+    // A refusal citing a recorded call came after the call (the host, the result screener, the class on the way back).
+    const afterCall = refused && callOfEntry(outcomes, e.id) !== "";
     return (
       <div className="flex gap-3">
         <Mono className="w-9 shrink-0 pt-2 text-[10.5px] text-ghost">{clock(e.t)}</Mono>
@@ -2878,30 +2915,64 @@ function JournalRow({ e, entries, located = false, onLineage, onProvenance }: { 
             <span className="flex flex-wrap items-center gap-2">
               <span className={`size-1.5 shrink-0 rounded-[2px] ${refused ? "bg-err" : "bg-warn"}`} />
               <span className={`text-[10.5px] font-medium ${refused ? "text-err" : "text-warn"}`}>
-                {gate ? "waits for" : refused ? "refused by" : "marked by"}
+                {gate ? (unknownOutcome ? "outcome unknown · waits for" : "waits for") : refused ? "refused by" : "marked by"}
               </span>
-              <span className="text-[12.5px] font-medium text-fg">{gate ? (approvers.length ? approvers.join(" or ") : "anyone with the approve permission") : why.name}</span>
+              <span className="text-[12.5px] font-medium text-fg">{gate ? (approvers.length ? approvers.map(roleLabel).join(" or ") : "no approver named on the entry") : name}</span>
               {!gate && <ControlRef control={control} />}
               {tool && <Mono className="text-[10.5px] text-mist">{tool}</Mono>}
+              {risk && <Tag tone={risk === "destructive" ? "err" : risk === "risky" ? "warn" : "neutral"}>{risk}</Tag>}
+              {afterCall && <Tag>after the call was recorded</Tag>}
               <span className="grow" />
               {lineageButton}
               {provenanceButton}
             </span>
+            {gate && e.title && <span className="text-[11.5px] font-medium text-fg">{e.title}</span>}
             {/* The rule, in full. Truncating the reason is how a refusal turns
                 into a mystery two weeks later. */}
             {e.detail && (
               <span className="text-[11.5px] leading-[1.55] text-fg">{e.detail}</span>
             )}
+            {gate && (
+              <span className="flex flex-wrap items-center gap-1.5 text-[11px] text-faint">
+                <span>Held by</span>
+                <ControlMark control={control} />
+                {also.length > 0 && <span>and also</span>}
+                {also.map((c) => (
+                  <ControlMark key={c} control={c} />
+                ))}
+              </span>
+            )}
+            {gate && when && (
+              <span className="text-[11px] leading-[1.5] text-faint">
+                Condition: <Mono className="text-[10.5px] text-dim">{when}</Mono>
+              </span>
+            )}
+            {gate && conditionError && <span className="text-[11px] leading-[1.5] text-warn">The condition could not be read, so the call is held: {conditionError}</span>}
+            {unknownOutcome && <span className="text-[11px] leading-[1.5] text-faint">The answer says whether the call happened before the worker stopped.</span>}
             {gate && <span className="text-[11px] leading-[1.5] text-faint">{gateDeadlineLine(typeof e.data?.deadline === "string" ? e.data.deadline : null, (iso) => new Date(iso).toLocaleString("en-GB"))}</span>}
             {!gate && why.decides && (
               <span className="text-[11px] leading-[1.5] text-faint">
                 {why.name} decides: {why.decides}
               </span>
             )}
+            {problems.length > 0 && (
+              <ul className="flex flex-col gap-0.5 text-[11px] leading-[1.5] text-fg">
+                {problems.map((p, i) => (
+                  <li key={i}>· {p}</li>
+                ))}
+              </ul>
+            )}
+            {(where || reasons.length > 0) && (
+              <span className="text-[11px] leading-[1.5] text-faint">
+                {where ? `Screened: ${where}` : "Screened"}
+                {reasons.length ? ` · ${reasons.join("; ")}` : ""}
+              </span>
+            )}
+            {sources.length > 0 && <span className="text-[11px] leading-[1.5] text-faint">Untrusted source{sources.length === 1 ? "" : "s"}: {sources.join(", ")}</span>}
             {!!e.data?.args && (
               <details className="pt-0.5">
                 <summary className="focusable cursor-pointer text-[10.5px] text-ghost">
-                  what was attempted
+                  {gate ? "what it is about to send" : "what was attempted"}
                 </summary>
                 <pre className="mt-1 max-h-40 overflow-auto rounded-sm border border-line bg-canvas px-2 py-1.5 font-mono text-[10px] leading-[1.5] whitespace-pre-wrap text-faint">
                   {JSON.stringify(e.data.args, null, 2)}
@@ -2909,6 +2980,65 @@ function JournalRow({ e, entries, located = false, onLineage, onProvenance }: { 
               </details>
             )}
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* A person's answer to a gate over a tool call: who, which way, and every
+     rule the answer covers. Other answers keep the plain row below. */
+  if (e.kind === "gate.answer" && (e.data?.tool || e.data?.call_digest)) {
+    const approved = e.data?.approved === true ? true : e.data?.approved === false ? false : null;
+    const covered = strList(e.data?.controls);
+    const said = typeof e.data?.outcome === "string" ? e.data.outcome : "";
+    const by = typeof e.data?.by === "string" ? e.data.by : "";
+    const note = typeof e.data?.note === "string" ? e.data.note : "";
+    return (
+      <div className="flex gap-3">
+        <Mono className="w-9 shrink-0 pt-2 text-[10.5px] text-ghost">{clock(e.t)}</Mono>
+        <div className="min-w-0 grow rounded-md border border-warn/40 bg-raise">
+          <div className="flex flex-col gap-1 px-3 py-2">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="size-1.5 shrink-0 rounded-[2px] bg-warn" />
+              <span className="text-[10.5px] font-medium text-warn">decision</span>
+              <span className="text-[12.5px] font-medium text-fg">{e.data?.aborted === true ? "Aborted" : said ? `“${said}”` : approved === true ? "Approved" : approved === false ? "Refused" : e.title}</span>
+              {by && <span className="text-[11px] text-dim">by {by.replace(/\s*<[^>]*>\s*$/, "")}</span>}
+              {e.data?.tool ? <Mono className="text-[10.5px] text-mist">{String(e.data.tool)}</Mono> : null}
+              <span className="grow" />
+              {provenanceButton}
+            </span>
+            {/* The entry's detail is "<by>: <note>"; the note alone is shown when there is one. */}
+            {note ? <span className="text-[11.5px] leading-[1.55] whitespace-pre-wrap text-mist">{note}</span> : e.detail && !e.detail.startsWith(by) ? <span className="text-[11.5px] leading-[1.55] text-fg">{e.detail}</span> : null}
+            {e.data?.aborted === true && typeof e.data?.reason === "string" && !note && <span className="text-[11.5px] leading-[1.55] text-fg">{e.data.reason}</span>}
+            {covered.length > 0 && (
+              <span className="flex flex-wrap items-center gap-1.5 text-[11px] text-faint">
+                <span>Covers</span>
+                {covered.map((c) => (
+                  <ControlMark key={c} control={c} />
+                ))}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* The engine's note that a worker stopped mid-call or mid-step: which call,
+     and whether it is made again or waits for a person. */
+  if (e.kind === "note" && e.data?.control === "worker.interrupted") {
+    const repeated = e.data?.outcome === "repeated";
+    return (
+      <div className="flex gap-3">
+        <Mono className="w-9 shrink-0 text-[10.5px] text-ghost">{clock(e.t)}</Mono>
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className="flex flex-wrap items-baseline gap-2">
+            <span className="mt-1.5 size-1.5 shrink-0 rounded-[2px] bg-warn" />
+            <span className="shrink-0 text-[10.5px] font-medium text-warn">{repeated ? "interrupted · repeated" : e.data?.outcome === "unknown" ? "interrupted · outcome unknown" : "interrupted"}</span>
+            <span className="text-[12.5px] text-fg">{e.title}</span>
+            {e.data?.tool ? <Mono className="text-[10.5px] text-mist">{String(e.data.tool)}</Mono> : null}
+          </span>
+          {e.detail && <span className="pl-3.5 text-[11.5px] leading-[1.5] text-faint">{e.detail}</span>}
         </div>
       </div>
     );
@@ -3002,6 +3132,12 @@ function JournalRow({ e, entries, located = false, onLineage, onProvenance }: { 
         <span className={`mt-1.5 size-1.5 shrink-0 rounded-[2px] ${k.dot}`} />
         <span className={`shrink-0 text-[10.5px] font-medium ${k.text}`}>{k.label}</span>
         <span className="text-[12.5px] text-fg">{e.title}</span>
+        {/* A note or an error that names a rule (a lockdown, a breaker, a screener's flag) shows it in words. */}
+        {typeof e.data?.control === "string" && e.data.control && !BOOKKEEPING.test(e.data.control) && (
+          <span className="shrink-0">
+            <ControlMark control={e.data.control} />
+          </span>
+        )}
         {e.detail && <span className="truncate text-[11.5px] text-faint">{e.detail}</span>}
       </div>
       {provenanceButton && <span className="ml-auto shrink-0">{provenanceButton}</span>}
@@ -3027,23 +3163,26 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function CurlBlock({ tool, args }: { tool: string; args: Record<string, unknown> }) {
-  // The journal records tool + args; the address is notation, not a claim —
-  // this product never renders a record it does not have as if it did.
-  const [server, ...rest] = tool.split(".");
-  const body = JSON.stringify(args, null, 2);
-  // POSIX-correct single-quote escaping: 'it'\''s' — a copy block that does
-  // not run when pasted is worse than no copy block.
-  const shellBody = body.replace(/'/g, "'\\''");
-  const text = `# mcp://${server}/${rest.join(".") || "call"}\ncurl -X POST $MCP_ENDPOINT/${server}/${rest.join(".") || "call"} \\\n  -H 'content-type: application/json' \\\n  -d '${shellBody}'`;
+/** Keys a note carries for the engine's own bookkeeping (a model call started, a worker took over) or that another row already names: no rule chip on the plain row. */
+const BOOKKEEPING = /^(operator\.|gate\.escalated$|model\.request$|worker\.takeover$)/;
+
+/** A list of strings from an entry's payload; anything else is no list. */
+function strList(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x !== "") : [];
+}
+
+/** What the call was sent, as the journal recorded it: the tool and its arguments, nothing reconstructed. */
+function ArgsBlock({ tool, args }: { tool: string; args: unknown }) {
+  const text = JSON.stringify(args ?? {}, null, 2);
   return (
     <div className="flex flex-col gap-1.5">
       <span className="flex items-center gap-2">
-        <Label>Request · reconstructed from the journal</Label>
+        <Label>Arguments · as journalled</Label>
+        <Mono className="text-[10.5px] text-faint">{tool}</Mono>
         <span className="grow" />
         <CopyButton text={text} />
       </span>
-      <pre className="overflow-x-auto rounded-md border border-line bg-sunken/40 p-2.5 font-mono text-[10.5px] leading-[1.6] text-mist">{text}</pre>
+      <pre className="max-h-[240px] overflow-auto rounded-md border border-line bg-sunken/40 p-2.5 font-mono text-[10.5px] leading-[1.6] whitespace-pre-wrap text-mist">{text}</pre>
     </div>
   );
 }

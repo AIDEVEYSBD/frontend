@@ -5,6 +5,7 @@ import { notBuiltDoorOf } from "@/lib/api/client";
 
 import { useEffect, useRef, useState } from "react";
 import { Button, Mono, Status, Tag } from "./ui";
+import { Pick } from "./select";
 import { ControlRef } from "./control-ref";
 import { DigestChip } from "./digest-chip";
 import { AddServerDialog } from "./add-server-dialog";
@@ -20,21 +21,24 @@ import {
   rescanServer,
   type AddForm,
   type McpServer,
+  type RegisteredServer,
   type ScreenHit,
-  type Transport,
 } from "@/lib/api/l6";
-import { adoptedLine, approveAccess, changeLine, formProblem, isolationLine, pinChange, pinnedTools, refusedWhen, STATUS_META, toolHints, type Me } from "@/lib/mcp-registry";
+import { adoptedLine, approveAccess, changeLine, formProblem, isolationLine, pinChange, pinnedTools, refusedWhen, RISKS, STATUS_META, toolHints, toolRisk, type Me } from "@/lib/mcp-registry";
 
 /**
  * The MCP registry: the tool servers this deployment connects, and whether
- * each may reach a run (phase L6, backend/CONTRACT.md "The MCP registry
- * door").
+ * each may reach a run (`GET/POST /api/mcp`, `POST /api/mcp/{id}/approve`,
+ * `/rescan`, `DELETE /api/mcp/{id}`).
  *
- * Registering is admission, not trust. Adding a server starts it once,
- * screens every tool's name, description and schema, and pins the tool list
- * by digest; the server waits, pending, until a person approves the pin, and
- * only an approved pin attaches to a run. A rescan that finds a different
- * list marks the server changed and detaches it until someone approves again.
+ * Registering is admission, not trust. A server is registered by its address
+ * and the headers it is sent, each naming a vault credential; adding it asks
+ * it for its tool list, screens every tool's name, description and schema,
+ * and pins the list by digest. The server waits, pending, until a platform
+ * admin approves the pin and sets each tool's risk (a tool left unset counts
+ * as destructive), and only an approved pin attaches to a run. A rescan that
+ * finds a different list marks the server changed and detaches it until it
+ * is approved again.
  * Each row says which of those it is, the pin and the scan that stand behind
  * it (for a changed server, the approved list it moved away from and which
  * tools moved), who signed, whether it was adopted from before the registry
@@ -64,8 +68,8 @@ function who(by: string): string {
   return by.replace(/\s*<[^>]*>\s*$/, "").trim() || by || "unknown";
 }
 
-function meOf(session: { name: string; email: string; sub: string } | null): Me | null {
-  return session ? { name: session.name, email: session.email, sub: session.sub } : null;
+function meOf(session: { name: string; email: string; sub: string; appRoles?: string[] } | null): Me | null {
+  return session ? { name: session.name, email: session.email, sub: session.sub, roles: session.appRoles ?? [] } : null;
 }
 
 /** A status as a chip: changed and refused are solid red, so they stop a reader scanning the list. */
@@ -142,13 +146,10 @@ const AREA = "focusable w-full resize-y rounded-md border border-line-strong bg-
 /**
  * The add form in one piece, for a narrow rail; the list on Configuration
  * adds through the dialog instead (components/add-server-dialog.tsx), which
- * sends the same body. It posts the
- * contract's body (lib/api/l6.ts addBody): a stdio server by its command
- * line and KEY=VALUE environment, an HTTP server by its URL and headers.
- * Values are typed here and sent once; the registry never hands them back.
+ * sends the same body (lib/api/l6.ts addBody): a remote server by its
+ * address and the headers it is sent, each value naming a vault credential.
  * A 422 is the screener refusing admission (the hits, and the control); a
- * 502 is the server failing to start or answer; either way nothing reaches
- * a run.
+ * 502 is the server not answering; either way nothing reaches a run.
  */
 export function AddServerForm({
   onAdded,
@@ -166,12 +167,12 @@ export function AddServerForm({
   const [form, setForm] = useState<AddForm>(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<RegistryError | Error | null>(null);
+  const addDoor = useDoorOff("POST", "/api/mcp");
   const set = (patch: Partial<AddForm>) => {
     setForm((f) => ({ ...f, ...patch }));
     setError(null);
   };
   const problem = formProblem(form);
-  const stdio = form.transport === "stdio";
   const cell = stacked ? "flex flex-col gap-1" : "flex min-w-0 grow basis-[200px] flex-col gap-1";
 
   const submit = async () => {
@@ -203,7 +204,7 @@ export function AddServerForm({
     >
       <span className="flex flex-wrap items-center gap-2">
         <span className="text-[12px] font-semibold text-fg">Register a tool server</span>
-        <span className="text-[10.5px] text-faint">started once to list its tools, screened, then pinned; nothing attaches until the pin is approved</span>
+        <span className="text-[10.5px] text-faint">asked for its tool list, screened, then pinned; nothing attaches until a platform admin approves the pin</span>
       </span>
       <div className={stacked ? "flex flex-col gap-2" : "flex flex-wrap items-end gap-2"}>
         <label className={cell}>
@@ -214,25 +215,6 @@ export function AddServerForm({
           <span className="text-[10.5px] text-ghost">Id (optional)</span>
           <input value={form.id} onChange={(e) => set({ id: e.target.value })} placeholder="from the name" spellCheck={false} className={`${INPUT} font-mono text-[11.5px]`} />
         </label>
-        <span className={cell}>
-          <span className="text-[10.5px] text-ghost">Transport</span>
-          <span role="radiogroup" aria-label="Transport" className="inline-flex h-8 items-center gap-px self-start rounded-md border border-line bg-raise p-px">
-            {(["stdio", "http"] as Transport[]).map((t) => (
-              <button
-                key={t}
-                type="button"
-                role="radio"
-                aria-checked={form.transport === t}
-                onClick={() => set({ transport: t })}
-                className={`focusable h-full cursor-pointer rounded-sm px-2.5 text-[12px] whitespace-nowrap transition-colors ${
-                  form.transport === t ? "bg-surface font-medium text-fg shadow-[var(--shadow-1)]" : "text-faint hover:text-dim"
-                }`}
-              >
-                {t === "stdio" ? "Command (stdio)" : "URL (HTTP)"}
-              </button>
-            ))}
-          </span>
-        </span>
         <label className={cell}>
           <span className="text-[10.5px] text-ghost">Version (optional)</span>
           <input value={form.version} onChange={(e) => set({ version: e.target.value })} placeholder="1.4.2" spellCheck={false} className={`${INPUT} font-mono text-[11.5px]`} />
@@ -240,48 +222,26 @@ export function AddServerForm({
       </div>
       <div className={stacked ? "flex flex-col gap-2" : "grid gap-2 md:grid-cols-2"}>
         <label className="flex min-w-0 flex-col gap-1">
-          <span className="text-[10.5px] text-ghost">{stdio ? "Command line that starts it" : "URL it answers on"}</span>
-          {stdio ? (
-            <input value={form.command} onChange={(e) => set({ command: e.target.value })} placeholder="python3 tools/risk_server.py" spellCheck={false} className={`${INPUT} font-mono text-[11.5px]`} />
-          ) : (
-            <input value={form.url} onChange={(e) => set({ url: e.target.value })} placeholder="https://tools.example.com/mcp" spellCheck={false} className={`${INPUT} font-mono text-[11.5px]`} />
-          )}
+          <span className="text-[10.5px] text-ghost">Address it answers on</span>
+          <input value={form.url} onChange={(e) => set({ url: e.target.value })} placeholder="https://tools.example.com/mcp" spellCheck={false} className={`${INPUT} font-mono text-[11.5px]`} />
         </label>
         <label className="flex min-w-0 flex-col gap-1">
-          <span className="text-[10.5px] text-ghost">{stdio ? "Environment, one KEY=VALUE per line (optional)" : "Headers, one Name: value per line (optional)"}</span>
-          {stdio ? (
-            <textarea rows={2} value={form.env} onChange={(e) => set({ env: e.target.value })} placeholder={"API_BASE=https://…\nAPI_KEY=${secret:risk-key}"} spellCheck={false} className={AREA} />
-          ) : (
-            <textarea rows={2} value={form.headers} onChange={(e) => set({ headers: e.target.value })} placeholder={"Authorization: Bearer ${secret:tools-token}"} spellCheck={false} className={AREA} />
-          )}
+          <span className="text-[10.5px] text-ghost">Headers, one Name: value per line, each naming a vault credential (optional)</span>
+          <textarea rows={2} value={form.headers} onChange={(e) => set({ headers: e.target.value })} placeholder={"Authorization: Bearer ${secret:tools-token}"} spellCheck={false} className={AREA} />
         </label>
       </div>
-      {stdio && (
-        <div className={stacked ? "flex flex-col gap-2" : "grid gap-2 md:grid-cols-2"}>
-          <label className="flex min-w-0 flex-col gap-1">
-            <span className="text-[10.5px] text-ghost">Run it in a container: image (optional)</span>
-            <input value={form.image} onChange={(e) => set({ image: e.target.value })} placeholder="registry.example/risk-server:1.4" spellCheck={false} className={`${INPUT} font-mono text-[11.5px]`} />
-          </label>
-          <label className="flex min-w-0 flex-col gap-1">
-            <span className="text-[10.5px] text-ghost">Container network (optional; none when blank)</span>
-            <input value={form.network} onChange={(e) => set({ network: e.target.value })} placeholder="none" spellCheck={false} className={`${INPUT} font-mono text-[11.5px]`} />
-          </label>
-        </div>
-      )}
       <p className="text-[10.5px] leading-[1.5] text-faint">
-        Values are sent once and kept by the registry; only their names are shown again. Reference the vault as{" "}
-        <Mono className="text-[10px]">{"${secret:name}"}</Mono> rather than pasting a credential.
-        {stdio && " With an image, the server is discovered and run in that container, read-only and with every capability dropped, at admission as at every run."}
+        A header value names a vault credential as <Mono className="text-[10px]">{"${secret:name}"}</Mono>, with any text around it; the registry refuses a plain value and a name the vault does not hold. Only the header names are shown again.
       </p>
       {error && <Refusal error={error} />}
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="submit" size="sm" variant="solid" tone="ink" permission="configure" disabled={Boolean(problem)} loading={busy}>
-          {busy ? "Starting it and listing its tools…" : "Register and scan"}
+        <Button type="submit" size="sm" variant="solid" tone="ink" permission="configure" disabled={Boolean(problem) || addDoor.off} title={addDoor.why} loading={busy}>
+          {busy ? "Asking it for its tools…" : "Register and scan"}
         </Button>
         <Button size="sm" variant="solid" tone="err" onClick={onCancel}>
           Cancel
         </Button>
-        {problem && (form.label || form.command || form.url) && <span className="text-[11px] text-faint">{problem}</span>}
+        {addDoor.off ? <span className="text-[11px] text-faint">{addDoor.why}</span> : problem && (form.label || form.url) && <span className="text-[11px] text-faint">{problem}</span>}
       </div>
     </form>
   );
@@ -311,13 +271,99 @@ function Names({ names, none }: { names: string[]; none: string }) {
   );
 }
 
-function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { server: McpServer; twoPerson: boolean; me: Me | null; onChanged: () => void; /** Added a moment ago, in this window: marked, and scrolled to once. */ fresh?: boolean }) {
+const DATA_CLASSES = ["public", "internal", "confidential", "restricted"] as const;
+const RISK_TEXT: Record<string, string> = {
+  read: "read: reads only",
+  write: "write: changes something",
+  risky: "risky",
+  destructive: "destructive: a platform admin approves every call",
+};
+
+/**
+ * What a platform admin decides when approving a pin: each tool's risk, and
+ * the most sensitive class of data the server may be sent. A tool left unset
+ * is sent as unset, and the platform counts it destructive: every call to it
+ * then waits for a platform admin. The server's own hints are shown beside
+ * each tool as its word about itself, and decide nothing.
+ */
+function RiskApproval({ server: s, busy, onApprove, onCancel }: { server: RegisteredServer; busy: boolean; onApprove: (risks: Record<string, string>, cls: string) => void; onCancel: () => void }) {
+  const tools = pinnedTools(s);
+  const [risks, setRisks] = useState<Record<string, string>>(() => Object.fromEntries(tools.map((t) => [t.name, toolRisk(t).set ? toolRisk(t).risk : ""])));
+  const [cls, setCls] = useState(s.max_data_class || "public");
+  const unset = tools.filter((t) => !risks[t.name]).length;
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-line bg-canvas p-3">
+      <span className="flex flex-wrap items-baseline gap-2">
+        <span className="text-[12px] font-semibold text-fg">{s.status === "approved" ? "Change the risks of the approved list" : "Approve the pinned list"}</span>
+        <span className="text-[11px] text-faint">set each tool&rsquo;s risk; a tool left unset is destructive, and every call to it waits for a platform admin</span>
+      </span>
+      <div className="overflow-x-auto rounded-sm border border-line">
+        <table className="w-full min-w-[620px] border-collapse text-[11.5px]">
+          <thead>
+            <tr className="border-b border-line bg-raise/60 text-left text-[10.5px] text-faint">
+              <th className="px-3 py-1.5 font-medium">Tool</th>
+              <th className="px-3 py-1.5 font-medium">The server&rsquo;s hints say</th>
+              <th className="px-3 py-1.5 font-medium">Risk</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tools.map((t) => {
+              const h = toolHints(t);
+              return (
+                <tr key={t.name} className="border-b border-line align-top last:border-0">
+                  <td className="px-3 py-1.5">
+                    <span className="flex flex-col gap-0.5">
+                      <Mono className="text-[11px] text-fg">{t.name}</Mono>
+                      {t.description && <span className="line-clamp-2 max-w-[52ch] text-[10.5px] text-faint">{t.description}</span>}
+                    </span>
+                  </td>
+                  <td className="px-3 py-1.5 text-dim">
+                    {h.risk}
+                    {h.hints.length ? <span className="block text-[10px] text-faint">{h.hints.join(", ")}</span> : <span className="block text-[10px] text-faint">no hints</span>}
+                  </td>
+                  <td className="w-[230px] px-3 py-1.5">
+                    <Pick
+                      value={risks[t.name] ?? ""}
+                      onChange={(v) => setRisks((r) => ({ ...r, [t.name]: v }))}
+                      aria-label={`Risk of ${t.name}`}
+                      options={[{ value: "", label: "Not set: destructive" }, ...RISKS.map((r) => ({ value: r, label: RISK_TEXT[r] ?? r }))]}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <span className="flex flex-wrap items-center gap-2">
+        <span className="text-[11px] text-dim">Most sensitive data it may be sent</span>
+        <span className="block w-[170px]">
+          <Pick value={cls} onChange={setCls} aria-label="Most sensitive data the server may be sent" options={DATA_CLASSES.map((c) => ({ value: c, label: c }))} />
+        </span>
+        <span className="grow" />
+        <Button size="sm" variant="solid" tone="err" onClick={onCancel} disabled={busy}>
+          Cancel
+        </Button>
+        <Button size="sm" variant="solid" tone="ink" permission="configure" loading={busy} onClick={() => onApprove(Object.fromEntries(Object.entries(risks).filter(([, v]) => v)), cls)}>
+          {s.status === "approved" ? "Save the risks" : `Approve${unset ? `, ${unset} left destructive` : ""}`}
+        </Button>
+      </span>
+    </div>
+  );
+}
+
+function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { server: RegisteredServer; twoPerson: boolean; me: Me | null; onChanged: () => void; /** Added a moment ago, in this window: marked, and scrolled to once. */ fresh?: boolean }) {
   const row = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (fresh) row.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [fresh]);
   const [busy, setBusy] = useState<"approve" | "rescan" | "delete" | null>(null);
   const [confirming, setConfirming] = useState(false);
+  /** The risk table is open: approving, or changing the risks of an approved list. */
+  const [deciding, setDeciding] = useState(false);
+  const approveDoor = useDoorOff("POST", "/api/mcp/{id}/approve");
+  const rescanDoor = useDoorOff("POST", "/api/mcp/{id}/rescan");
+  const deleteDoor = useDoorOff("DELETE", "/api/mcp/{id}");
   const [error, setError] = useState<RegistryError | Error | null>(null);
   const [notice, setNotice] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const meta = STATUS_META[s.status];
@@ -328,14 +374,17 @@ function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { ser
   const approval = s.approvals.at(-1);
   const isolated = isolationLine(s);
 
-  const act = async (what: "approve" | "rescan" | "delete") => {
+  const act = async (what: "approve" | "rescan" | "delete", decided?: { risks: Record<string, string>; cls: string }) => {
     setBusy(what);
     setError(null);
     setNotice(null);
     try {
       if (what === "approve") {
-        await approveServer(s.id);
-        setNotice({ tone: "ok", text: "Pin approved: its tools attach to runs from now on." });
+        const set = Object.keys(decided?.risks ?? {}).length;
+        const left = tools.length - set;
+        await approveServer(s.id, decided ? { risks: decided.risks, max_data_class: decided.cls } : undefined);
+        setDeciding(false);
+        setNotice({ tone: "ok", text: `Approved: its tools attach to runs at the risks set${left ? `; ${left} tool${left === 1 ? " is" : "s are"} left destructive, so every call to ${left === 1 ? "it" : "them"} waits for a platform admin` : ""}.` });
       } else if (what === "rescan") {
         const r = await rescanServer(s.id);
         setNotice(
@@ -397,23 +446,24 @@ function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { ser
           </span>
         ) : (
           <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
-            {s.status !== "approved" && (
-              <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={!access.ok || busy !== null} loading={busy === "approve"} onClick={() => act("approve")}>
-                {s.status === "changed" ? "Approve new list" : "Approve"}
+            {s.status !== "refused" && (
+              <Button size="sm" variant="solid" tone={s.status === "approved" ? "neutral" : "ink"} permission="configure" disabled={!access.ok || busy !== null || deciding || approveDoor.off} title={approveDoor.why} loading={busy === "approve"} onClick={() => setDeciding(true)}>
+                {s.status === "approved" ? "Change risks" : s.status === "changed" ? "Approve new list" : "Approve"}
               </Button>
             )}
-            <Button size="sm" variant="solid" tone="neutral" permission="configure" disabled={busy !== null} loading={busy === "rescan"} onClick={() => act("rescan")}>
+            <Button size="sm" variant="solid" tone="neutral" permission="configure" disabled={busy !== null || rescanDoor.off} title={rescanDoor.why} loading={busy === "rescan"} onClick={() => act("rescan")}>
               Rescan
             </Button>
-            <Button size="sm" variant="solid" tone="err" permission="configure" disabled={busy !== null} onClick={() => setConfirming(true)}>
+            <Button size="sm" variant="solid" tone="err" permission="configure" disabled={busy !== null || deleteDoor.off} title={deleteDoor.why} onClick={() => setConfirming(true)}>
               Delete
             </Button>
           </span>
         )}
       </div>
-      {s.status !== "approved" && !access.ok && access.reason && (
+      {s.status !== "refused" && !access.ok && access.reason && (
         <span className="-mt-1 self-end text-[11px] text-warn">{access.reason}</span>
       )}
+      {deciding && access.ok && <RiskApproval server={s} busy={busy === "approve"} onCancel={() => setDeciding(false)} onApprove={(risks, cls) => void act("approve", { risks, cls })} />}
 
       {where && <Mono className="block truncate text-[10.5px] text-ghost">{where}</Mono>}
       <span className="text-[11px] leading-[1.5] text-faint">{meta.means}.</span>
@@ -465,7 +515,15 @@ function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { ser
         </Fact>
         <Fact k={s.transport === "http" ? "Headers (names only)" : "Environment (names only)"}>
           <Names names={s.transport === "http" ? s.header_names : s.env_names} none="none" />
+          {s.credentials.length > 0 && <span className="text-ghost">· vault: {s.credentials.join(", ")}</span>}
         </Fact>
+        {(s.timeout_s !== null || s.max_data_class || s.protocol) && (
+          <Fact k="Calls">
+            {s.timeout_s !== null && <span>at most {s.timeout_s} s each</span>}
+            {s.max_data_class && <span>· sent up to {s.max_data_class} data</span>}
+            {s.protocol && <Mono className="text-[10px] text-faint">· MCP {s.protocol}</Mono>}
+          </Fact>
+        )}
       </div>
 
       {tools.length > 0 && (
@@ -473,19 +531,34 @@ function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { ser
           <span className="mr-1 text-[10px] text-ghost">{s.status === "changed" ? "New tool list" : "Pinned tools"}</span>
           {tools.map((t) => {
             const h = toolHints(t);
+            const r = toolRisk(t);
             const moved = change?.rewritten.includes(t.name) || change?.added.includes(t.name);
             return (
               <span
                 key={t.name}
-                title={`${t.description || t.name}${h.hints.length ? `\nHints: ${h.hints.join(", ")}` : "\nNo hints: the builder seeds it as write"}`}
+                title={`${t.description || t.name}\n${r.set ? `Risk ${r.risk}, set when the pin was approved.` : "No risk set for this pin: the platform counts it destructive, and every call waits for a platform admin."}\nThe server's hints say ${h.risk}${h.hints.length ? ` (${h.hints.join(", ")})` : ""}.`}
                 className={`inline-flex items-center gap-1 rounded-[3px] border bg-surface px-1 py-px font-mono text-[10px] ${moved ? "border-err text-err" : "border-line text-dim"}`}
               >
                 {t.name}
-                <span className={h.risk === "destructive" ? "text-err" : h.risk === "read" ? "text-ok" : "text-faint"}>· {h.risk}</span>
+                <span className={r.risk === "destructive" ? "text-err" : r.risk === "read" ? "text-ok" : "text-faint"}>
+                  · {r.risk}
+                  {r.set ? "" : " (not set)"}
+                </span>
               </span>
             );
           })}
         </div>
+      )}
+      {(s.last_scan?.excluded?.length ?? 0) > 0 && (
+        <span className="text-[11px] leading-[1.5] text-faint">
+          Left out of the pin:{" "}
+          {s.last_scan!.excluded!.map((x, i) => (
+            <span key={i}>
+              {i > 0 && "; "}
+              <Mono className="text-[10.5px] text-dim">{x.tool}</Mono> ({x.reason})
+            </span>
+          ))}
+        </span>
       )}
 
       {s.status === "changed" && (
@@ -546,7 +619,7 @@ export function ToolServers({
   error,
   refresh,
 }: {
-  servers: McpServer[] | null;
+  servers: RegisteredServer[] | null;
   twoPerson: boolean;
   error: string;
   refresh: () => void;
@@ -555,7 +628,7 @@ export function ToolServers({
   const me = meOf(session);
   const [adding, setAdding] = useState(false);
   const addDoor = useDoorOff("POST", "/api/mcp");
-  const [added, setAdded] = useState<McpServer | null>(null);
+  const [added, setAdded] = useState<RegisteredServer | null>(null);
   // Alarms first, then what waits for a person, then what is in service.
   const order: McpServer["status"][] = ["changed", "refused", "pending", "approved"];
   // The row just added shows at once, from the door's own answer, until the list read after it carries it.
@@ -583,8 +656,8 @@ export function ToolServers({
         )}
         {!unread && <span className="min-w-0 max-w-[70ch] text-[11px] leading-[1.5] text-faint">
           {twoPerson
-            ? "Two-person approval is on: whoever registers a server cannot approve its pin."
-            : "One approval admits a server; two-person approval is off on this deployment."}
+            ? "A platform admin approves each pin and sets its tools' risks. Two-person approval is on: whoever registers a server cannot approve it."
+            : "A platform admin approves each pin and sets its tools' risks. Two-person approval is off on this deployment."}
         </span>}
         <span className="grow" />
         <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={addDoor.off} title={addDoor.why} onClick={() => setAdding(true)}>
@@ -597,7 +670,7 @@ export function ToolServers({
           twoPerson={twoPerson}
           onClose={() => setAdding(false)}
           onAdded={(s) => {
-            setAdded(s);
+            setAdded(s as RegisteredServer);
             refresh();
           }}
           onRefused={refresh}
@@ -611,7 +684,7 @@ export function ToolServers({
             {pinnedTools(added).length} tool{pinnedTools(added).length === 1 ? "" : "s"} pinned
           </span>
           {added.pin && <DigestChip digest={added.pin.digest} label="Pin" />}
-          <span className="text-[11px] text-faint">and pending: nothing attaches to a run until the pin is approved{twoPerson ? " by someone other than you" : ""}.</span>
+          <span className="text-[11px] text-faint">and pending: nothing attaches to a run until a platform admin{twoPerson ? " other than you" : ""} approves the pin and sets each tool&rsquo;s risk.</span>
           <span className="grow" />
           <Button size="sm" variant="solid" tone="neutral" onClick={() => setAdded(null)}>
             Dismiss
@@ -619,7 +692,7 @@ export function ToolServers({
         </div>
       )}
 
-      {error && <p className="border-b border-line px-4 py-2.5 text-[11.5px] text-err">{error}</p>}
+      {error && <Failure className="border-b border-line px-4 py-2.5" message={error} what="The tool server registry could not be read" />}
       {shown.map((s) => (
         <ServerRow
           key={s.id}
@@ -636,7 +709,7 @@ export function ToolServers({
       ))}
       {servers !== null && shown.length === 0 && !error && (
         <p className="px-4 py-3 text-[11.5px] text-faint">
-          No tool server is registered. A team&rsquo;s own tools reach agents by registering the MCP server that serves them; its tools become available to agents once the pin is approved.
+          No tool server is registered. A team&rsquo;s own tools reach agents by registering the MCP server that serves them; its tools become available to agents once a platform admin approves the pin.
         </p>
       )}
     </div>

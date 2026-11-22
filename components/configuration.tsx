@@ -103,18 +103,8 @@ interface Data {
   defaultModel: string;
   classDefaults: Record<string, string>;
   sources: Source[];
-  tools: {
-    tool: string;
-    agent: string;
-    agentName: string;
-    risk: string;
-    taints: boolean;
-    sink: boolean;
-    scoped: boolean;
-    summary: string;
-    calls: number;
-    lastUsed: string | null;
-  }[];
+  /** The tool registry as the platform answers it; read through `registeredToolOf`, so a missing field never throws. */
+  tools: unknown[];
   gates: { agent: string; agentName: string; atOrAbove: string; approvers: string[] }[];
   vaultKeys: string[];
   apiKeys: { name: string; agent: string | null; prefix: string; last_used: string | null; revoked_at: string | null }[];
@@ -124,6 +114,61 @@ interface Data {
   basis: string;
   /** False only when the console has nothing behind it: no database, no backend, no runtime files (app/api/configuration/route.ts). */
   connected?: boolean;
+}
+
+/**
+ * One row of the tool registry panel: a tool a deployed workflow names, beside
+ * what the platform registered about it (agentfactory api/routes/modelsettings.py
+ * `_tools`): the registered risk, the definition's declared risk and the
+ * effective risk the policy gates on (the higher of the two), whether it acts
+ * outside and whether what it returns is untrusted, its calls. `registered`
+ * false: no tool of that name is registered, and a run is refused it. Fields
+ * the answer does not carry (`repeatable`) read "not stated".
+ */
+interface RegisteredTool {
+  name: string;
+  /** "builtin", the id of the approved tool server it comes from, or "" when the answer does not say. */
+  server: string;
+  description: string;
+  /** The risk it is registered at; "" when not registered or not said. */
+  risk: string;
+  declaredRisk: string;
+  effectiveRisk: string;
+  /** null when the answer does not say. */
+  registered: boolean | null;
+  sink: boolean;
+  untrusted: boolean;
+  /** null when the answer does not say. */
+  repeatable: boolean | null;
+  agent: string;
+  agentName: string;
+  calls: number | null;
+  lastUsed: string | null;
+}
+
+/** A row of `tools[]`, read defensively: a missing field is empty or "not stated", never a crash. */
+function registeredToolOf(v: unknown): RegisteredTool | null {
+  const t = v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+  if (!t) return null;
+  const s = (x: unknown) => (typeof x === "string" ? x : "");
+  const name = s(t.tool) || s(t.name);
+  if (!name) return null;
+  return {
+    name,
+    server: s(t.server),
+    description: s(t.summary) || s(t.description),
+    risk: s(t.risk),
+    declaredRisk: s(t.declared_risk),
+    effectiveRisk: s(t.effective_risk) || s(t.risk),
+    registered: typeof t.registered === "boolean" ? t.registered : null,
+    sink: t.sink === true || t.is_sink === true,
+    untrusted: t.taints === true || t.untrusted === true,
+    repeatable: typeof t.repeatable === "boolean" ? t.repeatable : null,
+    agent: s(t.agent),
+    agentName: s(t.agentName) || s(t.agent),
+    calls: typeof t.calls === "number" ? t.calls : null,
+    lastUsed: s(t.lastUsed) || s(t.last_used) || null,
+  };
 }
 
 type TabId = "models" | "tools" | "connections" | "access" | "deployment";
@@ -138,7 +183,7 @@ const TABS: { id: TabId; panels: string[]; about: string }[] = [
   {
     id: "tools",
     panels: ["registry", "tools", "mcp"],
-    about: "The tool servers registered here, every tool the workflows hold, and this deployment's own MCP server.",
+    about: "The tool servers registered here, every tool a workflow can be given, and this deployment's own MCP server.",
   },
   {
     id: "connections",
@@ -148,7 +193,7 @@ const TABS: { id: TabId; panels: string[]; about: string }[] = [
   {
     id: "access",
     panels: ["credentials", "ingress", "gates"],
-    about: "The vault's credentials (a value is never shown in full), the keys that may post work here, and where a person has to sign.",
+    about: "The vault's credentials (by name; a value is never shown), the keys that may post work here, and where a person has to sign.",
   },
   {
     id: "deployment",
@@ -216,6 +261,7 @@ const RISK_TONE: Record<string, "ok" | "warn" | "err" | "neutral"> = {
   read: "ok",
   write: "warn",
   risky: "err",
+  destructive: "err",
 };
 
 function ago(iso: string | null): string {
@@ -404,12 +450,17 @@ function ConfigurationTabs() {
     [],
   );
 
+  // The workflow filter offers every workflow that holds a connection or names a tool.
   const agents = useMemo(
-    () => [...new Set((data?.sources ?? []).map((s) => s.agent))].sort(),
+    () => [...new Set([...(data?.sources ?? []).map((s) => s.agent), ...(Array.isArray(data?.tools) ? data.tools : []).map((t) => registeredToolOf(t)?.agent ?? "")].filter(Boolean))].sort(),
     [data],
   );
   const sources = useMemo(() => (data?.sources ?? []).filter((s) => !agent || s.agent === agent), [data, agent]);
-  const tools = useMemo(() => (data?.tools ?? []).filter((t) => !agent || t.agent === agent), [data, agent]);
+  const registered = useMemo(() => (Array.isArray(data?.tools) ? data.tools : []).map(registeredToolOf).filter((t): t is RegisteredTool => t !== null), [data]);
+  const tools = useMemo(() => registered.filter((t) => !agent || t.agent === agent), [registered, agent]);
+  const usage = tools.some((t) => t.calls !== null);
+  /** Whether the answer says if a call may be made again after its worker stopped: a column only when it does. */
+  const repeatShown = tools.some((t) => t.repeatable !== null);
   const used = sources.filter((s) => s.calls > 0).length;
   /** The panels that read the page's record show its failure themselves; none is drawn in an empty form. */
   const quiet = false;
@@ -490,7 +541,7 @@ function ConfigurationTabs() {
           egressAllowlist: data.deployment.egress,
           connections: { total: rows.length, calledAtLeastOnce: used, offline: rows.filter((r) => r.mode === "offline").length, live: rows.filter((r) => r.mode === "live").length },
           connectionList: rows.map((r) => ({ name: r.name, kind: r.kindLabel, mode: r.mode ?? "not stated", heldBy: r.heldBy, calls: r.calls })),
-          tools: data.tools.length,
+          tools: notBuilt(unbuilt, "tools") ? "not built" : registered.map((t) => ({ name: t.name, workflow: t.agentName, from: t.server, registered: t.registered, registeredRisk: t.risk, effectiveRisk: t.effectiveRisk, actsOutside: t.sink, untrustedOutput: t.untrusted, calls: t.calls })),
           gates: data.gates,
           models: data.models.map((m) => m.id),
           defaultModel: data.defaultModel,
@@ -599,8 +650,8 @@ function ConfigurationTabs() {
               id="registry"
               {...fold("registry")}
               title={TITLES.registry}
-              caption="The MCP servers that carry a team's own tools to its agents. A server's tools attach to a run only after a person approves its pinned tool list."
-              how="Registering is admission, not trust: the server is started once, every tool's name, description and schema is screened, and the tool list is pinned by its digest. A rescan that finds a different list marks the server changed and detaches it until someone approves again. Environment and header values stay with the registry; only their names are shown."
+              caption="The MCP servers that carry a team's own tools to its agents. A server's tools attach to a run only after a platform admin approves its pinned tool list."
+              how="Registering is admission, not trust: the server is asked for its tool list once, every tool's name, description and schema is screened, and the list is pinned by its digest. A platform admin approves the pin and sets each tool's risk; a tool left unset counts as destructive. A rescan that finds a different list marks the server changed and detaches it until it is approved again. Header values reference the vault; only their names are shown."
               meta={
                 registry.servers && registry.servers.some((x) => STATUS_META[x.status].alarming) ? (
                   <Tag tone="err" solid>
@@ -613,15 +664,18 @@ function ConfigurationTabs() {
             >
               <ToolServers servers={registry.servers} twoPerson={registry.twoPerson} error={registry.error} refresh={registry.refresh} />
             </Panel>
-            {/* ── tools ── */}
+            {/* ── tools: what the deployed workflows name, beside the registry ── */}
             <Panel
               id="tools"
               {...fold("tools")}
               title={TITLES.tools}
-              caption={notBuilt(unbuilt, "tools") ? "Tool steps are not built on this deployment: no run calls a tool, so none is granted or counted here." : "Every tool granted to a workflow, with the risk it was registered at."}
-              meta={data ? notBuilt(unbuilt, "tools") ? <NotBuiltValue field="tools" /> : <span className="tnum text-[10.5px] font-normal text-faint">{data.tools.length} granted</span> : undefined}
+              caption={
+                notBuilt(unbuilt, "tools")
+                  ? "Not built: the platform names its tool registry as not built on this deployment, so no tool is listed and none can be granted."
+                  : "Every tool a deployed workflow names, beside what the platform registered about it: the built-in tools and the tools of approved tool servers. A workflow may make a tool stricter, never looser."
+              }
+              meta={data ? notBuilt(unbuilt, "tools") ? <NotBuiltValue field="tools" /> : <span className="tnum text-[10.5px] font-normal text-faint">{registered.length} named</span> : undefined}
             >
-              {quiet ? <EmptyTable cols={["Tool", "Workflow", "Risk", "Properties", "Calls", "Last used"]}>Each tool granted to a workflow is listed here with its risk and its calls.</EmptyTable> : <>
               {workflowPick && (
                 <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2">
                   <span className="grow" />
@@ -629,51 +683,73 @@ function ConfigurationTabs() {
                 </div>
               )}
               <div className="max-h-[420px] overflow-x-auto overflow-y-auto">
-                <table className="w-full min-w-[820px] border-collapse text-[11.5px]">
+                <table className="w-full min-w-[960px] border-collapse text-[11.5px]">
                   <thead className="sticky top-0 z-10 bg-surface">
                     <tr className="border-b border-line text-left text-[10.5px] text-faint">
                       <th className="px-4 py-2 font-medium">Tool</th>
                       <th className="px-3 py-2 font-medium">Workflow</th>
                       <th className="px-3 py-2 font-medium">Risk</th>
-                      <th className="px-3 py-2 font-medium">Properties</th>
-                      <th className="px-3 py-2 font-medium">Calls</th>
-                      <th className="px-3 py-2 font-medium">Last used</th>
+                      <th className="px-3 py-2 font-medium">Acts outside</th>
+                      <th className="px-3 py-2 font-medium">Untrusted output</th>
+                      {repeatShown && <th className="px-3 py-2 font-medium">Repeatable</th>}
+                      {usage && <th className="px-3 py-2 font-medium">Calls</th>}
+                      {usage && <th className="px-3 py-2 font-medium">Last used</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {tools
                       .slice()
-                      .sort((a, b) => b.calls - a.calls || a.tool.localeCompare(b.tool))
+                      .sort((a, b) => a.name.localeCompare(b.name) || a.agentName.localeCompare(b.agentName))
                       .map((t, i) => (
-                        <tr key={`${t.agent}-${t.tool}-${i}`} className="border-b border-line last:border-0">
-                          <td className="px-4 py-2.5 font-mono text-[11px]">{t.tool}</td>
-                          <td className="px-3 py-2.5 whitespace-nowrap">{t.agentName}</td>
-                          <td className="px-3 py-2.5 whitespace-nowrap">
-                            <Status tone={RISK_TONE[t.risk] ?? "neutral"}>{t.risk}</Status>
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <span className="flex flex-wrap gap-1">
-                              {t.taints && <Tag tone="warn">taints</Tag>}
-                              {t.sink && <Tag tone="err">sink</Tag>}
-                              {t.scoped && <Tag>scoped</Tag>}
-                              {!t.taints && !t.sink && !t.scoped && <span className="text-ghost">—</span>}
+                        <tr key={`${t.agent}:${t.name}:${i}`} className="border-b border-line align-top last:border-0">
+                          <td className="px-4 py-2.5">
+                            <span className="flex flex-col gap-0.5">
+                              <span className="font-mono text-[11px] text-fg">{t.name}</span>
+                              <span className="text-[10.5px] text-faint">{t.registered === false ? "not registered" : t.server === "builtin" ? "built in" : t.server ? `tool server ${t.server}` : ""}</span>
+                              {t.description && <span className="line-clamp-2 max-w-[56ch] text-[10.5px] leading-[1.45] text-faint">{t.description}</span>}
                             </span>
                           </td>
-                          <td className="tnum px-3 py-2.5">{t.calls || <span className="text-ghost">0</span>}</td>
-                          <td className="px-3 py-2.5 whitespace-nowrap text-faint">{ago(t.lastUsed)}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap">{t.agentName || <span className="text-faint">not stated</span>}</td>
+                          <td className="px-3 py-2.5">
+                            {t.registered === false ? (
+                              <span className="text-[11px] text-err">no tool of this name is registered: a run is refused it</span>
+                            ) : t.effectiveRisk ? (
+                              <span className="flex flex-col gap-0.5">
+                                <Status tone={RISK_TONE[t.effectiveRisk] ?? "neutral"}>{t.effectiveRisk}</Status>
+                                {(t.risk || t.declaredRisk) && (
+                                  <span className="text-[10px] text-faint">
+                                    registered {t.risk || "not stated"}
+                                    {t.declaredRisk ? `, declared ${t.declaredRisk}` : ""}
+                                  </span>
+                                )}
+                                {t.effectiveRisk === "destructive" && <span className="text-[10px] text-faint">every call waits for a platform admin</span>}
+                              </span>
+                            ) : (
+                              <span className="text-faint">not stated</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5">{t.sink ? <Tag tone="err">acts outside</Tag> : <span className="text-ghost">no</span>}</td>
+                          <td className="px-3 py-2.5">{t.untrusted ? <Tag tone="warn">untrusted</Tag> : <span className="text-ghost">no</span>}</td>
+                          {repeatShown && <td className="px-3 py-2.5 text-dim">{t.repeatable === null ? <span className="text-faint">not stated</span> : t.repeatable ? "yes" : "no"}</td>}
+                          {usage && <td className="tnum px-3 py-2.5">{t.calls === null ? <span className="text-faint">not stated</span> : t.calls || <span className="text-ghost">0</span>}</td>}
+                          {usage && <td className="px-3 py-2.5 whitespace-nowrap text-faint">{t.calls === null ? "" : ago(t.lastUsed)}</td>}
                         </tr>
                       ))}
                     {data && tools.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="px-4 py-3 text-faint">
-                          {notBuilt(unbuilt, "tools") ? "Not built: the platform names tools as not built, so this list is empty because nothing can fill it." : "No workflow on this deployment holds a tool yet."}
+                        <td colSpan={5 + (repeatShown ? 1 : 0) + (usage ? 2 : 0)} className="px-4 py-3 text-faint">
+                          {notBuilt(unbuilt, "tools") ? "Not built: the platform names tools as not built, so this list is empty because nothing can fill it." : agent ? "This workflow names no tool." : "No deployed workflow names a tool."}
                         </td>
                       </tr>
                     )}
                   </tbody>
                 </table>
               </div>
-              </>}
+              {data && !notBuilt(unbuilt, "tools") && tools.length > 0 && !repeatShown && (
+                <p className="border-t border-line px-4 py-2 text-[10.5px] leading-[1.5] text-faint">
+                  Whether a call to each tool may be made again after the worker making it stopped (repeatable) is not in the platform&rsquo;s answer, so it is not shown.
+                </p>
+              )}
             </Panel>
             {/* ── the platform as an MCP server ── */}
             <Panel
@@ -924,10 +1000,10 @@ function ConfigurationTabs() {
               id="credentials"
               {...fold("credentials")}
               title={TITLES.credentials}
-              caption="What the vault holds, by name. A value is pasted here once and shown masked from then on."
-              how="A connector referencing one of these carries the reference in the spec and never the value, which is what makes a workflow safe to export. Only the runtime reads a value, at the moment a tool is called."
+              caption="What the vault holds, by name. A value is pasted here once and never shown again."
+              how="A tool server's header or a workflow's tool argument names a credential as ${secret:name} and never holds the value, which is what makes a workflow safe to export. The value is read at the moment a call is made."
             >
-              {off("credentials") && <EmptyBar action="Add a key">Vault keys are listed here by name, each value masked.</EmptyBar>}
+              {off("credentials") && <EmptyBar action="Add a key">Vault keys are listed here by name.</EmptyBar>}
               <Kept off={off("credentials")}>
                 <Keys bare={bare} onChanged={changed} onQuiet={says.credentials} />
               </Kept>

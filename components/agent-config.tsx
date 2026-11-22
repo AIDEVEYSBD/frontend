@@ -17,18 +17,24 @@ import { retiredLine } from "@/lib/lifecycle";
 import { editableDocument, retiredRefusalOf, saveAgent, type AgentSaved, type EditableDocument } from "@/lib/api/l8";
 import { runBlockers, unsupportedHeading, unsupportedReason } from "@/lib/unsupported";
 import { UnsupportedParts } from "./unsupported";
+import { notBuilt, readConfiguration } from "@/lib/not-built";
+import { listServers } from "@/lib/api/l6";
+import { toolRisk } from "@/lib/mcp-registry";
 import {
   NEW_GATE,
   arr,
   changed,
+  declaredTools,
   fieldsOf,
   gateProblems,
   gatesOf,
   grantsOf,
   obj,
   pendingOf,
+  roles,
   stepsOf,
   str,
+  toolRowOf,
   withEdits,
   type BudgetKey,
   type Doc,
@@ -169,15 +175,19 @@ function Code({ children }: { children: ReactNode }) {
 
 /* ═══════════════════ sections ═══════════════════ */
 
+type Registry = { built: boolean | null; risk: Map<string, string> };
+
 const BUDGET: { key: BudgetKey; label: string; hint: string; unset: string; placeholder?: string }[] = [
   { key: "cost_usd", label: "Cost (USD)", hint: "Tokens at the price set for each model on the Models tab, checked after each model reply.", unset: "No limit set" },
   { key: "tokens", label: "Tokens", hint: "Counted from every model reply, in and out, and checked after each reply.", unset: "No limit set" },
-  { key: "tool_calls", label: "Tool calls", hint: "Kept in the document and not counted: tool steps are not built on this deployment.", unset: "Not counted", placeholder: "200" },
+  { key: "tool_calls", label: "Tool calls", hint: "The most tool calls one run may make.", unset: "The runtime default", placeholder: "200" },
   { key: "wall_clock_s", label: "Wall clock (seconds)", hint: "From the run's start, checked between steps. Time spent waiting at a gate is not counted.", unset: "No limit set" },
 ];
 
-function Limits({ form }: { form: Form }) {
+function Limits({ form, registry }: { form: Form; registry: Registry }) {
   const wall = Number(form.value("budget.wall_clock_s"));
+  /** The tool-call ceiling's hint, from what the platform says about its tool registry. */
+  const callsHint = registry.built === false ? "Kept in the document and not counted: the platform names its tool registry as not built, so no run calls a tool." : "The most tool calls one run may make; when none is set the runtime's default of 200 applies.";
   return (
     <Section title="Limits" hue="budget" meta="what one run may spend">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -190,7 +200,7 @@ function Limits({ form }: { form: Form }) {
             numeric
             placeholder={b.placeholder}
             unset={b.unset}
-            hint={b.key === "wall_clock_s" && Number.isFinite(wall) && wall >= 60 ? `${b.hint} ${Math.round((wall / 60) * 10) / 10} minutes.` : b.hint}
+            hint={b.key === "wall_clock_s" && Number.isFinite(wall) && wall >= 60 ? `${b.hint} ${Math.round((wall / 60) * 10) / 10} minutes.` : b.key === "tool_calls" ? callsHint : b.hint}
           />
         ))}
       </div>
@@ -201,7 +211,7 @@ function Limits({ form }: { form: Form }) {
   );
 }
 
-function Bounds({ form, steps }: { form: Form; steps: StepRow[] }) {
+function Bounds({ form, steps, registry }: { form: Form; steps: StepRow[]; registry: Registry }) {
   return (
     <Section title="Bounds" hue="run" meta="how far each step and the agent as a whole may go">
       <div className="overflow-x-auto rounded-md border border-line">
@@ -271,7 +281,8 @@ function Bounds({ form, steps }: { form: Form; steps: StepRow[] }) {
         </table>
       </div>
       <Hint>
-        A fixed sequence runs its steps in order and a wait step resumes when it is answered; the engine also caps how many times one run may enter the same step. A step where the model decides (a delegate step) and a tool step are not built on this deployment.
+        A fixed sequence runs its steps in order and a wait step resumes when it is answered; the engine also caps how many times one run may enter the same step.
+        {registry.built === false && " Tool steps call nothing: the platform names its tool registry as not built."} A part of this document the platform does not carry out is listed at the top of the page.
       </Hint>
     </Section>
   );
@@ -322,7 +333,7 @@ function GateCard({ index, gate, base, edit, stepLabel, onChange, onRemove }: { 
 const gateDiffers = (a: GateDraft, b: GateDraft) =>
   changed("choice", a.at_or_above, b.at_or_above) || changed("text", a.when, b.when) || changed("roles", a.approvers, b.approvers) || changed("roles", a.escalate_to, b.escalate_to) || changed("choice", a.on_timeout, b.on_timeout) || changed("number", a.timeout_h, b.timeout_h);
 
-function Gates({ form, doc, steps, baseGates, gates, setGates }: { form: Form; doc: Doc; steps: StepRow[]; baseGates: GateDraft[]; gates: GateDraft[]; setGates: (update: (g: GateDraft[]) => GateDraft[]) => void }) {
+function Gates({ form, doc, steps, baseGates, gates, setGates, registry }: { form: Form; doc: Doc; steps: StepRow[]; baseGates: GateDraft[]; gates: GateDraft[]; setGates: (update: (g: GateDraft[]) => GateDraft[]) => void; registry: Registry }) {
   const stepLabel = (id: string) => steps.find((s) => s.id === id)?.label ?? id;
   const approvals = steps.filter((s) => s.harness === "await" && s.waits === "approval");
   const edges = arr(obj(doc.spec).edges).map(obj);
@@ -331,9 +342,14 @@ function Gates({ form, doc, steps, baseGates, gates, setGates }: { form: Form; d
       title="Gates"
       meta="where a person decides before the agent goes on"
     >
-      {/* Gates on tool calls are kept in the document and shown, never offered for adding: tool steps are not built on this deployment, so no such gate is consulted. */}
-      {gates.length > 0 && <span className="text-[12px] font-semibold text-fg">On tool calls</span>}
-      {gates.length > 0 && <p className="text-[12.5px] text-dim">The document declares gates on tool calls. They are kept as written and not consulted: tool steps are not built on this deployment.</p>}
+      {/* Gates on tool calls: offered for adding only once the platform has a tool registry to consult them against. */}
+      {(gates.length > 0 || registry.built === true) && <span className="text-[12px] font-semibold text-fg">On tool calls</span>}
+      {gates.length > 0 && registry.built === false && <p className="text-[12.5px] text-dim">The document declares gates on tool calls. They are kept as written and not consulted: the platform names its tool registry as not built.</p>}
+      {registry.built === true && (
+        <p className="text-[12.5px] text-dim">
+          A call at or above a gate&rsquo;s risk waits for its approvers. A call to a destructive tool waits for a platform admin whatever these gates say.
+        </p>
+      )}
       {gates.map((g, i) => (
         <GateCard
           key={g.src === null ? `new-${i}` : `gate-${g.src}`}
@@ -346,6 +362,13 @@ function Gates({ form, doc, steps, baseGates, gates, setGates }: { form: Form; d
           onRemove={() => setGates((list) => list.filter((_, j) => j !== i))}
         />
       ))}
+      {registry.built === true && form.edit && (
+        <span>
+          <Button size="sm" variant="solid" tone="neutral" permission="deploy" onClick={() => setGates((list) => [...list, { ...NEW_GATE }])}>
+            Add a gate on tool calls
+          </Button>
+        </span>
+      )}
       <span className="mt-1 text-[12px] font-semibold text-fg">Approval steps</span>
       <p className="text-[11.5px] leading-[1.55] text-faint">{GATE_TIMEOUT_LINE}</p>
       {approvals.length === 0 && <p className="text-[12.5px] text-dim">This agent has no step that waits for a person.</p>}
@@ -385,17 +408,64 @@ function Gates({ form, doc, steps, baseGates, gates, setGates }: { form: Form; d
   );
 }
 
-function Tools({ doc }: { doc: Doc }) {
-  const grants = useMemo(() => grantsOf(doc), [doc]);
-  const total = grants.reduce((n, g) => n + g.tools.length, 0);
+/**
+ * What the platform's tool registry says about each tool: the registered risk,
+ * which a document may raise and never lower. Two reads: the configuration
+ * record (`tools[]`, rows for the tools deployed workflows name, unless its
+ * `not_built` names them) and the tool server registry (`GET /api/mcp`): an
+ * approved server's tool is registered at the risk its approving platform
+ * admin set, destructive when none was set. A built-in tool no deployed
+ * workflow names is in neither answer, so its registered risk is not shown.
+ * `built` is false when the platform names its registry as not built, null
+ * when the record could not be read (nothing is then said either way).
+ */
+function useRegistry(): Registry {
+  const [got, setGot] = useState<Registry>({ built: null, risk: new Map() });
+  useEffect(() => {
+    let live = true;
+    void Promise.all([readConfiguration(), listServers().catch(() => null)]).then(([r, servers]) => {
+      if (!live || !r.ok) return;
+      if (notBuilt(r.notBuilt, "tools")) return setGot({ built: false, risk: new Map() });
+      const risk = new Map<string, string>();
+      for (const row of Array.isArray(r.body.tools) ? r.body.tools : []) {
+        const t = obj(row);
+        const name = str(t.name) || str(t.tool);
+        if (name && str(t.risk)) risk.set(name, str(t.risk));
+      }
+      for (const s of servers?.servers ?? []) {
+        if (s.status !== "approved") continue;
+        for (const t of s.pin?.tools ?? []) risk.set(`${s.id}.${t.name}`, toolRisk(t).risk);
+      }
+      setGot({ built: true, risk });
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  return got;
+}
+
+/** The higher of two risks; an unknown word counts as nothing. */
+function stricter(a: string, b: string): string {
+  const ia = (RISK_ORDER as string[]).indexOf(a);
+  const ib = (RISK_ORDER as string[]).indexOf(b);
+  return ia >= ib ? (ia >= 0 ? a : "") : b;
+}
+
+function Tools({ doc, form, registry }: { doc: Doc; form: Form; registry: Registry }) {
+  const steps = useMemo(() => grantsOf(doc), [doc]);
+  const declared = useMemo(() => declaredTools(doc), [doc]);
+  const listOf = (step: string) => roles(form.value(`grant.${step}.tools`));
+  const total = steps.reduce((n, g) => n + listOf(g.step).length, 0);
   const scope = (rows: [string, string[]][]) =>
     rows.map(([path, values]) => (
       <span key={path} className="break-words font-mono text-[10.5px] text-dim">
         {path}: {values.length ? values.join(", ") : "nothing"}
       </span>
     ));
+  const setList = (step: string, list: string[]) => form.set(`grant.${step}.tools`, list.join(", "));
   return (
-    <Section title="Tools" meta={`${plural(total, "grant")} across ${plural(grants.length, "step")} · read only`}>
+    <Section title="Tools" meta={`${plural(total, "grant")} across ${plural(steps.length, "step")}${form.edit ? "" : " · read only"}`}>
       <div className="overflow-x-auto rounded-md border border-line">
         <table className="w-full min-w-[820px] border-collapse text-[11.5px]">
           <thead>
@@ -407,50 +477,92 @@ function Tools({ doc }: { doc: Doc }) {
             </tr>
           </thead>
           <tbody>
-            {grants.map((g) => [
-              <tr key={`${g.step}:head`} className="border-b border-line bg-raise/40">
-                <td colSpan={4} className="px-4 py-1.5">
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className="text-[12px] font-medium text-fg">{g.label}</span>
-                    <span className="font-mono text-[10.5px] text-faint">{g.step}</span>
-                    <span className="text-[10.5px] text-faint">{g.tools.length ? plural(g.tools.length, "tool") : "no tools granted"}</span>
-                    {g.maxDataClass && <Tag tone={DATA_CLASS_TONE[g.maxDataClass] ?? "neutral"}>reads up to {g.maxDataClass}</Tag>}
-                  </span>
-                </td>
-              </tr>,
-              ...g.tools.map((t) => (
-                <tr key={`${g.step}:${t.name}`} className="border-b border-line align-top last:border-0">
-                  <td className="px-4 py-2">
-                    <span className="flex flex-col gap-0.5">
-                      <span className="font-mono text-[11px] text-fg">{t.name}</span>
-                      {t.summary && <span className="max-w-[60ch] text-[10.5px] leading-[1.45] text-faint">{t.summary}</span>}
+            {steps.map((g) => {
+              const names = listOf(g.step);
+              const key = `grant.${g.step}.tools`;
+              const addable = declared.filter((t) => !names.includes(t));
+              const problem = form.problem(key);
+              return [
+                <tr key={`${g.step}:head`} className="border-b border-line bg-raise/40">
+                  <td colSpan={4} className="px-4 py-1.5">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="text-[12px] font-medium text-fg">{g.label}</span>
+                      <span className="font-mono text-[10.5px] text-faint">{g.step}</span>
+                      <span className="text-[10.5px] text-faint">{names.length ? plural(names.length, "tool") : "no tools granted"}</span>
+                      {form.edited(key) && <span className="text-[10.5px] font-medium text-queue">changed</span>}
+                      {g.maxDataClass && <Tag tone={DATA_CLASS_TONE[g.maxDataClass] ?? "neutral"}>reads up to {g.maxDataClass}</Tag>}
+                      <span className="grow" />
+                      {form.edit && addable.length > 0 && (
+                        <span className="block w-[230px]">
+                          <Pick value="" onChange={(v) => v && setList(g.step, [...names, v])} aria-label={`Grant a tool to ${g.label}`} options={[{ value: "", label: "Grant a declared tool…" }, ...addable.map((t) => ({ value: t, label: t }))]} />
+                        </span>
+                      )}
+                      {form.edit && addable.length === 0 && <span className="text-[10.5px] text-faint">{declared.length ? "every declared tool is granted" : "the document declares no tool to grant"}</span>}
                     </span>
+                    {problem && <span role="alert" className="block pt-1 text-[11.5px] text-err">{problem}</span>}
                   </td>
-                  <td className="px-3 py-2 whitespace-nowrap">{t.registered ? <Status tone={RISK_TONE[t.risk] ?? "neutral"}>{riskLabel(t.risk)}</Status> : <span className="text-warn">not registered in this document</span>}</td>
-                  <td className="px-3 py-2">
-                    <span className="flex flex-col gap-0.5">
-                      {scope(t.scope)}
-                      {t.narrowed.length > 0 && <span className="text-[10.5px] text-faint">Narrowed for this step:</span>}
-                      {scope(t.narrowed)}
-                      {t.scope.length === 0 && t.narrowed.length === 0 && <span className="text-faint">Not limited</span>}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2">
-                    <span className="flex flex-wrap gap-1">
-                      {t.taints && <Tag tone="warn">untrusted output</Tag>}
-                      {t.sink && <Tag tone="err">acts outside</Tag>}
-                      {t.impact.map((i) => (
-                        <Tag key={i}>impact: {i}</Tag>
-                      ))}
-                      {t.dataClass && <Tag tone={DATA_CLASS_TONE[t.dataClass] ?? "neutral"}>returns {t.dataClass}</Tag>}
-                      {t.maxDataClass && <Tag tone={DATA_CLASS_TONE[t.maxDataClass] ?? "neutral"}>takes up to {t.maxDataClass}</Tag>}
-                      {!t.taints && !t.sink && !t.impact.length && !t.dataClass && !t.maxDataClass && <span className="text-faint">None</span>}
-                    </span>
-                  </td>
-                </tr>
-              )),
-            ])}
-            {grants.length === 0 && (
+                </tr>,
+                ...names.map((name) => {
+                  const t = toolRowOf(doc, g.step, name);
+                  const registered = registry.risk.get(name) ?? "";
+                  // The risk a call is ruled at: the higher of what the platform registered and what the document declares.
+                  const effective = stricter(t.risk || "", registered);
+                  return (
+                    <tr key={`${g.step}:${name}`} className="border-b border-line align-top last:border-0">
+                      <td className="px-4 py-2">
+                        <span className="flex flex-col gap-0.5">
+                          <span className="flex items-center gap-2">
+                            <span className="font-mono text-[11px] text-fg">{t.name}</span>
+                            {form.edit && (
+                              <Button size="sm" variant="solid" tone="err" permission="deploy" aria-label={`Take ${name} away from ${g.label}`} onClick={() => setList(g.step, names.filter((n) => n !== name))}>
+                                Remove
+                              </Button>
+                            )}
+                          </span>
+                          {t.summary && <span className="max-w-[60ch] text-[10.5px] leading-[1.45] text-faint">{t.summary}</span>}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {t.registered ? (
+                          <span className="flex flex-col items-start gap-1">
+                            <Status tone={RISK_TONE[effective || t.risk] ?? "neutral"}>{riskLabel(effective || t.risk)}</Status>
+                            {registered && registered !== t.risk && <span className="text-[10px] text-faint">registered {registered}{t.risk ? `, declared ${t.risk}` : ""}</span>}
+                            {effective === "destructive" && (
+                              <span title="A call to a destructive tool waits for a platform admin's approval every time, whatever this document's gates say." className="inline-flex">
+                                <Tag tone="err">a platform admin approves every call</Tag>
+                              </span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-warn">not declared in this document</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className="flex flex-col gap-0.5">
+                          {scope(t.scope)}
+                          {t.narrowed.length > 0 && <span className="text-[10.5px] text-faint">Narrowed for this step:</span>}
+                          {scope(t.narrowed)}
+                          {t.scope.length === 0 && t.narrowed.length === 0 && <span className="text-faint">Not limited</span>}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className="flex flex-wrap gap-1">
+                          {t.taints && <Tag tone="warn">untrusted output</Tag>}
+                          {t.sink && <Tag tone="err">acts outside</Tag>}
+                          {t.impact.map((i) => (
+                            <Tag key={i}>impact: {i}</Tag>
+                          ))}
+                          {t.dataClass && <Tag tone={DATA_CLASS_TONE[t.dataClass] ?? "neutral"}>returns {t.dataClass}</Tag>}
+                          {t.maxDataClass && <Tag tone={DATA_CLASS_TONE[t.maxDataClass] ?? "neutral"}>takes up to {t.maxDataClass}</Tag>}
+                          {!t.taints && !t.sink && !t.impact.length && !t.dataClass && !t.maxDataClass && <span className="text-faint">None</span>}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                }),
+              ];
+            })}
+            {steps.length === 0 && (
               <tr>
                 <td colSpan={4} className="px-4 py-3 text-faint">
                   The document has no steps.
@@ -460,7 +572,14 @@ function Tools({ doc }: { doc: Doc }) {
           </tbody>
         </table>
       </div>
-      <Hint>The grants, risks and scopes the document declares, as written. They are not applied: tool steps are not built on this deployment, so no step calls a tool.</Hint>
+      <Hint>
+        {registry.built === false
+          ? "The platform names its tool registry as not built on this deployment, so these grants are what the document declares; no step can call a tool until it is built."
+          : registry.built
+            ? "A step may call only the tools granted here, each declared in the document and registered on the platform. A document may raise a tool's registered risk, never lower it; a destructive tool waits for a platform admin on every call. The registered risk is shown for a tool a deployed workflow names or an approved tool server serves."
+            : "The grants, risks and scopes the document declares, as written."}{" "}
+        {form.edit && "A grant names a tool the document declares; a tool it does not declare is added in the document itself."}
+      </Hint>
     </Section>
   );
 }
@@ -519,6 +638,8 @@ function AgentForm({ edit, saved, onSaved }: { edit: EditableDocument; saved: Ag
   const [gates, setGates] = useState<GateDraft[]>(baseGates);
   const [saving, setSaving] = useState(false);
   const [refusal, setRefusal] = useState("");
+  /** What the platform says about its tool registry: whether it is built, and each tool's registered risk. */
+  const registry = useRegistry();
 
   const form: Form = {
     edit: canEdit,
@@ -622,12 +743,12 @@ function AgentForm({ edit, saved, onSaved }: { edit: EditableDocument; saved: Ag
           Production runs version {a.deployed_version ?? "?"}. A save here adds another draft; nothing production runs changes until a version is deployed from the Versions tab.
         </Banner>
       )}
-      {loaded && !canEdit && <p className="rounded-md border border-line bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-faint">Read only. Changing the limits, bounds and gates needs the &ldquo;deploy&rdquo; permission.</p>}
+      {loaded && !canEdit && <p className="rounded-md border border-line bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-faint">Read only. Changing the limits, bounds, gates and tool grants needs the &ldquo;deploy&rdquo; permission.</p>}
 
-      <Limits form={form} />
-      <Bounds form={form} steps={steps} />
-      <Gates form={form} doc={doc} steps={steps} baseGates={baseGates} gates={gates} setGates={(update) => setGates(update)} />
-      <Tools doc={doc} />
+      <Limits form={form} registry={registry} />
+      <Bounds form={form} steps={steps} registry={registry} />
+      <Gates form={form} doc={doc} steps={steps} baseGates={baseGates} gates={gates} setGates={(update) => setGates(update)} registry={registry} />
+      <Tools doc={doc} form={form} registry={registry} />
       <Fallbacks steps={steps} />
 
       {/* The save bar stops short of the corner the console's Ask button floats in. */}

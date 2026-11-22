@@ -84,33 +84,40 @@ export interface GrantRow {
 
 const scopeRows = (v: unknown): [string, string[]][] => Object.entries(obj(v)).map(([k, vals]) => [k, strs(vals)]);
 
+/** The tools the document declares (`spec.tools[].name`): the only ones a grant may name. */
+export function declaredTools(doc: Doc): string[] {
+  return arr(specOf(doc).tools).map(obj).map((t) => str(t.name)).filter(Boolean);
+}
+
+/** One tool as a step holds it: the document's binding for it, and the step's own narrowing of its scope. */
+export function toolRowOf(doc: Doc, step: string, name: string): ToolRow {
+  const t = arr(specOf(doc).tools).map(obj).find((x) => str(x.name) === name);
+  const g = arr(policyOf(doc).grants).map(obj).find((x) => str(x.node) === step) ?? {};
+  return {
+    name,
+    registered: Boolean(t),
+    risk: str(t?.risk),
+    summary: str(t?.summary),
+    sink: t?.is_sink === true,
+    taints: t?.taints === true,
+    impact: strs(t?.impact),
+    dataClass: str(t?.data_class),
+    maxDataClass: str(t?.max_data_class),
+    scope: scopeRows(t?.scope),
+    narrowed: scopeRows(obj(g.scope)[name]),
+  };
+}
+
 /** Per step, the tools granted and their scope. A step with no grant, or an empty one, is listed with none. */
 export function grantsOf(doc: Doc): GrantRow[] {
-  const tools = new Map(arr(specOf(doc).tools).map(obj).map((t) => [str(t.name), t]));
   const grants = new Map(arr(policyOf(doc).grants).map(obj).map((g) => [str(g.node), g]));
   return stepsOf(doc).map((s) => {
     const g = grants.get(s.id) ?? {};
-    const narrowed = obj(g.scope);
     return {
       step: s.id,
       label: s.label,
       maxDataClass: str(g.max_data_class),
-      tools: strs(g.tools).map((name) => {
-        const t = tools.get(name);
-        return {
-          name,
-          registered: Boolean(t),
-          risk: str(t?.risk),
-          summary: str(t?.summary),
-          sink: t?.is_sink === true,
-          taints: t?.taints === true,
-          impact: strs(t?.impact),
-          dataClass: str(t?.data_class),
-          maxDataClass: str(t?.max_data_class),
-          scope: scopeRows(t?.scope),
-          narrowed: scopeRows(narrowed[name]),
-        };
-      }),
+      tools: strs(g.tools).map((name) => toolRowOf(doc, s.id, name)),
     };
   });
 }
@@ -212,9 +219,32 @@ export function fieldsOf(doc: Doc): Map<string, FieldSpec> {
     write: (d, v) => writeNumber(d, "delegation", "max_depth", v),
   });
 
+  const declared = new Set(declaredTools(doc));
+  const grantList = arr(policy.grants).map(obj);
   for (const n of nodesOf(doc)) {
     const id = str(n.id);
     const name = str(n.label) || id;
+    // The tools this step may call (`policy.grants[node].tools`): only tools the document declares may be added.
+    const granted = strs(grantList.find((g) => str(g.node) === id)?.tools);
+    add({
+      key: `grant.${id}.tools`,
+      label: `Tools: grants of ${name}`,
+      kind: "roles",
+      base: granted.join(", "),
+      check: (v) => {
+        const added = roles(v).filter((t) => !granted.includes(t) && !declared.has(t));
+        return added.length ? `${added.join(", ")} ${added.length === 1 ? "is" : "are"} not declared in this document's tools.` : "";
+      },
+      write: (d, v) => {
+        const spec = isObj(d.spec) ? d.spec : (d.spec = {} as Record<string, unknown>);
+        const pol = isObj(spec.policy) ? spec.policy : (spec.policy = {} as Record<string, unknown>);
+        const list = Array.isArray(pol.grants) ? (pol.grants as unknown[]) : (pol.grants = [] as unknown[]);
+        const tools = [...new Set(roles(v))];
+        const grant = list.find((g) => isObj(g) && str(g.node) === id) as Record<string, unknown> | undefined;
+        if (grant) grant.tools = tools;
+        else if (tools.length) list.push({ node: id, tools });
+      },
+    });
     if (str(n.harness) === "delegate") {
       add({
         key: `step.${id}.max_steps`,

@@ -14,6 +14,8 @@ export interface BoardEntry {
   title?: string;
   detail?: string;
   tainted?: boolean;
+  /** The entries this one rests on: a result, a refusal or a failure cites the `tool.call` it closes. */
+  because?: string[];
   data?: { tool?: string; args?: Record<string, unknown>; value?: unknown; [k: string]: unknown };
 }
 export interface BoardNode { id: string; label: string; kind: string }
@@ -31,6 +33,8 @@ export interface Item {
   call?: BoardEntry;
   control?: string;
   done: boolean;
+  /** A tool call closed by something other than its result: refused after it was recorded, or failed. */
+  outcome?: "refused" | "failed";
   ms?: number;
   /** Tokens a model call spent, when the journal recorded them. */
   tokens?: { in: number; out: number };
@@ -153,6 +157,21 @@ function fieldNames(brief: unknown): string[] | undefined {
   return brief && typeof brief === "object" && !Array.isArray(brief) ? Object.keys(brief as Record<string, unknown>) : undefined;
 }
 
+/** The open tool call an entry cites in `because`, taken off the open list; undefined when it cites none. */
+function takeCited(pending: Map<string, Item[]>, e: BoardEntry): Item | undefined {
+  const cites = Array.isArray(e.because) ? e.because : [];
+  if (!cites.length) return undefined;
+  for (const [key, list] of pending) {
+    const i = list.findIndex((it) => cites.includes(it.id));
+    if (i >= 0) {
+      const [item] = list.splice(i, 1);
+      pending.set(key, list);
+      return item;
+    }
+  }
+  return undefined;
+}
+
 function addEvent(v: Visit, e: BoardEntry, pending: Map<string, Item[]>) {
   v.lastT = Math.max(v.lastT, e.t);
   switch (e.kind) {
@@ -164,8 +183,11 @@ function addEvent(v: Visit, e: BoardEntry, pending: Map<string, Item[]>) {
       break;
     }
     case "tool.result": {
+      // The call it cites, else (a journal from before calls were cited) the oldest open call of that tool in this visit.
       const key = `${v.id}:${String(e.data?.tool ?? "")}`;
-      const item = (pending.get(key) ?? []).shift();
+      // A result that cites a call already closed is not handed to another call of the same tool.
+      const citesACall = (e.because ?? []).some((id) => [...pending.values()].some((list) => list.some((it) => it.id === id)) || id.includes("#"));
+      const item = takeCited(pending, e) ?? (citesACall ? undefined : (pending.get(key) ?? []).shift());
       if (item) {
         item.result = e;
         item.done = true;
@@ -185,10 +207,24 @@ function addEvent(v: Visit, e: BoardEntry, pending: Map<string, Item[]>) {
       break;
     }
     case "denied":
-    case "contract.breach":
+    case "contract.breach": {
+      // A refusal after the call was recorded closes that call: it is no longer in flight.
+      const closed = takeCited(pending, e);
+      if (closed) {
+        closed.done = true;
+        closed.outcome = "refused";
+        closed.ms = e.t - closed.t;
+      }
       v.items.push({ id: e.id, t: e.t, kind: "refused", title: String(e.data?.tool ?? e.title ?? "refused"), detail: e.detail, control: String(e.data?.control ?? (e.kind === "contract.breach" ? "contract.breach" : "denied")), done: true });
       break;
+    }
     case "error": {
+      const closed = takeCited(pending, e);
+      if (closed) {
+        closed.done = true;
+        closed.outcome = "failed";
+        closed.ms = e.t - closed.t;
+      }
       const failures = e.data?.failures as { index: number }[] | undefined;
       if (Array.isArray(failures) && v.fanItems) for (const f of failures) { const fi = v.fanItems.find((x) => x.index === f.index); if (fi) fi.state = "failed"; }
       v.items.push({ id: e.id, t: e.t, kind: "error", title: String(e.title ?? "error"), detail: e.detail, done: true });

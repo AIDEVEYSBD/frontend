@@ -10,6 +10,7 @@ import { Checkbox, Input, Segmented } from "./forms";
 import { Pick } from "./select";
 import { Cross, Row, Text } from "./builder/controls";
 import { listVault, removeVaultKey, setVaultKey } from "@/lib/api/l2";
+import { useDoorOff } from "@/lib/use-doors";
 
 /**
  * The bodies of two of Configuration's panels (components/configuration.tsx):
@@ -65,13 +66,32 @@ interface Config {
   providers?: { id: string; label: string; local?: boolean }[];
 }
 
+/** One credential as the vault lists it: names, labels and dates. Its value is never read here, masked or not. */
 interface VaultKey {
   name: string;
   label: string;
-  value: string;
   used_by: string[];
   set: boolean;
   last_used: string;
+  /** When it was last set, and by whom, when the vault says. */
+  updated_at: string;
+  updated_by: string;
+}
+
+/** A row of `GET /api/vault` `keys`, read defensively: a missing field is empty, never a crash. */
+function vaultKeyOf(v: unknown): VaultKey | null {
+  const k = v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+  const str = (x: unknown) => (typeof x === "string" ? x : "");
+  if (!k || !str(k.name)) return null;
+  return {
+    name: str(k.name),
+    label: str(k.label),
+    used_by: Array.isArray(k.used_by) ? k.used_by.filter((x): x is string => typeof x === "string") : [],
+    set: k.set !== false,
+    last_used: str(k.last_used),
+    updated_at: str(k.updated_at) || str(k.created),
+    updated_by: str(k.updated_by),
+  };
 }
 
 /* ═══════════════════ Models ═══════════════════ */
@@ -453,10 +473,12 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
 
 export function Keys({ bare = false, onChanged, onQuiet }: { bare?: boolean | null; onChanged?: () => void; onQuiet?: (quiet: boolean) => void }) {
   const [keys, setKeys] = useState<VaultKey[] | null>(null);
-  /** The vault did not answer the read. */
+  /** The vault did not answer the read: the platform's own reason, a 503 naming the setting it lacks included. */
   const [unread, setUnread] = useState("");
   /** The vault refused a write. */
   const [error, setError] = useState("");
+  /** The vault refused a removal: which key, and why (409: what still references it). */
+  const [removeError, setRemoveError] = useState<{ name: string; message: string } | null>(null);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [value, setValue] = useState("");
@@ -464,11 +486,15 @@ export function Keys({ bare = false, onChanged, onQuiet }: { bare?: boolean | nu
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+  const setDoor = useDoorOff("POST", "/api/vault");
+  const removeDoor = useDoorOff("DELETE", "/api/vault");
 
   const refresh = useCallback(() => {
     listVault()
       .then((v) => {
-        setKeys(v.keys);
+        const list = Array.isArray((v as { keys?: unknown }).keys) ? ((v as { keys: unknown[] }).keys) : null;
+        if (!list) throw new Error("GET /api/vault answered without its list of keys");
+        setKeys(list.map(vaultKeyOf).filter((k): k is VaultKey => k !== null));
         setUnread("");
       })
       .catch((e: Error) => setUnread(e.message));
@@ -508,23 +534,22 @@ export function Keys({ bare = false, onChanged, onQuiet }: { bare?: boolean | nu
     <>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-4 py-2 last:border-b-0">
         {none ? (
-          <span className="min-w-0 max-w-[92ch] text-[12px] leading-[1.55] text-dim">
-            The vault is empty. Keys set in the environment (<code className="font-mono text-[11px]">*_API_KEY</code>) appear here on their own.
-          </span>
+          <span className="min-w-0 max-w-[92ch] text-[12px] leading-[1.55] text-dim">The vault holds no credential.</span>
         ) : (
           <>
             <span className="tnum text-[11px] text-faint">{keys.length === 1 ? "1 key" : `${keys.length} keys`}</span>
             <span className="text-[11px] text-faint">
-              referenced from specs as <code className="font-mono">{"${secret:name}"}</code>
+              names only; referenced as <code className="font-mono">{"${secret:name}"}</code>
             </span>
           </>
         )}
         <span className="grow" />
         {!adding && (
-          <Button size="sm" variant="solid" tone="ink" permission="configure" onClick={() => setAdding(true)}>
+          <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={setDoor.off} title={setDoor.why} onClick={() => setAdding(true)}>
             Add a key
           </Button>
         )}
+        {setDoor.off && !adding && <span className="w-full text-[11px] text-faint">{setDoor.why}</span>}
       </div>
 
       {adding && (
@@ -536,18 +561,18 @@ export function Keys({ bare = false, onChanged, onQuiet }: { bare?: boolean | nu
           }}
         >
           <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]">
-            <Row label="Name" tight hint="What specs will reference.">
+            <Row label="Name" tight hint="Lower-case letters, digits, - and _. Setting a name again replaces its value.">
               <Text mono value={name} placeholder="key-name" onChange={setName} />
             </Row>
             <Row label="Label" tight hint="What this credential is for.">
               <Text value={label} placeholder="The system it opens" onChange={setLabel} />
             </Row>
-            <Row label="Value" tight hint="Kept by the vault and shown masked from then on.">
+            <Row label="Value" tight hint="Sent once; never shown again, not even masked.">
               <Input type="password" mono value={value} onChange={setValue} placeholder="pasted once, shown never" aria-label="Value" autoComplete="off" />
             </Row>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="submit" size="sm" variant="solid" tone="ink" permission="configure" loading={busy} disabled={!name.trim() || !value}>
+            <Button type="submit" size="sm" variant="solid" tone="ink" permission="configure" loading={busy} disabled={!name.trim() || !value || setDoor.off} title={setDoor.why}>
               Add key
             </Button>
             <Button
@@ -562,7 +587,7 @@ export function Keys({ bare = false, onChanged, onQuiet }: { bare?: boolean | nu
               Cancel
             </Button>
             <span className="text-[11px] text-faint">
-              Any connector, including ones that do not exist yet, reads it as <code className="font-mono">{`\${secret:${name.trim() || "name"}}`}</code>
+              A tool server&rsquo;s header or a workflow&rsquo;s tool argument names it as <code className="font-mono">{`\${secret:${name.trim() || "name"}}`}</code>
             </span>
           </div>
         </form>
@@ -572,57 +597,61 @@ export function Keys({ bare = false, onChanged, onQuiet }: { bare?: boolean | nu
       {unread && <PanelFailure title="The vault could not be read again">{unread}</PanelFailure>}
 
       {keys.map((k) => (
-        <div key={k.name} className="flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-b-0">
-          <Status tone={k.set ? "ok" : "err"}>{k.set ? "Set" : "Missing"}</Status>
-          <div className="flex min-w-0 grow flex-col">
-            <div className="flex items-baseline gap-2">
+        <div key={k.name} className="flex flex-col border-b border-line last:border-b-0">
+          <div className="flex items-center gap-3 px-4 py-2.5">
+            <Status tone={k.set ? "ok" : "err"}>{k.set ? "Set" : "Missing"}</Status>
+            <div className="flex min-w-0 grow flex-col">
               <code className="font-mono text-[12px] font-semibold text-fg">{k.name}</code>
-              <code className="tnum truncate font-mono text-[11px] text-faint">{k.value}</code>
+              <span className="truncate text-[10.5px] text-faint">
+                {[
+                  k.label,
+                  k.label.startsWith("from $") ? "supplied by the environment: manage it there" : "",
+                  k.updated_at ? `set ${k.updated_at.slice(0, 10)}${k.updated_by ? ` by ${k.updated_by.replace(/\s*<[^>]*>\s*$/, "")}` : ""}` : "",
+                  k.last_used ? `last used ${k.last_used.slice(0, 10)}` : "never used",
+                  k.used_by.length ? `referenced by ${k.used_by.join(", ")}` : "referenced by nothing",
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || " "}
+              </span>
             </div>
-            <span className="truncate text-[10.5px] text-faint">
-              {[
-                k.label,
-                k.label.startsWith("from $") ? "supplied by the environment: manage it there" : "",
-                k.last_used ? `last used ${k.last_used.slice(0, 10)}` : "",
-                k.used_by?.length
-                  ? `read by ${k.used_by.length} workflow${k.used_by.length === 1 ? "" : "s"}`
-                  : "",
-              ]
-                .filter(Boolean)
-                .join(" · ") || " "}
-            </span>
+            {k.label.startsWith("from $") ? (
+              <span className="shrink-0 font-mono text-[9.5px] text-ghost">env</span>
+            ) : (
+              <Button
+                size="sm"
+                variant="solid"
+                tone="err"
+                className="shrink-0"
+                permission="configure"
+                disabled={removeDoor.off}
+                title={removeDoor.why}
+                loading={removing === k.name}
+                onClick={async () => {
+                  if (confirming !== k.name) {
+                    setConfirming(k.name);
+                    return;
+                  }
+                  setConfirming(null);
+                  setRemoving(k.name);
+                  setRemoveError(null);
+                  try {
+                    await removeVaultKey(k.name);
+                  } catch (e) {
+                    // A refusal is the vault's own sentence: a 409 names what still references the key.
+                    setRemoveError({ name: k.name, message: (e as Error).message });
+                  } finally {
+                    setRemoving(null);
+                  }
+                  refresh();
+                  onChanged?.();
+                }}
+              >
+                <Cross size={10} />
+                {confirming === k.name ? "Click again to remove" : "Remove"}
+              </Button>
+            )}
           </div>
-          {k.label.startsWith("from $") ? (
-            <span className="shrink-0 font-mono text-[9.5px] text-ghost">env</span>
-          ) : (
-            <Button
-              size="sm"
-              variant="solid"
-              tone="err"
-              className="shrink-0"
-              permission="configure"
-              loading={removing === k.name}
-              onClick={async () => {
-                if (confirming !== k.name) {
-                  setConfirming(k.name);
-                  return;
-                }
-                setConfirming(null);
-                setRemoving(k.name);
-                try {
-                  // A refusal is said by the console's guard (401, 403); the list is read again either way.
-                  await removeVaultKey(k.name).catch(() => {});
-                } finally {
-                  setRemoving(null);
-                }
-                refresh();
-                onChanged?.();
-              }}
-            >
-              <Cross size={10} />
-              {confirming === k.name ? "Click again to remove" : "Remove"}
-            </Button>
-          )}
+          {removeError?.name === k.name && <PanelFailure title={`${k.name} was not removed`}>{removeError.message}</PanelFailure>}
         </div>
       ))}
     </>

@@ -5,6 +5,8 @@ import Link from "next/link";
 import { Tag } from "./ui";
 import { Section } from "./section";
 import { BASELINE, BASELINE_AREAS, CHANGES_LABEL, KIND_LABEL, KIND_MEANS, controlsOf, referencesOf, type BaselineKind, type BaselinePolicy } from "@/lib/baseline-policies";
+import { enforcementOf, useControls, type ControlsRead } from "@/lib/controls-status";
+import { AnswerFailure } from "./pending";
 
 /**
  * The baseline policy set (lib/baseline-policies.ts) on the Policy tab: what
@@ -12,17 +14,20 @@ import { BASELINE, BASELINE_AREAS, CHANGES_LABEL, KIND_LABEL, KIND_MEANS, contro
  * protects. A row opens to the values it ships with, how they change, the
  * catalogue controls that carry it and the standards those controls cite.
  *
- * It is the platform's own defaults read out of its code, so it is the same
- * with or without a control plane connected, and it states no firing, no
- * count and nothing about this deployment in particular: what a deployment
- * has changed is the Changes list's to show.
+ * It is the catalogue's own defaults, the same with or without a control
+ * plane connected. What it says about this deployment comes from one answer,
+ * `GET /api/controls`: whether each carrying control is enforced now. Until
+ * that address answers, the section says enforcement is not connected and
+ * states nothing either way; what a deployment has changed is the Changes
+ * list's to show.
  */
 
 const KIND_TONE: Record<BaselineKind, "ok" | "neutral" | "warn"> = { fixed: "ok", default: "neutral", off: "warn" };
 const KINDS: BaselineKind[] = ["fixed", "default", "off"];
 
-/** `unconnected`: the platform answers 501 for the policy addresses, so nothing reports what this deployment enforces. */
-export function PolicyBaseline({ unconnected = false }: { unconnected?: boolean }) {
+export function PolicyBaseline() {
+  /** Whether this deployment enforces each carrying control now: the platform's answer, or nothing. */
+  const status = useControls();
   const [open, setOpen] = useState<string | null>(null);
   const [std, setStd] = useState("");
   const [kind, setKind] = useState<BaselineKind | "">("");
@@ -44,10 +49,13 @@ export function PolicyBaseline({ unconnected = false }: { unconnected?: boolean 
       hue="controls"
       meta={`${BASELINE.length} in the catalogue · ${BASELINE.filter((p) => p.kind === "fixed").length} with no setting · ${BASELINE.filter((p) => p.kind === "default").length} with a default · ${BASELINE.filter((p) => p.kind === "off").length} off until set`}
     >
-      {unconnected && (
-        <p className="max-w-[96ch] rounded-md border border-line bg-surface px-3 py-2.5 text-[12px] leading-[1.55] text-dim">
-          Enforcement is not connected in this release: the platform does not report which of these policies it applies, so this is the catalogue a deployment starts with, not a statement of what this deployment does.
-        </p>
+      {status && status.state !== "ok" && (
+        <div className="flex max-w-[96ch] flex-col gap-2">
+          <p className="rounded-md border border-line bg-surface px-3 py-2.5 text-[12px] leading-[1.55] text-dim">
+            Enforcement is not connected: the platform does not report which of the controls carrying these policies it enforces, so this is the catalogue a deployment starts with, not a statement of what this deployment does.
+          </p>
+          <AnswerFailure answer={status} what="Whether each control is enforced could not be read" />
+        </div>
       )}
       <p className="max-w-[96ch] text-[12.5px] leading-[1.6] text-dim">
         The policy set a deployment starts with, as the catalogue writes it. A default changes only the way its row says, and each row names the{" "}
@@ -91,7 +99,7 @@ export function PolicyBaseline({ unconnected = false }: { unconnected?: boolean 
                 <span className="text-[11.5px] text-faint">{purpose}</span>
               </div>
               {rows.map((p) => (
-                <Row key={p.id} p={p} open={open === p.id} onToggle={() => setOpen(open === p.id ? null : p.id)} />
+                <Row key={p.id} p={p} status={status} open={open === p.id} onToggle={() => setOpen(open === p.id ? null : p.id)} />
               ))}
             </div>
           );
@@ -102,9 +110,11 @@ export function PolicyBaseline({ unconnected = false }: { unconnected?: boolean 
   );
 }
 
-function Row({ p, open, onToggle }: { p: BaselinePolicy; open: boolean; onToggle: () => void }) {
+function Row({ p, status, open, onToggle }: { p: BaselinePolicy; status: ControlsRead | null; open: boolean; onToggle: () => void }) {
   const refs = referencesOf(p);
   const stds = [...new Set(refs.map((r) => r.std))];
+  const carriers = controlsOf(p);
+  const enforced = status?.state === "ok" ? carriers.filter((c) => status.byId.get(c.id)?.state === "enforced").length : null;
   return (
     <div className="border-b border-line last:border-b-0" data-baseline={p.id}>
       <button type="button" onClick={onToggle} aria-expanded={open} className="focusable flex w-full cursor-pointer items-start gap-3 px-4 py-3 text-left hover:bg-raise/40">
@@ -123,8 +133,13 @@ function Row({ p, open, onToggle }: { p: BaselinePolicy; open: boolean; onToggle
             </span>
           ))}
         </span>
-        <span className="w-[112px] shrink-0 pt-px text-right">
+        <span className="flex w-[112px] shrink-0 flex-col items-end gap-1 pt-px text-right">
           <Tag tone={KIND_TONE[p.kind]}>{KIND_LABEL[p.kind]}</Tag>
+          {enforced !== null && (
+            <span className="text-[10.5px] text-faint" title="Of the controls that carry it, how many this deployment enforces now (GET /api/controls).">
+              {enforced} of {carriers.length} enforced
+            </span>
+          )}
         </span>
       </button>
       {open && (
@@ -147,12 +162,20 @@ function Row({ p, open, onToggle }: { p: BaselinePolicy; open: boolean; onToggle
             <div className="flex flex-col gap-1.5">
               <span className="text-[11px] font-semibold text-dim">Carried by</span>
               <span className="flex flex-col gap-1">
-                {controlsOf(p).map((c) => (
-                  <span key={c.id} className="flex items-baseline gap-2 text-[12px]">
-                    <span className="font-mono text-[11px] text-faint">{c.id}</span>
-                    <span className="text-fg">{c.title}</span>
-                  </span>
-                ))}
+                {carriers.map((c) => {
+                  const enf = enforcementOf(status, c.id);
+                  return (
+                    <span key={c.id} className="flex flex-wrap items-baseline gap-2 text-[12px]">
+                      <span className="font-mono text-[11px] text-faint">{c.id}</span>
+                      <span className="text-fg">{c.title}</span>
+                      {enf && (
+                        <span title={enf.why || undefined} className="inline-flex">
+                          <Tag tone={enf.tone}>{enf.label}</Tag>
+                        </span>
+                      )}
+                    </span>
+                  );
+                })}
               </span>
             </div>
             <div className="flex flex-col gap-1.5">

@@ -101,6 +101,8 @@ export const DOORS = {
   control: { method: "GET", path: "/api/control", purpose: "The estate in one read: every agent with its runs, spend, gates, limits and the activity behind them", rows: [] },
   controlSave: { method: "POST", path: "/api/control", purpose: "Setting the deployment's budget for a period", rows: [] },
   guardrails: { method: "GET", path: "/api/guardrails", purpose: "The record of control firings, counted from the run journals, and the injection and exfiltration watch", rows: [] },
+  controls: { method: "GET", path: "/api/controls", purpose: "Which controls of the catalogue this deployment enforces now, and how often each has fired", rows: [] },
+  screenerHealth: { method: "GET", path: "/api/screener/health", purpose: "Whether the deployment's screener answers now: which one, whether it fails closed, and how long it takes", rows: [] },
   evals: { method: "GET", path: "/api/evals", purpose: "The evaluations created on this deployment, with the history of their runs", rows: [] },
   evalsSave: { method: "POST", path: "/api/evals", purpose: "Saving a benchmark", rows: [] },
   observability: { method: "GET", path: "/api/observability", purpose: "A run's trace: how long each step took and what it cost; and the tools ranked across runs", rows: [] },

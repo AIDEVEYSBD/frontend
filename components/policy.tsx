@@ -1,7 +1,6 @@
 "use client";
 import { useDoorOff } from "@/lib/use-doors";
 import { Failure } from "./pending";
-import { notBuiltDoorOf } from "@/lib/api/client";
 
 import { PolicyBaseline } from "./policy-baseline";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -832,7 +831,7 @@ function PolicyPage() {
       )}
 
       {/* The catalogue a deployment starts with: shown whether or not the policy door answers, and said to be a catalogue while it does not. */}
-      <PolicyBaseline unconnected={Boolean(notBuiltDoorOf(error))} />
+      <PolicyBaseline />
       {notice && (
         <Banner tone="ok" title="Proposed">
           {notice}

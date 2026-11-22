@@ -5,6 +5,7 @@ import { Meter, Status, Tag, type Tone } from "./ui";
 import { api } from "@/lib/api/client";
 import { fmtUsd } from "@/lib/run-tree";
 import { useRunTree } from "./run-tree";
+import { notBuilt, readRunRowsNotBuilt } from "@/lib/not-built";
 
 /**
  * What a run was held to, and what it spent against it.
@@ -32,6 +33,8 @@ export interface LimitEntry {
   node?: string;
   title?: string;
   detail?: string;
+  /** The entries this one rests on: a result, refusal or failure cites the call it closes. */
+  because?: string[];
   data?: Rec;
 }
 
@@ -271,10 +274,9 @@ export interface SpendRow {
 }
 
 /** The run's spend beside the spec's budget. `cost` is the ledger's price for the run's own entries; null while it is not known. */
-export function spendRows(spec: Rec | null, facts: RunFacts, entries: LimitEntry[], cost: number | null, stopped: Stopped | null): SpendRow[] {
+export function spendRows(spec: Rec | null, facts: RunFacts, entries: LimitEntry[], cost: number | null, stopped: Stopped | null, /** False when the platform names tool calls as not built: the row is left out and the panel says why. */ toolCalls = true): SpendRow[] {
   const budget = obj(obj(spec?.policy).budget);
   const metered = (k: string) => num(facts.spent[k]);
-  const toolCalls = entries.filter((e) => e.kind === "tool.call").length;
   let tokens = 0;
   for (const e of entries) {
     if (e.kind !== "model.call") continue;
@@ -289,12 +291,23 @@ export function spendRows(spec: Rec | null, facts: RunFacts, entries: LimitEntry
   const none = spec ? "no ceiling set" : "ceiling not known: no spec";
 
   const calls = metered("tool_calls");
+  const toolCallsInJournal = entries.filter((e) => e.kind === "tool.call").length;
   const callCeiling = ceiling("tool_calls") ?? (spec ? RUNTIME_DEFAULT.tool_calls : null);
   const tok = metered("tokens");
   const usd = metered("cost_usd") ?? cost;
   // The models a call used with no price set (`spent.unpriced`): while any is named, the run has no cost figure.
   const unpriced = Array.isArray(facts.spent.unpriced) ? (facts.spent.unpriced as unknown[]).map(String) : [];
   const wall = metered("wall_clock_s") ?? clocked ?? journalClock;
+  const callRow: SpendRow = {
+    key: "tool_calls",
+    label: "Tool calls",
+    used: calls ?? toolCallsInJournal,
+    usedText: (calls ?? toolCallsInJournal).toLocaleString("en-GB"),
+    ceiling: callCeiling,
+    ceilingText: callCeiling === null ? none : ceiling("tool_calls") === null ? `${callCeiling.toLocaleString("en-GB")}, the runtime default` : callCeiling.toLocaleString("en-GB"),
+    basis: calls !== null ? "counted by the runtime (spent.tool_calls)" : "the journal's recorded calls; a call refused before it was recorded is not among them",
+    stopped: stopped?.kind === "tool_calls",
+  };
   return [
     {
       key: "tokens",
@@ -326,6 +339,7 @@ export function spendRows(spec: Rec | null, facts: RunFacts, entries: LimitEntry
       basis: metered("wall_clock_s") !== null ? "counted by the runtime, checked between steps" : clocked !== null ? "from the record's start and finish" : "the journal's clock, which restarts when a run resumes",
       stopped: stopped?.kind === "wall_clock_s",
     },
+    ...(toolCalls ? [callRow] : []),
   ];
 }
 
@@ -569,7 +583,19 @@ export function RunLimitsPanel({
   const { tree } = useRunTree(runId, live);
   const own = tree?.nodes.find((n) => n.run === tree.asked);
   const cost = own ? (own.listed?.cost ?? own.cost) : null;
-  const rows = spendRows(spec.body, facts, entries, cost, stopped);
+  /** The run ledger's not-built list: tool calls are neither made nor counted while it names them. */
+  const [ledgerNotBuilt, setLedgerNotBuilt] = useState<string[]>([]);
+  useEffect(() => {
+    let alive = true;
+    void readRunRowsNotBuilt().then((l) => alive && setLedgerNotBuilt(l));
+    return () => {
+      alive = false;
+    };
+  }, []);
+  // Left out only while the ledger names a run's tool calls as not built and this run shows none: a run that made a call,
+  // or was stopped by its tool-call ceiling, always shows the row.
+  const toolCallsUnbuilt = notBuilt(ledgerNotBuilt, "toolCalls") && !entries.some((e) => e.kind === "tool.call") && stopped?.kind !== "tool_calls";
+  const rows = spendRows(spec.body, facts, entries, cost, stopped, !toolCallsUnbuilt);
   const steps = stepBounds(spec.body, entries, facts.visits);
   const tokRow = rows[0];
   const usd = rows[1];
@@ -611,7 +637,8 @@ export function RunLimitsPanel({
             </h3>
             <SpendView rows={rows} />
             <p className="px-4 py-2 text-[10px] leading-[1.45] text-faint">
-              The ceiling is the run&rsquo;s whole budget (the spec&rsquo;s <span className="font-mono">policy.budget</span>). Tool calls are not counted: tool steps are not built on this deployment.
+              The ceiling is the run&rsquo;s whole budget (the spec&rsquo;s <span className="font-mono">policy.budget</span>).
+              {toolCallsUnbuilt && " Tool calls are not shown: the platform names a run's tool calls as not built (runs[].toolCalls)."}
             </p>
           </section>
         </div>

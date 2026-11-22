@@ -7,7 +7,7 @@ import { HARNESS } from "@/lib/spec";
 import { explainControl } from "@/lib/guardrails";
 import { sandboxRunOf, SANDBOX_TOOL } from "@/lib/sandbox";
 import { SandboxOutput } from "./sandbox-result";
-import { ControlRef } from "./control-ref";
+import { ControlMark } from "./control-ref";
 import { DrillModal } from "./drill";
 import { Icon } from "./builder/icons";
 import { RetrievalBody, retrievalOf } from "./run-retrieval";
@@ -719,6 +719,8 @@ function compress(items: Item[]): Row[] {
 function Glyph({ row, live }: { row: Row; live: boolean }) {
   const common = { width: 12, height: 12, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2.6, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
   if (row.kind === "tool" && !row.allDone) return live ? <Spinner size={10} /> : <span className="size-[9px] rounded-full border-[1.5px] border-line-strong" />;
+  // A call closed by a refusal or a failure after it was recorded is not a success.
+  if (row.kind === "tool" && row.members.some((m) => m.outcome)) return <svg {...common} className="text-err"><path d="M7 7l10 10M17 7L7 17" /></svg>;
   if (row.kind === "tool" || row.kind === "answer" || (row.kind === "gate" && row.done)) return <svg {...common} className="text-ok"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>;
   if (row.kind === "refused" || row.kind === "error") return <svg {...common} className="text-err"><path d="M7 7l10 10M17 7L7 17" /></svg>;
   if (row.kind === "gate") return <span className="size-[9px] rounded-full border-[1.5px] border-warn" />;
@@ -809,7 +811,7 @@ function LedgerModal({ visit: v, live, maxT, initial, onClose }: { visit: Visit;
                   {t.main}
                   {t.sub && !isOpen && <span className="text-faint"> · {t.sub}</span>}
                 </span>
-                {r.control && <ControlRef control={r.control} />}
+                {r.control && <ControlMark control={r.control} />}
                 <span className={`tnum shrink-0 font-mono text-[10px] ${r.kind === "tool" && !r.allDone && live ? "text-run" : "text-ghost"}`}>
                   {r.kind === "tool" && !r.allDone && live ? fmtMs(maxT - r.t) : r.allDone && r.ms !== undefined ? fmtMs(r.ms) : ""}
                 </span>
@@ -823,7 +825,8 @@ function LedgerModal({ visit: v, live, maxT, initial, onClose }: { visit: Visit;
                     const retrieval = m.result ? retrievalOf(String(m.result.data?.tool ?? ""), m.result.data?.value) : null;
                     return (
                       <div key={m.id} className="flex flex-col gap-1.5">
-                        {r.count > 1 && <span className="font-mono text-[10px] text-faint">call {i + 1} of {r.count} · {m.done && m.ms !== undefined ? fmtMs(m.ms) : "no result"}</span>}
+                        {r.count > 1 && <span className="font-mono text-[10px] text-faint">call {i + 1} of {r.count} · {m.outcome ? m.outcome : m.done && m.ms !== undefined ? fmtMs(m.ms) : "no result"}</span>}
+                        {r.count === 1 && m.outcome && <span className="text-[11px] text-err">{m.outcome === "refused" ? "Refused after the call was recorded; the refusal is listed below." : "Failed after the call was recorded; the failure is listed below."}</span>}
                         <Args args={m.call?.data?.args ?? {}} />
                         {sandbox ? (
                           <SandboxOutput run={sandbox} />

@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { soon } from "./soon";
-import { listServers, type McpServer, type PinnedTool } from "./api/l6";
-import { toolHints } from "./mcp-registry";
+import { listServers, type McpServer, type PinnedTool, type RegisteredServer } from "./api/l6";
+import { toolRisk } from "./mcp-registry";
 import type { Risk, Tool } from "./spec";
 
 /**
@@ -18,16 +18,15 @@ export type { McpServer } from "./api/l6";
 export type McpTool = PinnedTool;
 
 /**
- * MCP tool annotations are hints the server gives about its own behaviour;
- * they set the binding's starting risk, which the author can still raise in
- * the inspector. Absent hints default to "write", never to "read" — an
- * unknown tool is not assumed harmless.
+ * A pinned tool as a spec binding, registered the way the platform registers
+ * it (agentfactory tools/servers/calls.py `registered`): at the risk the
+ * approving platform admin set, destructive when none was set; what it
+ * returns is always untrusted (it came from outside); and it acts outside
+ * unless its risk is read. The server's hints decide none of this. An author
+ * may still raise the risk in the inspector, never lower it below this.
  */
 export function toolOf(server: Pick<McpServer, "id">, t: McpTool): Tool {
-  const a = (t.annotations ?? {}) as Record<string, unknown>;
-  // The one rule, shared with the registry's tool chips (lib/mcp-registry.ts toolHints).
-  const risk: Risk = toolHints(t).risk;
-  const openWorld = a.openWorldHint === true;
+  const risk: Risk = toolRisk(t).risk;
   return {
     name: `${server.id}.${t.name}`,
     risk,
@@ -35,13 +34,13 @@ export function toolOf(server: Pick<McpServer, "id">, t: McpTool): Tool {
     remote_name: t.name,
     summary: (t.description ?? "").slice(0, 240),
     params: t.inputSchema,
-    ...(openWorld ? { taints: true } : {}),
-    ...(openWorld && risk !== "read" ? { is_sink: true } : {}),
+    taints: true,
+    ...(risk !== "read" ? { is_sink: true } : {}),
   };
 }
 
 export function useMcp() {
-  const [servers, setServers] = useState<McpServer[] | null>(null);
+  const [servers, setServers] = useState<RegisteredServer[] | null>(null);
   const [twoPerson, setTwoPerson] = useState(false);
   const [error, setError] = useState("");
   const refresh = useCallback(async () => {

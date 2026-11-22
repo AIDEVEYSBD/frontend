@@ -7,32 +7,32 @@ import { Pick } from "./select";
 import { DigestChip } from "./digest-chip";
 import { listVault } from "@/lib/api/l2";
 import { addBody, addServer, EMPTY_FORM, RegistryError, type AddForm, type McpServer, type NewServer, type Transport } from "@/lib/api/l6";
-import { formProblem, pinnedTools, toolHints } from "@/lib/mcp-registry";
+import { formProblem, pinnedTools, toolHints, toolRisk } from "@/lib/mcp-registry";
+import { useDoorOff } from "@/lib/use-doors";
 
 /**
- * Adding a tool server, as a dialog in two steps (phase L6, the MCP registry
- * door: backend/README.md "The MCP registry").
+ * Adding a tool server, as a dialog in two steps (`POST /api/mcp`).
  *
- * Step one is the server: its name and how it is reached. Step two is how it
- * signs in, as three cards. What is sent is unchanged: the dialog fills the
- * same `AddForm` the inline form filled and posts `addBody(form)` to
- * `POST /api/mcp`, so the door sees `{label, id?, command?, url?, env?,
- * headers?, version?, isolate?}` exactly as before.
+ * Step one is the server: its name and the address it answers on. Only a
+ * remote server is registered; the platform starts no server itself. Step
+ * two is how it signs in, as three cards. The dialog fills the same
+ * `AddForm` the inline form fills and posts `addBody(form)`: `{label, id?,
+ * url, headers?, version?}`.
  *
- *   Shared credential: one header (HTTP) or one environment variable (stdio)
- *   whose value is a vault reference, `${secret:name}`. The door resolves
- *   it; the console never holds the value.
+ *   Shared credential: one header whose value is a vault reference,
+ *   `${secret:name}`. The registry resolves it at each call; the console
+ *   never holds the value.
  *
- *   Each person as themselves: the door has no field for it. A registration
- *   carries one set of headers or one environment for every caller, so the
- *   card is shown and cannot be chosen.
+ *   Each person as themselves: the registry has no field for it. A
+ *   registration carries one set of headers for every caller, so the card
+ *   is shown and cannot be chosen.
  *
- *   Manual: the door takes `headers` and `env` with plain values today, so
- *   this is the form's own two text areas, as they were.
+ *   Manual: header lines typed here, each value naming a vault credential
+ *   (the registry refuses a plain value).
  *
- * A 201 is admission, not trust: the server was started once, its tools
- * screened and the list pinned, and it waits, pending, until a person
- * approves the pin. The closing view says that, in the registry's words.
+ * A 201 is admission, not trust: the server was asked for its tool list, its
+ * tools screened and the list pinned, and it waits, pending, until a
+ * platform admin approves the pin and sets each tool's risk.
  */
 
 type SignIn = "shared" | "personal" | "manual";
@@ -198,7 +198,7 @@ function Summary({ body, transport, mode, complete }: { body: NewServer; transpo
     <dl className="flex flex-col gap-2.5">
       <Row k="Name">{body.label || unset("not named yet")}</Row>
       <Row k="Id">{body.id ? <Mono className="text-[11px] text-fg">{body.id}</Mono> : unset("derived from the name")}</Row>
-      <Row k={transport === "http" ? "Reached at (HTTP)" : "Started by (stdio)"}>
+      <Row k="Reached at">
         {body.url || body.command ? <Mono className="text-[11px] break-all text-fg">{body.url ?? body.command}</Mono> : unset(transport === "http" ? "no URL yet" : "no command yet")}
       </Row>
       {body.version && (
@@ -286,7 +286,8 @@ export function AddServerDialog({
     };
   }, []);
 
-  const stdio = server.transport === "stdio";
+  const stdio = false;
+  const addDoor = useDoorOff("POST", "/api/mcp");
   const form = useMemo(() => formOf(server, mode, shared, manual), [server, mode, shared, manual]);
   const body = useMemo(() => addBody(form), [form]);
   // Step one answers for the server alone: the sign-in is checked on its own step.
@@ -385,7 +386,7 @@ export function AddServerDialog({
               {done ? `${done.label} added` : "Add a tool server"}
             </span>
             <span className="max-w-[80ch] text-[11.5px] leading-[1.5] text-faint">
-              {done ? "Admitted and pinned. It is not in use yet." : "An MCP server whose tools agents may be given. Adding it is admission, not trust: nothing attaches to a run until its tool list is approved."}
+              {done ? "Admitted and pinned. It is not in use yet." : "A remote MCP server whose tools agents may be given. Adding it is admission, not trust: nothing attaches to a run until a platform admin approves its tool list and sets each tool's risk."}
             </span>
           </span>
           {!done && <Steps step={step} canTwo={!serverProblem} onStep={setStep} />}
@@ -404,7 +405,7 @@ export function AddServerDialog({
               <ol className="flex flex-col gap-2 text-[12.5px] leading-[1.55] text-dim">
                 <li className="flex gap-2.5">
                   <Status tone="ok">Screened</Status>
-                  <span className="min-w-0">The server was started once to list its tools, and every tool&rsquo;s name, description and input schema went through the screener. It raised nothing.</span>
+                  <span className="min-w-0">The server was asked for its tool list, and every tool&rsquo;s name, description and input schema went through the screener. It raised nothing.</span>
                 </li>
                 <li className="flex gap-2.5">
                   <Status tone="ok">Pinned</Status>
@@ -416,8 +417,8 @@ export function AddServerDialog({
                 <li className="flex gap-2.5">
                   <Status tone="warn">Waiting</Status>
                   <span className="min-w-0">
-                    An approver must approve the pin before any agent can use it. Until then nothing attaches to a run.
-                    {twoPerson ? " Two-person approval is on, so that approver cannot be you." : ""}
+                    A platform admin must approve the pin and set each tool&rsquo;s risk before any agent can use it; a tool left unset counts as destructive. Until then nothing attaches to a run.
+                    {twoPerson ? " Two-person approval is on, so that admin cannot be you." : ""}
                   </span>
                 </li>
                 <li className="flex gap-2.5">
@@ -431,10 +432,11 @@ export function AddServerDialog({
                 <span className="mr-1 text-[10.5px] text-faint">Pinned tools</span>
                 {doneTools.map((t) => {
                   const h = toolHints(t);
+                  const r = toolRisk(t);
                   return (
-                    <span key={t.name} title={t.description || t.name} className="inline-flex items-center gap-1 rounded-[3px] border border-line bg-surface px-1 py-px font-mono text-[10px] text-dim">
+                    <span key={t.name} title={`${t.description || t.name}\nThe server's hints say ${h.risk}; the risk is set when the pin is approved.`} className="inline-flex items-center gap-1 rounded-[3px] border border-line bg-surface px-1 py-px font-mono text-[10px] text-dim">
                       {t.name}
-                      <span className={h.risk === "destructive" ? "text-err" : h.risk === "read" ? "text-ok" : "text-faint"}>· {h.risk}</span>
+                      <span className="text-err">· {r.risk}{r.set ? "" : " until set"}</span>
                     </span>
                   );
                 })}
@@ -462,60 +464,14 @@ export function AddServerDialog({
                       <Input value={server.id} onChange={(v) => patch({ id: v })} mono autoComplete="off" />
                     </Field>
                   </div>
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-[12.5px] font-medium text-mist">How it is reached</span>
-                    <span role="radiogroup" aria-label="How it is reached" className="inline-flex h-9 items-center gap-px self-start rounded-md border border-line bg-raise p-px">
-                      {(["stdio", "http"] as Transport[]).map((t) => (
-                        <button
-                          key={t}
-                          type="button"
-                          role="radio"
-                          aria-checked={server.transport === t}
-                          onClick={() => patch({ transport: t })}
-                          className={`focusable h-full cursor-pointer rounded-sm px-3 text-[12.5px] whitespace-nowrap transition-colors ${
-                            server.transport === t ? "bg-surface font-medium text-fg shadow-[var(--shadow-1)]" : "text-faint hover:text-dim"
-                          }`}
-                        >
-                          {t === "stdio" ? "Command (stdio)" : "URL (HTTP)"}
-                        </button>
-                      ))}
-                    </span>
-                    <span className="text-[11.5px] text-faint">
-                      {stdio ? "The platform starts the server itself and talks to it over standard input and output." : "The server is already running; the platform calls it over HTTP."}
-                    </span>
-                  </div>
-                  {stdio ? (
-                    <Field label="Command line that starts it" hint="A shell line: the program and its arguments.">
-                      <Input value={server.command} onChange={(v) => patch({ command: v })} mono autoComplete="off" />
-                    </Field>
-                  ) : (
-                    <Field label="URL it answers on" hint="Starting https://. A URL carries no credentials; those belong to step 2.">
-                      <Input value={server.url} onChange={(v) => patch({ url: v })} mono type="url" autoComplete="off" />
-                    </Field>
-                  )}
+                  <Field label="Address it answers on" hint="An https address; http only at a loopback address. It carries no credentials and no query: those go in a header in step 2.">
+                    <Input value={server.url} onChange={(v) => patch({ url: v })} mono type="url" autoComplete="off" />
+                  </Field>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <Field label="Version (optional)" hint="The version you expect; kept on the row.">
                       <Input value={server.version} onChange={(v) => patch({ version: v })} mono autoComplete="off" />
                     </Field>
                   </div>
-                  {stdio && (
-                    <div className="flex flex-col gap-3 rounded-md border border-line bg-canvas p-3">
-                      <span className="flex flex-col gap-0.5">
-                        <span className="text-[12.5px] font-medium text-mist">Run it in a container (optional)</span>
-                        <span className="text-[11.5px] leading-[1.5] text-faint">
-                          With an image, the server is discovered and run in that container, read-only and with every capability dropped, at admission as at every run.
-                        </span>
-                      </span>
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <Field label="Image">
-                          <Input value={server.image} onChange={(v) => patch({ image: v })} mono autoComplete="off" />
-                        </Field>
-                        <Field label="Network" hint="None when blank.">
-                          <Input value={server.network} onChange={(v) => patch({ network: v })} mono autoComplete="off" />
-                        </Field>
-                      </div>
-                    </div>
-                  )}
                 </>
               ) : (
                 <>
@@ -537,7 +493,7 @@ export function AddServerDialog({
                     />
                     <Card
                       title="Manual"
-                      line={stdio ? "Environment you type here, or none at all." : "Headers you type here, or none at all."}
+                      line="Header lines you type here, each naming a vault credential, or none at all."
                       selected={mode === "manual"}
                       onSelect={() => {
                         setMode("manual");
@@ -612,8 +568,8 @@ export function AddServerDialog({
                   {mode === "manual" && (
                     <div className="flex flex-col gap-2">
                       <Field
-                        label={stdio ? "Environment, one KEY=VALUE per line (optional)" : "Headers, one Name: value per line (optional)"}
-                        hint="Leave it blank for a server that needs no sign-in."
+                        label="Headers, one Name: value per line (optional)"
+                        hint="Each value names a vault credential as ${secret:name}, with any text around it. Leave it blank for a server that needs no sign-in."
                       >
                         {stdio ? (
                           <Textarea rows={4} value={manual.env} onChange={(v) => { setManual((m) => ({ ...m, env: v })); setError(null); }} mono />
@@ -622,7 +578,7 @@ export function AddServerDialog({
                         )}
                       </Field>
                       <p className="text-[11.5px] leading-[1.5] text-faint">
-                        Values are sent once and kept by the registry; only their names are shown again. Reference the vault as <Mono className="text-[10.5px]">{"${secret:name}"}</Mono> rather than pasting a credential.
+                        The registry keeps the references, never a credential, and refuses a plain value. Only the header names are shown again.
                       </p>
                     </div>
                   )}
@@ -647,7 +603,7 @@ export function AddServerDialog({
               <div className="flex flex-col gap-1.5 border-t border-line pt-3">
                 <span className="text-[12px] font-semibold text-fg">On adding</span>
                 <p className="text-[11.5px] leading-[1.55] text-dim">
-                  The server is started once to list its tools. Each tool is screened and the list is pinned by digest. The server then waits, pending: an approver must approve the pin before any agent can use it
+                  The server is asked for its tool list. Each tool is screened and the list is pinned by digest. The server then waits, pending: a platform admin must approve the pin and set each tool&rsquo;s risk before any agent can use it
                   {twoPerson ? ", and with two-person approval on that cannot be you" : ""}.
                 </p>
               </div>
@@ -669,7 +625,7 @@ export function AddServerDialog({
           ) : (
             <>
               <span className="min-w-0 grow text-[11.5px] leading-[1.5] text-faint">
-                {step === 1 ? (dirty ? serverProblem : "") : problem && !error ? problem : busy ? "Starting it and listing its tools. A slow server may take up to 30 seconds." : ""}
+                {step === 1 ? (dirty ? serverProblem : "") : addDoor.off ? addDoor.why : problem && !error ? problem : busy ? "Asking it for its tool list. A slow server may take up to 30 seconds." : ""}
               </span>
               <Button size="sm" variant="solid" tone="err" onClick={onClose} disabled={busy}>
                 Cancel
@@ -684,7 +640,7 @@ export function AddServerDialog({
                   Next: how it signs in
                 </Button>
               ) : (
-                <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={Boolean(problem)} loading={busy} onClick={() => void submit()}>
+                <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={Boolean(problem) || addDoor.off} title={addDoor.why} loading={busy} onClick={() => void submit()}>
                   {busy ? "Adding…" : "Add server"}
                 </Button>
               )}

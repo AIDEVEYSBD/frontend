@@ -6,6 +6,10 @@ import { Button, Tag } from "./ui";
 import { RunStrip, specLine, type LimitEntry, type RunFacts, type RunSpec } from "./run-limits";
 import { sandboxOfEntry, sandboxRunOf, SANDBOX_TOOL, type SandboxRun } from "@/lib/sandbox";
 import { shortDigest } from "@/lib/digest";
+import { notBuilt, readConfiguration } from "@/lib/not-built";
+import { callOutcomes } from "@/lib/tool-calls";
+import { useDoorBuilt } from "@/lib/use-doors";
+import { controlLabel } from "@/lib/guardrails";
 
 /**
  * The trust boundary of one run, stated in one place: where it executed and
@@ -122,28 +126,48 @@ function Fact({ k, children }: { k: string; children: React.ReactNode }) {
   );
 }
 
-/** Reads the deployment's egress allowlist from the console's configuration route, once asked. */
-function useEgress(ask: boolean): { state: "idle" | "loading" | "ok" | "error"; hosts: string[]; message: string } {
-  const [got, setGot] = useState<{ hosts: string[]; message: string; ok: boolean } | null>(null);
+/**
+ * What the deployment says about itself, from its configuration record (read
+ * once per page): the egress allowlist, and the parts its `not_built` list
+ * names (`tools`, `egress`). A failed read states nothing either way.
+ */
+function useDeployment(): { state: "loading" | "ok" | "error"; hosts: string[]; unbuilt: string[]; message: string } {
+  const [got, setGot] = useState<{ hosts: string[]; unbuilt: string[]; message: string; ok: boolean } | null>(null);
   useEffect(() => {
-    if (!ask || got) return;
     let live = true;
-    fetch("/api/configuration", { cache: "no-store" })
-      .then(async (r) => {
-        const body = obj(await r.json().catch(() => null));
-        if (!live) return;
-        if (!r.ok) setGot({ hosts: [], ok: false, message: str(body.error) || `the server answered ${r.status}` });
-        else setGot({ hosts: strs(obj(body.deployment).egress), ok: true, message: "" });
-      })
-      .catch((e) => {
-        if (live) setGot({ hosts: [], ok: false, message: (e as Error).message });
-      });
+    void readConfiguration().then((r) => {
+      if (!live) return;
+      if (r.ok) setGot({ ok: true, hosts: strs(obj(r.body.deployment).egress), unbuilt: r.notBuilt, message: "" });
+      else setGot({ ok: false, hosts: [], unbuilt: [], message: r.message });
+    });
     return () => {
       live = false;
     };
-  }, [ask, got]);
-  if (!got) return { state: ask ? "loading" : "idle", hosts: [], message: "" };
-  return { state: got.ok ? "ok" : "error", hosts: got.hosts, message: got.message };
+  }, []);
+  if (!got) return { state: "loading", hosts: [], unbuilt: [], message: "" };
+  return { state: got.ok ? "ok" : "error", hosts: got.hosts, unbuilt: got.unbuilt, message: got.message };
+}
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** The run's tool calls as its journal holds them, in one sentence: how many, and how they ended. */
+function toolCallLine(entries: LimitEntry[]): string {
+  const outcomes = callOutcomes(entries);
+  const before = entries.filter((e) => (e.kind === "denied" || e.kind === "contract.breach") && e.data?.tool && !(e.because ?? []).some((id) => outcomes.has(id))).length;
+  const held = entries.filter((e) => e.kind === "gate.open" && e.data?.tool && !(e.because ?? []).some((id) => outcomes.has(id))).length;
+  const n = outcomes.size;
+  const count = (st: string) => [...outcomes.values()].filter((o) => o.state === st).length;
+  const parts = [
+    count("returned") && `${count("returned")} returned`,
+    count("refused") && `${count("refused")} refused after being recorded`,
+    count("failed") && `${count("failed")} failed`,
+    count("unknown") && `${count("unknown")} with an unknown outcome`,
+    count("held") && `${count("held")} waiting for a person`,
+    count("open") && `${count("open")} with no outcome on record`,
+  ].filter(Boolean);
+  const made = n ? `This run made ${plural(n, "tool call")}${parts.length ? `: ${parts.join(", ")}` : ""}.` : "This run's journal holds no tool call.";
+  const extra = [before && `${plural(before, "call")} refused before ${before === 1 ? "it was" : "they were"} made`, held && `${plural(held, "call")} held for a person before ${held === 1 ? "it was" : "they were"} made`].filter(Boolean);
+  return extra.length ? `${made} ${extra.join("; ")}.` : made;
 }
 
 /** The statement itself. Presentational, but for the egress read. */
@@ -169,7 +193,12 @@ export function RunBoundaryPanel({
 }) {
   const [chosen, setChosen] = useState(false);
   const open = asked ?? chosen;
-  const egress = useEgress(open);
+  const deployment = useDeployment();
+  // Whether the platform has built the tool server registry: a fact of the deployment, never assumed.
+  const serversBuilt = useDoorBuilt("GET", "/api/mcp");
+  const toolsUnbuilt = deployment.state === "ok" && notBuilt(deployment.unbuilt, "tools");
+  const egressUnbuilt = deployment.state === "ok" && notBuilt(deployment.unbuilt, "egress");
+  const isolationRefusals = entries.filter((e) => e.kind === "denied" && e.data?.control === "isolation");
   const grants = stepGrants(spec.body, entries);
   const granted = new Set(grants.flatMap((g) => g.tools.map((t) => t.name)));
   const holding = grants.filter((g) => g.tools.length > 0);
@@ -201,7 +230,9 @@ export function RunBoundaryPanel({
     >
       <div className="max-h-[320px] overflow-y-auto border-t border-line">
         <p className="border-b border-line px-4 py-1.5 text-[11px] leading-[1.5] text-faint">
-          This deployment runs model steps and approval waits only: it has no tool steps, no sandbox and no egress check, so the grants, ceilings and lists below are what the spec and the configuration say, not controls applied to this run.
+          {toolCallLine(entries)}
+          {toolsUnbuilt && " The platform names its tool registry as not built on this deployment, so the grants below are what the spec says, not rules a call was checked against."}
+          {serversBuilt === false && " Tool servers are not built: the platform answers 501 to GET /api/mcp."}
         </p>
         <div className="grid gap-px bg-line lg:grid-cols-[minmax(0,300px)_minmax(0,1fr)_minmax(0,300px)]">
           <dl className="flex min-w-0 flex-col divide-y divide-line/70 bg-surface">
@@ -229,8 +260,15 @@ export function RunBoundaryPanel({
                     ))}
                   </span>
                 </>
+              ) : isolationRefusals.length ? (
+                <span className="flex flex-col gap-0.5">
+                  <span className="text-err">
+                    {plural(isolationRefusals.length, "job")} refused: {controlLabel("isolation")}.
+                  </span>
+                  {isolationRefusals.map((e, i) => (e.detail ? <span key={i} className="text-[10.5px] text-faint">{e.detail}</span> : null))}
+                </span>
               ) : (
-                <span className="text-faint">None: there is no sandbox on this deployment, and the journal records no isolated execution.</span>
+                <span className="text-faint">The journal records no isolated execution.</span>
               )}
             </Fact>
           </dl>
@@ -312,15 +350,17 @@ export function RunBoundaryPanel({
                   ))}
                 </span>
               ) : (
-                <span className="text-faint">{body ? "No data class ceiling is set in this spec. None would be applied: nothing checks data classes on this deployment." : "Not known: there is no spec to read."}</span>
+                <span className="text-faint">{body ? "No data class ceiling is set in this spec." : "Not known: there is no spec to read."}</span>
               )}
             </Fact>
             <Fact k="Egress allowlist">
-              {egress.state === "ok" ? (
-                egress.hosts.length ? (
+              {deployment.state === "ok" ? (
+                egressUnbuilt ? (
+                  <span className="text-faint">Not built: the platform names the egress allowlist as not built on this deployment.</span>
+                ) : deployment.hosts.length ? (
                   <>
                     <span className="flex flex-wrap gap-1">
-                      {egress.hosts.map((h) => (
+                      {deployment.hosts.map((h) => (
                         <span key={h} className="rounded-sm border border-line bg-raise px-1.5 py-0.5 font-mono text-[10.5px] text-fg">
                           {h}
                         </span>
@@ -329,10 +369,10 @@ export function RunBoundaryPanel({
                     <span className="mt-0.5 block text-[10px] text-faint">The deployment&rsquo;s list as it is now; the run&rsquo;s record does not hold the list it ran under.</span>
                   </>
                 ) : (
-                  <span className="text-faint">None listed. There is no egress check on this deployment, and runs make only model calls.</span>
+                  <span className="text-faint">No host is listed on this deployment now; the run&rsquo;s record does not hold the list it ran under.</span>
                 )
-              ) : egress.state === "error" ? (
-                <Failure inline what="Could not be read" message={egress.message} />
+              ) : deployment.state === "error" ? (
+                <Failure inline what="Could not be read" message={deployment.message} />
               ) : (
                 <span className="text-faint">Reading the deployment&rsquo;s configuration…</span>
               )}

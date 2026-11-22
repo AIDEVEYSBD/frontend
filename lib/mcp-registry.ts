@@ -1,5 +1,6 @@
 import { controlLabel } from "./guardrails";
-import type { AddForm, McpServer, Pin, PinnedTool, ScreenHit, ServerStatus } from "./api/l6";
+import { isPlatformAdmin } from "./permissions";
+import { kvLines, type AddForm, type McpServer, type Pin, type PinnedTool, type ScreenHit, type ServerStatus } from "./api/l6";
 
 /**
  * What the console decides about a registered tool server before the
@@ -23,8 +24,8 @@ export interface StatusMeta {
 
 export const STATUS_META: Record<ServerStatus, StatusMeta> = {
   approved: { label: "Approved", tone: "ok", alarming: false, means: "its pinned tool list attaches to runs" },
-  pending: { label: "Pending approval", tone: "warn", alarming: false, means: "admitted and pinned; nothing attaches until a person approves the pin" },
-  changed: { label: "Tools changed", tone: "err", alarming: true, means: "a rescan found a tool list other than the approved one and pinned it, waiting; detached until someone approves the new list" },
+  pending: { label: "Pending approval", tone: "warn", alarming: false, means: "admitted and pinned; nothing attaches until a platform admin approves the pin and sets its tools' risks" },
+  changed: { label: "Tools changed", tone: "err", alarming: true, means: "the tool list moved from the approved one; detached until a platform admin approves the list again" },
   refused: { label: "Refused", tone: "err", alarming: true, means: "the screener refused its tool list, at admission or on a rescan; it never attaches" },
 };
 
@@ -85,14 +86,17 @@ export function changeLine(c: PinChange): string {
 }
 
 /**
- * The hints a pinned tool carries, in words, and the risk they seed a spec
- * binding with in the builder (lib/use-mcp.ts toolOf): destructive when it
- * says so, read when it says it only reads, else write. An unknown tool is
- * never assumed harmless.
+ * The hints a pinned tool carries, in words, and the risk they suggest. They
+ * are the server's own word about itself: shown to the platform admin who
+ * sets the risk, never used as the risk. Read the way the MCP specification
+ * defaults them (and the registry reads them, `risk_from_hints`): read when
+ * the tool says it only reads, write when it says it is not destructive,
+ * else destructive.
  */
-export function toolHints(t: Pick<PinnedTool, "annotations">): { risk: "read" | "write" | "destructive"; hints: string[] } {
+export function toolHints(t: Pick<PinnedTool, "annotations" | "risk_from_hints">): { risk: "read" | "write" | "destructive"; hints: string[] } {
   const a = t.annotations ?? {};
-  const risk = a.destructiveHint === true ? "destructive" : a.readOnlyHint === true ? "read" : "write";
+  const said = t.risk_from_hints;
+  const risk = said === "read" || said === "write" || said === "destructive" ? said : a.readOnlyHint === true ? "read" : a.destructiveHint === false ? "write" : "destructive";
   const hints = [
     a.readOnlyHint === true ? "read-only" : "",
     a.destructiveHint === true ? "destructive" : "",
@@ -100,6 +104,19 @@ export function toolHints(t: Pick<PinnedTool, "annotations">): { risk: "read" | 
     a.openWorldHint === true ? "open world" : "",
   ].filter(Boolean);
   return { risk, hints };
+}
+
+export const RISKS = ["read", "write", "risky", "destructive"] as const;
+export type ToolRisk = (typeof RISKS)[number];
+
+/**
+ * A pinned tool's risk as the platform registers it: the one the approving
+ * platform admin set for this pin, or destructive when none was set (the
+ * registry drops risks set for another pin). `set` says which.
+ */
+export function toolRisk(t: Pick<PinnedTool, "risk">): { risk: ToolRisk; set: boolean } {
+  const r = t.risk;
+  return r && (RISKS as readonly string[]).includes(r) ? { risk: r as ToolRisk, set: true } : { risk: "destructive", set: false };
 }
 
 /**
@@ -136,6 +153,8 @@ export interface Me {
   name: string;
   email: string;
   sub?: string;
+  /** The person's app roles: only a platform admin approves a tool server. */
+  roles?: readonly string[];
 }
 
 const emailIn = (s: string): string => {
@@ -178,8 +197,10 @@ export interface Access {
  * permission is the button's own check.
  */
 export function approveAccess(server: McpServer, me: Me | null, twoPerson: boolean): Access {
-  if (server.status === "approved") return { ok: false, reason: "the pin is already approved" };
   if (server.status === "refused") return { ok: false, reason: `refused ${refusedWhen(server)}; rescan once the server is fixed, or delete it` };
+  if (!server.pin) return { ok: false, reason: "it has no tool list to approve; rescan it first" };
+  if (!me) return { ok: false, reason: "who you are is not known yet" };
+  if (!isPlatformAdmin(me.roles)) return { ok: false, reason: "only a platform admin approves a tool server and sets its tools' risks" };
   if (twoPerson) {
     if (!me) return { ok: false, reason: "who you are is not known yet" };
     if (samePerson(server.added_by, me)) return { ok: false, reason: "a second person must approve" };
@@ -239,16 +260,17 @@ export function railOf(servers: readonly McpServer[] | null): { usable: McpServe
 
 /* ═══════════════════ the add form ═══════════════════ */
 
-/** The backend's rule for a server id (`SERVER_ID` in backend/app/mcp_registry.py). */
+/** The registry's rule for a server id. */
 const ID = /^[a-z][a-z0-9_-]{0,62}$/;
 /**
- * Ids the backend refuses: `server` (the platform's own MCP server answers at
- * /api/mcp/server, on the console) and the runtime's built-in servers, which
- * would answer in a registration's place (`BUILTIN_SERVERS`).
+ * Ids the registry refuses: `server` (the platform's own MCP server answers
+ * at /api/mcp/server), `builtin`, and the names the platform's built-in
+ * tools and other addresses use, which a server's tools would shadow.
  */
-export const RESERVED_IDS = ["server", "agents", "code", "documents", "engines", "events", "notify", "peers", "records", "retrieval", "sandbox", "spec", "store", "web"];
-const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+export const RESERVED_IDS = ["builtin", "server", "agents", "code", "dataset", "document", "documents", "engines", "events", "finding", "notify", "peers", "records", "retrieval", "sandbox", "spec", "store", "web"];
 const HEADER_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/;
+/** A vault reference inside a header value. */
+const SECRET_REF = /\$\{secret:[A-Za-z0-9_-]{1,64}\}/;
 
 /** The name on each line, split as lib/api/l6.ts kvLines splits it; `split` false when the line has no separator. */
 function lineNames(text: string, seps: string): { name: string; split: boolean }[] {
@@ -270,17 +292,17 @@ export function formProblem(f: AddForm): string {
   // /api/mcp/server is the platform's own MCP server, the console's; a registered server by that id could never be removed.
   if (id === "server") return "The id \"server\" is reserved for the platform's own MCP server.";
   if (RESERVED_IDS.includes(id)) return `"${id}" is a server the runtime serves itself; give this one another id.`;
-  if (f.transport === "stdio") {
-    if (!f.command.trim()) return "Give the command line that starts the server.";
-    const bad = lineNames(f.env, "=").find((l) => !l.split || !ENV_NAME.test(l.name));
-    if (bad) return bad.split ? `"${bad.name}" is not an environment variable name.` : `"${bad.name}" needs a value: one KEY=VALUE per line.`;
-    if (f.network.trim().toLowerCase() === "host") return "An isolated server never joins the host's network; name a network set up for it, or leave it blank for none.";
-  } else {
-    if (!/^https?:\/\/\S+$/i.test(f.url.trim())) return "Give the URL the server answers on, starting https://.";
-    // The backend refuses userinfo in a URL (a URL ends up in logs); a credential belongs in a header, as a vault reference.
-    if (/^https?:\/\/[^/\s?#]*@/i.test(f.url.trim())) return "A URL carries no credentials: put them in a header, ideally as a vault reference such as Authorization: Bearer ${secret:my-token}.";
-    const bad = lineNames(f.headers, ":=").find((l) => !l.split || !HEADER_NAME.test(l.name));
-    if (bad) return bad.split ? `"${bad.name}" is not a header name.` : `"${bad.name}" needs a value: one Name: value per line.`;
-  }
+  // Only a remote server is registered, by its address: the platform starts no server itself.
+  const url = f.url.trim();
+  if (!/^https?:\/\/\S+$/i.test(url)) return "Give the address the server answers on, starting https://.";
+  // The registry refuses userinfo in an address; a credential belongs in a header, as a vault reference.
+  if (/^https?:\/\/[^/\s?#]*@/i.test(url)) return "An address carries no credentials: put them in a header as a vault reference, such as Authorization: Bearer ${secret:my-token}.";
+  if (/[?#]/.test(url)) return "An address carries no query or fragment: anything else, a key included, goes in a header that names a vault credential.";
+  if (/^http:\/\//i.test(url) && !/^http:\/\/(localhost|127\.[0-9.]+|\[::1\])(:[0-9]+)?(\/|$)/i.test(url)) return "A tool server is reached over https; http only at a loopback address.";
+  const bad = lineNames(f.headers, ":=").find((l) => !l.split || !HEADER_NAME.test(l.name));
+  if (bad) return bad.split ? `"${bad.name}" is not a header name.` : `"${bad.name}" needs a value: one Name: value per line.`;
+  // Every header value takes its value from the vault: no credential, and no other literal, is stored with a registration.
+  const literal = Object.entries(kvLines(f.headers, ":=")).find(([, v]) => !SECRET_REF.test(v));
+  if (literal) return `The header "${literal[0]}" must take its value from the vault, as \${secret:name}, with any text around it ("Bearer \${secret:name}").`;
   return "";
 }
