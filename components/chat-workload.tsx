@@ -8,7 +8,8 @@ import { Markdown } from "./markdown";
 import { NotConnected, useDoor } from "./pending";
 import { QuietNote } from "./overlays";
 import { QUIET } from "@/lib/quiet";
-import { WORKLOADS, ask, type Door, type WorkloadList } from "@/lib/api/pending";
+import { WORKLOADS, ask, type Door, type WorkloadList, type WorkloadOffer } from "@/lib/api/pending";
+import { profileOf } from "@/lib/workloads";
 
 /**
  * Asking a security workload to do something, from chat (feature 2.3).
@@ -43,6 +44,9 @@ interface ChatStarted {
 
 const text = (v: unknown): string => (typeof v === "string" ? v : "");
 
+/** A workload's name as this console writes it; the door's own word for one the console does not know. */
+const nameOf = (w: WorkloadOffer): string => profileOf(String(w.id), w).name;
+
 export function WorkloadChat() {
   const { answer: offered } = useDoor<WorkloadList>("workloads");
   const [workload, setWorkload] = useState("");
@@ -70,7 +74,7 @@ export function WorkloadChat() {
     if (a.state === "pending") setAbsent(a.door);
     else if (a.state === "error") setError(a.message);
     else {
-      setStarted({ workload: chosen.name, message, answer: a.data && typeof a.data === "object" ? a.data : {} });
+      setStarted({ workload: nameOf(chosen), message, answer: a.data && typeof a.data === "object" ? a.data : {} });
       setDraft("");
     }
   };
@@ -103,7 +107,7 @@ export function WorkloadChat() {
               loading={offered === null}
               value={chosen ? String(chosen.id) : ""}
               onChange={setWorkload}
-              options={chosen ? available.map((w) => ({ value: String(w.id), label: w.agent ? `${w.name} · ${w.agent}` : w.name })) : [{ value: "", label: offered?.state === "ok" ? "No workload is available" : "Not connected" }]}
+              options={chosen ? available.map((w) => ({ value: String(w.id), label: w.agent ? `${nameOf(w)} · ${w.agent}` : nameOf(w) })) : [{ value: "", label: offered?.state === "ok" ? "No workload is available" : "Not connected" }]}
             />
             {connected && waiting > 0 && (
               <span className="text-[11.5px] text-faint">

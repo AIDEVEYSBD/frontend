@@ -146,7 +146,7 @@ function Sign({ record, disabled = false, onSigned }: { record: Acceptance | nul
           </Field>
         </div>
         <span className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="solid" tone="ink" permission="deploy" disabled={disabled || !ready} loading={busy} onClick={() => setConfirming(true)}>
+          <Button size="sm" variant="solid" tone="ink" permission="approve" disabled={disabled || !ready} loading={busy} onClick={() => setConfirming(true)}>
             {role ? `Sign as ${role}` : "Sign"}
           </Button>
           {error && (QUIET ? <QuietNote inline /> : <span className="text-[11.5px] text-err">{error}</span>)}
