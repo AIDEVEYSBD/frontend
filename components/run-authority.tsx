@@ -2,16 +2,18 @@
 
 import Link from "next/link";
 import { Tag } from "./ui";
-import { NotConnected, useDoor } from "./pending";
+import { NotConnected, NotBuiltValue, useDoor } from "./pending";
+import { notBuilt } from "@/lib/not-built";
 import type { RunAuthority } from "@/lib/api/pending";
 
 /**
- * The authority a run in a tree ran under (door `runAuthority`,
- * `GET /api/runs/{id}/authority`): what it may use and where each grant
- * came from (its own spec, or what its caller held), what its spec asked
- * for and the caller did not hold, the data class ceiling, and its gates.
- * A run handed work only ever holds less than its caller, and this is where
- * that narrowing is read. Opened from a row of the run tree.
+ * The authority a run was started under (door `runAuthority`,
+ * `GET /api/runs/{id}/authority`): who started it and what they held at
+ * that moment (`held`), the run it was started under when it was, its gates,
+ * and, where the platform builds them, its tool grants, what was narrowed and
+ * its data class ceiling. A field the answer names in `not_built` reads "not
+ * built", never "none". Opened from the run's page and from a row of the run
+ * tree.
  */
 
 const FROM: Record<RunAuthority["grants"][number]["from"], string> = {
@@ -23,36 +25,57 @@ const TH = "px-2 py-1 text-left text-[10px] font-medium text-faint";
 const TD = "px-2 py-1 align-top text-[11px]";
 
 /** The authority as the door answers it. Presentational. */
+const VIA: Record<string, string> = { iap: "signed in through Google Identity-Aware Proxy", key: "calling with an API key", issuer: "signing in with a workload token" };
+
 export function RunAuthorityView({ a }: { a: RunAuthority }) {
   const grants = Array.isArray(a.grants) ? a.grants : [];
   const narrowed = Array.isArray(a.narrowed) ? a.narrowed : [];
   const gates = Array.isArray(a.gates) ? a.gates : [];
+  const unbuilt = Array.isArray(a.not_built) ? a.not_built : [];
+  const off = (field: string) => notBuilt(unbuilt, field) || unbuilt.includes(field);
+  const held = a.held;
+  const starter = a.started_by ? a.started_by.name || a.started_by.email || a.started_by.sub : "";
   return (
     <div className="flex min-w-0 flex-col gap-2.5">
       <p className="text-[11px] leading-[1.5] text-dim">
-        {a.caller ? (
+        {starter ? <>Started by {starter}: the run acts with their authority, as they held it when it started, and nobody else&rsquo;s.</> : "The record names nobody as having started this run."}
+        {a.caller && (
           <>
-            Started by run{" "}
+            {" "}It was started under run{" "}
             <Link href={`/runs?id=${encodeURIComponent(a.caller.run)}`} className="focusable rounded-sm font-mono text-[10.5px] text-fg hover:underline">
               {a.caller.run}
             </Link>
-            {a.caller.agent ? `, running as ${a.caller.agent}` : ""}: it holds no more than that run held.
+            {a.caller.agent ? `, which ran as ${a.caller.agent}` : ""}.
           </>
-        ) : a.started_by ? (
-          <>
-            Started by {a.started_by.name}
-            {a.started_by.team ? ` (${a.started_by.team})` : ""}, not by another run: its authority is its own spec&rsquo;s.
-          </>
-        ) : (
-          "No caller is recorded for this run: its authority is its own spec's."
         )}
       </p>
 
       <div className="flex min-w-0 flex-col gap-1">
+        <span className="text-[10.5px] font-semibold text-dim">What the starter held when it started</span>
+        {held ? (
+          <span className="flex flex-col gap-1 text-[11px] text-dim">
+            <span className="flex flex-wrap items-center gap-1">
+              <span className="text-faint">Roles</span>
+              {held.roles.length ? held.roles.map((r) => <Tag key={r}>{r}</Tag>) : <span className="text-faint">none</span>}
+            </span>
+            <span className="flex flex-wrap items-center gap-1">
+              <span className="text-faint">Permissions</span>
+              {held.permissions.length ? held.permissions.map((p) => <Tag key={p}>{p}</Tag>) : <span className="text-faint">none</span>}
+            </span>
+            {(held.via || held.kind) && <span className="text-faint">{[held.kind ? `a ${held.kind}` : "", held.via ? (VIA[held.via] ?? `by ${held.via}`) : ""].filter(Boolean).join(", ")}</span>}
+          </span>
+        ) : (
+          <span className="text-[11px] text-faint">The record does not say what the starter held.</span>
+        )}
+      </div>
+
+      <div className="flex min-w-0 flex-col gap-1">
         <span className="text-[10.5px] font-semibold text-dim">
-          Grants <span className="tnum font-normal text-faint">({grants.length})</span>
+          Grants {off("grants") ? <NotBuiltValue field="grants" className="font-normal" /> : <span className="tnum font-normal text-faint">({grants.length})</span>}
         </span>
-        {grants.length ? (
+        {off("grants") ? (
+          <span className="text-[11px] text-faint">Tools are not connected on this platform, so no run holds a tool grant.</span>
+        ) : grants.length ? (
           <div className="overflow-x-auto rounded-md border border-line bg-surface">
             <table className="w-full min-w-[420px] border-collapse">
               <thead>
@@ -95,9 +118,11 @@ export function RunAuthorityView({ a }: { a: RunAuthority }) {
 
       <div className="flex min-w-0 flex-col gap-1">
         <span className="text-[10.5px] font-semibold text-dim">
-          Narrowed <span className="tnum font-normal text-faint">({narrowed.length})</span>
+          Narrowed {off("narrowed") ? <NotBuiltValue field="narrowed" className="font-normal" /> : <span className="tnum font-normal text-faint">({narrowed.length})</span>}
         </span>
-        {narrowed.length ? (
+        {off("narrowed") ? (
+          <span className="text-[11px] text-faint">With no tool grant, nothing is cut down to what a caller held.</span>
+        ) : narrowed.length ? (
           <ul className="flex flex-col gap-0.5">
             {narrowed.map((n, i) => (
               <li key={`${n.tool}-${i}`} className="flex flex-wrap items-baseline gap-x-2 text-[11px]">
@@ -118,6 +143,10 @@ export function RunAuthorityView({ a }: { a: RunAuthority }) {
             <span className="inline-flex">
               <Tag>up to {a.max_data_class}</Tag>
             </span>
+          ) : off("max_data_class") ? (
+            <span className="text-[11px] text-faint">
+              <NotBuiltValue field="max_data_class" />: nothing sets a run&rsquo;s data class yet.
+            </span>
           ) : (
             <span className="text-[11px] text-faint">None set.</span>
           )}
@@ -136,8 +165,9 @@ export function RunAuthorityView({ a }: { a: RunAuthority }) {
               ))}
             </ul>
           ) : (
-            <span className="text-[11px] text-faint">No gate stands in front of it.</span>
+            <span className="text-[11px] text-faint">Its definition has no step where it waits for a person.</span>
           )}
+          {unbuilt.some((f) => f.startsWith("gates[")) && <span className="text-[10.5px] text-faint">Gates on tool calls: not built; only the run&rsquo;s own waiting steps are listed.</span>}
         </div>
       </div>
     </div>
@@ -151,7 +181,7 @@ export function RunAuthorityPanel({ run }: { run: string }) {
   if (answer.state === "pending") {
     return (
       <NotConnected door={answer.door} compact title="The authority a run started under is not built yet">
-        What this run was granted and where each grant came from, what was narrowed and why, its data class ceiling and its gates.
+        Who started this run and what they held, its gates, and what it was granted.
       </NotConnected>
     );
   }

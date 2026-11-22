@@ -10,7 +10,7 @@ import { NotConnected, NotConnectedNote, useDoor } from "./pending";
 import { Card, ago } from "./identity-shared";
 import { whenFull } from "./dataset-parts";
 import { until } from "./sessions-parts";
-import { ACTS_AS, REGISTRATIONS, ServerState, hasS256, subjectKind } from "./authorization-parts";
+import { ServerState, UPSTREAM_NOT_BUILT, subjectKind } from "./authorization-parts";
 import { AddAuthServerDialog } from "./authorization-add";
 import { useSession, type SessionInfo } from "@/lib/use-session";
 import { readUsers } from "@/lib/api/l2";
@@ -19,15 +19,13 @@ import { ask, type Answer, type AuthServer, type AuthServerList, type Door } fro
 /**
  * Authorization servers: the outside issuers this deployment trusts.
  *
- * Three sections. Console sign-in is who signs people in to this console; it
- * is real today and read from the session door (`GET /api/auth/session`),
- * with the signed-in person as the example of what a sign-in yields.
- * Upstream services are the issuers trusted to give a per-person token for a
- * tool. Workloads are the issuers whose tokens an agent or worker may
- * exchange for a short session. The last two are ahead of their doors
- * (`authServers`, `authServerAdd`, `authServerRemove`, `authServerProbe` in
- * lib/api/pending.ts): until the list door answers each says it is not
- * connected, and no row is ever made up.
+ * Console sign-in is who signs people in to this console, read from the
+ * session door (`GET /api/auth/session`), with the signed-in person as the
+ * example of what a sign-in yields. Workloads are the issuers whose signed
+ * tokens a service signs in with (`GET /api/authorization-servers`). Upstream
+ * trust (a per-person token for a tool) is not built: the platform refuses to
+ * add one with 409 and `not_built: "upstream"`, and its card says so. No row
+ * is ever made up.
  */
 
 type Notice = { tone: "ok" | "err"; text: string } | { door: Door };
@@ -224,7 +222,6 @@ export function AuthorizationView() {
   const connected = answer?.state === "ok";
   const pending = answer?.state === "pending";
   const all = useMemo(() => (answer?.state === "ok" && Array.isArray(answer.data?.servers) ? answer.data.servers : []), [answer]);
-  const upstream = all.filter((s) => s.purpose === "upstream");
   const workload = all.filter((s) => s.purpose === "workload");
 
   const remove = async () => {
@@ -255,7 +252,7 @@ export function AuthorizationView() {
           </span>
         }
       >
-        The outside issuers this deployment trusts: who signs people in to the console, who gives a per-person token for a tool, and whose tokens an agent or worker may exchange for a short session.
+        The outside issuers this deployment trusts: who signs people in to the console, and whose signed tokens a service may sign in with. Upstream trust, a per-person token for a tool, is not built.
       </PageHeader>
 
       {notice && (
@@ -277,82 +274,25 @@ export function AuthorizationView() {
       <ConsoleSignIn now={now} />
       <IapAccess />
 
-      {/* ── upstream services ── */}
-      <Card title="Upstream services" meta={count(upstream.length)}>
-        <p className="border-b border-line px-4 py-2.5 text-[12px] leading-[1.55] text-dim">
-          Issuers trusted to give a per-person token for a tool, so a tool server is called as the person and not with a shared key.
-        </p>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1040px] border-collapse text-left text-[12px]">
-            <thead>
-              <tr className="border-b border-line">
-                <th className={`${th} pl-4`}>Name</th>
-                <th className={th}>Issuer address</th>
-                <th className={th}>Registered by</th>
-                <th className={th}>Acts as</th>
-                <th className={th}>Tool servers that use it</th>
-                <th className={th} title="Whether the issuer advertises PKCE with S256, the check that stops a stolen sign-in code from being used">
-                  PKCE S256
-                </th>
-                <th className={th}>State</th>
-                <th className="py-2 pr-4 pl-3" />
-              </tr>
-            </thead>
-            <tbody>
-              {upstream.map((s) => {
-                const pkce = s.pkce_methods === undefined ? null : hasS256(s.pkce_methods);
-                return (
-                  <tr key={s.id} className="border-b border-line align-top last:border-0">
-                    <NameCell s={s} />
-                    <td className="max-w-[300px] px-3 py-2.5">
-                      <span className="flex min-w-0 flex-col gap-0.5">
-                        <Mono className="text-[11px] break-all text-fg">{s.issuer}</Mono>
-                        {pkce === false && (
-                          <span className="text-[11px] leading-[1.45] text-warn">Does not advertise PKCE with S256, the check that stops a stolen sign-in code from being used.</span>
-                        )}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5 whitespace-nowrap">
-                      <span className="flex flex-col gap-0.5">
-                        <span className="text-fg">{s.registration ? (REGISTRATIONS[s.registration]?.label ?? s.registration) : <span className="text-ghost">not recorded</span>}</span>
-                        {s.client_id && <span className="max-w-[180px] truncate font-mono text-[10.5px] text-faint" title={s.client_id}>{s.client_id}</span>}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5 whitespace-nowrap text-fg">{s.acts_as ? (ACTS_AS[s.acts_as]?.label ?? s.acts_as) : <span className="text-ghost">not recorded</span>}</td>
-                    <td className="max-w-[220px] px-3 py-2.5">
-                      {s.tool_servers === undefined ? (
-                        <span className="text-ghost">not recorded</span>
-                      ) : s.tool_servers.length === 0 ? (
-                        <span className="text-faint">none yet</span>
-                      ) : (
-                        <span className="flex flex-wrap gap-1">
-                          {s.tool_servers.map((t) => (
-                            <Tag key={t.id}>{t.name || t.id}</Tag>
-                          ))}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 whitespace-nowrap">{pkce === null ? <span className="text-ghost">not reported</span> : pkce ? <Status tone="ok">advertised</Status> : <Status tone="warn">not advertised</Status>}</td>
-                    <StateCell s={s} now={now} />
-                    <RemoveCell onRemove={() => setRemoving(s)} />
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      {/* ── upstream services: not built ── */}
+      <Card title="Upstream services" meta="not built">
+        <div className="p-4">
+          <div className="flex flex-col gap-1.5 rounded-lg border border-dashed border-line-strong bg-surface px-4 py-3" data-not-built="upstream">
+            <span className="flex items-center gap-2">
+              <span className="size-1.5 shrink-0 rounded-[2px] bg-faint" />
+              <span className="text-[13px] font-semibold text-fg">Upstream trust is not built</span>
+            </span>
+            <p className="max-w-[86ch] text-[12.5px] leading-[1.55] text-dim">
+              An upstream issuer would give a per-person token for a tool, so a tool server is called as the person and not with a shared key. {UPSTREAM_NOT_BUILT}
+            </p>
+          </div>
         </div>
-        <ListState
-          answer={answer}
-          count={upstream.length}
-          pendingText="The issuers trusted for per-person tokens: each with its address, how this deployment is registered with it, whether it acts as each person or as a service account, the tool servers that use it, its state, and whether it advertises PKCE with S256."
-          emptyText="No upstream service is trusted yet."
-        />
       </Card>
 
       {/* ── workloads ── */}
       <Card title="Workloads" meta={count(workload.length)}>
         <p className="border-b border-line px-4 py-2.5 text-[12px] leading-[1.55] text-dim">
-          Issuers whose tokens an agent or worker may exchange for a short session, so no long-lived key is stored. A Kubernetes service account issuer is one.
+          Issuers whose signed tokens a service signs in with: the token is sent on every request and checked there, so no long-lived key is stored for the service. A Kubernetes service account issuer is one.
         </p>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[860px] border-collapse text-left text-[12px]">
@@ -361,7 +301,7 @@ export function AuthorizationView() {
                 <th className={`${th} pl-4`}>Name</th>
                 <th className={th}>Issuer address</th>
                 <th className={th}>Admitted subjects</th>
-                <th className={`${th} text-right`}>Live sessions</th>
+                <th className={`${th} text-right`} title="Services from this issuer seen in the last 30 minutes">Connected now</th>
                 <th className={th}>State</th>
                 <th className="py-2 pr-4 pl-3" />
               </tr>
@@ -398,7 +338,7 @@ export function AuthorizationView() {
         <ListState
           answer={answer}
           count={workload.length}
-          pendingText="The issuers whose tokens a workload may exchange for a short session: each with its address, the subjects admitted from it (exact, or a prefix ending in *), the sessions it has issued and its state."
+          pendingText="The issuers whose signed tokens a service signs in with: each with its address, the subjects admitted from it (exact, or a prefix ending in *), how many of its services are connected and its state."
           emptyText="No workload issuer is trusted yet."
         />
       </Card>
@@ -427,11 +367,11 @@ export function AuthorizationView() {
             {removing.purpose === "workload" ? (
               <>
                 <span>
-                  Withdrawing trust in an issuer stops every workload from it. No agent or worker can exchange a token from <span className="font-mono text-[11.5px] break-all text-fg">{removing.issuer}</span> for a session
-                  from then on.
+                  Withdrawing trust in an issuer stops every workload from it: the next token from <span className="font-mono text-[11.5px] break-all text-fg">{removing.issuer}</span> is refused, and its services leave
+                  the register.
                 </span>
                 {removing.sessions !== undefined && (
-                  <span>{removing.sessions === 0 ? "It has no live session now." : removing.sessions === 1 ? "The one live session it issued ends." : `The ${removing.sessions.toLocaleString("en-GB")} live sessions it issued end.`}</span>
+                  <span>{removing.sessions === 0 ? "None of its services is connected now." : removing.sessions === 1 ? "The one service connected now is cut off." : `The ${removing.sessions.toLocaleString("en-GB")} services connected now are cut off.`}</span>
                 )}
                 {Boolean(removing.subjects?.length) && (
                   <span className="flex flex-col gap-1">

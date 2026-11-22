@@ -22,8 +22,15 @@ export const kindWord = (k: string): string => KIND_WORD[k as SessionKind]?.one 
 
 export const STATE_TONE: Record<SessionState, Tone> = { active: "ok", idle: "warn", expired: "neutral", revoked: "err" };
 
-/** A session that can still be ended: one that has not already lapsed or been ended. */
+/** A session in use now: seen within the platform's live window. */
 export const isLive = (s: Session): boolean => s.state === "active" || s.state === "idle";
+
+/**
+ * A session that can be ended: any not already ended. Ending acts on the
+ * caller, not on a cookie, so a person or a key not seen lately ("expired")
+ * still has something to stop: the person can come back, the key still works.
+ */
+export const isEndable = (s: Session): boolean => s.state !== "revoked";
 
 const CLIENT_WORD: Record<string, string> = {
   browser: "Browser",
@@ -72,20 +79,23 @@ export function targetPhrase(s: Session): string {
   return s.target.name || s.target.id;
 }
 
-/** What ending this one session stops, in one sentence. */
+/** What ending this one session does, in the platform's terms: ending stops the caller from its next request. */
 export function consequence(s: Session): string {
   const who = s.principal.name || s.principal.id;
-  if (s.kind === "person") return `${who} is signed out of ${targetPhrase(s)} on ${s.client.name} and has to sign in again to carry on.`;
-  if (s.kind === "agent") return `${who} can no longer call ${targetPhrase(s)} with this session. Its calls are refused until it signs in again.`;
-  return `The platform closes the connection to ${targetPhrase(s)} it holds for ${who}. Tool calls through it stop until a new connection is made.`;
+  if (s.kind === "person")
+    return `${who} is held out of ${targetPhrase(s)}: every request of theirs is refused until an administrator lets them back. This service cannot end their Google sign-in, and their API keys keep working until revoked.`;
+  if (s.kind === "agent" && s.client.kind === "api_key") return `The API key ${who} is revoked: its next request is refused, and a revoked key cannot be restored. Mint a new key to replace it.`;
+  if (s.kind === "agent" && s.client.kind === "workload")
+    return `Every token issued to ${who} until now is refused. A token its issuer issues later signs it in again; to keep it out, remove its subject from the issuer.`;
+  return `${who} is stopped from its next request.`;
 }
 
-/** What ending several stops: one sentence for each kind among them. */
+/** What ending several does: one sentence for each kind of caller among them. */
 export function consequences(rows: Session[]): string[] {
   const out: string[] = [];
-  if (rows.some((s) => s.kind === "person")) out.push("People are signed out and have to sign in again to carry on.");
-  if (rows.some((s) => s.kind === "agent")) out.push("Agents' calls on these sessions are refused until they sign in again.");
-  if (rows.some((s) => s.kind === "tool_server")) out.push("Connections to tool servers close, and tool calls through them stop until a new connection is made.");
+  if (rows.some((s) => s.kind === "person")) out.push("People are held out until an administrator lets them back; their API keys keep working until revoked.");
+  if (rows.some((s) => s.kind === "agent" && s.client.kind === "api_key")) out.push("API keys are revoked, for good.");
+  if (rows.some((s) => s.kind === "agent" && s.client.kind === "workload")) out.push("Workload services have every token issued to them until now refused; a later token signs them in again.");
   return out;
 }
 
@@ -145,6 +155,7 @@ export function SessionPanel({
   onClose,
   onEnd,
   onEndClient,
+  notBuilt = [],
 }: {
   session: Session;
   now: number;
@@ -159,6 +170,8 @@ export function SessionPanel({
   onClose: () => void;
   onEnd: () => void;
   onEndClient: () => void;
+  /** The list's `not_built`: a field named there reads "not built", never "none". */
+  notBuilt?: string[];
 }) {
   useEffect(() => {
     if (locked) return;
@@ -171,7 +184,9 @@ export function SessionPanel({
 
   const who = s.principal.name || s.principal.id;
   const live = isLive(s);
+  const endable = isEndable(s);
   const activity = s.activity;
+  const activityUnbuilt = notBuilt.some((f) => f === "activity" || f.endsWith(".activity"));
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-canvas/60" onClick={locked ? undefined : onClose}>
@@ -283,7 +298,9 @@ export function SessionPanel({
               <span className="text-[12px] font-semibold">Recent activity</span>
               {activity && <span className="tnum text-[11px] text-faint">{activity.length.toLocaleString("en-GB")}</span>}
             </div>
-            {activity === undefined && <p className="px-4 py-3 text-[12px] text-faint">The record carries no activity for this session.</p>}
+            {activity === undefined && (
+              <p className="px-4 py-3 text-[12px] text-faint">{activityUnbuilt ? "Not built: the platform keeps no record of what a session did. The audit trail on People and agents holds every change a caller made." : "The record carries no activity for this session."}</p>
+            )}
             {activity && activity.length === 0 && <p className="px-4 py-3 text-[12px] text-faint">Nothing has been recorded on this session yet.</p>}
             {(activity ?? []).map((a, i) => (
               <div key={`${a.at}:${i}`} className="flex items-baseline gap-3 border-b border-line px-4 py-2 last:border-0">
@@ -302,13 +319,13 @@ export function SessionPanel({
         <footer className="flex shrink-0 flex-col gap-2 border-t border-line px-4 py-3">
           <span className="text-[11.5px] leading-[1.5] text-faint">
             {note ??
-              (!live
-                ? `This session has already ${s.state === "revoked" ? "been ended" : "lapsed"}. It stays here as a record.`
+              (s.state === "revoked"
+                ? "Ended by an administrator, and not seen since. It stays here as a record."
                 : mine
-                  ? "This is your own session. It ends when you sign out."
-                  : consequence(s))}
+                  ? "This is your own session. Nobody ends their own; another administrator can."
+                  : `${live ? "" : "Not seen in the last 30 minutes; ending it still acts. "}${consequence(s)}`)}
           </span>
-          {live && !mine && (
+          {endable && !mine && (
             <span className="flex flex-wrap items-center justify-end gap-2">
               {s.client.registration && (
                 <Button size="sm" variant="solid" tone="err" permission="iam" onClick={onEndClient}>

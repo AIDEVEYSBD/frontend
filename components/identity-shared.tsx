@@ -1,9 +1,11 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Button, Mono, Status, type Tone } from "./ui";
 import { hueFor } from "@/lib/hue";
 import { agentHref } from "@/lib/agent-link";
+import { revokeKey } from "@/lib/api/l2";
+import type { LiveKey } from "@/lib/api/pending";
 
 /**
  * What the identity roster, the identity page and the IAM page share: the
@@ -19,7 +21,8 @@ export type Kind = "workflow" | "attached_agent" | "mcp_server" | "api_key" | "v
 export interface Owner {
   owner: string;
   owner_sub: string | null;
-  purpose: string;
+  /** Null when nobody has recorded why the identity exists. */
+  purpose: string | null;
   review_due_at: string | null;
   updated_at: string;
   updated_by: string;
@@ -28,7 +31,7 @@ export interface Identity {
   kind: Kind;
   id: string;
   name: string;
-  description: string;
+  description: string | null;
   credential: string;
   privileges: string;
   risk: string;
@@ -55,24 +58,36 @@ export interface Register {
   counts: { total: number; byKind: Record<string, number>; findings: number; unowned: number };
   store: string;
   basis: string;
+  /** The kinds the platform does not build (`mcp_server`, `vault_credential`): none is listed, and their count is not zero but not built. */
+  not_built?: string[];
 }
 export interface Person {
   sub: string;
   email: string;
+  /** Null when the sign-in does not say (Google IAP's assertion never does). */
+  email_verified: boolean | null;
   name: string;
-  /** The organisation as the identity provider gave it; "" when it gave none. */
-  org_type: string;
+  /** Null when the sign-in does not carry one. */
+  preferred_username: string | null;
   last_roles: string[];
   last_app_roles: string[];
   permissions: string[];
   first_seen: string | null;
   last_seen: string | null;
   sessions: number;
+  /** When an administrator held them out; null while they are not. */
   disabled_at: string | null;
+  /** Who held them out; null while they are not held out. */
+  disabled_by: string | null;
 }
 export interface AuthEvent {
   id: number;
   at: string;
+  /**
+   * `sign_in`, `disabled` (held out), `enabled` (let back), `denied` (a held-out
+   * person's request refused), `forbidden` (any other refusal), `action_failed`
+   * (a permitted change that did not succeed), `action`.
+   */
   kind: string;
   sub: string | null;
   email: string | null;
@@ -81,7 +96,8 @@ export interface AuthEvent {
 export interface People {
   users: Person[];
   events: AuthEvent[];
-  sso: { configured: boolean; issuer: string; demo_default_role: string };
+  /** `demo_default_role` is null where nobody the role map leaves out is given a role. */
+  sso: { configured: boolean; issuer: string; demo_default_role: string | null };
   roles: { role: string; permissions: string[] }[];
   permissions: { permission: string; means: string }[];
   store: string;
@@ -241,13 +257,26 @@ export function eventsFor(e: Entry, events: AuthEvent[]): AuthEvent[] {
 }
 
 const EVENT_TONE = (kind: string): Tone =>
-  kind === "sign_in" || kind === "enabled" ? "ok" : kind === "denied" || kind === "provision_failed" || kind === "disabled" || kind === "forbidden" ? "err" : kind === "refresh_failed" ? "warn" : kind === "action" ? "run" : "neutral";
+  kind === "sign_in" || kind === "enabled"
+    ? "ok"
+    : kind === "denied" || kind === "provision_failed" || kind === "disabled" || kind === "forbidden" || kind === "action_failed"
+      ? "err"
+      : kind === "refresh_failed"
+        ? "warn"
+        : kind === "action"
+          ? "run"
+          : "neutral";
 
 /** One audit event: what happened, who or what it was about, the detail as recorded, and when. */
 export function EventLine({ event: e, now }: { event: AuthEvent; now: number }) {
-  const d = (e.detail && typeof e.detail === "object" ? e.detail : {}) as { actor?: unknown; method?: unknown; path?: unknown };
+  const d = (e.detail && typeof e.detail === "object" ? e.detail : {}) as { actor?: unknown; method?: unknown; path?: unknown; action?: unknown };
+  const about = e.kind === "disabled" || e.kind === "enabled";
   const line =
-    e.kind === "action" || e.kind === "forbidden" ? `${String(d.actor ?? e.email ?? e.sub ?? "not recorded")} · ${String(d.method ?? "")} ${String(d.path ?? "")}` : e.email || e.sub || "not recorded";
+    e.kind === "action" || e.kind === "forbidden" || e.kind === "action_failed" || e.kind === "denied"
+      ? `${String(d.actor ?? e.email ?? e.sub ?? "not recorded")} · ${String(d.method ?? "")} ${String(d.path ?? "")}`
+      : about
+        ? `${e.email || e.sub || "not recorded"}${typeof d.actor === "string" && d.actor ? `, by ${d.actor}` : ""}`
+        : e.email || e.sub || "not recorded";
   return (
     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-line px-4 py-2 last:border-0">
       <span className="w-[120px] shrink-0">
@@ -320,7 +349,7 @@ export function OwnerChip({ owner }: { owner: Owner }) {
       <span className="grid size-6 shrink-0 place-items-center rounded-full bg-ink text-[9px] font-semibold text-on-ink">{initialsOf(owner.owner)}</span>
       <span className="flex min-w-0 flex-col">
         <span className="truncate text-[12px] text-fg">{owner.owner}</span>
-        <span className="max-w-[220px] truncate text-[10.5px] text-faint" title={owner.purpose}>
+        <span className="max-w-[220px] truncate text-[10.5px] text-faint" title={owner.purpose ?? undefined}>
           {owner.purpose || (owner.review_due_at ? `review ${owner.review_due_at.slice(0, 10)}` : "no purpose recorded")}
         </span>
       </span>
@@ -335,6 +364,58 @@ export function KindGlyph({ entry, size = "size-6 text-[10px]" }: { entry: Entry
   return (
     <span className={`grid shrink-0 place-items-center rounded-md font-semibold text-on-solid ${size}`} style={{ background: m.color }}>
       {m.glyph}
+    </span>
+  );
+}
+
+/**
+ * The API keys of a person who has just been held out. Holding a person out
+ * does not stop their keys (a key acts with its own authority), so each is
+ * listed with a way to revoke it, and what revoking answered.
+ */
+export function LiveKeys({ keys, onRevoked }: { keys: LiveKey[]; onRevoked?: () => void }) {
+  const [revoked, setRevoked] = useState<Record<string, string>>({});
+  const [failed, setFailed] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState("");
+  if (keys.length === 0) return <span className="text-[12px] leading-[1.5] text-dim">No unrevoked API key answers to them, so nothing of theirs keeps working.</span>;
+  const left = keys.filter((k) => !revoked[k.id]).length;
+  const revoke = async (k: LiveKey) => {
+    setBusy(k.id);
+    try {
+      const r = await revokeKey(k.id);
+      setRevoked((m) => ({ ...m, [k.id]: r.revoked_at ?? "" }));
+      setFailed((m) => ({ ...m, [k.id]: "" }));
+      onRevoked?.();
+    } catch (e) {
+      setFailed((m) => ({ ...m, [k.id]: (e as Error).message }));
+    } finally {
+      setBusy("");
+    }
+  };
+  return (
+    <span className="flex w-full flex-col gap-1.5">
+      <span className="text-[12px] leading-[1.5] text-fg">
+        {left === 0
+          ? "Every API key that answered to them is now revoked."
+          : `${left === 1 ? "One API key" : `${left} API keys`} that answer${left === 1 ? "s" : ""} to them keep${left === 1 ? "s" : ""} working: a key acts with its own authority, not the person's. Revoke ${left === 1 ? "it" : "each"} unless someone else should answer for ${left === 1 ? "it" : "them"}.`}
+      </span>
+      <span className="flex flex-col overflow-hidden rounded-md border border-line">
+        {keys.map((k) => (
+          <span key={k.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-canvas px-3 py-1.5 last:border-0">
+            <Mono className="text-[11px] text-faint">{k.prefix}…</Mono>
+            <span className="min-w-0 grow truncate text-[12px] text-fg">{k.name}</span>
+            <span className="text-[11px] text-faint">{k.agent ? `acts only as ${k.agent}` : "not bound to an agent"}</span>
+            {revoked[k.id] !== undefined ? (
+              <Status tone="neutral">revoked</Status>
+            ) : (
+              <Button size="sm" variant="solid" tone="err" permission="iam" loading={busy === k.id} onClick={() => void revoke(k)}>
+                Revoke
+              </Button>
+            )}
+            {failed[k.id] && <span className="w-full text-[11.5px] leading-[1.5] text-err">Not revoked: {failed[k.id]}</span>}
+          </span>
+        ))}
+      </span>
     </span>
   );
 }

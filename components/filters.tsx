@@ -19,6 +19,10 @@ export interface Chip {
   count?: number;
   active: boolean;
   tone?: "ok" | "warn" | "err";
+  /** Why it cannot be chosen: the chip is drawn disabled, with this on hover. */
+  off?: string;
+  /** A word in place of the count (`not built`). */
+  note?: string;
 }
 
 function fmt(n: number): string {
@@ -35,13 +39,15 @@ export function Chips({ items, label, onToggle }: { items: Chip[]; label?: strin
           type="button"
           onClick={() => onToggle(c.value)}
           aria-pressed={c.active}
+          disabled={Boolean(c.off)}
+          title={c.off}
           className={`focusable inline-flex h-7 items-center gap-1.5 rounded-sm border px-2.5 text-[12px] font-medium whitespace-nowrap transition-colors duration-100 ${
-            c.active ? "border-transparent bg-ink text-on-ink" : "border-line bg-surface text-dim hover:bg-raise hover:text-fg"
+            c.off ? "cursor-not-allowed border-dashed border-line-strong bg-raise text-faint" : c.active ? "border-transparent bg-ink text-on-ink" : "border-line bg-surface text-dim hover:bg-raise hover:text-fg"
           }`}
         >
-          {c.tone && !c.active && <span className={`size-1.5 rounded-full ${c.tone === "err" ? "bg-err" : c.tone === "warn" ? "bg-warn" : "bg-ok"}`} />}
+          {c.tone && !c.active && !c.off && <span className={`size-1.5 rounded-full ${c.tone === "err" ? "bg-err" : c.tone === "warn" ? "bg-warn" : "bg-ok"}`} />}
           {c.label}
-          {c.count !== undefined && <span className={`tnum font-mono text-[10.5px] ${c.active ? "opacity-70" : "text-faint"}`}>{fmt(c.count)}</span>}
+          {c.note ? <span className="text-[10.5px] font-normal text-faint">{c.note}</span> : c.count !== undefined && <span className={`tnum font-mono text-[10.5px] ${c.active ? "opacity-70" : "text-faint"}`}>{fmt(c.count)}</span>}
         </button>
       ))}
     </div>

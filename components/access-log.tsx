@@ -7,18 +7,18 @@ import { Pick } from "./select";
 import { Chips, type Chip } from "./filters";
 import { PageHeader, Section } from "./section";
 import { WindowPick, winMs, type Win } from "./window-pick";
-import { NotConnected } from "./pending";
+import { NotConnected, NotBuiltValue } from "./pending";
+import { notBuilt, notBuiltOf } from "@/lib/not-built";
 import { ask, type AccessEvent, type AccessLog, type Answer } from "@/lib/api/pending";
 import { readUsers } from "@/lib/api/l2";
 
 /**
- * The access log: who opened which record, and when.
+ * The access log: who opened which record, and when (`GET /api/access-log`).
  *
- * Reads, not changes: a run, an evidence pack, a deliverable or a document
- * viewed, downloaded or exported. The screen is ahead of its door
- * (`accessLog` in lib/api/pending.ts): until the control plane serves it,
- * the filters and the column headers stand and the rows' place says the
- * page is not connected. No row is ever made up.
+ * Reads, not changes: a record viewed, downloaded or exported. The person,
+ * kind and time filters are sent to the platform (`subject`, `kind`, `since`,
+ * `limit`); `total` counts every match. A field the answer names in
+ * `not_built` (a person's team) says so. No row is ever made up.
  */
 
 type Kind = AccessEvent["kind"];
@@ -111,6 +111,8 @@ export function AccessLogView() {
   const pending = shown?.state === "pending";
   const events = shown?.state === "ok" ? (shown.data.events ?? []) : [];
   const total = shown?.state === "ok" ? (shown.data.total ?? events.length) : 0;
+  /** A person's team, when the platform names it as not built: it is never shown as blank or filtered on. */
+  const teamUnbuilt = shown?.state === "ok" && notBuilt(notBuiltOf(shown.data), "team");
 
   const kindChips: Chip[] = [{ value: "", label: "Every kind", active: kind === "" }, ...KINDS.map((k) => ({ value: k.id, label: k.label, active: kind === k.id }))];
   const personOptions = [{ value: "", label: "Everyone" }, ...Object.entries(people).sort((a, b) => a[1].localeCompare(b[1])).map(([sub, name]) => ({ value: sub, label: name }))];
@@ -185,6 +187,11 @@ export function AccessLogView() {
           }}
         />
         {personOptions.length === 1 && <span className="text-[11px] text-faint">People appear in the person filter once the identity provider or the log itself names them.</span>}
+        {teamUnbuilt && (
+          <span className="flex items-baseline gap-1.5 text-[11px] text-faint">
+            Team: <NotBuiltValue field="events[].who.team" />. Nothing records a person&rsquo;s team, so the log is not filtered or grouped by one.
+          </span>
+        )}
       </div>
 
       <Section title="Access events" hue="audit" meta={shown?.state === "ok" ? `${events.length.toLocaleString("en-GB")} of ${total.toLocaleString("en-GB")}` : undefined}>

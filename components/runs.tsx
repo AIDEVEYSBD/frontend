@@ -50,6 +50,7 @@ import { agentDocument, listAgents } from "@/lib/api/l2";
 import { Deadline, useNow } from "./gate-form";
 import { RunLimitsPanel, RunStrip, useRunSpec, type RunFacts } from "./run-limits";
 import { RunFindings } from "./run-findings";
+import { RunAuthorityPanel } from "./run-authority";
 import { RunBoundaryPanel } from "./run-boundary";
 import { RetrievalCard, retrievalOf } from "./run-retrieval";
 import { ModelMark, modelCallOf, routeLine, titleIsModel } from "./run-model";
@@ -250,9 +251,10 @@ const agentsOf = (r: unknown, system: string): string[] => {
   return Array.isArray(a) ? [...new Set(a.filter((x): x is string => typeof x === "string" && x !== "" && x !== system))] : [];
 };
 
-/* "My team" is not offered: the run ledger filters by `scope=mine` only. */
-const SCOPES: { id: Scope; label: string }[] = [
+/* "My team" is shown and not offered: nothing sets a person's team, so the ledger has nothing to filter on. */
+const SCOPES: { id: Scope; label: string; off?: string }[] = [
   { id: "mine", label: "Mine" },
+  { id: "team", label: "My team", off: "Not built: nothing on this platform sets a person's team, so runs cannot be filtered by one." },
   { id: "all", label: "All" },
 ];
 
@@ -397,10 +399,14 @@ function Launcher() {
                       type="button"
                       role="radio"
                       aria-checked={on}
+                      aria-disabled={o.off ? true : undefined}
+                      disabled={Boolean(o.off)}
+                      title={o.off}
                       onClick={() => setScope(o.id)}
-                      className={`focusable cursor-pointer rounded-sm px-2 py-0.5 text-[11px] transition-colors duration-100 ${on ? "bg-surface font-semibold text-fg shadow-[var(--shadow-1)]" : "font-medium text-faint hover:text-dim"}`}
+                      className={`focusable rounded-sm px-2 py-0.5 text-[11px] transition-colors duration-100 ${o.off ? "cursor-not-allowed font-medium text-ghost" : on ? "cursor-pointer bg-surface font-semibold text-fg shadow-[var(--shadow-1)]" : "cursor-pointer font-medium text-faint hover:text-dim"}`}
                     >
                       {o.label}
+                      {o.off && <span className="ml-1 text-[10px] font-normal">not built</span>}
                     </button>
                   );
                 })}
@@ -1944,7 +1950,7 @@ function Theater({
     setChosenView(v);
   };
   // The limits and the trust boundary share the room under the transcript: one is open at a time. null: neither was touched, and the limits strip opens by itself when a limit ended the run.
-  const [strip, setStrip] = useState<"limits" | "boundary" | "findings" | "" | null>(null);
+  const [strip, setStrip] = useState<"limits" | "boundary" | "findings" | "authority" | "" | null>(null);
   const showRefusals = () => {
     setHoldTranscript(true);
     // The refusals are in the transcript: the strip gives the room back to it.
@@ -2183,6 +2189,12 @@ function Theater({
           <RunLimitsPanel key={`limits:${traceOf ?? runId ?? ""}`} runId={traceOf ?? runId} spec={spec} facts={limits.facts} entries={record} error={limits.error} live={runLive ?? live} open={strip === null ? null : strip === "limits"} onToggle={(o) => setStrip(o ? "limits" : "")} />
           <RunBoundaryPanel key={`boundary:${traceOf ?? runId ?? ""}`} spec={spec} facts={limits.facts} entries={record} source={source} onShowRefusals={showRefusals} open={strip === "boundary"} onToggle={(o) => setStrip(o ? "boundary" : "")} />
         </>
+      )}
+      {/* Who started the run and what they held then, and where it stops for a person. Read only when opened. */}
+      {(traceOf ?? runId) && (
+        <RunStrip title="Authority" summary="who started it, what they held, its gates" open={strip === "authority"} onToggle={() => setStrip(strip === "authority" ? "" : "authority")}>
+          <div className="px-4 py-3">{strip === "authority" && <RunAuthorityPanel run={(traceOf ?? runId)!} />}</div>
+        </RunStrip>
       )}
       {/* What the run found: its findings, once the control plane keeps them. */}
       {(traceOf ?? runId) && (

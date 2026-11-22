@@ -102,6 +102,7 @@ export function IdentityRoster({
   onAssignOwner,
   ownerStoreDown,
   unread = false,
+  notBuiltKinds = [],
 }: {
   entries: Entry[];
   findingsOf: Map<string, Finding[]>;
@@ -117,6 +118,8 @@ export function IdentityRoster({
   ownerStoreDown: boolean;
   /** A quiet console (lib/quiet.ts) with neither door read: the roster is drawn empty, with no counts. */
   unread?: boolean;
+  /** The kinds the register names in `not_built`: their chip says "not built", never a zero. */
+  notBuiltKinds?: string[];
 }) {
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "group", dir: 1 });
 
@@ -133,7 +136,7 @@ export function IdentityRoster({
     if (term) {
       const hay =
         e.type === "person"
-          ? [e.person.name, e.person.email, e.person.sub, e.person.org_type, ...e.person.last_app_roles]
+          ? [e.person.name, e.person.email, e.person.sub, e.person.preferred_username ?? "", ...e.person.last_app_roles]
           : [e.identity.name, e.identity.id, e.identity.owner?.owner ?? "", e.identity.privileges, e.identity.credential, KIND_META[e.identity.kind].label];
       if (!hay.some((x) => x.toLowerCase().includes(term))) return false;
     }
@@ -167,7 +170,11 @@ export function IdentityRoster({
   };
 
   const groupChips: Chip[] = GROUPS.map((g) => ({ value: g.id, label: g.label, count: unread ? undefined : entries.filter((e) => groupOf(e) === g.id && matches(e, "group")).length, active: filter.groups.includes(g.id) }));
-  const kindChips: Chip[] = KINDS.map((k) => ({ value: k, label: KIND_META[k].plural, count: unread ? undefined : entries.filter((e) => e.type === "identity" && e.identity.kind === k && matches(e, "kind")).length, active: filter.kinds.includes(k) }));
+  const kindChips: Chip[] = KINDS.map((k) =>
+    notBuiltKinds.includes(k)
+      ? { value: k, label: KIND_META[k].plural, active: false, note: "not built", off: `${KIND_META[k].plural} are not built on this platform: the register names ${k} as not built, so none is listed.` }
+      : { value: k, label: KIND_META[k].plural, count: unread ? undefined : entries.filter((e) => e.type === "identity" && e.identity.kind === k && matches(e, "kind")).length, active: filter.kinds.includes(k) },
+  );
   const statusValues = [...new Set(entries.map((e) => statusOf(e).label))];
   const statusChips: Chip[] = statusValues.map((s) => {
     const tone = STATUS_TONE[s] ?? (s === "disabled" ? "err" : "neutral");
@@ -251,7 +258,7 @@ export function IdentityRoster({
               const mine = findingsOf.get(e.key) ?? [];
               const st = statusOf(e);
               const seen = lastSeenOf(e);
-              const second = e.type === "person" ? e.person.email || e.person.sub : e.identity.kind === "api_key" ? e.identity.description : e.identity.id;
+              const second = e.type === "person" ? e.person.email || e.person.sub : e.identity.kind === "api_key" ? e.identity.description || e.identity.id : e.identity.id;
               return (
                 <tr key={e.key} onClick={() => onOpen(e.key)} className={`cursor-pointer border-b border-line align-middle transition-colors last:border-0 hover:bg-raise/40 ${e.type === "person" && e.person.disabled_at ? "text-faint" : ""}`}>
                   <td className="py-2.5 pr-3 pl-4">
@@ -264,10 +271,9 @@ export function IdentityRoster({
                           </Link>
                           {mine.length > 0 && <span className={`size-1.5 shrink-0 rounded-[2px] ${mine.some((f) => f.severity === "err") ? "bg-err" : "bg-warn"}`} title={`${mine.length} finding${mine.length === 1 ? "" : "s"}`} />}
                           {e.type === "person" && e.person.sub === meSub && <Tag>you</Tag>}
-                          {e.type === "person" && e.person.org_type && <Tag>{e.person.org_type}</Tag>}
                           {e.type === "identity" && Boolean(e.identity.facts.demo) && <Tag>sample</Tag>}
                         </span>
-                        <span className="truncate font-mono text-[10.5px] text-faint" title={e.type === "identity" ? e.identity.description : undefined}>
+                        <span className="truncate font-mono text-[10.5px] text-faint" title={e.type === "identity" ? (e.identity.description ?? undefined) : undefined}>
                           {second}
                         </span>
                       </span>

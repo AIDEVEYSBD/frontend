@@ -100,9 +100,15 @@ export async function listKeys(): Promise<KeyList> {
   return data;
 }
 
-/** `POST /api/keys`: the key is in the answer once and never again. */
-export async function mintKey(name: string, agent: string | null): Promise<MintedKey> {
-  const { data, error, response } = await api.POST("/api/keys", { body: { name, agent } });
+/**
+ * `POST /api/keys`: the key is in the answer once and never again. `permissions`
+ * left out mints the platform's default (view and run); a permission no key may
+ * hold is refused by the platform with its reason, which this rejects with.
+ */
+export async function mintKey(name: string, agent: string | null, permissions?: string[]): Promise<MintedKey> {
+  // `permissions` is ahead of the generated request type (lib/api/backend.d.ts).
+  const body = (permissions ? { name, agent, permissions } : { name, agent }) as Schemas["MintKeyRequest"];
+  const { data, error, response } = await api.POST("/api/keys", { body });
   if (!data) throw doorError(error, response);
   return data;
 }

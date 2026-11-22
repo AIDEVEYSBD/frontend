@@ -142,20 +142,36 @@ export interface AccessEvent {
 export interface AccessLog {
   events: AccessEvent[];
   total: number;
+  /** Fields whose feature is not built (`events[].who.team`). */
+  not_built?: string[];
 }
 
 /** GET /api/runs/{id}/authority */
 export interface RunAuthority {
   run: string;
-  /** The run that started this one, and the agent it ran as; absent for a run a person or a trigger started. */
+  /** The run it was started under, and the agent that run ran as; absent for a run started on its own. */
   caller?: { run: string; agent: string };
   started_by?: Owner;
+  /** What the starter held at the moment the run started: their roles and permissions, how they came in, and what kind of caller they were. */
+  held?: { roles: string[]; permissions: string[]; via: string | null; kind: string | null };
   /** What the run may use: its own grants, cut down to what its caller held. */
   grants: { tool: string; scope?: Record<string, string[]>; from: "spec" | "caller" }[];
   /** What its spec asked for and the caller did not hold. */
   narrowed: { tool: string; reason: string }[];
   max_data_class?: DataClass;
   gates: { name: string; approvers: string[] }[];
+  /** Fields whose feature is not built: `grants`, `narrowed`, `gates[tool calls]`, `max_data_class`, `started_by.team`. */
+  not_built?: string[];
+}
+
+/** An API key a person answers for that is not revoked: holding them out does not stop it, because a key acts with its own authority. */
+export interface LiveKey {
+  id: string;
+  name: string;
+  prefix: string;
+  agent: string | null;
+  /** The person it belongs to, when the answer covers more than one. */
+  owner_sub?: string;
 }
 
 export type DatasetKind = "code" | "firewall_export" | "telemetry" | "document" | "other";
@@ -423,12 +439,15 @@ export interface SessionList {
   sessions: Session[];
   /** How many of each kind the control plane holds, which may be more than the rows it sent. */
   counts?: Partial<Record<SessionKind, number>>;
+  /** Kinds and fields whose feature is not built (`tool_server`, `sessions[].owner.team`, `sessions[].ip`, `sessions[].activity`). */
+  not_built?: string[];
 }
 /** POST /api/sessions/end: the sessions to end, or a client's registration to end with every session issued to it. */
 export type SessionsEnd = { ids: string[] } | { client: string };
-/** What POST /api/sessions/{id}/end and POST /api/sessions/end answer: the ids of the sessions that ended. */
+/** What POST /api/sessions/{id}/end and POST /api/sessions/end answer: the ids of the sessions that ended, and the keys of anyone held out, which keep working. */
 export interface SessionsEnded {
   ended: string[];
+  live_keys?: LiveKey[];
 }
 
 /** Upstream: gives a per-person token for a tool. Workload: its tokens are exchanged by an agent or worker for a short session. */
@@ -731,7 +750,20 @@ export interface CloudFindingList {
 
 /* ═══════════════════ asking ═══════════════════ */
 
-export type Answer<T> = { state: "ok"; data: T } | { state: "pending"; door: Door } | { state: "error"; message: string; status?: number };
+/**
+ * What a door answered. A refusal keeps the platform's whole body in `body`
+ * (its `error` is already in `message`), because some refusals carry more than
+ * a sentence: `not_built` (a 409 for a feature not built), `needs` (what a
+ * service account must hold), `levels`, or `ended` (what a batch did before it
+ * was refused).
+ */
+export type Answer<T> = { state: "ok"; data: T } | { state: "pending"; door: Door } | { state: "error"; message: string; status?: number; body?: unknown };
+
+/** A member of a refusal's body, when the refusal carried one. */
+export function refusalField(answer: Answer<unknown> | null | undefined, name: string): unknown {
+  if (!answer || answer.state !== "error" || !answer.body || typeof answer.body !== "object") return undefined;
+  return (answer.body as Record<string, unknown>)[name];
+}
 
 /** A door's path with its `{name}` parts filled and a query added. */
 export function doorUrl(door: Door, params: Record<string, string> = {}, query: Record<string, string | number | undefined> = {}): string {
@@ -773,7 +805,7 @@ export async function ask<T>(
   // method the platform does not know) and is shown as one, with its status.
   if (res.status === 501) return { state: "pending", door };
   const where = `${door.method} ${door.path}`;
-  if (!res.ok) return { state: "error", message: said ? `${said} (${res.status} from ${where})` : `the backend did not answer ${where} (${res.status})`, status: res.status };
+  if (!res.ok) return { state: "error", message: said ? `${said} (${res.status} from ${where})` : `the backend did not answer ${where} (${res.status})`, status: res.status, body: said ? body : undefined };
   if (!parsed) return { state: "error", message: `${where} answered ${res.status} with a body that is not JSON`, status: res.status };
   return { state: "ok", data: body as T };
 }

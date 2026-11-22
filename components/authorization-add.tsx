@@ -4,9 +4,10 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Button, Mono, Status, Tag } from "./ui";
 import { Field, Input, Textarea } from "./forms";
 import { NotConnectedNote } from "./pending";
-import { ACTS_AS, PURPOSES, REGISTRATIONS, ServerState, hasS256, subjectKind } from "./authorization-parts";
+import { ACTS_AS, PURPOSES, REGISTRATIONS, ServerState, UPSTREAM_NOT_BUILT, hasS256, subjectKind } from "./authorization-parts";
 import {
   ask,
+  refusalField,
   type Answer,
   type AuthServer,
   type AuthServerActsAs,
@@ -49,7 +50,8 @@ interface Form {
   secret: string;
   subjects: string;
 }
-const EMPTY: Form = { issuer: "", name: "", purpose: "upstream", registration: "dynamic", actsAs: "person", clientId: "", secret: "", subjects: "" };
+// Upstream trust is not built (UPSTREAM_NOT_BUILT), so a new issuer is added for workloads.
+const EMPTY: Form = { issuer: "", name: "", purpose: "workload", registration: "dynamic", actsAs: "person", clientId: "", secret: "", subjects: "" };
 
 function issuerUrl(raw: string): URL | null {
   try {
@@ -137,7 +139,7 @@ function Steps({ step, canTwo, onStep }: { step: 1 | 2; canTwo: boolean; onStep:
   );
 }
 
-function Choice({ title, line, selected, unavailable, onSelect }: { title: string; line: string; selected: boolean; /** Why it cannot be chosen. */ unavailable?: string; onSelect: () => void }) {
+function Choice({ title, line, selected, unavailable, unavailableTag = "Not offered by this issuer", onSelect }: { title: string; line: string; selected: boolean; /** Why it cannot be chosen. */ unavailable?: string; /** The tag over that reason. */ unavailableTag?: string; onSelect: () => void }) {
   const off = Boolean(unavailable);
   return (
     <button
@@ -160,7 +162,7 @@ function Choice({ title, line, selected, unavailable, onSelect }: { title: strin
       <span className={`text-[11.5px] leading-[1.5] ${off ? "text-faint" : "text-dim"}`}>{line}</span>
       {off ? (
         <span className="mt-auto flex flex-col gap-1 border-t border-line pt-2">
-          <Tag>Not offered by this issuer</Tag>
+          <Tag>{unavailableTag}</Tag>
           <span className="text-[11px] leading-[1.45] text-faint">{unavailable}</span>
         </span>
       ) : (
@@ -306,7 +308,7 @@ export function AddAuthServerDialog({ onClose, onAdded }: { onClose: () => void;
     const a = await ask<AuthServerAdded>("authServerAdd", { body });
     setBusy(false);
     if (a.state === "pending") return setFailed({ door: a.door });
-    if (a.state === "error") return setFailed({ message: a.message });
+    if (a.state === "error") return setFailed({ message: refusalField(a, "not_built") ? `not built: ${a.message}` : a.message });
     const got = a.data && typeof a.data === "object" ? ("server" in a.data ? a.data.server : a.data) : null;
     const server = got && typeof (got as AuthServer).id === "string" ? (got as AuthServer) : null;
     setDone({ server, name: server?.name || form.name.trim() || host });
@@ -336,7 +338,7 @@ export function AddAuthServerDialog({ onClose, onAdded }: { onClose: () => void;
               {done ? `${done.name} added` : "Add an authorization server"}
             </span>
             <span className="max-w-[80ch] text-[11.5px] leading-[1.5] text-faint">
-              {done ? "This deployment now trusts it for what was chosen." : "An outside issuer this deployment will trust: for a per-person token to a tool, or for the tokens a workload exchanges for a short session."}
+              {done ? "This deployment now trusts it for what was chosen." : "An outside issuer this deployment will trust for workloads: a service signs in with a token it signed. Upstream trust, a per-person token for a tool, is not built."}
             </span>
           </span>
           {!done && <Steps step={step} canTwo={!atIssuer} onStep={setStep} />}
@@ -427,8 +429,10 @@ export function AddAuthServerDialog({ onClose, onAdded }: { onClose: () => void;
                 <>
                   <div className="flex flex-col gap-1.5">
                     <span className="text-[12.5px] font-medium text-mist">What it is trusted for</span>
-                    <Segments label="What it is trusted for" value={form.purpose} onChange={(v) => patch({ purpose: v })} options={(Object.keys(PURPOSES) as AuthServerPurpose[]).map((p) => ({ id: p, label: PURPOSES[p].label }))} />
-                    <span className="max-w-[72ch] text-[11.5px] leading-[1.5] text-faint">{PURPOSES[form.purpose].line}</span>
+                    <div role="radiogroup" aria-label="What it is trusted for" className="grid gap-2.5 sm:grid-cols-2">
+                      <Choice title={PURPOSES.workload.label} line={PURPOSES.workload.line} selected={form.purpose === "workload"} onSelect={() => patch({ purpose: "workload" })} />
+                      <Choice title={PURPOSES.upstream.label} line={PURPOSES.upstream.line} selected={false} unavailable={UPSTREAM_NOT_BUILT} unavailableTag="Not built" onSelect={() => undefined} />
+                    </div>
                   </div>
 
                   {upstream ? (
@@ -474,7 +478,7 @@ export function AddAuthServerDialog({ onClose, onAdded }: { onClose: () => void;
                         </span>
                       )}
                       <p className="max-w-[72ch] text-[11.5px] leading-[1.5] text-faint">
-                        Nothing is registered with a workload issuer: a token from it is checked against the keys it publishes. Whom a workload acts as is the agent or worker the subject belongs to.
+                        Nothing is registered with a workload issuer: a token from it is checked against the keys it publishes. A service admitted from it acts with its own authority: it may read and start runs, and never approve, configure or change identity.
                       </p>
                     </div>
                   )}
@@ -530,7 +534,7 @@ export function AddAuthServerDialog({ onClose, onAdded }: { onClose: () => void;
                     ? "What it is trusted for is chosen in step 2."
                     : upstream
                       ? "It is then registered with the issuer the way chosen here, and tool servers can be set to get their tokens from it."
-                      : "From then on a token from it whose subject is admitted can be exchanged for a short session. Removing the issuer later stops every workload from it."}
+                      : "From then on a service whose token it signed, for an admitted subject, is signed in on every request it sends. Removing the issuer later stops every workload from it."}
                 </p>
               </div>
             </aside>

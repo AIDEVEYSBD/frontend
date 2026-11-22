@@ -8,34 +8,31 @@ import { Dialog, EmptyState } from "./overlays";
 import { PageHeader } from "./section";
 import { Chips, FilterBar, SearchBox } from "./filters";
 import { NotConnected, NotConnectedNote, useDoor } from "./pending";
-import { ago } from "./identity-shared";
+import { LiveKeys, ago } from "./identity-shared";
 import { whenFull } from "./dataset-parts";
-import { Affected, KIND_WORD, STATE_TONE, SessionGlyph, SessionPanel, SessionState, clientWord, consequence, consequences, isLive, kindWord, sameWord, targetWord, until, whoLine } from "./sessions-parts";
+import { Affected, KIND_WORD, STATE_TONE, SessionGlyph, SessionPanel, SessionState, clientWord, consequence, consequences, isEndable, isLive, kindWord, sameWord, targetWord, until, whoLine } from "./sessions-parts";
 import { useSession } from "@/lib/use-session";
-import { SESSION_KINDS, SESSION_STATES, ask, type Door, type Session, type SessionKind, type SessionList, type SessionState as State, type SessionsEnded } from "@/lib/api/pending";
+import { notBuiltOf } from "@/lib/not-built";
+import { SESSION_KINDS, SESSION_STATES, ask, refusalField, type Door, type LiveKey, type Session, type SessionKind, type SessionList, type SessionState as State, type SessionsEnded } from "@/lib/api/pending";
 
 /**
- * Sessions: every live connection to this deployment, and who is behind it.
+ * Sessions: every connection to this deployment, and who is behind it
+ * (`GET /api/sessions`).
  *
- * Three kinds in one list: a person signed in to the console, an agent
- * holding a key or a workload sign-in, and a connection the platform holds
- * open to a tool server on behalf of a person or an agent. A row opens the
+ * A person coming in through Google's proxy, and an agent calling with an API
+ * key or a workload token. Connections held open to tool servers are a third
+ * kind the platform names in `not_built`; their tab says so. A row opens the
  * session at the side; a session, or a selection of them, can be ended by
- * someone who administers access, after a question that names who is
- * affected and what stops.
- *
- * The screen is ahead of its doors (`sessions`, `sessionEnd`, `sessionsEnd`
- * in lib/api/pending.ts). The identity door that exists today
- * (`GET /api/iam/users`) gives a count of sessions per person, not the
- * sessions, so all three kinds wait for the new door: until it answers the
- * filters and the column headers stand and the rows' place says the page is
- * not connected. No row is ever made up.
+ * someone who administers access, after a question that says what ending
+ * does: a person is held out until an administrator lets them back, a key is
+ * revoked, a service's tokens issued until now are refused. No row is ever
+ * made up.
  */
 
 const COLUMNS = ["Who", "Kind", "Client", "Connected to", "Started", "Last active", "Ends", "State"];
 
 type Ending = { what: "sessions"; rows: Session[] } | { what: "client"; registration: string; client: string; rows: Session[] };
-type Notice = { tone: "ok" | "err"; text: string } | { door: Door };
+type Notice = { tone: "ok" | "err" | "warn"; text: string; keys?: LiveKey[] } | { door: Door };
 
 function matches(s: Session, term: string): boolean {
   if (!term) return true;
@@ -67,9 +64,12 @@ function SessionsPage() {
   const all = useMemo(() => (answer?.state === "ok" && Array.isArray(answer.data?.sessions) ? answer.data.sessions : []), [answer]);
   const counts = answer?.state === "ok" ? answer.data?.counts : undefined;
   const countOf = (k: SessionKind): number => counts?.[k] ?? all.filter((s) => s.kind === k).length;
+  /** What the platform names as not built on this read: a kind among them is never counted as zero. */
+  const unbuilt = useMemo(() => (answer?.state === "ok" ? notBuiltOf(answer.data) : []), [answer]);
+  const kindUnbuilt = (k: SessionKind): boolean => unbuilt.includes(k);
 
   const isMine = useCallback((s: Session) => s.kind === "person" && Boolean(me?.sub) && s.principal.id === me?.sub, [me]);
-  const canEnd = useCallback((s: Session) => isLive(s) && !isMine(s), [isMine]);
+  const canEnd = useCallback((s: Session) => isEndable(s) && !isMine(s), [isMine]);
 
   const shown = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -108,25 +108,41 @@ function SessionsPage() {
     const was = ending;
     setEnding(null);
     if (a.state === "pending") return setNotice({ door: a.door });
-    if (a.state === "error") return setNotice({ tone: "err", text: a.message });
+    if (a.state === "error") {
+      // A batch refused part way names what it ended before the refusal; nothing else changed.
+      const before = refusalField(a, "ended");
+      const endedFirst = Array.isArray(before) ? before.filter((x): x is string => typeof x === "string") : [];
+      const names = endedFirst.map((id) => was.rows.find((r) => r.id === id)).filter(Boolean).map((r) => r!.principal.name || r!.principal.id);
+      setPicked((p) => p.filter((id) => !endedFirst.includes(id)));
+      setNotice({ tone: "err", text: endedFirst.length ? `${a.message}. Ended before the refusal: ${names.join(", ")}; the rest were not ended.` : a.message });
+      if (endedFirst.length) reload();
+      return;
+    }
     setPicked((p) => p.filter((id) => !ids.includes(id)));
+    const one = was.rows.length === 1 ? was.rows[0] : null;
     setNotice({
-      tone: "ok",
+      tone: was.rows.some((r) => r.kind === "person") ? "warn" : "ok",
       text:
         was.what === "client"
           ? `The registration of ${was.client} was ended, and every session issued to it with it.`
-          : ids.length === 1
-            ? `The session of ${was.rows[0].principal.name || was.rows[0].principal.id} was ended.`
-            : `${ids.length.toLocaleString("en-GB")} sessions were ended.`,
+          : one
+            ? `Ended. ${consequence(one)}`
+            : `${ids.length.toLocaleString("en-GB")} sessions were ended. ${consequences(was.rows).join(" ")}`,
+      keys: was.rows.some((r) => r.kind === "person") ? (a.data?.live_keys ?? []) : undefined,
     });
     reload();
   };
 
   const noticeText: ReactNode = notice ? "door" in notice ? <NotConnectedNote door={notice.door} /> : notice.text : null;
 
-  const kindTabs: { id: SessionKind | ""; label: string; count: number }[] = [
-    { id: "", label: "All", count: SESSION_KINDS.reduce((n, k) => n + countOf(k), 0) },
-    ...SESSION_KINDS.map((k) => ({ id: k, label: KIND_WORD[k].many, count: countOf(k) })),
+  const kindTabs: { id: SessionKind | ""; label: string; count: number; off?: string }[] = [
+    { id: "", label: "All", count: SESSION_KINDS.filter((k) => !kindUnbuilt(k)).reduce((n, k) => n + countOf(k), 0) },
+    ...SESSION_KINDS.map((k) => ({
+      id: k,
+      label: KIND_WORD[k].many,
+      count: countOf(k),
+      off: kindUnbuilt(k) ? `Not built: the platform names ${k} as not built, so no ${KIND_WORD[k].one.toLowerCase()} connection is held or listed.` : undefined,
+    })),
   ];
 
   return (
@@ -139,23 +155,24 @@ function SessionsPage() {
           </Button>
         }
       >
-        Every live connection to this deployment and who is behind it: people signed in to the console, agents holding a key or a workload sign-in, and the connections the platform holds open to
-        tool servers on their behalf. Ending a session stops it at once.
+        Every connection to this deployment and who is behind it: people coming in through Google&rsquo;s proxy, and agents calling with an API key or a workload token. Ending a session stops that
+        caller from its next request: a person is held out until an administrator lets them back, a key is revoked, a service&rsquo;s tokens issued until now are refused.
+        {kindUnbuilt("tool_server") && " Connections held open to tool servers are not built."}
       </PageHeader>
 
       {notice && (
         <div className="relative flex flex-wrap items-center gap-3 overflow-hidden rounded-lg border border-line bg-surface py-2.5 pr-3 pl-4 elev-1">
           {"tone" in notice && (
             <>
-              <span className={`absolute inset-y-0 left-0 w-[3px] ${notice.tone === "err" ? "bg-err" : "bg-ok"}`} />
+              <span className={`absolute inset-y-0 left-0 w-[3px] ${notice.tone === "err" ? "bg-err" : notice.tone === "warn" ? "bg-warn" : "bg-ok"}`} />
               <Status tone={notice.tone}>{notice.tone === "err" ? "Refused" : "Done"}</Status>
             </>
           )}
-          <span className="min-w-0 text-[12.5px] leading-[1.5] text-fg">{noticeText}</span>
-          <span className="grow" />
+          <span className="min-w-0 basis-[420px] grow text-[12.5px] leading-[1.5] text-fg">{noticeText}</span>
           <Button size="sm" variant="solid" tone="neutral" onClick={() => setNotice(null)}>
             Dismiss
           </Button>
+          {"keys" in notice && notice.keys && <LiveKeys keys={notice.keys} onRevoked={reload} />}
         </div>
       )}
 
@@ -169,13 +186,16 @@ function SessionsPage() {
                 type="button"
                 role="radio"
                 aria-checked={kind === t.id}
+                aria-disabled={t.off ? true : undefined}
+                disabled={Boolean(t.off)}
+                title={t.off}
                 onClick={() => setKind(t.id)}
-                className={`focusable inline-flex h-full cursor-pointer items-center gap-1.5 rounded-sm px-2.5 text-[12px] whitespace-nowrap transition-colors ${
-                  kind === t.id ? "bg-surface font-medium text-fg shadow-[var(--shadow-1)]" : "text-faint hover:text-dim"
+                className={`focusable inline-flex h-full items-center gap-1.5 rounded-sm px-2.5 text-[12px] whitespace-nowrap transition-colors ${
+                  t.off ? "cursor-not-allowed text-ghost" : kind === t.id ? "cursor-pointer bg-surface font-medium text-fg shadow-[var(--shadow-1)]" : "cursor-pointer text-faint hover:text-dim"
                 }`}
               >
                 {t.label}
-                {connected && <span className="tnum font-mono text-[10.5px] text-faint">{t.count.toLocaleString("en-GB")}</span>}
+                {connected && (t.off ? <span className="text-[10.5px] text-faint">not built</span> : <span className="tnum font-mono text-[10.5px] text-faint">{t.count.toLocaleString("en-GB")}</span>)}
               </button>
             ))}
           </span>
@@ -315,7 +335,7 @@ function SessionsPage() {
         {answer?.state === "error" && <div className="p-4">{<p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">The sessions could not be read: {answer.message}</p>}</div>}
         {connected && all.length === 0 && (
           <div className="p-4">
-            <EmptyState title="No sessions" detail="The control plane holds no session right now. People, agents and connections to tool servers are listed here as they sign in or connect." />
+            <EmptyState title="No sessions" detail="The platform has recorded no connection yet. People and agents are listed here from their first request." />
           </div>
         )}
         {connected && all.length > 0 && shown.length === 0 && (
@@ -339,6 +359,7 @@ function SessionsPage() {
           onClose={() => open(null)}
           onEnd={() => setEnding({ what: "sessions", rows: [row] })}
           onEndClient={() => row.client.registration && setEnding({ what: "client", registration: row.client.registration, client: row.client.name, rows: issuedTo(row.client.registration) })}
+          notBuilt={unbuilt}
         />
       )}
       {selectedId && connected && !row && (
@@ -389,7 +410,7 @@ function SessionsPage() {
               </>
             ) : (
               <>
-                <span>These end at once:</span>
+                <span>These are ended:</span>
                 <Affected rows={ending.rows} />
                 {consequences(ending.rows).map((line) => (
                   <span key={line}>{line}</span>

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button, Mono, Status, Tag } from "./ui";
 import { Field, Input } from "./forms";
 import { Figures } from "./section";
+import { useSession } from "@/lib/use-session";
 import {
   Card,
   EventLine,
@@ -48,6 +49,8 @@ export interface IamActions {
   revokeKey: (i: Identity) => void;
   rotateKey: (i: Identity) => void;
   blockAgent: (i: Identity, blocked: boolean) => void;
+  /** A service a trusted issuer admits: every token issued to it until now is refused (`DELETE /api/iam/identities?kind=attached_agent`). */
+  disconnectService: (i: Identity) => void;
   gateAgent: (i: Identity) => void;
   disconnectServer: (i: Identity) => void;
   removeSecret: (i: Identity) => void;
@@ -82,6 +85,7 @@ export function IdentityPage({
   editOwner,
   actions,
   unread = false,
+  keysOfPerson = null,
 }: {
   entry: Entry;
   findings: Finding[];
@@ -99,25 +103,40 @@ export function IdentityPage({
   actions: IamActions;
   /** A quiet console (lib/quiet.ts) with a door unread: "nothing needs attention" is not known, so the card is left out. */
   unread?: boolean;
+  /** For a person: the unrevoked API keys the register says answer to them; null when the register was not read. */
+  keysOfPerson?: Identity[] | null;
 }) {
   const [confirming, setConfirming] = useState("");
+  /** Behind Google IAP a person's roles come from this deployment's role map, never from the sign-in. */
+  const iap = useSession().session?.via === "iap";
   const st = statusOf(entry);
   const mine = events ? eventsFor(entry, events) : [];
   const i = entry.type === "identity" ? entry.identity : null;
   const p = entry.type === "person" ? entry.person : null;
   const local = Boolean(p && p.sub.startsWith("local:"));
   const self = Boolean(p && p.sub === meSub);
+  const who = p ? p.name || p.email || p.sub : "";
+  const theirKeys = keysOfPerson ?? [];
 
   /* ── what needs attention ── */
   const personIssues: { tone: "err" | "warn"; title: string; detail: string }[] = [];
-  if (p?.disabled_at) personIssues.push({ tone: "err", title: "Access is disabled", detail: `Disabled ${ago(p.disabled_at, now)}. This person cannot sign in until an administrator enables them again.` });
+  if (p?.disabled_at)
+    personIssues.push({
+      tone: "err",
+      title: "Held out of the console",
+      detail: `Held out ${ago(p.disabled_at, now)}${p.disabled_by ? ` by ${p.disabled_by}` : ""}. Every request of theirs is refused until an administrator lets them back; their Google sign-in itself is untouched.${
+        theirKeys.length ? ` ${theirKeys.length === 1 ? "One API key that answers to them still works" : `${theirKeys.length} API keys that answer to them still work`}: ${theirKeys.map((k) => k.name).join(", ")}.` : ""
+      }`,
+    });
   if (p && !p.disabled_at && p.last_app_roles.length === 0)
     personIssues.push({
       tone: "warn",
       title: "No role in this app",
       detail: people?.sso.demo_default_role
-        ? `Their latest token carried no role this app recognises; this deployment treats them as ${people.sso.demo_default_role}.`
-        : "Their latest token carried no role this app recognises, so no permission maps to them. Roles are assigned in the identity provider.",
+        ? `No role this app recognises maps to them; this deployment treats them as ${people.sso.demo_default_role}.`
+        : iap
+          ? "This deployment's role map names no role for them, so no permission maps to them. A role is given in the role map, by address or by domain."
+          : "Their latest token carried no role this app recognises, so no permission maps to them. Roles are assigned in the identity provider.",
     });
   const unowned = Boolean(i && !i.owner && i.status !== "revoked");
   const attention = findings.length + personIssues.length + (unowned ? 1 : 0);
@@ -144,7 +163,6 @@ export function IdentityPage({
             <h1 className="min-w-0 text-[22px] leading-[1.2] font-semibold tracking-[-0.02em] break-words">{entryName(entry)}</h1>
             <Tag>{kindLabel(entry)}</Tag>
             <Status tone={st.tone}>{st.label}</Status>
-            {p?.org_type && <Tag>{p.org_type}</Tag>}
             {self && <Tag>you</Tag>}
             {i && Boolean(i.facts.demo) && <Tag>sample</Tag>}
           </span>
@@ -173,31 +191,56 @@ export function IdentityPage({
               <span className="text-[11.5px] text-faint">The console&rsquo;s own operator; sign-in is off on this deployment.</span>
             ) : self ? (
               <span className="text-[11.5px] text-faint">Nobody changes their own access; another administrator does it.</span>
+            ) : p.disabled_at ? (
+              <Button size="sm" variant="solid" tone="ok" permission="iam" loading={busy === `user:${p.sub}`} onClick={() => actions.setAccess(p, false)}>
+                Let back in
+              </Button>
+            ) : confirming === "disable" || confirming === "signout" ? (
+              <span className="flex max-w-[460px] flex-col items-end gap-1.5">
+                <span className="text-right text-[11.5px] leading-[1.5] text-dim">
+                  {confirming === "signout"
+                    ? `This service cannot end a Google session. Signing ${who} out everywhere holds them out instead: every request of theirs is refused until an administrator lets them back.`
+                    : `Every request ${who} makes is refused until an administrator lets them back. Their Google sign-in is untouched.`}{" "}
+                  Their API keys keep working; the notice lists them, to revoke.
+                </span>
+                <span className="flex gap-1.5">
+                  {confirmPair(
+                    confirming === "signout" ? "Sign out everywhere" : "Hold out",
+                    () => {
+                      const how = confirming;
+                      setConfirming("");
+                      if (how === "signout") actions.signOut(p);
+                      else actions.setAccess(p, true);
+                    },
+                    busy === `user:${p.sub}` || busy === `signout:${p.sub}`,
+                  )}
+                </span>
+              </span>
             ) : (
               <>
                 {p.sessions > 0 && (
-                  <Button size="sm" variant="solid" tone="neutral" permission="iam" loading={busy === `signout:${p.sub}`} onClick={() => actions.signOut(p)}>
+                  <Button size="sm" variant="solid" tone="neutral" permission="iam" loading={busy === `signout:${p.sub}`} onClick={() => setConfirming("signout")}>
                     Sign out everywhere
                   </Button>
                 )}
-                {p.disabled_at ? (
-                  <Button size="sm" variant="solid" tone="ok" permission="iam" loading={busy === `user:${p.sub}`} onClick={() => actions.setAccess(p, false)}>
-                    Enable
-                  </Button>
-                ) : confirming === "disable" ? (
-                  confirmPair("Disable now", () => { setConfirming(""); actions.setAccess(p, true); }, busy === `user:${p.sub}`)
-                ) : (
-                  <Button size="sm" variant="solid" tone="err" permission="iam" loading={busy === `user:${p.sub}`} onClick={() => setConfirming("disable")}>
-                    Disable
-                  </Button>
-                )}
+                <Button size="sm" variant="solid" tone="err" permission="iam" loading={busy === `user:${p.sub}`} onClick={() => setConfirming("disable")}>
+                  Hold out
+                </Button>
               </>
             ))}
-          {i?.kind === "attached_agent" && (
-            <Button size="sm" variant="solid" tone={i.status === "blocked" ? "ok" : "err"} permission="iam" loading={busy === `block:${i.id}`} onClick={() => actions.blockAgent(i, i.status !== "blocked")}>
-              {i.status === "blocked" ? "Unblock" : "Block"}
-            </Button>
-          )}
+          {i?.kind === "attached_agent" &&
+            (confirming === "disconnect-service" ? (
+              <span className="flex max-w-[460px] flex-col items-end gap-1.5">
+                <span className="text-right text-[11.5px] leading-[1.5] text-dim">
+                  Every token issued to {i.name} until now is refused. A token its issuer issues later signs it in again; to keep it out, remove its subject from the issuer.
+                </span>
+                <span className="flex gap-1.5">{confirmPair("Disconnect now", () => { setConfirming(""); actions.disconnectService(i); }, busy === `service:${i.id}`)}</span>
+              </span>
+            ) : (
+              <Button size="sm" variant="solid" tone="err" permission="iam" loading={busy === `service:${i.id}`} onClick={() => setConfirming("disconnect-service")}>
+                Disconnect
+              </Button>
+            ))}
           {i?.kind === "api_key" &&
             i.status === "active" &&
             (confirming === "revoke" ? (
@@ -263,20 +306,30 @@ export function IdentityPage({
 
       {/* ── access ── */}
       {p && (
-        <Card id="access" title="Access" meta="roles from the identity provider, and the permissions they map to here">
+        <Card id="access" title="Access" meta={iap ? "roles from this deployment's role map, and the permissions they map to here" : "roles from the identity provider, and the permissions they map to here"}>
           <div className="grid gap-px bg-line lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
             <div className="flex flex-col bg-surface px-4 py-1.5">
               <Fact k="Roles in this app">
                 <span className="flex flex-wrap gap-1">{p.last_app_roles.length ? p.last_app_roles.map((r) => <Tag key={r}>{r}</Tag>) : <Tag tone="warn">none</Tag>}</span>
               </Fact>
-              <Fact k="Directory roles">{p.last_roles.length ? p.last_roles.join(", ") : <span className="text-faint">none</span>}</Fact>
-              <Fact k="Organisation">{p.org_type ? <Tag>{p.org_type}</Tag> : <span className="text-faint">not given by the identity provider</span>}</Fact>
-              <Fact k="Sessions open">
-                <span className="tnum">{p.sessions}</span>
+              <Fact k="Directory roles">{p.last_roles.length ? p.last_roles.join(", ") : <span className="text-faint">none carried by the sign-in</span>}</Fact>
+              <Fact k="Email verified">{p.email_verified === null ? <span className="text-faint">not stated by the sign-in</span> : p.email_verified ? "yes" : "no"}</Fact>
+              {p.preferred_username && <Fact k="Username">{p.preferred_username}</Fact>}
+              <Fact k="Connected now">
+                <span className="tnum">{p.sessions > 0 ? "yes, seen in the last 30 minutes" : "no"}</span>
               </Fact>
               {p.first_seen && <Fact k="First seen">{ago(p.first_seen, now)}</Fact>}
               {p.last_seen && <Fact k="Last seen">{ago(p.last_seen, now)}</Fact>}
-              <Fact k="Access">{p.disabled_at ? <Status tone="err">disabled {ago(p.disabled_at, now)}</Status> : <Status tone="ok">enabled</Status>}</Fact>
+              <Fact k="Access">
+                {p.disabled_at ? (
+                  <span className="flex flex-col gap-0.5">
+                    <Status tone="err">held out {ago(p.disabled_at, now)}</Status>
+                    {p.disabled_by && <span className="text-[11px] text-faint">by {p.disabled_by}, until an administrator lets them back</span>}
+                  </span>
+                ) : (
+                  <Status tone="ok">let in</Status>
+                )}
+              </Fact>
             </div>
             <div className="flex flex-col bg-surface">
               <span className="border-b border-line px-4 py-2 text-[11px] text-faint">What this person may do here, and the role that grants it</span>
@@ -332,20 +385,42 @@ function IdentityAccess({ identity: i, now, busy, ownerStoreDown, editOwner, act
   const [draft, setDraft] = useState<OwnerDraft>({ owner: i.owner?.owner ?? "", purpose: i.owner?.purpose ?? "", review: i.owner?.review_due_at?.slice(0, 10) ?? "" });
   const f = i.facts;
   const facts: { k: string; v: React.ReactNode }[] = [];
+  const text = (v: unknown): string => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
+  const when = (v: unknown, none: string) => (typeof v === "string" && v ? `${ago(v, now)} (${new Date(v).toLocaleString("en-GB")})` : none);
+  const chips = (v: unknown) =>
+    list(v).length ? (
+      <span className="flex flex-wrap gap-1">
+        {list(v).map((g) => (
+          <Mono key={g} className="rounded-sm border border-line bg-raise px-1 py-px text-[11px]">
+            {g}
+          </Mono>
+        ))}
+      </span>
+    ) : (
+      "none"
+    );
+  // Only what the register answered for each kind; a kind's fact the register does not carry is left out, never filled in.
   if (i.kind === "workflow")
     facts.push(
-      { k: "Tools granted", v: String(f.tools ?? 0) },
-      { k: "Gate level", v: f.gate ? `stops for a person at ${String(f.gate)} and above` : "no gate" },
-      { k: "Trigger", v: String(f.trigger ?? "prompt") },
-      { k: "Secrets referenced", v: list(f.secrets).join(", ") || "none" },
+      { k: "Latest version", v: text(f.latest_version) || "none saved" },
+      { k: "Deployed version", v: text(f.deployed_version) || "not deployed" },
+      { k: "Deployed", v: when(f.deployed_at, "never") },
+      { k: "Retired", v: f.retired ? "yes" : "no" },
     );
   if (i.kind === "attached_agent")
     facts.push(
-      { k: "Grants", v: list(f.grants).length ? <span className="flex flex-wrap gap-1">{list(f.grants).map((g) => <Mono key={g} className="rounded-sm border border-line bg-raise px-1 py-px text-[11px]">{g}</Mono>)}</span> : "none" },
-      { k: "Gate level", v: f.gate_at ? `stops for a person at ${String(f.gate_at)} and above` : "no gate" },
-      { k: "Mode", v: String(f.mode ?? "") },
-      { k: "Injection screening", v: String(f.injection ?? "") },
-      { k: "Blocked", v: f.blocked ? "yes" : "no" },
+      { k: "Issuer", v: <Mono className="text-[11px] break-all">{text(f.issuer)}</Mono> },
+      { k: "Subject", v: <Mono className="text-[11px] break-all">{text(f.subject)}</Mono> },
+      {
+        k: "Trusted through",
+        v: (
+          <Link href="/authorization" className="focusable rounded-sm text-fg underline decoration-line-strong underline-offset-2 hover:decoration-fg">
+            {text(f.server)}
+          </Link>
+        ),
+      },
+      { k: "First signed in", v: when(f.first_seen, "not yet") },
+      { k: "Tokens refused", v: typeof f.refuse_issued_before === "string" && f.refuse_issued_before ? `every token issued before ${new Date(f.refuse_issued_before).toLocaleString("en-GB")}` : "none: it has not been disconnected" },
     );
   if (i.kind === "mcp_server")
     facts.push(
@@ -353,8 +428,18 @@ function IdentityAccess({ identity: i, now, busy, ownerStoreDown, editOwner, act
       { k: "Held by workflows", v: list(f.workflows).join(", ") || "none" },
       { k: "Granted to agents", v: list(f.attached).join(", ") || "none" },
     );
-  if (i.kind === "api_key")
-    facts.push({ k: "Scope", v: String(f.agent ?? "any workflow") }, { k: "Prefix", v: <Mono className="text-[11px]">{String(f.prefix ?? "")}</Mono> }, { k: "Created", v: i.created_at ? ago(i.created_at, now) : "not recorded" });
+  if (i.kind === "api_key") {
+    const minted = (f.minted_by && typeof f.minted_by === "object" ? f.minted_by : {}) as { sub?: unknown; email?: unknown; name?: unknown };
+    facts.push(
+      { k: "Prefix", v: <Mono className="text-[11px]">{text(f.prefix)}…</Mono> },
+      { k: "Bound to an agent", v: text(f.agent) ? `acts only as ${text(f.agent)}` : "no: it acts as any agent its permissions allow" },
+      { k: "Permissions", v: chips(f.permissions) },
+      { k: "Minted by", v: text(minted.email) || text(minted.name) || text(minted.sub) || "not recorded" },
+      { k: "Minted", v: when(i.created_at, "not recorded") },
+      ...(f.revoked_at ? [{ k: "Revoked", v: when(f.revoked_at, "") }] : []),
+      ...(f.owner_held_out ? [{ k: "Its owner", v: <span className="text-err">is held out of the console; this key still works until it is revoked</span> }] : []),
+    );
+  }
   if (i.kind === "vault_credential") facts.push({ k: "Referenced by", v: list(f.referenced_by).join(", ") || "no spec" }, { k: "Declared users", v: list(f.declared_users).join(", ") || "none" }, { k: "Value set", v: f.set ? "yes" : "no" });
 
   const save = async () => {
@@ -410,6 +495,9 @@ function IdentityAccess({ identity: i, now, busy, ownerStoreDown, editOwner, act
           ) : (
             <>
               {i.owner ? <OwnerChip owner={i.owner} /> : <span className="text-[12px] text-warn">No owner. Nobody is named as answering for this identity.</span>}
+              {i.owner && (f.owner_from === "minted" || f.owner_from === "saved") && (
+                <span className="text-[11.5px] leading-[1.5] text-faint">Nobody is named on the register, so the person who {f.owner_from === "minted" ? "minted it" : "first saved it"} answers for it.</span>
+              )}
               {i.owner?.review_due_at && (
                 <span className="text-[11.5px] text-dim">
                   Review due {i.owner.review_due_at.slice(0, 10)} · set by {i.owner.updated_by} {ago(i.owner.updated_at, now)}

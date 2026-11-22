@@ -16,9 +16,16 @@ export const PURPOSES: Record<AuthServerPurpose, { label: string; line: string }
   },
   workload: {
     label: "Workload",
-    line: "Its tokens may be exchanged by an agent or worker for a short session, so no long-lived key is stored. A Kubernetes service account issuer is one.",
+    line: "A service signs in with a token this issuer signed, sent on every request and checked there against the keys the issuer publishes, so no long-lived key is stored for it. A Kubernetes service account issuer is one.",
   },
 };
+
+/**
+ * Upstream trust is not built: the platform refuses to add an upstream issuer
+ * (409, `not_built: "upstream"`), and nothing calls a tool with a per-person
+ * token. The page and the add dialog say so rather than offer it.
+ */
+export const UPSTREAM_NOT_BUILT = "Not built: the platform refuses to add an upstream issuer (it answers 409 with not_built \"upstream\"), and no tool is called with a per-person token. An issuer can be added for workloads.";
 
 export const REGISTRATIONS: Record<AuthServerRegistration, { label: string; line: string }> = {
   dynamic: { label: "Dynamic registration", line: "The platform registers itself at the address the issuer publishes for that, and keeps the client id it is given." },

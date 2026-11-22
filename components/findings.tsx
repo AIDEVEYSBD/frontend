@@ -51,9 +51,10 @@ import { WORKLOADS, ask, type Door, type Finding, type FindingList, type Finding
 
 const LIMIT = 500;
 
-const SCOPES: { id: Scope; label: string; title: string }[] = [
+/* "My team" is shown and not offered: nothing sets a person's team, and the platform answers a person with no team their own findings instead. */
+const SCOPES: { id: Scope; label: string; title: string; off?: boolean }[] = [
   { id: "mine", label: "Mine", title: "Findings of runs you started" },
-  { id: "team", label: "My team", title: "Findings of runs your team started" },
+  { id: "team", label: "My team", title: "Not built: nothing on this platform sets a person's team, so findings cannot be filtered by one.", off: true },
   { id: "all", label: "All", title: "Every finding you may see" },
 ];
 
@@ -366,7 +367,8 @@ function FindingsPage() {
   const status = params.get("status") ?? "";
   const agent = params.get("agent") ?? "";
   const scopeParam = params.get("scope");
-  const scope: Scope = scopeParam === "mine" || scopeParam === "team" ? scopeParam : "all";
+  // `team` is not built (SCOPES): an old link asking for it is read as every finding, not as a person's own under another name.
+  const scope: Scope = scopeParam === "mine" ? scopeParam : "all";
   const selected = params.get("id");
   const [q, setQ] = useState("");
   const [agents, setAgents] = useState<string[]>([]);
@@ -430,11 +432,14 @@ function FindingsPage() {
                   type="button"
                   role="radio"
                   aria-checked={scope === s.id}
+                  aria-disabled={s.off || undefined}
+                  disabled={s.off}
                   title={s.title}
                   onClick={() => filter({ scope: s.id === "all" ? null : s.id })}
-                  className={`focusable h-full cursor-pointer rounded-[5px] px-2.5 text-[11.5px] font-medium whitespace-nowrap ${scope === s.id ? "bg-surface text-fg elev-1" : "text-faint hover:text-fg"}`}
+                  className={`focusable h-full rounded-[5px] px-2.5 text-[11.5px] font-medium whitespace-nowrap ${s.off ? "cursor-not-allowed text-ghost" : scope === s.id ? "cursor-pointer bg-surface text-fg elev-1" : "cursor-pointer text-faint hover:text-fg"}`}
                 >
                   {s.label}
+                  {s.off && <span className="ml-1 text-[10px] font-normal">not built</span>}
                 </button>
               ))}
             </span>

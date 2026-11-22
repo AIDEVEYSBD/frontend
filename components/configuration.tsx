@@ -23,6 +23,7 @@ import type { AttachedAgent } from "@/lib/attached";
 import { JOB_STATUS_META, queueTotals } from "@/lib/queue";
 import { Providers, useConfigChanges } from "./providers";
 import { Keys, OfferedModels } from "./settings";
+import { ApiKeys } from "./api-keys";
 import { PeerList, meOf, usePeers } from "./peers";
 import { useSession } from "@/lib/use-session";
 import { Appearance } from "./appearance";
@@ -949,22 +950,10 @@ function ConfigurationTabs() {
                     <Holds>Jobs in the queue are counted here by state.</Holds>
                   </div>
                 </div>
-              ) : <div className="grid gap-px bg-line sm:grid-cols-2">
-                <div className="flex flex-col bg-surface">
+              ) : <div className="grid gap-px bg-line lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+                <div className="flex min-w-0 flex-col bg-surface">
                   <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">API keys</span>
-                  {(data?.apiKeys ?? []).map((k) => (
-                    <span key={k.prefix} className="flex items-center gap-2 border-b border-line px-4 py-2 last:border-0">
-                      <Mono className="text-[10.5px] text-faint">{k.prefix}…</Mono>
-                      <span className="min-w-0 grow truncate text-[11.5px]">{k.name}</span>
-                      <span className="shrink-0 text-[10.5px] text-faint">{k.agent ?? "any workflow"}</span>
-                      {k.revoked_at ? <Status tone="err">revoked</Status> : <Status tone="ok">active</Status>}
-                    </span>
-                  ))}
-                  {data && data.apiKeys.length === 0 && (
-                    <span className="px-4 py-2 text-[11.5px] text-faint">
-                      No keys. Every machine door (trigger, SDK, A2A, MCP server) refuses until the first one is minted.
-                    </span>
-                  )}
+                  <ApiKeys />
                 </div>
                 <div className="flex flex-col bg-surface">
                   <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">Queue</span>
