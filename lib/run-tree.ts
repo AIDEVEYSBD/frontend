@@ -225,6 +225,7 @@ export function treeSummary(tree: RunTree): string {
 
 /** How the kill reached a run, in the reader's words. */
 export const DELIVERY_TEXT: Record<string, string> = {
+  settled: "stopped at once: no worker held it, so the platform settled it as killed",
   "in-process": "stopped at once, as it was waiting for a person",
   "shared-cancel": "an in-process sub-run, stopped with the run it runs in",
   worker: "a worker's run: the worker stops it at its next model call, step or node",
@@ -331,7 +332,7 @@ export function alreadySummary(refusal: KillRefusal): string {
 
 /** The reached runs grouped by how the kill reached them, in a stable order. */
 export function reachedGroups(receipt: Pick<KillReceipt, "reached">): { delivery: string; label: string; runs: Reached[] }[] {
-  const order = ["in-process", "shared-cancel", "worker", "sdk", "queue", "a2a", "a2a-refused"];
+  const order = ["settled", "in-process", "shared-cancel", "worker", "sdk", "queue", "a2a", "a2a-refused"];
   const groups = new Map<string, Reached[]>();
   for (const r of receipt.reached) groups.set(r.delivery, [...(groups.get(r.delivery) ?? []), r]);
   return [...groups.entries()]
@@ -359,7 +360,7 @@ export function killSummary(receipt: KillReceipt): string {
     count("a2a", "peer task cancelled over A2A", "peer tasks cancelled over A2A"),
     count("a2a-refused", "peer task the cancel did not reach", "peer tasks the cancel did not reach"),
   ].filter(Boolean);
-  const known = new Set(["shared-cancel", "in-process", "worker", "sdk", "queue", "a2a", "a2a-refused"]);
+  const known = new Set(["settled", "shared-cancel", "in-process", "worker", "sdk", "queue", "a2a", "a2a-refused"]);
   const odd = others.filter((r) => !known.has(r.delivery)).length;
   if (odd) parts.push(`${odd} more`);
   // Only what the platform names in its receipt is said; it stops one run, and says nothing of any other.
@@ -372,6 +373,6 @@ export function killSummary(receipt: KillReceipt): string {
     const head = self ? `The run is already stopping on an earlier kill; this kill${by} reached what that kill had not` : `The run itself had already ended (${receipt.state || "settled"}); the kill${by} reached what it set off`;
     return `${head}${rest ? `: ${rest}` : ""}.${already}`;
   }
-  const own = receipt.delivery === "in-process" ? "stopped at once, as it was waiting for a person" : receipt.delivery === "worker" ? "is stopped by its worker at its next model call, step or node" : "is stopped on its SDK's next control poll";
+  const own = receipt.delivery === "settled" ? "was stopped at once: no worker held it, so the platform settled it as killed" : receipt.delivery === "in-process" ? "stopped at once, as it was waiting for a person" : receipt.delivery === "worker" ? "is stopped by its worker at its next model call, step or node" : "is stopped on its SDK's next control poll";
   return `Kill requested${by}: the run ${own}${rest ? `; ${rest}` : ""}. Child runs it started are not stopped.${already}`;
 }

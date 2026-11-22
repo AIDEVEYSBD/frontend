@@ -180,7 +180,8 @@ export function readOffer(answer: Answer<WorkloadList> | null, id: string): Offe
   if (!offer) return { state: "not_listed", label: "Not offered", tone: "neutral", why: "The control plane does not list this workload on this deployment.", short: "Not listed by the control plane.", ...none };
   const agent = typeof offer.agent === "string" ? offer.agent : "";
   if (offer.status === "available") {
-    if (!agent) return { state: "not_deployed", label: "No agent named", tone: "queue", why: "The control plane marks this workload available and names no agent to run it.", short: "No agent is named to run it.", offer, agent };
+    // `available` means the workload's agent is deployed. The platform does not name that agent, so a run is not started from this page; chat starts one by the workload's name.
+    if (!agent) return { state: "not_deployed", label: "Deployed", tone: "ok", why: "The platform says this workload's agent is deployed and does not name the agent, so a run is not started from this page.", short: "Its agent is deployed; it is not named here.", offer, agent };
     return { state: "available", label: "Available", tone: "ok", why: "", short: "", offer, agent };
   }
   const known = offer.status === "not_deployed";

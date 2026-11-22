@@ -425,6 +425,8 @@ export interface DeliverableList {
   count: number;
   /** State → count over the list answered. */
   states: Record<string, number>;
+  /** What the platform names as not built for this answer (`producer`: nothing produces deliverables yet, so an empty list says so). */
+  not_built: string[];
 }
 
 export interface DeliverableFilter {
@@ -541,7 +543,7 @@ export function deliverableViewOf(v: unknown): DeliverableView {
 export function deliverableListOf(v: unknown): DeliverableList {
   const o = obj(v);
   const deliverables = objs(o.deliverables).map(deliverableOf).filter((d) => d.id);
-  return { deliverables, count: num(o.count, deliverables.length), states: counts(o.states) };
+  return { deliverables, count: num(o.count, deliverables.length), states: counts(o.states), not_built: strs(o.not_built) };
 }
 
 export function registerListOf(v: unknown): RegisterList {

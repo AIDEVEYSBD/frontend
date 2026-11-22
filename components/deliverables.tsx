@@ -163,7 +163,14 @@ export function ReportGateDeliverables({ gate }: { gate: Pick<Gate, "control" | 
 
 /** The deliverables listed. Presentational. */
 export function DeliverablesListView({ list, selected, onSelect }: { list: DeliverableList; selected?: string | null; onSelect?: (id: string) => void }) {
-  if (!list.deliverables.length) return <p className="text-[12px] text-faint">No deliverable is recorded. Runs on this deployment do not record deliverables yet.</p>;
+  if (!list.deliverables.length)
+    return list.not_built.includes("producer") ? (
+      <p className="text-[12px] text-dim" data-not-built="producer">
+        Nothing produces deliverables yet: the platform names their producer as not built, so this list is empty because no run can write one.
+      </p>
+    ) : (
+      <p className="text-[12px] text-faint">No deliverable matches.</p>
+    );
   return (
     <ul className="flex flex-col overflow-hidden rounded-md border border-line">
       {list.deliverables.map((d) => (
@@ -408,7 +415,7 @@ function DeliverablesPage() {
         </Banner>
       )}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
-        <Section title="Deliverables" meta={list && !listOff ? `${list.count} · ${statesLine(list.states)}` : undefined}>
+        <Section title="Deliverables" meta={list && !listOff ? (list.count === 0 && list.not_built.includes("producer") ? "not built: nothing produces one" : `${list.count} · ${statesLine(list.states)}`) : undefined}>
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex flex-col gap-1">
               <span className="text-[11px] text-faint">State</span>

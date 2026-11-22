@@ -1,4 +1,5 @@
 "use client";
+import { useDoorOff } from "@/lib/use-doors";
 import { Failure } from "./pending";
 import { notBuiltDoorOf } from "@/lib/api/client";
 
@@ -430,6 +431,7 @@ export function usePeers() {
  */
 export function PeerList({ peers, twoPerson, me, error, refresh, bare = false }: { peers: Peer[] | null; twoPerson: boolean; me: Me | null; error: string; refresh: () => void; /** The console has nothing behind it (null: not known yet). */ bare?: boolean | null }) {
   const [adding, setAdding] = useState(false);
+  const addDoor = useDoorOff("POST", "/api/peers");
   const [added, setAdded] = useState<Peer | null>(null);
   const counts = peerCounts(peers ?? []);
   const shown = orderPeers(peers ?? []);
@@ -450,18 +452,21 @@ export function PeerList({ peers, twoPerson, me, error, refresh, bare = false }:
           </span>
         ) : (
           <>
+            {/* With the registry unread (an error and nothing listed), no count is shown: a zero would be a claim. */}
+            {!(none && error) && (
             <span className="flex flex-wrap items-center gap-3">
               <Status tone="ok">{counts.approved} approved</Status>
               <Status tone="warn">{counts.pending} pending</Status>
               <Status tone={counts.changed ? "err" : "neutral"}>{counts.changed} changed</Status>
               {counts.no_card > 0 && <Status tone="warn">{counts.no_card} without a card</Status>}
             </span>
+            )}
             <span className="min-w-0 max-w-[70ch] text-[11px] leading-[1.5] text-faint">{approvalRule}</span>
           </>
         )}
         <span className="grow" />
         {!adding && (
-          <Button size="sm" variant="solid" tone="ink" permission="configure" onClick={() => setAdding(true)}>
+          <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={addDoor.off} title={addDoor.why} onClick={() => setAdding(true)}>
             Register a peer
           </Button>
         )}

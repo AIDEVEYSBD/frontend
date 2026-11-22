@@ -1,5 +1,6 @@
 "use client";
 import { notBuiltDoorOf } from "@/lib/api/client";
+import { NotConnectedNote } from "./pending";
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -31,6 +32,7 @@ import {
   type CanaryForm,
 } from "@/lib/canary";
 import { itemLine, shortDigest, whenText } from "@/lib/lifecycle";
+import { useDoorBuilt } from "@/lib/use-doors";
 
 /**
  * Canary and shadow beside production (phase L8, second round), on the
@@ -260,6 +262,8 @@ export function CanaryPanel({ agent, versions, production, retired, onChanged }:
   const [canary, setCanary] = useState<CanaryView | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [readError, setReadError] = useState("");
+  // Starting one is offered only while its address is built (GET /api/doors); unknown leaves the form, and a press hears the answer.
+  const startBuilt = useDoorBuilt("PUT", "/api/agents/{agent}/canary");
   const choices = candidateChoices(versions, production);
   const [form, setForm] = useState<CanaryForm>(() => ({ ...EMPTY_CANARY, version: choices[0] ? Number(choices[0].value) : null }));
   const [tried, setTried] = useState(false);
@@ -370,7 +374,8 @@ export function CanaryPanel({ agent, versions, production, retired, onChanged }:
       {refusal && <CanaryRefusalView refusal={refusal} />}
 
       {/* While the canary is not built (its read answers 501), no form offers to start one. */}
-      {!retired && !notBuiltDoorOf(readError) && (
+      {!retired && !notBuiltDoorOf(readError) && startBuilt === false && <NotConnectedNote door={{ method: "PUT", path: "/api/agents/{agent}/canary" }} />}
+      {!retired && !notBuiltDoorOf(readError) && startBuilt !== false && (
         <div className="flex flex-col gap-2.5 rounded-md border border-line bg-canvas/60 p-3">
           <span className="text-[12.5px] font-semibold text-fg">{canary?.active ? "Replace it with another" : "Run a version beside production"}</span>
           <span className="text-[11.5px] leading-[1.5] text-dim">

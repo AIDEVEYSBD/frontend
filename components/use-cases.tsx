@@ -6,6 +6,7 @@ import { Button, Status, Tag } from "./ui";
 import { Dialog } from "./overlays";
 import { Section } from "./section";
 import { NotConnected, NotConnectedNote, useDoor, Failure } from "./pending";
+import { notBuilt, notBuiltOf } from "@/lib/not-built";
 import { RegisterDialog, tierLabel } from "./use-cases-dialog";
 import { DATA_CLASS_TONE } from "@/lib/bom";
 import { otherOffers, workloadHref } from "@/lib/workloads";
@@ -122,6 +123,11 @@ export function UseCases({ workloads, calm }: { /** The workloads door's answer,
       {answer?.state === "pending" && (calm ? <p className="text-[12px] text-faint">{WHAT}</p> : <NotConnected door={answer.door} compact>{WHAT}</NotConnected>)}
       {answer?.state === "error" &&
         <Failure what="The registered use cases could not be read" message={answer.message} />}
+      {connected && notBuilt(notBuiltOf(answer?.state === "ok" ? answer.data : null), "enforcement") && (
+        <p className="text-[12px] leading-[1.55] text-dim" data-not-built="enforcement">
+          A record only: holding runs to a registered use case (its data classes, autonomy level and gates) is not built, so nothing here is enforced on a run.
+        </p>
+      )}
       {connected && rows.length === 0 && <p className="text-[12px] text-faint">No use case is registered. Register one to record its owner, the data it handles, its autonomy level and the gates where a person decides.</p>}
 
       {rows.length > 0 && (

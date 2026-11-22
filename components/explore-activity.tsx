@@ -7,6 +7,8 @@ import { Button, Mono, RUN_STATE, Status } from "./ui";
 import { EmptyState } from "./overlays";
 import { ControlMark } from "./control-ref";
 import { Skeleton } from "./loaders";
+import { NotBuiltValue } from "./pending";
+import { notBuilt } from "@/lib/not-built";
 import { listAgents, type AgentSummary } from "@/lib/api/l2";
 import { agentHref } from "@/lib/agent-link";
 import { soon } from "@/lib/soon";
@@ -83,6 +85,8 @@ const runFailed = (r: RunRow) => r.state === "failed";
 
 export function AgentActivityView({ ledger, win, now, address }: ViewProps) {
   const { rows, error } = ledger;
+  /** The run rows' tool counts are named as not built: the column says so instead of a measured zero. */
+  const toolsUnbuilt = notBuilt(ledger.notBuilt, "toolCalls");
   const { limit, more } = useReadLimit(win);
   const [registry, setRegistry] = useState<AgentSummary[] | null>(null);
   const [registryError, setRegistryError] = useState("");
@@ -228,7 +232,7 @@ export function AgentActivityView({ ledger, win, now, address }: ViewProps) {
                     )}
                   </td>
                   <td className="tnum px-3 py-2 text-right align-top text-dim">{rows ? count(a.modelCalls) : unknown}</td>
-                  <td className="tnum px-3 py-2 text-right align-top text-dim">{rows ? count(a.toolCalls) : unknown}</td>
+                  <td className="tnum px-3 py-2 text-right align-top text-dim">{!rows ? unknown : toolsUnbuilt ? <NotBuiltValue field="runs[].toolCalls" /> : count(a.toolCalls)}</td>
                   <td className="tnum px-3 py-2 text-right align-top" style={a.failed ? { color: "var(--color-err)" } : undefined}>
                     {rows ? count(a.failed) : unknown}
                   </td>

@@ -1,4 +1,5 @@
 "use client";
+import { useDoorOff } from "@/lib/use-doors";
 import { Failure } from "./pending";
 import { notBuiltDoorOf } from "@/lib/api/client";
 
@@ -553,6 +554,7 @@ export function ToolServers({
   const { session } = useSession();
   const me = meOf(session);
   const [adding, setAdding] = useState(false);
+  const addDoor = useDoorOff("POST", "/api/mcp");
   const [added, setAdded] = useState<McpServer | null>(null);
   // Alarms first, then what waits for a person, then what is in service.
   const order: McpServer["status"][] = ["changed", "refused", "pending", "approved"];
@@ -585,7 +587,7 @@ export function ToolServers({
             : "One approval admits a server; two-person approval is off on this deployment."}
         </span>}
         <span className="grow" />
-        <Button size="sm" variant="solid" tone="ink" permission="configure" onClick={() => setAdding(true)}>
+        <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={addDoor.off} title={addDoor.why} onClick={() => setAdding(true)}>
           Add a server
         </Button>
       </div>

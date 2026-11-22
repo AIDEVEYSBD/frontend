@@ -1,4 +1,5 @@
 "use client";
+import { useDoorOff } from "@/lib/use-doors";
 import { Failure } from "./pending";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -83,6 +84,7 @@ export function Applications() {
   const [cls, setCls] = useState<ApplicationClass | "">("");
   const [q, setQ] = useState("");
   const [connecting, setConnecting] = useState(false);
+  const connectDoor = useDoorOff("POST", "/api/applications");
   const [minted, setMinted] = useState<Minted | null>(null);
   const [busy, setBusy] = useState("");
 
@@ -154,7 +156,7 @@ export function Applications() {
   return (
     <div className="min-h-full" data-hue="blue">
       <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7">
-        <GroupHeader group="agents" tab="applications" actions={<Button size="sm" variant="solid" tone="ink" permission="configure" onClick={() => setConnecting(true)}>Connect an application</Button>}>
+        <GroupHeader group="agents" tab="applications" actions={<Button size="sm" variant="solid" tone="ink" permission="configure" disabled={connectDoor.off} title={connectDoor.why} onClick={() => setConnecting(true)}>Connect an application</Button>}>
           Every AI application this control plane governs, across the four classes. A chatbot or RAG app connects by pointing its OpenAI SDK at the gateway with the key minted here; the gateway screens every prompt and response, records every completion and enforces the policy on the row. Agents and multi-agent systems are listed from the Agents tab and the attached agents.
         </GroupHeader>
 

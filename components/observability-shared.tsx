@@ -4,7 +4,7 @@ import { Failure } from "./pending";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { api, errorText, type RunRow } from "@/lib/api/client";
-import { listRuns } from "@/lib/api/l2";
+import { notBuiltOf } from "@/lib/not-built";
 import { operatorOf } from "@/lib/api/l5";
 import { redactText } from "@/lib/redact";
 import { soon } from "@/lib/soon";
@@ -83,19 +83,26 @@ export const windowWords = (w: Win): string => (w === "all" ? "all time" : w ===
 
 /* ═══════════════════ the ledger ═══════════════════ */
 
-/** `GET /api/runs`, newest first. `error` is the door's own words. */
-export function useLedger(): { rows: RunRow[] | null; error: string; reload: () => void; loading: boolean } {
+/** `GET /api/runs`, newest first. `error` is the door's own words; `notBuilt` the row fields the answer names as not built (`runs[].toolCalls`, ...). */
+export function useLedger(): { rows: RunRow[] | null; error: string; reload: () => void; loading: boolean; notBuilt: string[] } {
   const [rows, setRows] = useState<RunRow[] | null>(null);
+  const [notBuilt, setNotBuilt] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
   useEffect(() => {
     let live = true;
     const cancel = soon(() => {
-      listRuns()
-        .then((r) => {
+      api
+        .GET("/api/runs")
+        .then(({ data, error: refused, response }) => {
+          if (!data) throw new Error(errorText(refused, response, "GET"));
+          return data;
+        })
+        .then((d) => {
           if (!live) return;
-          setRows([...r].sort((a, b) => lastActive(b) - lastActive(a)));
+          setRows([...d.runs].sort((a, b) => lastActive(b) - lastActive(a)));
+          setNotBuilt(notBuiltOf(d));
           setError("");
         })
         .catch((e) => {
@@ -117,7 +124,7 @@ export function useLedger(): { rows: RunRow[] | null; error: string; reload: () 
     setLoading(true);
     setTick((t) => t + 1);
   }, []);
-  return { rows, error, reload, loading };
+  return { rows, error, reload, loading, notBuilt };
 }
 
 /* ═══════════════════ a journal, folded ═══════════════════ */

@@ -1,7 +1,8 @@
 "use client";
 import { ask, type Answer } from "@/lib/api/pending";
 import { errorText } from "@/lib/api/client";
-import { Failure, AnswerFailure } from "./pending";
+import { Failure, AnswerFailure, NotBuiltValue } from "./pending";
+import { notBuilt, notBuiltOf } from "@/lib/not-built";
 
 import { VertexDetected, useVertex } from "./vertex-detected";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -91,9 +92,13 @@ interface Data {
     workflows: number;
     deployed: number;
     egress: string[];
-    billing: boolean;
+    /** Null when there is no billing feed (`billing` is then in `not_built`). */
+    billing: boolean | null;
+    /** Where this service is set to send requests: a description, not an allowlist that refuses other hosts. */
+    outbound?: string[];
   };
-  models: { id: string; label: string; class?: string; price_in?: number; price_out?: number }[];
+  /** A price is null when none is set: "not priced", never $0. */
+  models: { id: string; label: string; class?: string; price_in?: number | null; price_out?: number | null }[];
   defaultModel: string;
   classDefaults: Record<string, string>;
   sources: Source[];
@@ -113,6 +118,8 @@ interface Data {
   vaultKeys: string[];
   apiKeys: { name: string; agent: string | null; prefix: string; last_used: string | null; revoked_at: string | null }[];
   queue: Record<string, number>;
+  /** The fields whose feature is not built (`tools`, `sources`, `vaultKeys`, `egress`, `billing`): their lists are empty because nothing could fill them. */
+  not_built?: string[];
   basis: string;
   /** False only when the console has nothing behind it: no database, no backend, no runtime files (app/api/configuration/route.ts). */
   connected?: boolean;
@@ -405,6 +412,8 @@ function ConfigurationTabs() {
   const used = sources.filter((s) => s.calls > 0).length;
   /** The panels that read the page's record show its failure themselves; none is drawn in an empty form. */
   const quiet = false;
+  /** The fields the platform names as not built on this read: an empty list among them reads "not built", never "none". */
+  const unbuilt = notBuiltOf(data);
   /** For the panels that read their own doors: false once the record has answered or failed, null until then. */
   const bare = data || failed ? false : null;
   const peerCount = peerCounts(peers.peers ?? []);
@@ -608,8 +617,8 @@ function ConfigurationTabs() {
               id="tools"
               {...fold("tools")}
               title={TITLES.tools}
-              caption="Every tool granted to a workflow, with the risk it was registered at. Risk is declared on the tool and read as a lookup at call time, never inferred while a run is in flight."
-              meta={data ? <span className="tnum text-[10.5px] font-normal text-faint">{data.tools.length} granted</span> : undefined}
+              caption={notBuilt(unbuilt, "tools") ? "Tool steps are not built on this deployment: no run calls a tool, so none is granted or counted here." : "Every tool granted to a workflow, with the risk it was registered at."}
+              meta={data ? notBuilt(unbuilt, "tools") ? <NotBuiltValue field="tools" /> : <span className="tnum text-[10.5px] font-normal text-faint">{data.tools.length} granted</span> : undefined}
             >
               {quiet ? <EmptyTable cols={["Tool", "Workflow", "Risk", "Properties", "Calls", "Last used"]}>Each tool granted to a workflow is listed here with its risk and its calls.</EmptyTable> : <>
               {workflowPick && (
@@ -656,7 +665,7 @@ function ConfigurationTabs() {
                     {data && tools.length === 0 && (
                       <tr>
                         <td colSpan={6} className="px-4 py-3 text-faint">
-                          No workflow on this deployment holds a tool yet.
+                          {notBuilt(unbuilt, "tools") ? "Not built: the platform names tools as not built, so this list is empty because nothing can fill it." : "No workflow on this deployment holds a tool yet."}
                         </td>
                       </tr>
                     )}
@@ -718,7 +727,9 @@ function ConfigurationTabs() {
               {...fold("sources")}
               title={TITLES.sources}
               caption={
-                data
+                data && notBuilt(unbuilt, "sources")
+                  ? `Not built on this deployment · ${data.deployment.runs} runs on record.`
+                  : data
                   ? `${rows.length === 1 ? "1 connection" : `${rows.length} connections`} configured in the workflows saved on this deployment, ${used} called at least once · ${data.deployment.runs} runs on record.`
                   : failed
                     ? "not read"
@@ -746,7 +757,9 @@ function ConfigurationTabs() {
               {failed && <p className="px-4 py-3 text-[11.5px] text-faint">Not read: the configuration record failed (above).</p>}
               {data && rows.length === 0 && (
                 <p className="px-4 py-6 text-[12px] leading-[1.55] text-dim">
-                  No workflow on this deployment configures a connection yet. A connection appears here once a saved workflow names one.
+                  {notBuilt(unbuilt, "sources")
+                    ? "Not built: the platform names connected sources as not built, so this list is empty because nothing can fill it."
+                    : "No workflow on this deployment configures a connection yet. A connection appears here once a saved workflow names one."}
                 </p>
               )}
 
@@ -861,9 +874,9 @@ function ConfigurationTabs() {
               id="egress"
               {...fold("egress")}
               title={TITLES.egress}
-              caption="The hosts an outbound request from a run may reach. A request to any other host is refused, and the refusal is recorded."
-              how="An outbound request is a web fetch, a webhook output, a notify transport that calls a URL, an A2A peer, or a tool server spoken to over HTTP. A listed host also covers its subdomains. A refusal is recorded against the egress control, naming the host."
-              meta={data ? <span className="tnum text-[10.5px] font-normal text-faint">{data.deployment.egress.length === 1 ? "1 host" : `${data.deployment.egress.length} hosts`}</span> : undefined}
+              caption={data && notBuilt(unbuilt, "egress") ? "An egress allowlist is not built on this deployment: nothing refuses an outbound request by its host. Below is where this service is set to send requests, as the platform describes it." : "The hosts an outbound request from a run may reach."}
+              how="An outbound request is a model call, a knowledge fetch, a sign-in key read, or a call to an authorization server. The platform lists where it is set to send them; it is a description, not a list that refuses other hosts."
+              meta={data ? notBuilt(unbuilt, "egress") ? <NotBuiltValue field="egress" /> : <span className="tnum text-[10.5px] font-normal text-faint">{data.deployment.egress.length === 1 ? "1 host" : `${data.deployment.egress.length} hosts`}</span> : undefined}
             >
               <div className="flex flex-col gap-2 px-4 py-3">
                 {!data && !failed && <span className="text-[11.5px] text-faint">Reading the deployment&hellip;</span>}
@@ -877,15 +890,24 @@ function ConfigurationTabs() {
                     ))}
                   </div>
                 )}
-                {data && data.deployment.egress.length === 0 && (
+                {data && data.deployment.egress.length === 0 && !notBuilt(unbuilt, "egress") && (
                   <span className="text-[12px] text-dim">No host is listed for this deployment.</span>
                 )}
-                {data && (
-                  <span className="max-w-[92ch] text-[11px] leading-[1.55] text-faint">
-                    Beside this list, a request reaches only the host registered for its own path: an approved tool server&rsquo;s URL, a configured peer&rsquo;s, a configured notify
-                    transport&rsquo;s. {data.deployment.egress.length === 0 ? "With no host listed, a web fetch or a webhook output reaches nothing. " : ""}The list is the deployment&rsquo;s own setting
-                    and is not edited here.
-                  </span>
+                {data && notBuilt(unbuilt, "egress") && (
+                  <>
+                    <span className="text-[12px] text-dim">
+                      Allowlist: <NotBuiltValue field="egress" />
+                    </span>
+                    {(data.deployment.outbound ?? []).length > 0 && (
+                      <ul className="flex flex-col gap-1">
+                        {(data.deployment.outbound ?? []).map((line) => (
+                          <li key={line} className="font-mono text-[11px] text-fg">
+                            {line}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
                 )}
               </div>
             </Panel>
@@ -1006,7 +1028,7 @@ function ConfigurationTabs() {
                   { k: "Registry", v: !data ? "—" : data.deployment.registry === "postgres" ? "Postgres" : "Workspace files" },
                   { k: "Model gateway", v: !data ? "—" : data.deployment.gateway === "not configured" ? "Not configured" : data.deployment.gateway },
                   { k: "Gateway resource", v: !data ? "—" : data.deployment.endpoint?.replace(/^https:\/\//, "") || "None set", mono: Boolean(data?.deployment.endpoint) },
-                  { k: "Billing feed", v: !data ? "—" : data.deployment.billing ? "Connected" : "Not connected" },
+                  { k: "Billing feed", v: !data ? "—" : notBuilt(unbuilt, "billing") ? "Not built" : data.deployment.billing ? "Connected" : "Not connected" },
                   { k: "Workflows", v: !data ? "—" : `${data.deployment.workflows} saved · ${data.deployment.deployed} deployed` },
                   { k: "Runs on record", v: !data ? "—" : `${data.deployment.runs} · the basis for usage figures` },
                 ].map((f) => (

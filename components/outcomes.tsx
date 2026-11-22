@@ -7,6 +7,7 @@ import { Banner } from "./overlays";
 import { GroupHeader } from "./page-tabs";
 import { WindowPick, type Win } from "./window-pick";
 import { NotConnected, useDoor } from "./pending";
+import { notBuilt, notBuiltOf } from "@/lib/not-built";
 import { FINDING_STATUSES, FindingStatusMark, RunLink, SEVERITIES, SeverityBar, count, runStateMeta, shortWhen } from "./finding-marks";
 import { hueFor } from "@/lib/hue";
 import { WORKLOADS, type Answer, type FindingsSummary, type WorkloadList } from "@/lib/api/pending";
@@ -57,7 +58,7 @@ function Cell({ figure, label, href }: { figure: string; label: React.ReactNode;
   );
 }
 
-function WorkloadCard({ id, name, line, entry, state, win }: { id: string; name: string; line: string; entry: Entry | undefined; state: "reading" | "ok" | "pending" | "error"; win: Win }) {
+function WorkloadCard({ id, name, line, entry, state, win, unproduced = false }: { id: string; name: string; line: string; entry: Entry | undefined; state: "reading" | "ok" | "pending" | "error"; win: Win; /** The platform names the producer of findings as not built. */ unproduced?: boolean }) {
   const findingsHref = `/findings?workload=${encodeURIComponent(id)}`;
   const bySeverity = entry?.by_severity ?? {};
   const byStatus = entry?.by_status ?? {};
@@ -83,7 +84,8 @@ function WorkloadCard({ id, name, line, entry, state, win }: { id: string; name:
         {state === "reading" && <p className="text-[12px] text-faint">Reading the summary…</p>}
         {state === "pending" && <p className="text-[12px] text-faint">No figures: the platform does not build the summary yet.</p>}
         {state === "error" && <p className="text-[12px] text-faint">No figures: the summary could not be read.</p>}
-        {state === "ok" && nothing && <p className="text-[12px] text-faint">No findings recorded{win === "all" ? "" : " in this window"}.</p>}
+        {state === "ok" && nothing && unproduced && <p className="text-[12px] text-dim">Nothing produces findings yet: the platform names their producer as not built.</p>}
+        {state === "ok" && nothing && !unproduced && <p className="text-[12px] text-faint">No findings recorded{win === "all" ? "" : " in this window"}.</p>}
         {state === "ok" && !nothing && (
           <>
             <div className="grid grid-cols-[repeat(2,minmax(0,150px))_minmax(0,1fr)] gap-px overflow-hidden rounded-md border border-line bg-line">
@@ -145,6 +147,7 @@ export function OutcomesBody({ win, figures, compact = false }: { win: Win; figu
   const offeredIds = offered?.state === "ok" && Array.isArray(offered.data?.workloads) ? new Set(offered.data.workloads.map((w) => String(w.id))) : null;
   const entries: Entry[] = answer?.state === "ok" && Array.isArray(answer.data?.workloads) ? answer.data.workloads : [];
   const state = answer === null ? "reading" : answer.state;
+  const unproduced = answer?.state === "ok" && notBuilt(notBuiltOf(answer.data), "producer");
   const known = new Set<string>(WORKLOADS.map((w) => w.id));
   const others = entries.filter((e) => e && typeof e.workload === "string" && !known.has(e.workload));
 
@@ -162,7 +165,7 @@ export function OutcomesBody({ win, figures, compact = false }: { win: Win; figu
       <p className="text-[11.5px] leading-[1.55] text-faint">
         {offeredIds === null
           ? offered?.state === "pending"
-            ? "The four security workloads this console is built for. Which of them this deployment offers is not built yet (GET /api/workloads answers 501)."
+            ? "The four security workloads this console is built for. Which of them this deployment offers is not built yet: the platform answers 501 to GET /api/workloads."
             : offered?.state === "error"
               ? `The four security workloads this console is built for. Which of them this deployment offers could not be read: ${offered.message}`
               : "The four security workloads this console is built for."
@@ -173,10 +176,10 @@ export function OutcomesBody({ win, figures, compact = false }: { win: Win; figu
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {WORKLOADS.map((w) => (
-          <WorkloadCard key={w.id} id={w.id} name={w.name} line={w.line} entry={entries.find((e) => e?.workload === w.id)} state={state} win={win} />
+          <WorkloadCard key={w.id} id={w.id} name={w.name} line={w.line} entry={entries.find((e) => e?.workload === w.id)} state={state} win={win} unproduced={unproduced} />
         ))}
         {others.map((e) => (
-          <WorkloadCard key={e.workload} id={e.workload} name={e.workload} line="" entry={e} state={state} win={win} />
+          <WorkloadCard key={e.workload} id={e.workload} name={e.workload} line="" entry={e} state={state} win={win} unproduced={unproduced} />
         ))}
       </div>
     </>

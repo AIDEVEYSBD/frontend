@@ -83,6 +83,20 @@ export function NotConnectedNote({ door }: { door: DoorId | Door | NamedDoor }) 
 }
 
 /**
+ * A value the platform names in its answer's `not_built` list (lib/not-built.ts):
+ * the field is there with an empty value because its feature is not built, so
+ * it reads "not built", never "none" or a zero. `field` is the answer's own
+ * name for it, shown on hover.
+ */
+export function NotBuiltValue({ field, className = "" }: { field: string; className?: string }) {
+  return (
+    <span className={`text-[11.5px] text-faint ${className}`} title={`The platform names ${field} as not built: its value is empty because nothing produces it yet.`} data-not-built={field}>
+      not built
+    </span>
+  );
+}
+
+/**
  * A read or a write that failed, as a person should see it. A "not built"
  * answer (a message from lib/api/client.ts notBuiltText) is drawn as the
  * not-built panel or note, naming the method, the address and the 501;

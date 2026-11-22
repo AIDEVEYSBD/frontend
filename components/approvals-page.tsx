@@ -14,7 +14,7 @@ import { BudgetHolds, holdsOf } from "./budget-holds";
 import { useDoor, Failure } from "./pending";
 import { Deadline, ShapeTag, useNow } from "./gate-form";
 import { listGates, type Gate } from "@/lib/api/l5";
-import { getEvidence, type SignedDecision } from "@/lib/api/l9";
+import { signedDecisionOf, type SignedDecision } from "@/lib/api/l9";
 import { batchable, countdown, escalationPath, gateAccess, gateDeadlineLine, type Who } from "@/lib/gates";
 import { useSession } from "@/lib/use-session";
 import { soon } from "@/lib/soon";
@@ -30,9 +30,9 @@ import type { BudgetHoldList } from "@/lib/api/pending";
  * (components/approve.tsx); a person whose roles do not match a gate's
  * approvers sees which role it needs, on the row and in the dialog.
  *
- * Answered gates are the signed decisions the evidence door returns for the
- * gate control (`GET /api/evidence?control=gate`): who answered, how, when,
- * and the note they left.
+ * Answered gates are the decisions kept on the runs, as the inbox answer
+ * gives them (`closed` in `GET /api/approvals`, the 100 most recent): who
+ * answered, how, when, and the note they left.
  *
  * Beside the gates, the runs paused at their budget (components/budget-holds.tsx):
  * a second queue for a person, decided with the same permission. Its door is
@@ -100,10 +100,13 @@ export function ApprovalsView() {
   const { session, loaded } = useSession();
   const who: Who | null = useMemo(() => (loaded && session ? { roles: session.roles, appRoles: session.appRoles, groups: session.groups ?? [] } : null), [loaded, session]);
 
+  /** The answered gates as the inbox answer gives them (`closed`), newest first; null until read. */
+  const [closed, setClosed] = useState<SignedDecision[] | null>(null);
   const load = useCallback(() => {
     listGates()
       .then((d) => {
         setGates(d.pending);
+        setClosed(d.closed.map(signedDecisionOf));
         setError("");
       })
       .catch((e: Error) => setError(e.message));
@@ -127,26 +130,15 @@ export function ApprovalsView() {
   }, [holdsOk, reloadHolds]);
   const holdsWaiting = holdsOf(holds).filter((h) => h.state === "waiting").length;
 
-  /* ── answered: the signed decisions of the gate control, over a window ── */
+  /* ── answered: the decisions kept on the runs (`closed` in GET /api/approvals, the 100 most recent), over a window ── */
   const [win, setWin] = useState<Win>("30d");
-  const [tick, setTick] = useState(0);
-  const [answered, setAnswered] = useState<{ key: string; decisions: SignedDecision[]; truncated: boolean; error: string } | null>(null);
-  const answeredKey = `${win}:${tick}`;
-  useEffect(() => {
-    let live = true;
-    const from = win === "all" ? "2000-01-01T00:00:00.000Z" : new Date(Date.now() - winMs(win)).toISOString();
-    getEvidence({ control: "gate", from })
-      .then((p) => {
-        if (!live) return;
-        const decisions = [...p.decisions].sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
-        setAnswered({ key: answeredKey, decisions, truncated: p.truncated, error: "" });
-      })
-      .catch((e: Error) => live && setAnswered({ key: answeredKey, decisions: [], truncated: false, error: e.message }));
-    return () => {
-      live = false;
-    };
-  }, [win, answeredKey]);
-  const answeredNow = answered && answered.key === answeredKey ? answered : null;
+  const [, setTick] = useState(0);
+  const answeredNow = useMemo(() => {
+    if (closed === null) return error ? { decisions: [] as SignedDecision[], truncated: false, error } : null;
+    const from = win === "all" ? 0 : now - winMs(win);
+    const decisions = closed.filter((d) => (Date.parse(d.at) || 0) >= from).sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
+    return { decisions, truncated: closed.length >= 100, error: "" };
+  }, [closed, win, now, error]);
 
   /* ── the queue under its filters ── */
   const all = useMemo(() => [...(gates ?? [])].sort(byUrgency(now)), [gates, now]);

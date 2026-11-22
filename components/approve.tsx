@@ -10,6 +10,8 @@ import { answerGate, DoorError, listGates, mintLink, type Answer, type AnswerRes
 import { SAMPLE_SIZE, batchCount, batchable, declaresNote, emptyForm, gateAccess, nextSample, refusalErrors, sampleGates, validateForm, validateVerdicts, type Access, type FormState } from "@/lib/gates";
 import { Deadline, EvidencePanel, GateFields, GateMeta, ShapeTag, SignerLine, VerdictTable, useNow } from "./gate-form";
 import { ReportGateDeliverables } from "./deliverables";
+import { NotConnectedNote } from "./pending";
+import { useDoorBuilt } from "@/lib/use-doors";
 
 /**
  * Answering a gate, from the console.
@@ -131,6 +133,8 @@ export function ApproveDialog({
 
   // The external link: an email, then the URL to copy.
   const [linking, setLinking] = useState(false);
+  // Links for an outside approver are offered only while the platform has built their address (GET /api/doors); unknown leaves the offer, and a press then hears the answer.
+  const linksBuilt = useDoorBuilt("POST", "/api/approvals/{run_id}/links");
   const [email, setEmail] = useState("");
   const [minted, setMinted] = useState<MintedLink | null>(null);
   const [minting, setMinting] = useState(false);
@@ -351,7 +355,13 @@ export function ApproveDialog({
             <GateAnswer gate={gate} draft={draft} onChange={setDraft} disabled={Boolean(busy) || done} />
           </div>
 
-          {gate.external.allowed && !batch && (
+          {gate.external.allowed && !batch && linksBuilt === false && (
+            <div className="flex flex-col gap-1 border-t border-line px-4 py-3">
+              <span className="text-[11.5px] text-faint">This gate allows an answer from someone outside the firm, and links for an outside approver are not built.</span>
+              <NotConnectedNote door={{ method: "POST", path: "/api/approvals/{run_id}/links" }} />
+            </div>
+          )}
+          {gate.external.allowed && !batch && linksBuilt !== false && (
             <div className="flex flex-col gap-2 border-t border-line px-4 py-3">
               {!linking ? (
                 <span className="flex flex-wrap items-center gap-2">

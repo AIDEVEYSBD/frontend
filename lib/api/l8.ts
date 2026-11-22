@@ -2,6 +2,7 @@ import { errorText } from "./client";
 import { DoorError } from "./l5";
 import { rateLimitOf, type RateLimit } from "./l7";
 import type { Matrix, Metrics } from "../metrics";
+import { unsupportedOf, type UnsupportedPart } from "../unsupported";
 
 /**
  * The L8 doors of the first round (backend/CONTRACT.md, "L8: lifecycle and
@@ -548,6 +549,8 @@ export interface Deployed {
   decision: string;
   conditions: Condition[];
   override: OverrideRecord | null;
+  /** The parts of the answer the platform names as not built (`conditions`, `steps`, `environment`, `deployment`, `override`): their values are empty because nothing checks or records them. */
+  not_built: string[];
 }
 
 export function conditionOf(v: unknown): Condition {
@@ -614,6 +617,7 @@ export function deployedOf(v: unknown): Deployed {
     decision: str(o.decision),
     conditions: objs(o.conditions).map(conditionOf),
     override: overrideRecordOf(o.override),
+    not_built: Array.isArray(o.not_built) ? o.not_built.filter((x): x is string => typeof x === "string") : [],
   };
 }
 
@@ -935,6 +939,8 @@ export interface AgentLifecycleDetail {
   retired: Retired | null;
   /** An agent cut from a certified template (L8, second round): the template and the digest it was cut from; null for one made by hand. */
   lineage: { template: string; template_digest: string } | null;
+  /** Parts of the latest version's definition the platform does not carry out yet: deploying or running it is refused (409). */
+  unsupported: UnsupportedPart[];
 }
 
 export function agentDetailOf(v: unknown): AgentLifecycleDetail {
@@ -954,6 +960,7 @@ export function agentDetailOf(v: unknown): AgentLifecycleDetail {
     store: str(o.store),
     retired: retiredOf(o.retired),
     lineage: isObj(o.lineage) && str(obj(o.lineage).template) ? { template: str(obj(o.lineage).template), template_digest: str(obj(o.lineage).template_digest) } : null,
+    unsupported: unsupportedOf(o),
   };
 }
 

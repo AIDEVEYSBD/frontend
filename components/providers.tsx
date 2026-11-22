@@ -1,9 +1,10 @@
 "use client";
 import { Failure } from "./pending";
-import { notBuiltDoorOf } from "@/lib/api/client";
+import { errorText, notBuiltDoorOf } from "@/lib/api/client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Pick } from "./select";
+import { Status } from "./ui";
 import { kindOf, type Provider } from "@/lib/providers";
 import { DATA_CLASSES, type DataClass } from "@/lib/api/pending";
 
@@ -99,15 +100,14 @@ export function Providers({ bare = false, onQuiet }: { bare?: boolean | null; on
       .then(async (r) => {
         // A page (a proxy's 502, Next's own 404) is no answer and no message: the status alone is the reason.
         const d = await r.json().catch(() => null);
-        if (!d) throw new Error(`the server answered ${r.status}`);
+        if (!r.ok || !d || d.error) throw new Error(errorText(d, r, "GET", "/api/config"));
         return d;
       })
       .then((d) => {
-        if (d.error) return setError(String(d.error));
         setError("");
         setConfig({ models: Array.isArray(d.models) ? d.models : [], providers: Array.isArray(d.providers) ? d.providers : [] });
       })
-      .catch((e) => setError(String(e)));
+      .catch((e) => setError((e as Error).message || String(e)));
   }, []);
   useEffect(refresh, [refresh]);
   // The Models panel changes which models are offered; the counts here follow it.
@@ -143,12 +143,21 @@ export function Providers({ bare = false, onQuiet }: { bare?: boolean | null; on
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[12.5px] font-medium text-fg">{p.label}</span>
               <span className="text-[10.5px] text-faint">{kindOf(p.kind).label}</span>
+              {p.connected === true && <Status tone="ok">Connected</Status>}
+              {p.connected === false && <Status tone="err">Not connected</Status>}
               <span className="grow" />
               <span className="tnum text-[11px] text-dim">{models.length} model{models.length === 1 ? "" : "s"} offered</span>
             </div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10.5px] text-faint">
               <span className="truncate font-mono" title={p.endpoint}>{p.endpoint || "address not stated"}</span>
+              {p.checked_at && <span>checked {new Date(p.checked_at).toLocaleTimeString("en-GB")}</span>}
+              {p.listed_from && <span>models listed from {p.listed_from === "MODEL_NAMES" ? "the MODEL_NAMES setting, not the endpoint's own list" : p.listed_from}</span>}
             </div>
+            {p.connected === false && (
+              <p className="text-[11.5px] leading-[1.5] text-err" role="alert">
+                The platform could not reach this endpoint{p.error ? `: ${p.error}` : ", and gave no reason"}. A model offered on it cannot be called.
+              </p>
+            )}
             {models.length > 0 && (
               <div className="flex flex-wrap gap-1">
                 {models.map((m) => (

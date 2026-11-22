@@ -23,6 +23,14 @@ export interface Provider {
   local?: boolean;
   /** Fully loaded hourly cost of the hardware behind a local endpoint, for the Costs page's calculator. */
   hourly_usd?: number;
+  /** Whether the endpoint answered the platform's last call to it (made within the last minute of the read). Absent on an older platform. */
+  connected?: boolean;
+  /** When that call was made. */
+  checked_at?: string | null;
+  /** Why the endpoint did not answer, when it did not. */
+  error?: string | null;
+  /** Where the endpoint's model list came from: the endpoint's own list, or a setting that names the models (`MODEL_NAMES`). */
+  listed_from?: string | null;
 }
 
 const KIND_LABEL: Record<ProviderKind, string> = {

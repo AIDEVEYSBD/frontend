@@ -1,4 +1,5 @@
 "use client";
+import { useDoorOff } from "@/lib/use-doors";
 import { Failure } from "./pending";
 import { notBuiltDoorOf } from "@/lib/api/client";
 
@@ -399,6 +400,8 @@ function ProposalFields({ target, id, current, inherits, onProposed }: { target:
   const [refused, setRefused] = useState<{ field: string; error: string } | null>(null);
   const [sim, setSim] = useState<SimulationResult | null>(null);
   const [simBusy, setSimBusy] = useState(false);
+  const simDoor = useDoorOff("POST", "/api/policy/simulate");
+  const proposeDoor = useDoorOff("POST", "/api/policy/changes");
   const { patch, problems } = patchOf(fields, draft, current);
   const changed = Object.keys(patch);
   const blocked = !changed.length || Object.keys(problems).length > 0 || !reason.trim() || Boolean(effectiveProblem(effective));
@@ -451,11 +454,11 @@ function ProposalFields({ target, id, current, inherits, onProposed }: { target:
       </div>
       <ProposalNote reason={reason} onReason={setReason} effective={effective} onEffective={setEffective} disabled={!editable} />
       <span className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={blocked} loading={busy} onClick={propose}>
+        <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={blocked || proposeDoor.off} title={proposeDoor.why} loading={busy} onClick={propose}>
           {changed.length ? `Propose ${changed.length} change${changed.length === 1 ? "" : "s"}` : "No changes"}
         </Button>
         {target.kind === "attached" && (
-          <Button size="sm" variant="solid" tone="neutral" disabled={!changed.length} loading={simBusy} onClick={simulate}>
+          <Button size="sm" variant="solid" tone="neutral" disabled={!changed.length || simDoor.off} title={simDoor.why} loading={simBusy} onClick={simulate}>
             Simulate over the last 7 days
           </Button>
         )}
@@ -601,6 +604,7 @@ export function SimulationView({ result }: { result: SimulationResult }) {
 
 /** Rule the recorded calls again under a proposal. It writes nothing, so a viewer may run it. */
 function SimulatePanel({ agents, preset, quiet = false }: { agents: AgentSummary[] | null; preset: string | null; quiet?: boolean }) {
+  const simDoor = useDoorOff("POST", "/api/policy/simulate");
   const [subject, setSubject] = useState<"agent" | "attached">("agent");
   const [attached, setAttached] = useState<{ id: string; name: string; grants: string[]; gate_at: string }[]>([]);
   const [id, setId] = useState(preset ?? "");
@@ -692,10 +696,10 @@ function SimulatePanel({ agents, preset, quiet = false }: { agents: AgentSummary
         <Textarea rows={8} mono value={text} onChange={(v) => setEdited({ key, text: v })} />
       </Field>
       <span className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="solid" tone="ink" disabled={!picked || !text.trim()} loading={busy} onClick={run}>
+        <Button size="sm" variant="solid" tone="ink" disabled={!picked || !text.trim() || simDoor.off} title={simDoor.why} loading={busy} onClick={run}>
           Simulate
         </Button>
-        <span className="text-[11px] text-faint">Nothing is executed. The platform says whether it builds the simulation.</span>
+        <span className="text-[11px] text-faint">{simDoor.off ? simDoor.why : "Nothing is executed. The platform says whether it builds the simulation."}</span>
       </span>
       {error && <Failure inline message={error} />}
       {shown?.result && <SimulationView result={shown.result} />}

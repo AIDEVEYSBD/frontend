@@ -11,6 +11,9 @@ import { Banner } from "./overlays";
 import { Field, Input, Textarea } from "./forms";
 import { Pick } from "./select";
 import { DeployDialog, DeployedReceipt } from "./deploy-gate";
+import { UnsupportedParts } from "./unsupported";
+import { unsupportedHeading, unsupportedReason } from "@/lib/unsupported";
+import { useDoorBuilt, useDoorOff } from "@/lib/use-doors";
 import { CanaryPanel } from "./canary";
 import { LineageView } from "./templates";
 import { AutonomyPanel } from "./autonomy";
@@ -452,6 +455,8 @@ function RollbackForm({ agent, list, onDone }: { agent: string; list: Deployment
 }
 
 function RetireForm({ agent, others, onDone }: { agent: string; others: string[]; onDone: (r: Retirement) => void }) {
+  // Retiring is offered only while its address is built (GET /api/doors); unknown leaves the form, and a press hears the answer.
+  const retireDoor = useDoorOff("POST", "/api/agents/{agent}/retire");
   const [reason, setReason] = useState("");
   const [replacement, setReplacement] = useState("");
   const [busy, setBusy] = useState(false);
@@ -484,6 +489,8 @@ function RetireForm({ agent, others, onDone }: { agent: string; others: string[]
           tone="err"
           permission="deploy"
           loading={busy}
+          disabled={retireDoor.off}
+          title={retireDoor.why}
           onClick={async () => {
             setTried(true);
             if (problem) return;
@@ -590,6 +597,9 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
   const versionOptions = useMemo(() => versionChoices(data?.versions ?? []), [data?.versions]);
   const others = agents.filter((a) => a.id !== agent && !retiredOf(a.retired)).map((a) => a.id);
   const latest = data?.detail?.version ?? null;
+  const unsupported = data?.detail?.unsupported ?? [];
+  // A review is offered only while its address is built (GET /api/doors); unknown leaves the form, and a press hears the answer.
+  const reviewBuilt = useDoorBuilt("POST", "/api/agents/{agent}/reviews");
 
   return (
     <div className="flex flex-col gap-4">
@@ -598,13 +608,15 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
         id={agent}
         agent={data?.detail ? { ...data.detail, retired } : null}
         actions={
-          <Button size="sm" variant="solid" tone="ink" permission="deploy" disabled={Boolean(retired) || latest === null} onClick={() => setDeployAsk(true)}>
+          <Button size="sm" variant="solid" tone="ink" permission="deploy" disabled={Boolean(retired) || latest === null || unsupported.length > 0} title={unsupported.length ? unsupportedReason(unsupported) : undefined} onClick={() => setDeployAsk(true)}>
             Deploy version {latest ?? "?"}…
           </Button>
         }
       >
         This agent from design to retirement: each stage lit only by its own record, with its reviews, deployments, rollback and retirement. No promotion gate runs before a deploy on this deployment.
       </AgentHeader>
+
+      {unsupported.length > 0 && <UnsupportedParts parts={unsupported} heading={unsupportedHeading(data?.detail?.version, data?.detail?.deployed_version)} />}
 
       {/* What the header's buttons were: the pages that hold this agent's other records. */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -631,6 +643,7 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
           agent={agent}
           version={latest}
           label={`version ${latest} of ${agent}`}
+          unsupported={unsupported}
           onClose={() => setDeployAsk(false)}
           onDeployed={(d) => {
             setDeployed(d);
@@ -691,7 +704,7 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
       <Section id="reviews" title="Policy reviews" meta={data?.reviews ? `${data.reviews.count} on record · a reviewer holds the "${data.reviews.role}" role and never reviews a version they saved` : undefined}>
         {data?.failed.reviews && <Failure what="The reviews could not be read" message={data.failed.reviews} />}
         {data?.reviews && <ReviewsView list={data.reviews} />}
-        {data && !retired && !notBuiltDoorOf(data.failed.reviews) && (
+        {data && !retired && !notBuiltDoorOf(data.failed.reviews) && reviewBuilt !== false && (
           <ReviewForm agent={agent} versions={data.versions} defaultDigest={spineDigest || data.detail?.digest || ""} role={data.reviews?.role ?? "policy-reviewer"} who={who} onDone={load} />
         )}
       </Section>

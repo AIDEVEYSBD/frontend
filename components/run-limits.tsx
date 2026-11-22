@@ -292,6 +292,8 @@ export function spendRows(spec: Rec | null, facts: RunFacts, entries: LimitEntry
   const callCeiling = ceiling("tool_calls") ?? (spec ? RUNTIME_DEFAULT.tool_calls : null);
   const tok = metered("tokens");
   const usd = metered("cost_usd") ?? cost;
+  // The models a call used with no price set (`spent.unpriced`): while any is named, the run has no cost figure.
+  const unpriced = Array.isArray(facts.spent.unpriced) ? (facts.spent.unpriced as unknown[]).map(String) : [];
   const wall = metered("wall_clock_s") ?? clocked ?? journalClock;
   return [
     {
@@ -308,10 +310,10 @@ export function spendRows(spec: Rec | null, facts: RunFacts, entries: LimitEntry
       key: "cost_usd",
       label: "Cost",
       used: usd,
-      usedText: usd === null ? "not priced" : usd === 0 ? "$0 (no model price set)" : fmtUsd(usd),
+      usedText: usd === null || unpriced.length ? (unpriced.length ? `not priced: ${unpriced.join(", ")} ${unpriced.length === 1 ? "has" : "have"} no price set` : "not priced") : fmtUsd(usd),
       ceiling: ceiling("cost_usd"),
       ceilingText: ceiling("cost_usd") === null ? none : fmtUsd(ceiling("cost_usd") as number),
-      basis: metered("cost_usd") !== null ? "counted by the runtime at the prices set on the Models tab" : cost !== null ? "priced as the ledger prices it" : "the ledger has no price for this run",
+      basis: unpriced.length ? "a model call used a model with no price set on the Models tab, so the platform keeps no cost figure for this run" : metered("cost_usd") !== null ? "counted by the runtime at the prices set on the Models tab" : cost !== null ? "priced as the ledger prices it" : "the platform keeps no cost figure for this run",
       stopped: stopped?.kind === "cost_usd",
     },
     {

@@ -1,4 +1,5 @@
 "use client";
+import { useDoorOff } from "@/lib/use-doors";
 import { Failure } from "./pending";
 
 import { useEffect, useMemo, useState } from "react";
@@ -183,6 +184,7 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
   /** Why the register's read failed, when it did: shown in place of the register and its counts. */
   const [unread, setUnread] = useState("");
   const [mode, setMode] = useState<AttachMode>("sdk");
+  const attachDoor = useDoorOff("POST", "/api/attached");
   const [language, setLanguage] = useState<Language>("python");
   /** The install line, the snippets and the setup steps are folded away until asked for. */
   const [code, setCode] = useState(false);
@@ -506,7 +508,7 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
           <span className="text-[10.5px] text-ghost">Owner</span>
           <input value={owner} onChange={(e) => setOwner(e.target.value)} placeholder="Owning team" className={`${control} w-[160px]`} />
         </label>
-        <Button type="submit" variant="solid" tone="ink" size="sm" permission="configure" disabled={!name.trim() || store === "db unreachable"} loading={busy}>
+        <Button type="submit" variant="solid" tone="ink" size="sm" permission="configure" disabled={!name.trim() || store === "db unreachable" || attachDoor.off} title={attachDoor.why} loading={busy}>
           Attach
         </Button>
         {name.trim() && <Mono className="pb-1.5 text-[10.5px] text-ghost">id · {slugOf(name) || "—"}</Mono>}

@@ -155,6 +155,10 @@ export interface EscalationStep {
 export interface Inbox {
   count: number;
   pending: Gate[];
+  /** The answered gates, newest first, each the decision kept on its run (read with `signedDecisionOf` in lib/api/l9.ts). */
+  closed: unknown[];
+  /** Fields of a waiting gate the platform names as not built (`pending[].job`, `pending[].deliverables`, ...): their values are empty because nothing fills them. */
+  not_built: string[];
 }
 
 /** The answer a gate takes, by shape. */
@@ -897,7 +901,9 @@ export async function listGates(): Promise<Inbox> {
   return call("GET", "/api/approvals", undefined, (j) => {
     const o = obj(j);
     const pending = (Array.isArray(o.pending) ? o.pending : []).map(gateOf);
-    return { count: typeof o.count === "number" ? o.count : pending.length, pending };
+    const closed = Array.isArray(o.closed) ? o.closed : [];
+    const not_built = Array.isArray(o.not_built) ? o.not_built.filter((x): x is string => typeof x === "string") : [];
+    return { count: typeof o.count === "number" ? o.count : pending.length, pending, closed, not_built };
   });
 }
 

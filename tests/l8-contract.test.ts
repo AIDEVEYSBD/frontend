@@ -1016,7 +1016,8 @@ describe("the console's shapes and the generated client agree", () => {
     expectTypeOf<Agrees<Omit<l8.GateRefusal, "saved">, Schemas["GateRefusal"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l8.DeployRequest, Schemas["DeployBody"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l8.OverrideRequest, Schemas["OverrideBody"]>>().toEqualTypeOf<true>();
-    expectTypeOf<Agrees<l8.Deployed, Schemas["AgentDeployed"]>>().toEqualTypeOf<true>();
+    // `not_built` (the answer's own list of what is not built) is ahead of the generated types.
+    expectTypeOf<Agrees<Omit<l8.Deployed, "not_built">, Schemas["AgentDeployed"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l8.Deployment, Schemas["DeploymentView"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l8.DeploymentList, Schemas["DeploymentList"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l8.Stage, Schemas["Stage"]>>().toEqualTypeOf<true>();
@@ -1027,7 +1028,8 @@ describe("the console's shapes and the generated client agree", () => {
     expectTypeOf<Agrees<l8.Retirement, Schemas["RetirementView"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l8.VersionDocument, Schemas["VersionDocument"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l8.AgentSaved, Schemas["AgentSaved"]>>().toEqualTypeOf<true>();
-    expectTypeOf<Agrees<l8.AgentLifecycleDetail, Schemas["AgentDetail"]>>().toEqualTypeOf<true>();
+    // `unsupported` (the parts of the definition the platform does not carry out) is ahead of the generated types.
+    expectTypeOf<Agrees<Omit<l8.AgentLifecycleDetail, "unsupported">, Schemas["AgentDetail"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l7.Reached, Schemas["ReachedRun"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l7.PeerInfo, Schemas["PeerInfo"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l7.AgentDrift, Schemas["AgentDrift"]>>().toEqualTypeOf<true>();

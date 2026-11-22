@@ -1,5 +1,6 @@
 "use client";
 
+import { notBuilt, notBuiltOf } from "@/lib/not-built";
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -135,7 +136,9 @@ export function WorkloadFindings({ profile, selected }: { profile: WorkloadProfi
         {answer?.state === "error" && <Failure what="The findings could not be read" message={answer.message} />}
         {answer?.state === "ok" &&
           (rows.length === 0 ? (
-            <p className="text-[12.5px] leading-[1.6] text-dim">No finding is on record for this workload.</p>
+            <p className="text-[12.5px] leading-[1.6] text-dim">
+              {answer?.state === "ok" && notBuilt(notBuiltOf(answer.data), "producer") ? "Nothing produces findings yet: the platform names their producer as not built." : "No finding is on record for this workload."}
+            </p>
           ) : (
             <>
               <SeverityBar counts={countBySeverity(rows)} href={(s) => `${all}&severity=${s}`} />

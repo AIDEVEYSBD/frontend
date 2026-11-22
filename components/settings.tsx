@@ -33,9 +33,10 @@ import { listVault, removeVaultKey, setVaultKey } from "@/lib/api/l2";
 interface CatalogueModel {
   id: string;
   label: string;
-  context: number;
-  price: number;
-  price_out?: number;
+  /** Null when the endpoint does not say (the platform has no catalogue of context windows or prices). */
+  context: number | null;
+  price: number | null;
+  price_out?: number | null;
   /** The endpoint that serves it (lib/providers.ts). */
   provider?: string;
 }
@@ -45,7 +46,20 @@ const MODEL_CLASSES: ModelClass[] = ["small", "medium", "large"];
 
 interface Config {
   /** `max_data_class` (5.3) is read when the service answers one; nothing enforces it yet (components/providers.tsx). */
-  models: { id: string; label: string; class?: ModelClass; price_in?: number; price_out?: number; provider?: string; max_data_class?: DataClass }[];
+  models: {
+    id: string;
+    label: string;
+    class?: ModelClass;
+    /** USD per million tokens; null or absent when no price is set: a run on it is "not priced", never $0. */
+    price_in?: number | null;
+    price_out?: number | null;
+    provider?: string;
+    max_data_class?: DataClass;
+    /** Marked on each read: its endpoint did not answer the platform's last call. */
+    endpoint_missing?: boolean;
+    /** Marked on each read: its endpoint's list does not name it. */
+    unconfirmed?: boolean;
+  }[];
   default_model: string;
   class_defaults?: Partial<Record<ModelClass, string>>;
   providers?: { id: string; label: string; local?: boolean }[];
@@ -70,6 +84,8 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
   const [connected, setConnected] = useState(true);
   /** Why the service refused the last change, when it did. */
   const [refused, setRefused] = useState("");
+  /** Per endpoint, why its model list could not be read (`errors` in `GET /api/models`). */
+  const [listErrors, setListErrors] = useState<Record<string, string>>({});
   const [config, setConfig] = useState<Config | null>(null);
   /** The configuration's read failed and an empty one stands in for it. A quiet console (lib/quiet.ts) says not connected instead of "none offered". */
   const [unread, setUnread] = useState("");
@@ -108,6 +124,7 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
       .then((d) => {
         if (d.error) setCatalogueError(String(d.error));
         setConnected(d.connected !== false);
+        setListErrors(d.errors && typeof d.errors === "object" ? Object.fromEntries(Object.entries(d.errors as Record<string, unknown>).map(([k, v]) => [k, String(v)])) : {});
         setCatalogue(d.models ?? []);
       })
       .catch((e) => {
@@ -133,7 +150,7 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
     const ids = new Set(catalogue.map((m) => m.id));
     const extra: CatalogueModel[] = (config?.models ?? [])
       .filter((m) => !ids.has(m.id))
-      .map((m) => ({ id: m.id, label: m.label, context: 0, price: 0, provider: m.provider }));
+      .map((m) => ({ id: m.id, label: m.label, context: null, price: null, provider: m.provider }));
     const all = [...catalogue, ...extra];
     const q = query.trim().toLowerCase();
     const rows = q
@@ -141,8 +158,8 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
       : all;
     const by: Record<string, (a: CatalogueModel, b: CatalogueModel) => number> = {
       Name: (a, b) => a.label.localeCompare(b.label),
-      Price: (a, b) => (a.price || 0) - (b.price || 0),
-      Context: (a, b) => b.context - a.context,
+      Price: (a, b) => (a.price ?? 0) - (b.price ?? 0),
+      Context: (a, b) => (b.context ?? 0) - (a.context ?? 0),
     };
     const cmp = by[sort] ?? by.Name;
     // Selected first, then the chosen order — the working set stays in view.
@@ -268,6 +285,11 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
           <span className="font-medium">The catalogue could not be read.</span> {catalogueError}. The offered list still works; only browsing is unavailable.
         </p>
       )}
+      {Object.entries(listErrors).map(([endpoint, why]) => (
+        <p key={endpoint} className="border-b border-line px-4 py-2.5 text-[11.5px] leading-[1.5] text-err" role="alert">
+          <span className="font-medium">The models of {providerLabel(endpoint)?.label ?? endpoint} could not be listed.</span> {why}
+        </p>
+      ))}
       {lastGuard && <p className="border-b border-line px-4 py-2.5 text-[11.5px] leading-[1.5] text-warn">At least one model must stay offered.</p>}
 
       <div className="max-h-[460px] overflow-y-auto border-b border-line">
@@ -315,15 +337,30 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
                   <span className="truncate font-mono text-[10.5px] text-faint" title={m.id}>{m.id}</span>
                 </div>
                 <span className="flex shrink-0 flex-col items-end gap-0.5 text-right">
-                  {m.price > 0 && (
+                  {m.price != null && m.price > 0 && (
                     <span className="tnum font-mono text-[10px] text-ghost">
                       {(m.price_out ?? 0) > 0
                         ? `$${m.price.toFixed(2)} in · $${(m.price_out ?? 0).toFixed(2)} out /M`
                         : `$${m.price.toFixed(2)}/M in`}
                     </span>
                   )}
-                  {m.context > 0 && (
+                  {m.context != null && m.context > 0 && (
                     <span className="tnum font-mono text-[10px] text-ghost">{Math.round(m.context / 1000)}k ctx</span>
+                  )}
+                  {on && offered?.endpoint_missing && (
+                    <span className="text-[10px] font-medium text-err" title="Its endpoint did not answer the platform's last call: a run on this model fails.">
+                      endpoint not answering
+                    </span>
+                  )}
+                  {on && offered && !offered.endpoint_missing && offered.unconfirmed && (
+                    <span className="text-[10px] font-medium text-warn" title="Its endpoint answered, and its list does not name this model.">
+                      not listed by its endpoint
+                    </span>
+                  )}
+                  {on && offered && !local && (offered.price_in == null || offered.price_out == null) && (
+                    <span className="text-[10px] font-medium text-warn" title="With no price set, a run that calls this model shows its cost as not priced, and a cost budget cannot be kept.">
+                      not priced
+                    </span>
                   )}
                 </span>
               </div>
@@ -340,7 +377,7 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
                     />
                   </div>
                   {/* Cost per million tokens, recorded by the operator: no endpoint
-                      publishes a sheet the console reads. The service keeps 0 until a price is entered. */}
+                      publishes a sheet the console reads. The service keeps no price (null) until one is entered. */}
                   {local && <span className="text-[10px] text-ok">$0 per token · priced by the hour</span>}
                   {!local && (["price_in", "price_out"] as const).map((k) => (
                     <label key={k} className="flex items-center gap-1 text-[10px] text-faint">

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Button } from "./ui";
 import { NotConnected, useDoor, Failure } from "./pending";
+import { notBuilt, notBuiltOf } from "@/lib/not-built";
 import { FindingStatusMark, SEVERITIES, SEVERITY_META, SeverityTag, bySeverityThenRecent, count, severityMeta } from "./finding-marks";
 import type { Finding, FindingList } from "@/lib/api/pending";
 
@@ -41,7 +42,7 @@ export function RunFindings({ run }: { run: string }) {
         <span className="text-[12px] font-semibold text-fg">Findings</span>
         {answer?.state === "ok" && (
           <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-            <span className="tnum text-[11px] text-faint">{count(total)} reported</span>
+            <span className="tnum text-[11px] text-faint">{rows.length === 0 && notBuilt(notBuiltOf(answer.data), "producer") ? "not built" : `${count(total)} reported`}</span>
             {groups.map((g) => (
               <span key={g.severity} className="flex items-center gap-1 text-[11px] text-dim">
                 <span className="tnum font-semibold text-fg">{count(g.items.length)}</span>
@@ -58,7 +59,11 @@ export function RunFindings({ run }: { run: string }) {
 
       {answer === null && <p className="px-3 py-2.5 text-[11.5px] text-faint">Reading the findings…</p>}
       {answer?.state === "error" && <Failure className="m-3" what="This run's findings could not be read" message={answer.message} />}
-      {answer?.state === "ok" && rows.length === 0 && <p className="px-3 py-2.5 text-[11.5px] text-faint">No finding is recorded for this run. Runs on this deployment do not record findings yet.</p>}
+      {answer?.state === "ok" && rows.length === 0 && (
+        <p className="px-3 py-2.5 text-[11.5px] text-faint">
+          {notBuilt(notBuiltOf(answer.data), "producer") ? "Nothing produces findings yet: the platform names their producer as not built." : "No finding is recorded for this run."}
+        </p>
+      )}
 
       {groups.map((g) => (
         <div key={g.severity} className="flex flex-col border-b border-line last:border-b-0">

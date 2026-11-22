@@ -9,6 +9,7 @@ import { Pick } from "./select";
 import { Chips } from "./filters";
 import { GroupHeader } from "./page-tabs";
 import { NotConnected, NotConnectedNote, useDoor } from "./pending";
+import { notBuilt, notBuiltOf } from "@/lib/not-built";
 import { SeverityTag, acceptanceStatusMeta, count, shortWhen, workloadName } from "./finding-marks";
 import { hueFor } from "@/lib/hue";
 import { useSession } from "@/lib/use-session";
@@ -333,7 +334,11 @@ export function AcceptanceView() {
         </>
       )}
 
-      {answer?.state === "ok" && records.length === 0 && <EmptyState title="No acceptance record yet" detail="A use case appears here once its acceptance record is opened, with its criteria and the roles that sign it." />}
+      {answer?.state === "ok" && records.length === 0 && (notBuilt(notBuiltOf(answer.data), "producer") ? (
+        <EmptyState title="Nothing opens acceptance records yet" detail="The platform names the producer of acceptance records as not built: no part of it opens one, so this list is empty because nothing can fill it." />
+      ) : (
+        <EmptyState title="No acceptance record yet" detail="A use case appears here once its acceptance record is opened, with its criteria and the roles that sign it." />
+      ))}
 
       {records.map((r) => (
         <AcceptanceRecord key={r.use_case} record={r} onSigned={reload} />

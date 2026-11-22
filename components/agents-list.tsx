@@ -11,6 +11,9 @@ import { CLASS_LABEL, listApplications, type Application, type ApplicationClass 
 import { getFleet, type PauseInfo } from "@/lib/api/l5";
 import { retiredOf, type Retired } from "@/lib/api/l8";
 import { pausedLine, retiredLine } from "@/lib/lifecycle";
+import { runBlockers, unsupportedHeading, unsupportedOf, unsupportedReason } from "@/lib/unsupported";
+import { UnsupportedParts } from "./unsupported";
+import { useDoorBuilt } from "@/lib/use-doors";
 import { productionRuns } from "@/lib/production";
 import { HARNESS } from "@/lib/spec";
 import { useSession } from "@/lib/use-session";
@@ -233,6 +236,8 @@ function MenuItem({ icon, label, hint, tone, disabled = false, href, onClick }: 
 }
 
 function RowMenu({ at, canDelete, onClose, onExport, onCompare, onDelete }: { at: MenuAt; canDelete: boolean; onClose: () => void; onExport: () => void; onCompare: () => void; onDelete: () => void }) {
+  // Removing an agent is offered only while its address is built (GET /api/doors); unknown leaves it, and a press hears the answer.
+  const deleteBuilt = useDoorBuilt("DELETE", "/api/agents/{agent}");
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
@@ -257,13 +262,14 @@ function RowMenu({ at, canDelete, onClose, onExport, onCompare, onDelete }: { at
 
   const { a, retired } = at.row;
   const enc = encodeURIComponent(a.id);
+  const unsupported = runBlockers(unsupportedOf(a), a.version, a.deployed_version);
   return (
     <div ref={ref} role="menu" style={{ position: "fixed", left: at.x, top: at.y }} className="af-pop z-50 flex max-h-[calc(100vh-16px)] w-[264px] flex-col gap-0.5 overflow-y-auto rounded-lg border border-line bg-surface p-1.5 elev-3">
       <div className="truncate px-2 pt-1 pb-1.5">
         <Label>{a.name}</Label>
       </div>
       <MenuItem icon="bot" label="Open" hint="Configuration, versions, bill of materials" href={agentHref(a.id)} onClick={onClose} />
-      <MenuItem icon="pulse" label="Run" hint={retired ? "Retired: it takes no new runs" : "Opens Runs with this agent chosen"} disabled={Boolean(retired)} href={`/runs?agent=${enc}`} onClick={onClose} />
+      <MenuItem icon="pulse" label="Run" hint={retired ? "Retired: it takes no new runs" : unsupported.length ? "Uses parts the platform does not carry out: it cannot be run" : "Opens Runs with this agent chosen"} disabled={Boolean(retired) || unsupported.length > 0} href={`/runs?agent=${enc}`} onClick={onClose} />
       <MenuItem icon="chip" label="Evaluate" hint="Build or run a benchmark against it" href={`/evals?agent=${enc}`} onClick={onClose} />
       <MenuItem icon="gavel" label="Versions and deployment" hint="Versions and deploy" href={`/lifecycle?agent=${enc}`} onClick={onClose} />
       <MenuItem icon="clock" label="Compare versions" hint="What changed between two saves" onClick={onCompare} />
@@ -272,7 +278,14 @@ function RowMenu({ at, canDelete, onClose, onExport, onCompare, onDelete }: { at
       <MenuItem icon="plug" label="Dependencies" hint="What it relies on, and what relies on it" href={`/dependencies?node=${encodeURIComponent(`agent:${a.id}`)}`} onClick={onClose} />
       <MenuItem icon="json" label="Export JSON" hint="The agent's document itself" onClick={onExport} />
       <div className="my-0.5 h-px bg-line" />
-      <MenuItem icon="cross" label="Delete" hint={canDelete ? "Removes it from the registry" : 'Needs the "deploy" permission'} tone="err" disabled={!canDelete} onClick={onDelete} />
+      <MenuItem
+        icon="cross"
+        label="Delete"
+        hint={deleteBuilt === false ? "Not built yet: the platform answers 501 to DELETE /api/agents/{agent}" : canDelete ? "Removes it from the registry" : 'Needs the "deploy" permission'}
+        tone="err"
+        disabled={!canDelete || deleteBuilt === false}
+        onClick={onDelete}
+      />
     </div>
   );
 }
@@ -610,6 +623,11 @@ function AgentsPage() {
                                       : "No version on record"}
                                 </span>
                                 {r.draft !== null && <span className="tnum text-[10.5px] leading-[1.4] text-warn">Draft version {r.draft} saved since</span>}
+                                {!retired && unsupportedOf(a).length > 0 && (
+                                  <span className="text-[10.5px] leading-[1.4] font-medium text-warn" title={unsupportedHeading(a.version, a.deployed_version)}>
+                                    {runBlockers(unsupportedOf(a), a.version, a.deployed_version).length ? "Cannot be deployed or run" : "Latest save cannot be deployed"}: {unsupportedOf(a).map((p) => p.part).join(", ")}
+                                  </span>
+                                )}
                                 {stateLine && <span className="line-clamp-2 text-[10.5px] leading-[1.4] text-faint">{stateLine}</span>}
                               </span>
                             </td>
@@ -633,7 +651,7 @@ function AgentsPage() {
                                 <Button size="sm" variant="solid" tone="neutral" href={agentHref(a.id)}>
                                   Open
                                 </Button>
-                                <Button size="sm" variant="solid" tone="ink" href={`/runs?agent=${encodeURIComponent(a.id)}`} permission="run" disabled={Boolean(retired)}>
+                                <Button size="sm" variant="solid" tone="ink" href={`/runs?agent=${encodeURIComponent(a.id)}`} permission="run" disabled={Boolean(retired) || runBlockers(unsupportedOf(a), a.version, a.deployed_version).length > 0} title={runBlockers(unsupportedOf(a), a.version, a.deployed_version).length ? unsupportedReason(unsupportedOf(a)) : undefined}>
                                   Run
                                 </Button>
                                 <IconButton
@@ -661,6 +679,7 @@ function AgentsPage() {
                                   {a.description && <p className="max-w-[110ch] text-[12px] leading-[1.6] text-dim">{a.description}</p>}
                                   {retired && <p className="max-w-[110ch] text-[11.5px] leading-[1.55] text-faint">{retiredLine(retired)}</p>}
                                   {paused && <p className="max-w-[110ch] text-[11.5px] leading-[1.55] text-faint">{pausedLine(a.name, paused)}</p>}
+                                  {!retired && <UnsupportedParts parts={unsupportedOf(a)} heading={unsupportedHeading(a.version, a.deployed_version)} />}
                                   {roster === undefined && <p className="text-[12px] text-faint">Reading its steps&hellip;</p>}
                                   {/* A quiet console has said once, in the bar above, that something is not connected. */}
                                   {roster === null && <p className="text-[11.5px] text-err">Its steps could not be read: {reasons.steps}</p>}

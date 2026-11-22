@@ -133,7 +133,8 @@ function Overview() {
           window: win,
           runs_in_window: totals.runs,
           failed_in_window: totals.failed,
-          spend_in_window_usd: Number(totals.spend.toFixed(4)),
+          spend_in_window_usd: totals.unpriced ? null : Number(totals.spend.toFixed(4)),
+          runs_not_priced: totals.unpriced,
           running_now: live,
           awaiting_approval: gates?.length ?? null,
           p50_ms: latency?.p50 ?? null,
@@ -247,9 +248,9 @@ function Overview() {
             label="Spend"
             chip={chip}
             href="/finops"
-            value={runs ? fmtMoney(totals.spend) : null}
+            value={runs ? (totals.unpriced ? "Not priced" : fmtMoney(totals.spend)) : null}
             off={off}
-            sub={loading ? "reading the ledger" : unread ? "ledger not read" : !totals.runs ? "nothing spent in this window" : totals.estimated ? `${plural(totals.estimated, "run")} priced by estimate` : `across ${plural(totals.runs, "run")}`}
+            sub={loading ? "reading the ledger" : unread ? "ledger not read" : !totals.runs ? "nothing spent in this window" : totals.unpriced ? `${plural(totals.unpriced, "run")} of ${fmtCount(totals.runs)} used a model with no price set` : totals.estimated ? `${plural(totals.estimated, "run")} priced by estimate` : `across ${plural(totals.runs, "run")}`}
           />
         </div>
       </div>
@@ -269,7 +270,7 @@ function Overview() {
               </>
             }
           >
-            {noRows(agents.top.length > 0, "Agents rank here by runs, or by spend.", "No spend recorded for these runs.") ?? <RankList rows={agents.top} format={agentMeasure === "runs" ? fmtCount : fmtMoney} measure={agentMeasure === "runs" ? "runs" : "spent"} />}
+            {noRows(agents.top.length > 0, "Agents rank here by runs, or by spend.", totals.unpriced ? "Not priced: these runs used a model with no price set." : "No spend recorded for these runs.") ?? <RankList rows={agents.top} format={agentMeasure === "runs" ? fmtCount : fmtMoney} measure={agentMeasure === "runs" ? "runs" : "spent"} />}
           </Card>
 
           <Card
@@ -303,7 +304,7 @@ function Overview() {
               </>
             }
           >
-            {noRows(startersTop.top.length > 0, "Whoever starts runs ranks here, as far as the run records name them.", "No spend recorded for these runs.") ?? <RankList rows={startersTop.top} format={starterMeasure === "runs" ? fmtCount : fmtMoney} measure={starterMeasure === "runs" ? "runs" : "spent"} />}
+            {noRows(startersTop.top.length > 0, "Whoever starts runs ranks here, as far as the run records name them.", totals.unpriced ? "Not priced: these runs used a model with no price set." : "No spend recorded for these runs.") ?? <RankList rows={startersTop.top} format={starterMeasure === "runs" ? fmtCount : fmtMoney} measure={starterMeasure === "runs" ? "runs" : "spent"} />}
           </Card>
 
           <Card

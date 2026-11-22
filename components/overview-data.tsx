@@ -182,18 +182,24 @@ export interface Totals {
   done: number;
   failed: number;
   killed: number;
+  /** The priced runs' cost summed. Read it with `unpriced`: while any run is not priced, the window has no total. */
   spend: number;
   /** Runs whose cost includes a call priced by estimate. */
   estimated: number;
+  /** Runs with no cost figure (`cost: null`): a call used a model with no price set. */
+  unpriced: number;
 }
 
 export function totalsOf(rows: readonly RunRow[]): Totals {
-  const t: Totals = { runs: rows.length, done: 0, failed: 0, killed: 0, spend: 0, estimated: 0 };
+  const t: Totals = { runs: rows.length, done: 0, failed: 0, killed: 0, spend: 0, estimated: 0, unpriced: 0 };
   for (const r of rows) {
     if (r.state === "done") t.done += 1;
     if (r.state === "failed") t.failed += 1;
     if (r.state === "killed") t.killed += 1;
-    t.spend += r.cost || 0;
+    // `cost` is null for a run on a model with no price set (ahead of the generated type): counted as not priced, never as $0.
+    const cost = r.cost as number | null;
+    if (typeof cost === "number") t.spend += cost;
+    else t.unpriced += 1;
     if (r.estimated > 0) t.estimated += 1;
   }
   return t;

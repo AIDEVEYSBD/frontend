@@ -11,6 +11,7 @@ import { ActiveFilters, SearchBox } from "./filters";
 import { DrillModal } from "./drill";
 import { GroupHeader } from "./page-tabs";
 import { NotConnected, NotConnectedNote, useDoor } from "./pending";
+import { notBuilt, notBuiltOf } from "@/lib/not-built";
 import { FindingDetail, hasFindingDetail } from "./finding-detail";
 import {
   FINDING_STATUSES,
@@ -517,7 +518,9 @@ function FindingsPage() {
         {answer?.state === "error" && <p className="px-4 py-6 text-[12px] text-faint">Nothing to show: the findings could not be read.</p>}
         {answer?.state === "ok" && shown.length === 0 && (
           <div className="p-4">
-            {rows.length === 0 ? (
+            {rows.length === 0 && notBuilt(notBuiltOf(answer.data), "producer") ? (
+              <EmptyState title="Nothing produces findings yet" detail="The platform names the producer of findings as not built: no run writes one, so this list is empty because nothing can fill it." />
+            ) : rows.length === 0 ? (
               <EmptyState
                 title={set > 0 ? "No finding matches these filters" : "No findings yet"}
                 detail={set > 0 ? "Nothing on record has this workload, status, agent, run and owner." : "Runs on this deployment do not record findings yet: no engine step writes one."}

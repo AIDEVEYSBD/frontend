@@ -135,6 +135,7 @@ export function Button({
   type = "button",
   href,
   permission,
+  title,
 }: {
   children: ReactNode;
   tone?: Tone;
@@ -150,12 +151,14 @@ export function Button({
   href?: string;
   /** The permission this action needs; without it the button is disabled and says why. */
   permission?: Permission;
+  /** Why the button is off, or what it does, on hover. A missing permission's reason wins. */
+  title?: string;
 }) {
   // Role-based access: an action the signed-in person may not take is shown
   // disabled with the reason, and the API refuses it regardless.
   const { session, loaded } = useSession();
   const denied = Boolean(permission && loaded && session && !session.permissions.includes(permission));
-  const why = denied ? `Needs the "${permission}" permission. Your roles: ${session?.appRoles.join(", ") || "none"}.` : undefined;
+  const why = denied ? `Needs the "${permission}" permission. Your roles: ${session?.appRoles.join(", ") || "none"}.` : title;
   if (denied) disabled = true;
   // Every variant is a solid fill: buttons are never transparent, and the
   // text always contrasts the mode.

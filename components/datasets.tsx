@@ -9,6 +9,7 @@ import { GroupHeader } from "./page-tabs";
 import { Chips, FilterBar, SearchBox } from "./filters";
 import { DigestChip } from "./digest-chip";
 import { NotConnected, NotConnectedNote, useDoor } from "./pending";
+import { notBuilt, notBuiltOf } from "@/lib/not-built";
 import { DatasetUpload } from "./dataset-upload";
 import { DatasetDialog, DatasetStatus, Fact, KindMark, ModeTag, agoText, filesText, kindLabel, sizeText, whenFull } from "./dataset-parts";
 import { DATASET_KINDS, ask, type Dataset, type DatasetList, type Door } from "@/lib/api/pending";
@@ -34,10 +35,11 @@ function matches(d: Dataset, term: string): boolean {
   return [d.name, d.id, d.owner?.name, d.owner?.team, d.connection, kindLabel(d.kind)].some((v) => (v ?? "").toLowerCase().includes(term));
 }
 
-/** How many runs took it: the count, or "unknown" when the record does not say. */
-function runsText(d: Dataset): string {
-  // Which runs used a dataset is not tracked yet: none of them reads one. An empty list is not a measured zero.
-  return d.used_by && d.used_by.length ? d.used_by.length.toLocaleString("en-GB") : "not tracked";
+/** How many runs took it: the count, "not built" while the platform names `used_by` as not built, or "not tracked" when the record does not say. */
+function runsText(d: Dataset, unbuilt = false): string {
+  // An empty list is not a measured zero: which runs used a dataset is not built yet, and none of them reads one.
+  if (d.used_by && d.used_by.length) return d.used_by.length.toLocaleString("en-GB");
+  return unbuilt ? "not built" : "not tracked";
 }
 
 function DatasetsPage() {
@@ -55,6 +57,8 @@ function DatasetsPage() {
   const open = useCallback((id: string | null) => router.push(id ? `/datasets?id=${encodeURIComponent(id)}` : "/datasets"), [router]);
 
   const all = useMemo(() => (answer?.state === "ok" && Array.isArray(answer.data?.datasets) ? answer.data.datasets : []), [answer]);
+  /** The list answer names `used_by` as not built: no run is recorded as using a dataset, so the column says so. */
+  const usedUnbuilt = answer?.state === "ok" && notBuilt(notBuiltOf(answer.data), "used_by");
   const shown = useMemo(() => {
     const term = q.trim().toLowerCase();
     return all.filter((d) => (!kind || d.kind === kind) && (!mode || d.mode === mode) && matches(d, term));
@@ -184,7 +188,7 @@ function DatasetsPage() {
                   <td className="px-3 py-2.5 text-[11.5px] whitespace-nowrap text-dim" title={whenFull(d.created_at)}>
                     {agoText(d.created_at, now)}
                   </td>
-                  <td className={`tnum px-3 py-2.5 text-right text-[11.5px] whitespace-nowrap ${d.used_by ? "text-fg" : "text-ghost"}`}>{runsText(d)}</td>
+                  <td className={`tnum px-3 py-2.5 text-right text-[11.5px] whitespace-nowrap ${d.used_by ? "text-fg" : "text-ghost"}`}>{runsText(d, usedUnbuilt)}</td>
                 </tr>
               ))}
             </tbody>
@@ -370,7 +374,7 @@ function DatasetDetail({ id, row, now, onClose, onRemoved }: { id: string; row: 
             <div className="flex flex-col">
               <div className="flex items-center gap-2 border-b border-line bg-raise/55 px-4 py-2">
                 <span className="text-[12px] font-semibold">Runs that used it</span>
-                <span className="tnum text-[11px] text-faint">{used ? used.length.toLocaleString("en-GB") : answer === null ? "reading…" : "unknown"}</span>
+                <span className="tnum text-[11px] text-faint">{used && used.length ? used.length.toLocaleString("en-GB") : used ? "not tracked" : answer === null ? "reading…" : "unknown"}</span>
               </div>
               {used === undefined && answer !== null && <p className="px-4 py-3 text-[12px] text-faint">The record does not say which runs took this dataset.</p>}
               {used && used.length === 0 && <p className="px-4 py-3 text-[12px] text-faint">Not tracked yet: runs on this deployment do not read datasets.</p>}
@@ -412,7 +416,7 @@ function DatasetDetail({ id, row, now, onClose, onRemoved }: { id: string; row: 
             {used === undefined ? (
               <span>The record does not say which runs used it.</span>
             ) : used.length === 0 ? (
-              <span>No run has used it.</span>
+              <span>Not tracked: which runs used a dataset is not built, and runs on this deployment do not read datasets.</span>
             ) : (
               <span className="flex flex-col gap-1">
                 <span>

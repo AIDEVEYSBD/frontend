@@ -192,8 +192,9 @@ export function treeOf(v: unknown): RunTree {
 /* ═══════════════════ the kill that reaches the tree ═══════════════════ */
 
 /** Where the named run's own kill went; `tree` when the run itself had ended and the kill reached what it set off. */
-export type KillDelivery = Schemas["RunKilled"]["delivery"];
-export const KILL_DELIVERIES: KillDelivery[] = ["in-process", "worker", "sdk", "tree"];
+/** `settled`: the platform stopped the run at once, as no worker held it (queued, or waiting for a person); `worker`: the worker holding it stops it at its next checkpoint. */
+export type KillDelivery = Schemas["RunKilled"]["delivery"] | "settled";
+export const KILL_DELIVERIES: KillDelivery[] = ["settled", "in-process", "worker", "sdk", "tree"];
 
 /**
  * What a reached run is: a record, an in-process sub-run (on its parent's

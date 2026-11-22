@@ -7,6 +7,7 @@ import { Field, Textarea } from "./forms";
 import { api, errorText, type RunRow } from "@/lib/api/client";
 import { auditLine, fleet, FLEET_ACTIONS, getFleet, inFlight, setLockdown, type FleetAction, type FleetResult, type LockdownState, type PauseInfo } from "@/lib/api/l5";
 import type { Owner } from "@/lib/api/pending";
+import { useDoorBuilt } from "@/lib/use-doors";
 
 /**
  * One form for stopping things.
@@ -156,14 +157,22 @@ export function StopForm({
   }, []);
 
   const unticked = agents.length ? "" : "No agents are ticked in the estate list.";
+  // Each choice's address, as the platform's own list says it is built (GET /api/doors): one not built is off before anyone confirms it.
+  const killAllBuilt = useDoorBuilt("POST", "/api/runs/kill-all");
+  const fleetBuilt = useDoorBuilt("POST", "/api/fleet");
+  const lockdownBuilt = useDoorBuilt("POST", "/api/lockdown");
+  const built = { all: killAllBuilt, fleet: fleetBuilt, lockdown: lockdownBuilt };
+  const notBuiltLine = (path: string) => `Not built yet: the platform answers 501 to POST ${path}.`;
+  const fleetOff = built.fleet === false ? notBuiltLine("/api/fleet") : "";
+  const lockOff = built.lockdown === false ? notBuiltLine("/api/lockdown") : "";
   const off: Record<StopScope, string> = {
-    all: "",
-    agents: unticked,
-    lockdown: lockdown === null ? "The lockdown state has not been read yet." : lockdown.on ? "The estate is already locked down." : "",
-    pause: unticked,
-    drain: unticked,
-    resume: unticked,
-    unlock: lockdown === null ? "The lockdown state has not been read yet." : lockdown.on ? "" : "The estate is not locked down.",
+    all: built.all === false ? notBuiltLine("/api/runs/kill-all") : "",
+    agents: fleetOff || unticked,
+    lockdown: lockOff || (lockdown === null ? "The lockdown state has not been read yet." : lockdown.on ? "The estate is already locked down." : ""),
+    pause: fleetOff || unticked,
+    drain: fleetOff || unticked,
+    resume: fleetOff || unticked,
+    unlock: lockOff || (lockdown === null ? "The lockdown state has not been read yet." : lockdown.on ? "" : "The estate is not locked down."),
   };
   const action = FLEET_OF[scope] ?? null;
   const locks = scope === "lockdown" || scope === "unlock";
@@ -249,7 +258,7 @@ export function StopForm({
   };
 
   const options: { id: StopScope; title: string; line: string }[] = [
-    { id: "all", title: "Every run in flight", line: "In-process and on workers. Each is cancelled before its next model or tool call; every journal records the reason and your name." },
+    { id: "all", title: "Every run in flight", line: "Each is stopped before its next model call or step; every journal records the reason and your name." },
     { id: "agents", title: "The selected agents' runs", line: agents.length ? `${agentList}. ${KILL_WHAT}` : KILL_WHAT },
     { id: "lockdown", title: "Lock the estate down", line: "Nothing new starts or is claimed until it is lifted. Runs already in flight finish as they started." },
     { id: "pause", title: "Pause the selected agents", line: "Nothing new starts for them and their runs in flight are killed, until they are resumed." },
@@ -635,7 +644,7 @@ function RunList({ rows }: { rows: Row[] }) {
               <td className="max-w-[200px] px-3 py-1.5">
                 <Mono className="block truncate text-[11px]">{r.id}</Mono>
               </td>
-              <td className="tnum px-3 py-1.5 whitespace-nowrap text-dim">{clock(r.started)}</td>
+              <td className="tnum px-3 py-1.5 whitespace-nowrap text-dim">{clock(r.started) || "not taken up yet"}</td>
               <td className="px-3 py-1.5 text-dim">{r.owner?.name || r.owner?.email || (r.source ? `via ${r.source}` : "")}</td>
             </tr>
           ))}

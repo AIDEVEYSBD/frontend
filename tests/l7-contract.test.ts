@@ -962,7 +962,8 @@ describe("the console's shapes and the generated client agree", () => {
     expectTypeOf<Agrees<l7.TreeRollup, Schemas["TreeRollup"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l7.RunTree, Schemas["RunTree"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l7.Reached, Schemas["ReachedRun"]>>().toEqualTypeOf<true>();
-    expectTypeOf<Agrees<l7.KillReceipt, Schemas["RunKilled"]>>().toEqualTypeOf<true>();
+    // `settled` (stopped at once, no worker held it) is ahead of the generated types.
+    expectTypeOf<Agrees<Omit<l7.KillReceipt, "delivery">, Schemas["RunKilled"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l7.DepNode, Schemas["DepNode"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l7.DepEdge, Schemas["DepEdge"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l7.DepMap, Schemas["DependencyMap"]>>().toEqualTypeOf<true>();
@@ -985,7 +986,7 @@ describe("the console's shapes and the generated client agree", () => {
     expectTypeOf<Schemas["RateLimitRefusal"]["limit"]>().toMatchTypeOf<l7.RateLimit["limit"]>();
     expectTypeOf<Schemas["RateLimitRefusal"]["kind"]>().toMatchTypeOf<l7.RateLimit["kind"]>();
     expectTypeOf<l7.RateLimitName>().toEqualTypeOf<Schemas["RateLimitFigures"]["limit"]>();
-    expectTypeOf<l7.KillDelivery>().toEqualTypeOf<Schemas["RunKilled"]["delivery"]>();
+    expectTypeOf<Exclude<l7.KillDelivery, "settled">>().toEqualTypeOf<Schemas["RunKilled"]["delivery"]>();
     expectTypeOf<l7.TreeNodeKind>().toEqualTypeOf<Schemas["TreeNode"]["kind"]>();
     expectTypeOf<l7.MeasureName>().toEqualTypeOf<Schemas["DriftMeasure"]["name"]>();
     // The check bites: a field the backend does not serve is caught.

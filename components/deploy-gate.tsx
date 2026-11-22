@@ -7,6 +7,8 @@ import { Banner } from "./overlays";
 import { Field, Textarea } from "./forms";
 import { useSession } from "@/lib/use-session";
 import { DoorError } from "@/lib/api/l5";
+import { unsupportedOf, unsupportedReason, type UnsupportedPart } from "@/lib/unsupported";
+import { UnsupportedParts } from "./unsupported";
 import { deploy, gateRefusalOf, retiredRefusalOf, type Condition, type Deployed, type GateRefusal } from "@/lib/api/l8";
 import {
   CONDITION_ASKS,
@@ -238,11 +240,16 @@ export function GatePanel({
 
 /** A deploy that went through: where, which version, the gate's decision, and any override. */
 export function DeployedReceipt({ d }: { d: Deployed }) {
+  // Fields the platform names as not built are said to be so, never shown as an empty list or a blank.
+  const unbuilt = (f: string) => d.not_built.includes(f);
+  const env = unbuilt("environment") ? "production" : d.environment;
   return (
-    <Banner tone={d.override ? "warn" : "ok"} title={`Version ${d.version ?? "?"} deployed to ${d.environment}`}>
-      {d.environment === "production" ? (d.override ? overrideLine(d.override) : "Deployed. Production runs this version from its next run.") : "Recorded for that environment; production runs what it ran."}
+    <Banner tone={d.override ? "warn" : "ok"} title={`Version ${d.version ?? "?"} deployed${unbuilt("environment") ? "" : ` to ${env}`}`}>
+      {env === "production" ? (d.override ? overrideLine(d.override) : "Deployed. New runs of this agent use this version.") : "Recorded for that environment; production runs what it ran."}
+      {unbuilt("conditions") && <span className="mt-0.5 block text-[11.5px] text-dim">No condition was checked before the deploy: a promotion gate is not built.</span>}
       <span className="mt-0.5 block font-mono text-[10.5px] text-faint">
-        digest {shortDigest(d.digest)} · deployment {d.deployment}
+        digest {shortDigest(d.digest)}
+        {unbuilt("deployment") ? "" : ` · deployment ${d.deployment}`}
         {d.decision ? ` · decision ${d.decision}` : ""} · {whenText(d.at)}
       </span>
     </Banner>
@@ -261,6 +268,7 @@ export function DeployDialog({
   label,
   onClose,
   onDeployed,
+  unsupported = [],
 }: {
   agent: string;
   /** The version to deploy; the latest save when left out. */
@@ -269,12 +277,16 @@ export function DeployDialog({
   label: string;
   onClose: () => void;
   onDeployed: (d: Deployed) => void;
+  /** Parts of the agent's definition the platform does not carry out, when known before the press: Deploy is off, with them listed. */
+  unsupported?: UnsupportedPart[];
 }) {
   const { session } = useSession();
   const admin = canOverride(session);
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<GateRefusal | null>(null);
   const [error, setError] = useState("");
+  /** What the platform does not carry out, as known up front or as a 409 refusal names it. */
+  const [parts, setParts] = useState<UnsupportedPart[]>(unsupported);
   const [done, setDone] = useState<Deployed | null>(null);
   const close = useRef(onClose);
   useEffect(() => {
@@ -299,7 +311,11 @@ export function DeployDialog({
     } catch (e) {
       const gate = gateRefusalOf(e);
       const gone = retiredRefusalOf(e);
-      if (gate) setRefusal(gate);
+      const refused = e instanceof DoorError && e.status === 409 ? unsupportedOf(e.body) : [];
+      if (refused.length) {
+        setParts(refused);
+        setError((e as Error).message);
+      } else if (gate) setRefusal(gate);
       else if (gone) setError(`${agent} is retired. ${retiredLine(gone)}`);
       else if (e instanceof DoorError && e.status === 403 && e.control === "override") setError(`${e.message}. Only an administrator may override the gate.`);
       else setError((e as Error).message);
@@ -321,13 +337,14 @@ export function DeployDialog({
           </p>
         </div>
         <div className="flex min-h-0 grow flex-col gap-3 overflow-y-auto p-5">
+          {!done && parts.length > 0 && <UnsupportedParts parts={parts} />}
           {done ? <DeployedReceipt d={done} /> : refusal ? <GatePanel refusal={refusal} agent={agent} admin={admin} busy={busy} error={error} onOverride={(o) => send(o)} /> : null}
           {!refusal && error && (
             <Banner tone="err" title="The deploy was refused">
               {error}
             </Banner>
           )}
-          {!done && !refusal && !error && <Mono className="text-[11px] text-faint">Nothing is sent until you deploy.</Mono>}
+          {!done && !refusal && !error && !parts.length && <Mono className="text-[11px] text-faint">Nothing is sent until you deploy.</Mono>}
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-line px-5 py-3">
           {refusal && <Tag tone="err">{refusal.unmet.length} unmet</Tag>}
@@ -336,7 +353,7 @@ export function DeployDialog({
             {done ? "Close" : "Cancel"}
           </Button>
           {!done && !refusal && (
-            <Button variant="solid" tone="ink" size="sm" permission="deploy" loading={busy} onClick={() => send()}>
+            <Button variant="solid" tone="ink" size="sm" permission="deploy" loading={busy} disabled={parts.length > 0} title={parts.length ? unsupportedReason(parts) : undefined} onClick={() => send()}>
               Deploy
             </Button>
           )}

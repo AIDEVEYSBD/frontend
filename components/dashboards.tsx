@@ -13,6 +13,7 @@ import { OutcomesBody } from "./outcomes";
 import { failureTrend, fmtAge, fmtCount, fmtMoney, inWindow, leaders, oldestGate, totalsOf, windowWords } from "./overview-data";
 import { Card, CardFigure, FigureTile, FootNote, Nothing, RankList, TrendBars } from "./overview-parts";
 import { bucketsOf, cutCost, rankControls, rankRefusals, resultTotals, useCost, useSecurity, staleOf } from "./dashboards-data";
+import { notBuilt, notBuiltOf } from "@/lib/not-built";
 import { BoardNote, BoardSwitch, CloudFindingsCard, ValueBars } from "./dashboards-parts";
 import type { Answer, FindingsSummary } from "@/lib/api/pending";
 
@@ -618,7 +619,9 @@ function ResultFigures({ answer, win }: { answer: Answer<FindingsSummary> | null
   const chip = chipOf(win);
   const t = resultTotals(answer);
   /* The door is not there, or did not answer: the tiles say so and carry no figure. */
-  const off = answer?.state === "pending" ? "Not built" : answer?.state === "error" ? "Not read" : false;
+  // The summary names its producer as not built: every figure is empty because nothing can fill it, so the tiles say "Not built" instead of zeros.
+  const unproduced = answer?.state === "ok" && notBuilt(notBuiltOf(answer.data), "producer");
+  const off = answer?.state === "pending" || unproduced ? "Not built" : answer?.state === "error" ? "Not read" : false;
   const sub = (said: string) => (answer === null ? "reading the summary" : t ? said : "summary not read");
   return (
     <FigureBand>

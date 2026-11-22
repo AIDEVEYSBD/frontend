@@ -1,4 +1,5 @@
 "use client";
+import { useDoorOff } from "@/lib/use-doors";
 import { Failure } from "./pending";
 
 import { Suspense, useCallback, useEffect, useState } from "react";
@@ -203,6 +204,7 @@ const iso = (local: string): string | undefined => (local && !Number.isNaN(Date.
 
 function LedgerPage() {
   const params = useSearchParams();
+  const proposeDoor = useDoorOff("POST", "/api/policy/changes");
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [agent, setAgent] = useState(params.get("agent") ?? "");
   const [from, setFrom] = useState("");
@@ -298,7 +300,7 @@ function LedgerPage() {
         hue="ledger"
         meta="what is kept, and the tombstones left by what was not"
         action={
-          <Button size="sm" variant="solid" tone="neutral" href="/policy#propose">
+          <Button size="sm" variant="solid" tone="neutral" href="/policy#propose" disabled={proposeDoor.off} title={proposeDoor.why}>
             Propose a change
           </Button>
         }

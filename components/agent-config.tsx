@@ -15,6 +15,8 @@ import { HARNESS, RISK, RISK_ORDER, type HarnessKind, type Risk } from "@/lib/sp
 import { DATA_CLASS_TONE } from "@/lib/bom";
 import { retiredLine } from "@/lib/lifecycle";
 import { editableDocument, retiredRefusalOf, saveAgent, type AgentSaved, type EditableDocument } from "@/lib/api/l8";
+import { runBlockers, unsupportedHeading, unsupportedReason } from "@/lib/unsupported";
+import { UnsupportedParts } from "./unsupported";
 import {
   NEW_GATE,
   arr,
@@ -565,7 +567,7 @@ function AgentForm({ edit, saved, onSaved }: { edit: EditableDocument; saved: Ag
             <Button size="sm" variant="solid" tone="neutral" href={`/evals?agent=${enc}`}>
               Evaluate
             </Button>
-            <Button size="sm" variant="solid" tone="ink" href={`/runs?agent=${enc}`} permission="run" disabled={Boolean(a.retired)}>
+            <Button size="sm" variant="solid" tone="ink" href={`/runs?agent=${enc}`} permission="run" disabled={Boolean(a.retired) || runBlockers(a.unsupported, a.version, a.deployed_version).length > 0} title={runBlockers(a.unsupported, a.version, a.deployed_version).length ? unsupportedReason(a.unsupported) : undefined}>
               Run
             </Button>
           </>
@@ -573,6 +575,8 @@ function AgentForm({ edit, saved, onSaved }: { edit: EditableDocument; saved: Ag
       >
         {ABOUT}
       </AgentHeader>
+
+      {!a.retired && <UnsupportedParts parts={a.unsupported} heading={unsupportedHeading(a.version, a.deployed_version)} />}
 
 
       <div className="grid gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-2 xl:grid-cols-4">

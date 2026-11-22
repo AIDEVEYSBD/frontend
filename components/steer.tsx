@@ -8,6 +8,7 @@ import { listOfferedModels, steerRun, type OfferedModel, type SteerResult } from
 import { CURRENT_USER } from "@/lib/user";
 import { signerName, useSession } from "@/lib/use-session";
 import { notBuiltDoorOf } from "@/lib/api/client";
+import { useDoorBuilt } from "@/lib/use-doors";
 import { Failure, NotConnected, type NamedDoor } from "./pending";
 
 /**
@@ -48,7 +49,10 @@ export function SteerPanel({ runId, holdBlocked }: { runId: string; holdBlocked?
   const [receipts, setReceipts] = useState<{ what: string; r: SteerResult }[]>([]);
   const [error, setError] = useState("");
   /** The platform answered 501 to the steer: the panel becomes the not-built panel, with no form that cannot be acted on. */
-  const [notBuilt, setNotBuilt] = useState<NamedDoor | null>(null);
+  const [pressedNotBuilt, setNotBuilt] = useState<NamedDoor | null>(null);
+  // The platform's own list of what it has built (GET /api/doors) says so before anyone presses.
+  const listed = useDoorBuilt("POST", "/api/runs/{id}/steer");
+  const notBuilt = pressedNotBuilt ?? (listed === false ? { method: "POST", path: "/api/runs/{id}/steer" } : null);
 
   useEffect(() => {
     let stop = false;

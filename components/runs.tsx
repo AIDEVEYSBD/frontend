@@ -17,6 +17,9 @@ import { Icon } from "./builder/icons";
 import { Pick } from "./select";
 import { fromDocument, HARNESS, inputKeysOf, toDocument, type AgentSystem, type Kind } from "@/lib/spec";
 import { useModels } from "@/lib/use-models";
+import { runBlockers, unsupportedOf, unsupportedReason, type UnsupportedPart } from "@/lib/unsupported";
+import { notBuilt, readRunRowsNotBuilt } from "@/lib/not-built";
+import { UnsupportedParts } from "./unsupported";
 import { SpanDetail, Waterfall, useTrace, type Span } from "./waterfall";
 import { explainControl } from "@/lib/guardrails";
 import { ControlRef, KILL_CONTROL } from "./control-ref";
@@ -217,10 +220,15 @@ interface SavedAgent {
   nodes: number;
   /** L8: retired agents take no new runs; their card opens the lifecycle instead. */
   retired: Retired | null;
+  /** Parts of its definition the platform does not carry out: such an agent cannot be run, and its card opens the agent instead. */
+  unsupported: UnsupportedPart[];
 }
 
 /** A row of the backend's run ledger, as the list shows it. `stuck` and `waiting_on` are L5's; `source` (an attached agent's SDK, or A2A) is L6's. */
-type RunSummary = Pick<RunRowL6, "id" | "system" | "state" | "at" | "ms" | "denials" | "live" | "stuck" | "waiting_on" | "source" | "shadow" | "review" | "taint" | "eval" | "canary">;
+type RunSummary = Pick<RunRowL6, "id" | "system" | "state" | "at" | "ms" | "denials" | "live" | "stuck" | "waiting_on" | "source" | "shadow" | "review" | "taint" | "eval" | "canary"> & {
+  /** Why the run is stuck, when it is: no worker has taken it and none has reported in, or its job ended while it still ran. */
+  stuck_reason?: string | null;
+};
 
 const ago = (iso: string) => {
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -270,7 +278,7 @@ function Launcher() {
 
   useEffect(() => {
     listAgents()
-      .then((rows) => setAgents(rows.map((a) => ({ id: a.id, name: a.name, description: a.description ?? "", nodes: a.nodes, retired: retiredOf(a.retired) }))))
+      .then((rows) => setAgents(rows.map((a) => ({ id: a.id, name: a.name, description: a.description ?? "", nodes: a.nodes, retired: retiredOf(a.retired), unsupported: runBlockers(unsupportedOf(a), a.version, a.deployed_version) }))))
       .catch((e) => setAgentsError((e as Error).message));
   }, []);
 
@@ -336,8 +344,8 @@ function Launcher() {
             {(agents ?? []).map((a) => (
               <button
                 key={a.id}
-                onClick={() => router.push(a.retired ? `/lifecycle?agent=${encodeURIComponent(a.id)}` : `/runs?agent=${encodeURIComponent(a.id)}`)}
-                title={a.retired ? retiredLine(a.retired) : undefined}
+                onClick={() => router.push(a.retired ? `/lifecycle?agent=${encodeURIComponent(a.id)}` : a.unsupported.length ? `/agent?id=${encodeURIComponent(a.id)}` : `/runs?agent=${encodeURIComponent(a.id)}`)}
+                title={a.retired ? retiredLine(a.retired) : a.unsupported.length ? unsupportedReason(a.unsupported) : undefined}
                 className={`focusable group flex cursor-pointer flex-col gap-2.5 rounded-lg border border-line p-4 text-left elev-1 transition-[border-color,box-shadow,transform] duration-200 ease-[var(--ease-out)] hover:-translate-y-px hover:border-line-strong hover:elev-2 ${a.retired ? "bg-raise/60" : "bg-surface"}`}
               >
                 <div className="flex items-center gap-2.5">
@@ -355,11 +363,13 @@ function Launcher() {
                 ) : (
                   a.description && <p className="text-[11.5px] leading-[1.55] text-dim">{a.description}</p>
                 )}
+                {!a.retired && <UnsupportedParts parts={a.unsupported} compact />}
                 <span className="mt-auto flex items-center gap-2 border-t border-line pt-2">
                   <Mono className="text-[10px] text-faint">{a.nodes} nodes</Mono>
+                  {!a.retired && a.unsupported.length > 0 && <span className="text-[10.5px] font-medium text-warn">Cannot be run</span>}
                   <span className="grow" />
-                  <span className={`flex items-center gap-1 text-[11px] font-medium opacity-0 transition-opacity group-hover:opacity-100 ${a.retired ? "text-dim" : "text-run"}`}>
-                    {a.retired ? "Lifecycle" : "Run"}
+                  <span className={`flex items-center gap-1 text-[11px] font-medium opacity-0 transition-opacity group-hover:opacity-100 ${a.retired || a.unsupported.length ? "text-dim" : "text-run"}`}>
+                    {a.retired ? "Lifecycle" : a.unsupported.length ? "Agent" : "Run"}
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                       <path d="M5 12h14M13 6l6 6-6 6" />
                     </svg>
@@ -459,6 +469,7 @@ function Launcher() {
                       {r.id} · {ago(r.at)} · {(r.ms / 1000).toFixed(1)}s
                       {r.waiting_on ? ` · waiting on ${r.waiting_on}` : ""}
                     </Mono>
+                    {r.stuck && r.stuck_reason && <span className="text-[11px] leading-[1.45] text-warn">{r.stuck_reason}</span>}
                     {took.length > 0 && (
                       <span className="flex min-w-0 flex-wrap items-center gap-1 pt-0.5" title={`Agents that took part: ${took.join(", ")}`}>
                         <span className="text-[10.5px] text-faint">with</span>
@@ -509,8 +520,22 @@ function seedInput(s: AgentSystem): string {
 function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolean }) {
   const [system, setSystem] = useState<AgentSystem | null>(null);
   const [loadError, setLoadError] = useState("");
-  const { models, defaultModel } = useModels();
+  const { models, defaultModel, read: modelsRead, error: modelsError } = useModels();
   const [model, setModel] = useState("");
+  /** Parts of the agent's definition the platform does not carry out: Run stays off, with the reason. Read from the agent, and from a 409 start refusal. */
+  const [unsupported, setUnsupported] = useState<UnsupportedPart[]>([]);
+  useEffect(() => {
+    if (!agentId || draft) return;
+    let live = true;
+    // The start refusal (409 with `unsupported`) says the same if this read fails; it only lets Run be off before the press.
+    fetch(`/api/agents/${encodeURIComponent(agentId)}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => live && d && setUnsupported(runBlockers(unsupportedOf(d), d.version, d.deployed_version)))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [agentId, draft]);
   const [prompt, setPrompt] = useState("");
   const [input, setInput] = useState("{}");
   // The spec names its own inputs; typed fields are the default, JSON the escape hatch.
@@ -697,6 +722,8 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
         const retired = response.status === 409 ? retiredOf((error as { retired?: unknown } | undefined)?.retired) : null;
         // A paused (or draining) agent takes none either (409 `control: "paused"`, L8 second round): who paused it, why, and where it is resumed.
         const paused = pausedRefusalOf(response.status, error);
+        // A definition with parts the platform does not carry out is refused (409 `unsupported`): the parts are listed beside the form.
+        if (response.status === 409 && unsupportedOf(error).length) setUnsupported(unsupportedOf(error));
         setError(
           locked
             ? lockdownRefusalText(locked)
@@ -933,6 +960,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
                     </div>
                   </div>
                 )}
+                {unsupported.length > 0 && <UnsupportedParts parts={unsupported} className="mt-2" />}
                 {error && (
                   <p className="pt-1.5 text-[11.5px] text-err" role="alert">
                     {error}
@@ -951,8 +979,16 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
                   onChange={setModel}
                   options={models.map((m) => ({ value: m.id, label: m.label }))}
                 />
+                {modelsError && (
+                  <span className="block pt-1 text-[11px] leading-[1.45] text-err" role="alert">
+                    The offered models could not be read: {modelsError}
+                  </span>
+                )}
+                {!modelsError && modelsRead && models.length === 0 && (
+                  <span className="block pt-1 text-[11px] leading-[1.45] text-faint">No model is offered on this deployment (Configuration, Models).</span>
+                )}
               </div>
-              <Button tone="ink" variant="solid" permission="run" onClick={start} disabled={!retry.ready} className="shrink-0 px-5">
+              <Button tone="ink" variant="solid" permission="run" onClick={start} disabled={!retry.ready || unsupported.length > 0} title={unsupported.length ? unsupportedReason(unsupported) : undefined} className="shrink-0 px-5">
                 {retry.ready ? "Run" : `Retry in ${retry.left}s`}
               </Button>
             </div>
@@ -1026,6 +1062,12 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
 
 /* ═══════════════════ Replay theater ═══════════════════ */
 
+/** `live`, `waiting_on`, `stuck` and `stuck_reason` of a run record; ahead of the generated types. */
+function waitingOf(data: unknown): { on: string; live: boolean; stuck: boolean; reason: string } {
+  const o = (data ?? {}) as { live?: unknown; waiting_on?: unknown; stuck?: unknown; stuck_reason?: unknown };
+  return { on: typeof o.waiting_on === "string" ? o.waiting_on : "", live: o.live === true, stuck: o.stuck === true, reason: typeof o.stuck_reason === "string" ? o.stuck_reason : "" };
+}
+
 /** What a run record says beside its journal, each member empty when the record does not hold it. */
 function runFactsOf(data: Schemas["RunState"]): RunFacts {
   const text = (v: unknown) => (typeof v === "string" ? v : "");
@@ -1067,9 +1109,9 @@ function RunRecord({ id, onReread }: { id: string; onReread: () => void }) {
     kill: Schemas["KillInfo"] | null;
     /** When the run finished; "" while an SDK agent still holds it open. */
     finishedAt: string;
-  }>({ system: "", runId: "", state: "", error: "", result: null, source: "", startedAt: "", kill: null, finishedAt: "" });
-  const [specNodes, setSpecNodes] = useState<{ id: string; label: string; kind: string }[] | null>(null);
-  const [specEdges, setSpecEdges] = useState<BoardEdge[]>([]);
+    /** Whether anyone is working on it, as the record says: `waiting_on` is "a worker" while no worker has taken it, and `stuck` (with why) once none has for too long. */
+    waiting: { on: string; live: boolean; stuck: boolean; reason: string };
+  }>({ system: "", runId: "", state: "", error: "", result: null, source: "", startedAt: "", kill: null, finishedAt: "", waiting: { on: "", live: false, stuck: false, reason: "" } });
   const [loadError, setLoadError] = useState("");
   /** L8: what the record says beyond the journal: a rollback's flag, an A2A task's taint, the eval it is a case of. */
   const [flags, setFlags] = useState<RunFlags | null>(null);
@@ -1099,28 +1141,26 @@ function RunRecord({ id, onReread }: { id: string; onReread: () => void }) {
           startedAt: typeof data.started_at === "string" ? data.started_at : "",
           kill: data.kill ?? null,
           finishedAt: typeof data.finished_at === "string" ? data.finished_at : "",
+          waiting: waitingOf(data),
         });
       })
       .catch((e) => setLoadError((e as Error).message));
   }, [id]);
 
-  /* The full spine comes from the spec, so the nodes a run never reached are
-     visible as never-reached — what a run didn't do is part of the review. */
-  useEffect(() => {
-    if (!meta.system) return;
-    let stop = false;
-    agentDocument(meta.system)
-      .then((doc) => {
-        if (stop) return;
-        const s = fromDocument(doc);
-        setSpecNodes(s.nodes.map((n) => ({ id: n.id, label: n.label || n.id, kind: n.harness })));
-        setSpecEdges(s.edges.map((e) => ({ source: e.source, target: e.target, when: e.when, label: e.label })));
-      })
-      .catch(() => {});
-    return () => {
-      stop = true;
-    };
-  }, [meta.system]);
+  /* The full spine comes from the run's own copy of its definition (`spec` on
+     the record), never the agent's current one, so the nodes a run never
+     reached are visible as never-reached and a later version changes nothing
+     here. A record without a spec falls back to the steps its journal names. */
+  const runSpec = useMemo(() => {
+    if (!facts?.spec) return null;
+    try {
+      return fromDocument(facts.spec);
+    } catch {
+      return null;
+    }
+  }, [facts]);
+  const specNodes = useMemo(() => (runSpec ? runSpec.nodes.map((n) => ({ id: n.id, label: n.label || n.id, kind: n.harness })) : null), [runSpec]);
+  const specEdges = useMemo<BoardEdge[]>(() => (runSpec ? runSpec.edges.map((e) => ({ source: e.source, target: e.target, when: e.when, label: e.label })) : []), [runSpec]);
 
   const duration = useMemo(() => (entries?.length ? entries[entries.length - 1].t : 0), [entries]);
   // Review opens at the outcome, paused — a reviewer starts from the verdict,
@@ -1232,6 +1272,7 @@ function RunRecord({ id, onReread }: { id: string; onReread: () => void }) {
         flags={flags}
         facts={facts}
         locate={linked}
+        waiting={meta.waiting}
       />
     );
   }
@@ -1318,10 +1359,13 @@ function FollowTheater({
   flags = null,
   facts = null,
   locate = "",
+  waiting = null,
 }: {
   id: string;
   system: string;
   source: string;
+  /** Whether anyone was working on the run when the page opened (RunRecord): shown until an entry beyond those already on the record arrives. */
+  waiting?: { on: string; live: boolean; stuck: boolean; reason: string } | null;
   /** When the run started, for the clock between entries; "" when the record does not say. */
   startedAt: string;
   /** A kill already on the record when the page opened, not yet taken by the run. */
@@ -1505,7 +1549,11 @@ function FollowTheater({
                 following={
                   killing || killed
                     ? `kill requested${killed?.by ? ` by ${killed.by}` : ""} — the run stops before its next model call, step or node`
-                    : "following — every entry lands as the runtime writes it"
+                    : waiting && !waiting.live && entries.length <= initial.length && waiting.stuck
+                      ? `stuck: ${waiting.reason || "no worker is carrying this run"}`
+                      : waiting && !waiting.live && entries.length <= initial.length && waiting.on
+                        ? `queued — waiting on ${waiting.on}; nothing is written until it is taken up`
+                        : "following — every entry lands as the runtime writes it"
                 }
               />
               {error && <span className="min-w-0 truncate text-[11.5px] text-err">{error}</span>}
@@ -1864,6 +1912,15 @@ function Theater({
   const modelCalls = entries.filter((e) => e.kind === "model.call").length;
   const denied = entries.filter((e) => e.kind === "denied" || e.kind === "contract.breach").length;
   const artifacts = useMemo(() => artifactsOf(entries), [entries]);
+  /** The run ledger names `runs[].artifacts` as not built: no step writes a file, so an empty panel says so instead of "0 produced". */
+  const [rowsNotBuilt, setRowsNotBuilt] = useState<string[]>([]);
+  useEffect(() => {
+    let live = true;
+    void readRunRowsNotBuilt().then((l) => live && setRowsNotBuilt(l));
+    return () => {
+      live = false;
+    };
+  }, []);
   /** The documents the run registered as deliverables (`deliverable.written`, L8 second round). */
   const deliverablesWritten = useMemo(() => entries.filter((e) => e.kind === "deliverable.written").length, [entries]);
   // Theatre or agents: the same journal, read as one transcript or as a card
@@ -1928,7 +1985,8 @@ function Theater({
         <RunSourceTag run={{ source }} />
         {suspension ? (
           <Status tone="warn">Awaiting approval</Status>
-        ) : live ? (
+        ) : (runLive ?? live) ? (
+          // A replay's `live` is the film playing; the badge says what the run is, so a finished run replaying reads as finished.
           <Status tone="run">Running</Status>
         ) : (
           <StateBadge state={finalState} />
@@ -2062,7 +2120,7 @@ function Theater({
                 Deliverables ({deliverablesWritten})
               </Button>
             )}
-            <Mono className="shrink-0 text-[11px] text-faint">{artifacts.length} produced</Mono>
+            <Mono className="shrink-0 text-[11px] text-faint">{artifacts.length === 0 && notBuilt(rowsNotBuilt, "artifacts") ? "not built" : `${artifacts.length} produced`}</Mono>
           </div>
           <div className="flex min-h-0 grow flex-col gap-3 overflow-y-auto px-4 py-4">
             {steer}
@@ -2923,7 +2981,8 @@ function JournalRow({ e, entries, located = false, onLineage, onProvenance }: { 
     );
   }
 
-  const k = ROW[e.kind] ?? { dot: "bg-faint", text: "text-dim", label: e.kind };
+  // A gate's deadline passing moves it to the next approver: a note the platform marks `gate.escalated`, drawn as the gate's own colour.
+  const k = e.kind === "note" && e.data?.control === "gate.escalated" ? { dot: "bg-warn", text: "text-warn", label: "escalated" } : (ROW[e.kind] ?? { dot: "bg-faint", text: "text-dim", label: e.kind });
   return (
     <div className="flex gap-3">
       <Mono className="w-9 shrink-0 text-[10.5px] text-ghost">{clock(e.t)}</Mono>

@@ -1,4 +1,5 @@
 "use client";
+import { useDoorOff } from "@/lib/use-doors";
 import { errorText, notBuiltText } from "@/lib/api/client";
 import { ask } from "@/lib/api/pending";
 import { Failure } from "./pending";
@@ -599,6 +600,7 @@ function SetBuilder({
     URL.revokeObjectURL(url);
   };
 
+  const saveDoor = useDoorOff("POST", "/api/evals");
   const save = async () => {
     setBusy(true);
     setError("");
@@ -1103,7 +1105,8 @@ function SetBuilder({
                 variant="solid"
                 tone="ink"
                 permission="configure"
-                disabled={!agent || !cases.length || busy}
+                disabled={!agent || !cases.length || busy || saveDoor.off}
+                title={saveDoor.why}
                 loading={busy}
                 onClick={save}
               >
