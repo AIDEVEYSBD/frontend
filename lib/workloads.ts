@@ -173,7 +173,7 @@ const words = (raw: string): string => {
 export function readOffer(answer: Answer<WorkloadList> | null, id: string): OfferReading {
   const none = { offer: null, agent: "" };
   if (answer === null) return { state: "reading", label: "Reading", tone: "neutral", why: "The control plane has not answered yet.", short: "", ...none };
-  if (answer.state === "pending") return { state: "pending", label: "Not connected", tone: "neutral", why: "The workloads door is not connected on this deployment, so no agent is named to run it.", short: "No agent is named to run it yet.", door: answer.door, ...none };
+  if (answer.state === "pending") return { state: "pending", label: "Not built", tone: "neutral", why: "The platform does not answer the workloads address yet, so no agent is named to run it.", short: "No agent is named to run it yet.", door: answer.door, ...none };
   if (answer.state === "error") return { state: "error", label: "Could not be read", tone: "err", why: `The workloads could not be read: ${answer.message}`, short: "Its state could not be read.", ...none };
   const list = Array.isArray(answer.data?.workloads) ? answer.data.workloads : [];
   const offer = list.find((w) => w && w.id === id) ?? null;

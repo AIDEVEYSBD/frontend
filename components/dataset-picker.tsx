@@ -47,7 +47,7 @@ export function DatasetPicker({ kind, value, onChange, disabled }: { kind?: Data
   const of = kind ? kindLabel(kind).toLowerCase() : "dataset";
 
   const connected = answer?.state === "ok";
-  const placeholder = answer === null ? "Reading the datasets…" : answer.state === "pending" ? "Not connected" : answer.state === "error" ? "Could not be read" : ready.length ? `Choose a ${of}` : `No ready ${of} yet`;
+  const placeholder = answer === null ? "Reading the datasets…" : answer.state === "pending" ? "Not built yet" : answer.state === "error" ? "Could not be read" : ready.length ? `Choose a ${of}` : `No ready ${of} yet`;
   const options: { value: string; label: string }[] = [{ value: NONE, label: placeholder }];
   if (value && !ready.some((d) => d.id === value)) {
     // Chosen, and not among the ready ones: named for what it is. Without the list, only its id is known.

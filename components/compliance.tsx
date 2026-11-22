@@ -174,7 +174,7 @@ export function ComplianceView() {
   /* ── why nothing can be written, when it cannot ── */
   const denied = loaded && session !== null && !can("configure");
   const whyNot = !connected
-    ? "Not connected on this deployment"
+    ? "Not built yet: the platform does not answer this address"
     : denied
       ? `Needs the "configure" permission. Your roles: ${session?.appRoles.join(", ") || "none"}.`
       : "";

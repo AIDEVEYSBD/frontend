@@ -4,12 +4,12 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { DOORS, ask, type Answer, type Door, type DoorId } from "@/lib/api/pending";
 
 /**
- * A screen that is ahead of its door (lib/api/pending.ts).
+ * A screen whose address the platform has not built yet (lib/api/pending.ts).
  *
  * `useDoor` asks once and again on `reload`; `NotConnected` is what a panel
- * shows while nothing serves the door: what the panel is for, that this
- * deployment does not have it yet, and the door it is waiting for. It is a
- * statement, not an error, and never a stand-in record.
+ * shows when the platform answers 501 "not built": what the panel is for,
+ * that the platform does not do it yet, and the address it would call. It is
+ * never a stand-in record.
  */
 
 export function useDoor<T>(
@@ -41,15 +41,15 @@ export function NotConnected({ door, title, children, compact = false }: { door:
     <div className={`flex flex-col gap-1.5 rounded-lg border border-dashed border-line-strong bg-surface ${compact ? "px-4 py-3" : "px-6 py-8"}`} data-pending={d.path}>
       <span className="flex items-center gap-2">
         <span className="size-1.5 shrink-0 rounded-[2px] bg-faint" />
-        <span className="text-[13px] font-semibold text-fg">{title ?? "Not connected on this deployment"}</span>
+        <span className="text-[13px] font-semibold text-fg">{title ?? "Not built yet"}</span>
       </span>
       <p className="max-w-[64ch] text-[12.5px] leading-[1.55] text-dim">{children ?? `${d.purpose}.`}</p>
       <p className="text-[11.5px] leading-[1.5] text-faint">
-        The screen is ready and shows nothing until the control plane serves{" "}
+        The platform answers{" "}
         <span className="font-mono text-[11px] text-dim">
           {d.method} {d.path}
-        </span>
-        .
+        </span>{" "}
+        with 501, not built. Nothing here is shown until it does.
       </p>
     </div>
   );
@@ -60,7 +60,7 @@ export function NotConnectedNote({ door }: { door: DoorId | Door }) {
   const d: Door = typeof door === "string" ? DOORS[door] : door;
   return (
     <span className="text-[11.5px] leading-[1.5] text-faint" data-pending={d.path}>
-      Not connected on this deployment: waits for{" "}
+      Not built yet: the platform answers 501 to{" "}
       <span className="font-mono text-[11px] text-dim">
         {d.method} {d.path}
       </span>

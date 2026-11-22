@@ -749,13 +749,17 @@ export async function ask<T>(
     return { state: "error", message: (e as Error).message || "the request did not reach the server" };
   }
   let body: unknown = null;
+  let parsed = true;
   try {
     body = await res.clone().json();
   } catch {
-    /* not JSON: the console's own 404 page, or an empty answer */
+    parsed = false;
   }
   const said = body && typeof body === "object" && "error" in body ? String((body as { error?: unknown }).error ?? "") : "";
-  if (res.status === 501 || ((res.status === 404 || res.status === 405) && !said)) return { state: "pending", door };
-  if (!res.ok) return { state: "error", message: said || `the server answered ${res.status}`, status: res.status };
+  // Only the platform's own "not built" answer reads as not built. A 404 or 405 is a fault (an address or a
+  // method the platform does not know) and is shown as one, with its status.
+  if (res.status === 501) return { state: "pending", door };
+  if (!res.ok) return { state: "error", message: said || `the platform answered ${res.status} to ${door.method} ${door.path}`, status: res.status };
+  if (!parsed) return { state: "error", message: `the platform answered ${res.status} to ${door.method} ${door.path} with a body that is not JSON`, status: res.status };
   return { state: "ok", data: body as T };
 }

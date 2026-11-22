@@ -1,14 +1,12 @@
 /**
- * Who is at the console when nobody has signed in.
- *
- * With sign-in switched off (a laptop, or a deployment locked by its runtime
- * key alone) there is no person to name, so what gets written into
- * approvals, admissions and gate answers is this stand-in, which says so. A
- * signed-in session always takes its place; every caller goes through here
- * rather than asking the person to type their name.
+ * What the console shows in place of a person when it could not read who is
+ * signed in. The platform always knows (it checks the sign-in on every
+ * request, and refuses anything it cannot attribute), so this only appears
+ * while the session is being read or when reading it failed. It never names
+ * anyone and never suggests that sign-in is switched off.
  */
 export const CURRENT_USER = {
-  name: "Local operator",
-  role: "Sign-in is off",
-  initials: "LO",
+  name: "Not signed in",
+  role: "The platform has not confirmed who you are",
+  initials: "?",
 };

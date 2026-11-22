@@ -249,7 +249,7 @@ export function AuthorizationView() {
       <PageHeader
         title="Authorization servers"
         action={
-          <span title={pending ? "Not connected on this deployment" : undefined}>
+          <span title={pending ? "Not built yet: the platform answers 501" : undefined}>
             <Button variant="solid" tone="ink" permission="iam" disabled={!connected} onClick={() => setAdding(true)}>
               Add an authorization server
             </Button>

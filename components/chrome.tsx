@@ -472,8 +472,9 @@ export function Chrome({ children }: { children: React.ReactNode }) {
   // alone; so does the external answer page, which an outside participant
   // opens with a signed link and no session (lib/route-policy.ts OPEN_PAGES).
   if (isOpenPage(pathname)) return <>{children}</>;
-  const who = session ?? { name: CURRENT_USER.name, initials: CURRENT_USER.initials, appRoles: [] as string[], sso: false, demoDefaultApplied: false, email: "" };
-  const roleLabel = who.sso ? (who.appRoles.length ? who.appRoles.map(roleName).join(", ") : who.demoDefaultApplied && can("view") ? "default role (no assignment)" : "no role") : CURRENT_USER.role;
+  // Until the platform answers who this is, nobody is named; a failed read says so instead of inventing someone.
+  const who = session ?? { name: loaded ? CURRENT_USER.name : "Reading who you are…", initials: CURRENT_USER.initials, appRoles: [] as string[], sso: false, demoDefaultApplied: false, email: "" };
+  const roleLabel = who.sso ? (who.appRoles.length ? who.appRoles.map(roleName).join(", ") : "no role") : loaded ? CURRENT_USER.role : "";
   const me: Who = { name: who.name, initials: who.initials, email: who.email, role: roleLabel, sso: who.sso && session?.canSignOut !== false, signOut };
   return (
     <div className="flex h-screen bg-canvas">

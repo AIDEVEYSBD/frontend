@@ -150,7 +150,7 @@ export function RunAuthorityPanel({ run }: { run: string }) {
   if (!answer) return <p className="text-[11px] text-faint">Reading the authority this run was started under…</p>;
   if (answer.state === "pending") {
     return (
-      <NotConnected door={answer.door} compact title="Inherited authority is not connected on this deployment">
+      <NotConnected door={answer.door} compact title="The authority a run started under is not built yet">
         What this run was granted and where each grant came from, what was narrowed and why, its data class ceiling and its gates.
       </NotConnected>
     );

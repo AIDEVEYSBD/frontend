@@ -84,7 +84,7 @@ function DatasetsPage() {
         group="data"
         tab="datasets"
         actions={
-          <span title={pending ? "Not connected on this deployment" : undefined}>
+          <span title={pending ? "Not built yet: the platform answers 501" : undefined}>
             <Button variant="solid" tone="ink" permission="run" disabled={!connected} onClick={() => setUploading(true)}>
               Upload a dataset
             </Button>
