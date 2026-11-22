@@ -10,7 +10,7 @@ import { AgentLink, Card, Facts, Note, TextLink } from "./workload-parts";
 import { InputFields, InputValueText } from "./workload-inputs";
 import { FirstRun } from "./workload-first-run";
 import { count } from "./finding-marks";
-import { api, errorText } from "@/lib/api/client";
+import { api, errorText, type Schemas } from "@/lib/api/client";
 import { lockdownRefusalOf, lockdownRefusalText } from "@/lib/api/l5";
 import { rateLimitOf } from "@/lib/api/l7";
 import { retiredOf } from "@/lib/api/l8";
@@ -205,7 +205,8 @@ export function WorkloadSetup({
     setBusy(true);
     setRefused("");
     try {
-      const { data, error, response } = await api.POST("/api/runs", { body: { agent: reading.agent, input: toRunInput(form.inputs, values), model: "", provider: "foundry" } });
+      // No model and no endpoint are named: the agent's own steps say which model each one uses. The generated request type still asks for `provider`.
+      const { data, error, response } = await api.POST("/api/runs", { body: { agent: reading.agent, input: toRunInput(form.inputs, values), model: "" } as Schemas["RunStartRequest"] });
       if (!data?.run) {
         setRefused(startRefusal(reading.agent, response.status, error, response.headers.get("retry-after"), response));
         return;

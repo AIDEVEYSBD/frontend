@@ -14,12 +14,14 @@ export interface OfferedModel {
   label: string;
   /** Capability tier the operator assigned on the Configuration page. */
   class?: ModelClass;
+  /** The endpoint this model is called on (lib/providers.ts). */
+  provider?: string;
 }
 
 export const MODEL_CLASSES: ModelClass[] = ["small", "medium", "large"];
 
 // Nothing is offered until the Configuration page says so: a model id here
-// is a deployment name on the Foundry resource, and only the resource knows those.
+// is a name one of the deployment's endpoints serves, and only the endpoint knows those.
 const FALLBACK: OfferedModel[] = [];
 
 export function useModels(): {

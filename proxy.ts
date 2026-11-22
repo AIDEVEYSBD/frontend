@@ -77,9 +77,38 @@ const PUBLIC_ORIGIN = (process.env.NEXT_PUBLIC_ORIGIN ?? process.env.PUBLIC_ORIG
 
 const machineDoor = isMachineDoor;
 
+/**
+ * Connected to the platform behind Identity-Aware Proxy (BACKEND_ORIGIN and
+ * IAP_AUDIENCE both set): this server serves pages and forwards. Every /api
+ * request goes to the platform with its headers unchanged, IAP's signed
+ * assertion among them, and the platform decides who the person is and what
+ * they may do on every request. Nothing is decided here and no session is
+ * kept here. The one check made before forwarding is that a write comes from
+ * the console's own origin, since IAP's own session rides on a cookie.
+ */
+const PLATFORM = Boolean(BACKEND) && IAP;
+
+function forwardToPlatform(request: NextRequest): NextResponse {
+  const { pathname, search } = request.nextUrl;
+  if (request.method !== "GET" && request.method !== "HEAD" && request.method !== "OPTIONS") {
+    const origin = (request.headers.get("origin") ?? "").replace(/\/+$/, "");
+    const forwardedHost = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? request.nextUrl.host;
+    const allowed = [PUBLIC_ORIGIN, `${request.nextUrl.protocol}//${forwardedHost}`, `https://${forwardedHost}`, `http://${forwardedHost}`];
+    if (origin && !allowed.includes(origin)) return NextResponse.json({ error: "cross-origin writes are refused" }, { status: 403 });
+  }
+  const headers = new Headers(request.headers);
+  headers.delete("host");
+  return NextResponse.rewrite(new URL(`${BACKEND}${pathname}${search}`), { request: { headers } });
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const isApi = pathname.startsWith("/api/");
+
+  if (PLATFORM) {
+    if (isApi || pathname === "/.well-known/agent.json") return forwardToPlatform(request);
+    return NextResponse.next();
+  }
 
   if (AUTH_SECRET && !machineDoor(pathname) && request.headers.get(INTERNAL_HEADER) !== AUTH_SECRET) {
     const open = !isApi && isOpenPage(pathname);

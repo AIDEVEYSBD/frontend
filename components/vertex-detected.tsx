@@ -5,12 +5,12 @@ import { Button, Status, Tag } from "./ui";
 import { BrandMark } from "./brand";
 import { Text } from "./builder/controls";
 import { QUIET } from "@/lib/quiet";
-import type { VertexAnswer, VertexGroup } from "@/app/api/providers/vertex/route";
+import type { VertexAnswer, VertexGroup } from "@/lib/service-answers";
 
 /**
- * What the Vertex connection can see (app/api/providers/vertex/route.ts).
+ * What the Vertex connection can see (`GET /api/providers/vertex`).
  *
- * The console's server reads the list with its own Google identity, so this
+ * The platform service reads the list with its own Google identity, so this
  * shows the models the moment the deployment can reach Vertex AI, before any
  * of them is offered to agents or routed to. It states that plainly: these
  * are detected, not in use. With no connection it shows nothing in a quiet

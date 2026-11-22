@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ConsoleLinks } from "@/app/api/links/route";
+import type { ConsoleLinks } from "@/lib/service-answers";
 
 /**
- * The addresses of the consoles this one hands off to (app/api/links/route.ts),
+ * The addresses of the consoles this one hands off to (`GET /api/links`),
  * read once and shared. `null` until the answer is in; an address a deployment
  * has not given is absent, which is how a button knows the console it would
  * open is not live yet.

@@ -629,14 +629,18 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
     setWallMs(0);
     const ctrl = new AbortController();
     abort.current = ctrl;
+    const chosen = model || defaultModel;
+    // The endpoint the offered model is called on. Left out when none is named, and the platform finds the endpoint that serves the model.
+    const servedBy = models.find((m) => m.id === chosen)?.provider;
     try {
       const { data, error, response } = await api.POST("/api/runs", {
+        // The generated request type still asks for `provider` and fixes its values; the platform takes an endpoint id, or none.
         body: {
           ...(agentId && !draft ? { agent: agentId } : { spec: toDocument(system) as Record<string, unknown> }),
           input: parsed,
-          model: model || defaultModel,
-          provider: "foundry",
-        },
+          model: chosen,
+          ...(servedBy ? { provider: servedBy } : {}),
+        } as Schemas["RunStartRequest"],
         signal: ctrl.signal,
       });
       if (!data) {

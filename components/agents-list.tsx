@@ -14,6 +14,7 @@ import { productionRuns } from "@/lib/production";
 import { QUIET } from "@/lib/quiet";
 import { HARNESS } from "@/lib/spec";
 import { useSession } from "@/lib/use-session";
+import { AddAgent } from "./agent-add";
 import { usePageFacts } from "./assistant";
 import { Icon } from "./builder/icons";
 import { DrillModal } from "./drill";
@@ -475,7 +476,7 @@ function AgentsPage() {
   return (
     <div className="min-h-full" data-hue="blue">
       <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7">
-        <GroupHeader group="agents" tab="agents">
+        <GroupHeader group="agents" tab="agents" actions={<AddAgent onSaved={refresh} />}>
           Every agent saved on this deployment: what it does, who owns it, whether production runs it and when it last ran. Open an agent for its configuration, versions and bill of materials, or open its row for the steps inside it.
         </GroupHeader>
 
@@ -486,7 +487,7 @@ function AgentsPage() {
         {agents?.length === 0 && !error && (
           <div className="flex flex-col items-start gap-2 rounded-lg border border-dashed border-line-strong bg-surface px-6 py-10">
             <p className="text-[14px] font-medium text-fg">No agent is on this deployment yet.</p>
-            <p className="max-w-[60ch] text-[12.5px] leading-relaxed text-faint">Agents are delivered to this console rather than designed in it. Once one is saved it is listed here, ready to configure, run and deploy.</p>
+            <p className="max-w-[60ch] text-[12.5px] leading-relaxed text-faint">An agent is not designed in this console: it arrives as a definition document from its author. Add one with the button above; once it is saved it is listed here, ready to configure, run and deploy.</p>
           </div>
         )}
 

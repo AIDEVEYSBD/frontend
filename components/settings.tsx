@@ -1,6 +1,6 @@
 "use client";
 
-import { DATA_CLASS_STORED, PanelFailure, PanelNote, PermittedClass, PermittedClassNote, useConfigChanges } from "./providers";
+import { DATA_CLASS_ENFORCED, PanelFailure, PanelNote, PermittedClass, PermittedClassNote, announceConfig } from "./providers";
 import type { DataClass } from "@/lib/api/pending";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -14,13 +14,13 @@ import { listVault, removeVaultKey, setVaultKey } from "@/lib/api/l2";
 /**
  * The bodies of two of Configuration's panels (components/configuration.tsx):
  * the models this deployment offers, and the keys its connectors read. The
- * providers those models are served by are in components/providers.tsx.
+ * endpoints those models are served by are in components/providers.tsx.
  *
- * Models: what the configured providers serve, and a dropdown with
+ * Models: what the deployment's endpoints serve, and a dropdown with
  * hundreds of entries is a way of choosing nothing. Whoever runs this
  * deployment picks the short list here; every model picker in the console
  * shows exactly that list and nothing else. A deployment starts with no
- * provider and no model, and each panel says so rather than naming one.
+ * model offered, and the panel says so rather than naming one.
  *
  * Keys: named credentials, referenced from specs as ${secret:name}. Values
  * arrive here and leave masked — the only consumer of a live key is the
@@ -36,7 +36,7 @@ interface CatalogueModel {
   context: number;
   price: number;
   price_out?: number;
-  /** Provider id for models offered from an added provider; absent for a model the catalogue door lists. */
+  /** The endpoint that serves it (lib/providers.ts). */
   provider?: string;
 }
 
@@ -44,7 +44,7 @@ type ModelClass = "small" | "medium" | "large";
 const MODEL_CLASSES: ModelClass[] = ["small", "medium", "large"];
 
 interface Config {
-  /** `max_data_class` (5.3) is read when the door answers one; it does not store it yet (components/providers.tsx). */
+  /** `max_data_class` (5.3) is read when the service answers one; nothing enforces it yet (components/providers.tsx). */
   models: { id: string; label: string; class?: ModelClass; price_in?: number; price_out?: number; provider?: string; max_data_class?: DataClass }[];
   default_model: string;
   class_defaults?: Partial<Record<ModelClass, string>>;
@@ -66,6 +66,10 @@ interface VaultKey {
 export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boolean | null; onChanged?: () => void; onQuiet?: (quiet: boolean) => void }) {
   const [catalogue, setCatalogue] = useState<CatalogueModel[] | null>(null);
   const [catalogueError, setCatalogueError] = useState("");
+  /** Whether the deployment has any model endpoint to list (`connected` in `GET /api/models`). Without one there is nothing to browse, which is not a failed read. */
+  const [connected, setConnected] = useState(true);
+  /** Why the service refused the last change, when it did. */
+  const [refused, setRefused] = useState("");
   const [config, setConfig] = useState<Config | null>(null);
   /** The configuration's read failed and an empty one stands in for it. A quiet console (lib/quiet.ts) says not connected instead of "none offered". */
   const [unread, setUnread] = useState("");
@@ -94,7 +98,6 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
         setConfig({ models: [], default_model: "" });
       });
   }, []);
-  useConfigChanges(reloadConfig);
   useEffect(() => {
     reloadConfig();
     fetch("/api/models")
@@ -106,6 +109,7 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
       })
       .then((d) => {
         if (d.error) setCatalogueError(String(d.error));
+        setConnected(d.connected !== false);
         setCatalogue(d.models ?? []);
       })
       .catch((e) => {
@@ -122,18 +126,18 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
   useEffect(() => {
     if (settled) onQuiet?.(quietUnread);
   }, [settled, quietUnread, onQuiet]);
-  // A deployment with no catalogue to list is not a fault: the door says its endpoint is not set, and the panel says there is nothing to browse.
-  const noCatalogue = /not set/i.test(catalogueError);
+  // A deployment with no endpoint to list is not a fault: the service says none is connected, and the panel says there is nothing to browse.
+  const noCatalogue = !connected;
   const providerLabel = useCallback((id?: string) => (config?.providers ?? []).find((p) => p.id === id), [config]);
 
   const shown = useMemo(() => {
     if (!catalogue) return [];
-    // Models offered from added providers are not in the catalogue the door lists; they
-    // join the list from the configuration so their tier and price are editable here.
+    // An offered model its endpoint no longer lists (or cannot list just now) is not in the catalogue;
+    // it joins the list from the configuration so its tier and price stay editable here.
     const ids = new Set(catalogue.map((m) => m.id));
     const extra: CatalogueModel[] = (config?.models ?? [])
       .filter((m) => !ids.has(m.id))
-      .map((m) => ({ id: m.id, label: m.label, context: 0, price: 0, provider: m.provider ?? (m.id === "scripted" ? undefined : "other") }));
+      .map((m) => ({ id: m.id, label: m.label, context: 0, price: 0, provider: m.provider }));
     const all = [...catalogue, ...extra];
     const q = query.trim().toLowerCase();
     const rows = q
@@ -172,9 +176,17 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
             body: JSON.stringify(next),
           });
           if (res.ok) {
+            setRefused("");
             setSavedTick(true);
             setTimeout(() => setSavedTick(false), 1200);
             onChanged?.();
+            // The Providers panel counts the offered models of each endpoint.
+            announceConfig();
+          } else {
+            // A refusal leaves the stored list as it was: say why, and show what is stored again.
+            const d = await res.json().catch(() => null);
+            setRefused(String(d?.error ?? `the server answered ${res.status}`));
+            if (!queued.current) reloadConfig();
           }
           next = queued.current;
           queued.current = null;
@@ -183,13 +195,14 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
         inFlight.current = false;
       }
     },
-    [onChanged],
+    [onChanged, reloadConfig],
   );
 
+  /** `next` is what the panel shows from now on; `sent` is the part of it that is posted, the whole of it unless said otherwise. */
   const save = useCallback(
-    (next: Config) => {
+    (next: Config, sent: Config = next) => {
       setConfig(next);
-      void push(next);
+      void push(sent);
     },
     [push],
   );
@@ -206,13 +219,11 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
     }
     const models = has
       ? config.models.filter((x) => x.id !== m.id)
-      : [...config.models, { id: m.id, label: m.label, ...(m.provider && m.provider !== "other" ? { provider: m.provider } : {}) }];
-    save({
-      models,
-      default_model: models.some((x) => x.id === config.default_model)
-        ? config.default_model
-        : (models[0]?.id ?? ""),
-    });
+      : // A newly offered model starts in the medium tier, as the service stores one saved without a tier.
+        [...config.models, { id: m.id, label: m.label, class: "medium" as ModelClass, ...(m.provider ? { provider: m.provider } : {}) }];
+    const default_model = models.some((x) => x.id === config.default_model) ? config.default_model : (models[0]?.id ?? "");
+    // The rest of the configuration stays on screen (the endpoints name each model's chip); only the list and the default are sent.
+    save({ ...config, models, default_model }, { models, default_model });
   };
 
   if (quietUnread) return <PanelNote />;
@@ -225,7 +236,8 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
   if (none && catalogue.length === 0 && !unread && (QUIET || noCatalogue || !catalogueError)) {
     return (
       <p className="px-4 py-3 text-[12px] leading-[1.55] text-dim">
-        No model is offered on this deployment yet, and it lists no catalogue to pick from. Add a provider under Providers and offer the models it serves; they appear here.
+        No model is offered on this deployment yet, and {noCatalogue ? "no model endpoint is connected to pick from" : "its endpoints list no model to pick from"}. Endpoints are set when the platform
+        is deployed (see Providers); the models they serve appear here.
       </p>
     );
   }
@@ -254,6 +266,7 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
       </div>
 
       {unread && <PanelFailure title="The offered models could not be read">{unread}</PanelFailure>}
+      {refused && <PanelFailure title="The change was not saved">{refused}</PanelFailure>}
       {catalogueError && !noCatalogue && !QUIET && (
         <p className="border-b border-line px-4 py-2.5 text-[11.5px] leading-[1.5] text-warn">
           <span className="font-medium">The catalogue could not be read.</span> {catalogueError}. The offered list still works; only browsing is unavailable.
@@ -286,9 +299,9 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
                     {m.provider && (
                       <span
                         className={`shrink-0 rounded-[3px] border px-1 py-px font-mono text-[9px] font-semibold ${providerLabel(m.provider)?.local ? "border-ok/40 text-ok" : "border-line-strong text-dim"}`}
-                        title={providerLabel(m.provider) ? "Served by this provider" : m.provider === "other" ? "Offered, and neither the catalogue nor a configured provider lists it" : "The provider this model names is not configured"}
+                        title={providerLabel(m.provider) ? "The endpoint this model is served by" : "The endpoint this model names is not connected to this deployment"}
                       >
-                        {providerLabel(m.provider)?.label ?? (m.provider === "other" ? "no provider" : m.provider)}
+                        {providerLabel(m.provider)?.label ?? m.provider}
                       </span>
                     )}
                     {on && isDefault && (
@@ -325,20 +338,13 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
                   <div className="w-32">
                     <Pick
                       aria-label={`Tier of ${m.label}`}
-                      value={offered.class ?? ""}
-                      onChange={(v) =>
-                        save({
-                          ...config,
-                          models: config.models.map((x) =>
-                            x.id === m.id ? { ...x, ...(v ? { class: v as ModelClass } : { class: undefined }) } : x,
-                          ),
-                        })
-                      }
-                      options={[{ value: "", label: "no tier" }, ...MODEL_CLASSES.map((c) => ({ value: c, label: c }))]}
+                      value={offered.class ?? "medium"}
+                      onChange={(v) => save({ ...config, models: config.models.map((x) => (x.id === m.id ? { ...x, class: v as ModelClass } : x)) })}
+                      options={MODEL_CLASSES.map((c) => ({ value: c, label: c }))}
                     />
                   </div>
-                  {/* Cost per million tokens, recorded by the operator: no provider
-                      publishes a sheet the console reads, and a blank means unknown, never free. */}
+                  {/* Cost per million tokens, recorded by the operator: no endpoint
+                      publishes a sheet the console reads. The service keeps 0 until a price is entered. */}
                   {local && <span className="text-[10px] text-ok">$0 per token · priced by the hour</span>}
                   {!local && (["price_in", "price_out"] as const).map((k) => (
                     <label key={k} className="flex items-center gap-1 text-[10px] text-faint">
@@ -365,8 +371,8 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
                     value={offered.max_data_class}
                     label={`Permitted data class of ${m.label}`}
                     onChange={(v) =>
-                      // Written only once the door keeps the field; the control is disabled until then.
-                      DATA_CLASS_STORED && save({ ...config, models: config.models.map((x) => (x.id === m.id ? { ...x, max_data_class: v || undefined } : x)) })
+                      // Written only once something enforces the field; the control is disabled until then.
+                      DATA_CLASS_ENFORCED && save({ ...config, models: config.models.map((x) => (x.id === m.id ? { ...x, max_data_class: v || undefined } : x)) })
                     }
                   />
                   <span className="ml-auto flex flex-wrap items-center gap-2">
@@ -404,7 +410,7 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
         )}
       </div>
       <p className="flex px-4 py-2.5">
-        <PermittedClassNote short />
+        <PermittedClassNote />
       </p>
     </>
   );

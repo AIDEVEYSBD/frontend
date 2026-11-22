@@ -301,7 +301,14 @@ function ConfigurationTabs() {
 
   useEffect(() => {
     window.addEventListener("hashchange", arrive);
-    fetch("/api/mcp/server").then((r) => r.json()).then(setMcp).catch(() => setMcpFailed(true));
+    fetch("/api/mcp/server")
+      .then((r) => {
+        // An answer that is not a success carries an error body, not the tool list this page reads.
+        if (!r.ok) throw new Error(`answered ${r.status}`);
+        return r.json();
+      })
+      .then(setMcp)
+      .catch(() => setMcpFailed(true));
     const timer = setTimeout(() => setWaited(true), 400);
     return () => {
       window.removeEventListener("hashchange", arrive);

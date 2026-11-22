@@ -11,7 +11,7 @@ import { Pick } from "./select";
 import { QuietNote } from "./overlays";
 import { QUIET } from "@/lib/quiet";
 import { hueFor } from "@/lib/hue";
-import { FOUNDRY_ID, kindOf, type Provider } from "@/lib/providers";
+import { kindOf, type Provider } from "@/lib/providers";
 import { WindowPick, winMs, type Win } from "./window-pick";
 import { shadowBesideLine, shadowSpentLine, shadowSummary } from "@/lib/production";
 
@@ -72,7 +72,7 @@ function modelBook(cfg: Config, estimate?: { in: number; out: number }): Map<str
   const providers = new Map(cfg.providers.map((p) => [p.id, p]));
   const book = new Map<string, ModelInfo>();
   for (const m of cfg.models) {
-    const provider = providers.get(m.provider ?? FOUNDRY_ID) ?? null;
+    const provider = providers.get(m.provider ?? "") ?? null;
     const local = Boolean(provider?.local);
     const priced = typeof m.price_in === "number" || typeof m.price_out === "number";
     // An unpriced cloud model is costed at the estimate rate, and says so.
@@ -1038,7 +1038,7 @@ export function FinOps() {
             {off && <p className="px-4 pt-3 text-[12px] text-faint">Each provider is shown here with its endpoint, its models and its spend in the window.</p>}
             <div className="grid grid-cols-1 gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
               {(data?.config.providers ?? []).map((p) => {
-                const models = (data?.config.models ?? []).filter((m) => (m.provider ?? FOUNDRY_ID) === p.id);
+                const models = (data?.config.models ?? []).filter((m) => (m.provider ?? "") === p.id);
                 const spend = sumCost(kpiCalls.filter((c) => models.some((m) => m.id === c.model)).map((c) => c.cost));
                 return (
                   <button key={p.id} type="button" onClick={() => setDrill({ kind: "calls", title: p.label, subtitle: `Calls on ${p.label} in the last ${winFor("kpi")}.`, rows: kpiCalls.filter((c) => models.some((m) => m.id === c.model)) })}
