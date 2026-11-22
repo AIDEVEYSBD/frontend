@@ -4,8 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Mono, Tag } from "./ui";
-import { Banner, Dialog, EmptyState, QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
+import { Banner, Dialog, EmptyState } from "./overlays";
 import { GroupHeader } from "./page-tabs";
 import { Chips, FilterBar, SearchBox } from "./filters";
 import { DigestChip } from "./digest-chip";
@@ -37,7 +36,8 @@ function matches(d: Dataset, term: string): boolean {
 
 /** How many runs took it: the count, or "unknown" when the record does not say. */
 function runsText(d: Dataset): string {
-  return d.used_by ? d.used_by.length.toLocaleString("en-GB") : "unknown";
+  // Which runs used a dataset is not tracked yet: none of them reads one. An empty list is not a measured zero.
+  return d.used_by && d.used_by.length ? d.used_by.length.toLocaleString("en-GB") : "not tracked";
 }
 
 function DatasetsPage() {
@@ -91,8 +91,8 @@ function DatasetsPage() {
           </span>
         }
       >
-        What a security workload is run on: a code snapshot, a firewall export, a telemetry extract or a document. A file handed over is offline; a dataset read from a connection when a run asks
-        for it is live.
+        What a security workload is to be run on: a code snapshot, a firewall export, a telemetry extract or a document. Every dataset here is an uploaded file; runs on this deployment do not read
+        datasets yet, and which runs used one is not tracked yet.
       </GroupHeader>
 
       {answer?.state === "error" && (
@@ -199,7 +199,7 @@ function DatasetsPage() {
             </NotConnected>
           </div>
         )}
-        {answer?.state === "error" && !QUIET && <p className="px-4 py-4 text-[12px] text-faint">The list could not be read, so nothing is shown.</p>}
+        {answer?.state === "error" && <p className="px-4 py-4 text-[12px] text-faint">The list could not be read, so nothing is shown.</p>}
         {connected && all.length === 0 && (
           <div className="p-4">
             <EmptyState
@@ -293,7 +293,7 @@ function DatasetDetail({ id, row, now, onClose, onRemoved }: { id: string; row: 
           d ? (
             <>
               <span className="min-w-0 grow text-[11.5px] leading-[1.5] text-faint">
-                {waits ? <NotConnectedNote door={waits} /> : error ? QUIET ? <QuietNote inline /> : <span className="text-err">{error}</span> : "Removing a dataset takes it out of the list of run inputs."}
+                {waits ? <NotConnectedNote door={waits} /> : error ? <span className="text-err">{error}</span> : "Removing a dataset takes it out of the list of run inputs."}
               </span>
               <Button size="sm" variant="solid" tone="err" permission="configure" onClick={() => setConfirming(true)}>
                 Remove
@@ -303,7 +303,7 @@ function DatasetDetail({ id, row, now, onClose, onRemoved }: { id: string; row: 
         }
       >
         {!d && answer === null && <p className="px-4 py-4 text-[12px] text-faint">Reading the dataset…</p>}
-        {!d && answer?.state === "error" && (QUIET ? <div className="p-4"><QuietNote /></div> : <p className="px-4 py-4 text-[12px] text-err">{answer.message}</p>)}
+        {!d && answer?.state === "error" && (<p className="px-4 py-4 text-[12px] text-err">{answer.message}</p>)}
         {!d && answer?.state === "pending" && (
           <div className="p-4">
             <NotConnected door={answer.door} compact />
@@ -364,7 +364,7 @@ function DatasetDetail({ id, row, now, onClose, onRemoved }: { id: string; row: 
                 <NotConnectedNote door={answer.door} />
               </p>
             )}
-            {answer?.state === "error" && !QUIET && <p className="border-b border-line px-4 py-2.5 text-[11.5px] text-err">Its own record could not be read: {answer.message}. What the list said is shown.</p>}
+            {answer?.state === "error" && <p className="border-b border-line px-4 py-2.5 text-[11.5px] text-err">Its own record could not be read: {answer.message}. What the list said is shown.</p>}
 
             {/* the runs that took it */}
             <div className="flex flex-col">
@@ -373,7 +373,7 @@ function DatasetDetail({ id, row, now, onClose, onRemoved }: { id: string; row: 
                 <span className="tnum text-[11px] text-faint">{used ? used.length.toLocaleString("en-GB") : answer === null ? "reading…" : "unknown"}</span>
               </div>
               {used === undefined && answer !== null && <p className="px-4 py-3 text-[12px] text-faint">The record does not say which runs took this dataset.</p>}
-              {used && used.length === 0 && <p className="px-4 py-3 text-[12px] text-faint">No run has taken this dataset as an input yet.</p>}
+              {used && used.length === 0 && <p className="px-4 py-3 text-[12px] text-faint">Not tracked yet: runs on this deployment do not read datasets.</p>}
               {used && used.length > 0 && (
                 <table className="w-full border-collapse text-[11.5px]">
                   <thead>

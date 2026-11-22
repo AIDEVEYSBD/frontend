@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button, Status } from "./ui";
-import { QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
+import { errorText } from "@/lib/api/client";
 
 /**
  * The console's appearance, chosen once for everyone.
@@ -31,7 +30,13 @@ export function Appearance({ bare = false }: { bare?: boolean | null }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch("/api/ui", { cache: "no-store" }).then((r) => r.json()).then((d) => setAccent(Boolean(d.accent))).catch(() => setAccent(true));
+    fetch("/api/ui", { cache: "no-store" })
+      .then(async (r) => {
+        const d = await r.json().catch(() => null);
+        if (!r.ok || !d) throw new Error(errorText(d, r, "GET", "/api/ui"));
+        setAccent(Boolean(d.accent));
+      })
+      .catch((e) => setError(`The appearance setting could not be read: ${(e as Error).message}`));
   }, []);
 
   const choose = async (on: boolean) => {
@@ -41,7 +46,7 @@ export function Appearance({ bare = false }: { bare?: boolean | null }) {
       const r = await fetch("/api/ui", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accent: on }) });
       // A page in place of an answer is no message: the status alone is the reason.
       const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(String(d.error ?? r.status));
+      if (!r.ok) throw new Error(errorText(d, r, "POST", "/api/ui"));
       setAccent(Boolean(d.accent));
       applyAccent(Boolean(d.accent));
     } catch (e) {
@@ -51,14 +56,7 @@ export function Appearance({ bare = false }: { bare?: boolean | null }) {
     }
   };
 
-  // The one calm line of a panel whose record was not read (PanelNote in components/providers.tsx, kept out of this file because the chrome imports it).
-  if (bare === true) {
-    return (
-      <div className="px-4 py-3">
-        <QuietNote inline />
-      </div>
-    );
-  }
+  void bare;
   return (
     <>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5">
@@ -68,7 +66,7 @@ export function Appearance({ bare = false }: { bare?: boolean | null }) {
         <Button size="sm" variant="solid" tone={accent ? "ink" : "neutral"} permission="configure" loading={busy && accent === false} disabled={accent === null || accent === true} onClick={() => choose(true)}>Subject colours</Button>
         <Button size="sm" variant="solid" tone={accent === false ? "ink" : "neutral"} permission="configure" loading={busy && accent === true} disabled={accent === null || accent === false} onClick={() => choose(false)}>Monochrome</Button>
       </div>
-      {error && (QUIET ? <p className="border-t border-line px-4 py-2"><QuietNote inline /></p> : <p className="border-t border-line px-4 py-2 text-[11.5px] text-err">{error}</p>)}
+      {error && (<p className="border-t border-line px-4 py-2 text-[11.5px] text-err">{error}</p>)}
     </>
   );
 }

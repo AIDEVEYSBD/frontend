@@ -1,4 +1,7 @@
 "use client";
+import { errorText, notBuiltText } from "@/lib/api/client";
+import { ask } from "@/lib/api/pending";
+import { Failure } from "./pending";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { soon } from "@/lib/soon";
@@ -8,9 +11,8 @@ import { Icon } from "./builder/icons";
 import { useModels } from "@/lib/use-models";
 import { Pick, PickMany } from "./select";
 import { Field, Input, Switch, Textarea } from "./forms";
-import { Banner, QuietNote } from "./overlays";
+import { Banner } from "./overlays";
 import { GroupHeader } from "./page-tabs";
-import { QUIET } from "@/lib/quiet";
 import { fromDocument, inputKeysOf, type Kind } from "@/lib/spec";
 import { derive, labeledTemplate, INVALID, type Labels, type Matrix, type Reducer } from "@/lib/metrics";
 import { TriangleGlyph, bestOf, logScore } from "./tradeoff";
@@ -362,37 +364,29 @@ export function Evals() {
 
   /* Which agents are retired (L8): their benchmarks still read, and take no new eval. */
   const [retired, setRetired] = useState<Record<string, Retired>>({});
-  /* Neither read answered: the console's own store is down and the backend was not there. An empty list then means "not read", not "none created". */
-  const [unread, setUnread] = useState(false);
+  /* Each read that failed, with its reason: while any is set, an empty list means "not read", never "none created". */
+  const [failures, setFailures] = useState<{ what: string; message: string }[]>([]);
   const refresh = useCallback(async () => {
-    // The latest finished score per set: the console's read of the shared history.
+    const failed: { what: string; message: string }[] = [];
+    // The latest finished score per set: the history of eval runs (GET /api/evals).
     let consoleRows: SetRow[] = [];
-    let consoleDown = false;
-    let backendDown = false;
-    try {
-      const d = await (await fetch("/api/evals")).json();
-      consoleRows = Array.isArray(d.sets) ? d.sets : [];
-      consoleDown = d.store === "db unreachable";
-    } catch {
-      consoleRows = [];
-      consoleDown = true;
-    }
+    const history = await ask<{ sets?: SetRow[] }>("evals");
+    if (history.state === "ok") consoleRows = Array.isArray(history.data?.sets) ? history.data.sets! : [];
+    else failed.push({ what: "The evaluation history could not be read", message: history.state === "pending" ? notBuiltText(history.door.method, history.door.path) : history.message });
     // The sets themselves, as the backend's runner reads them, agent by agent.
     let agents: Awaited<ReturnType<typeof listAgents>> = [];
     try {
       agents = await listAgents();
-    } catch {
-      agents = [];
-      backendDown = true;
+    } catch (e) {
+      failed.push({ what: "The agents could not be read, so their benchmarks were not asked for", message: (e as Error).message });
     }
     try {
       setSets(mergeSetRows(await listEvalSets(agents.map((a) => a.id)), consoleRows));
-    } catch {
-      // No backend to ask: the console's own read is what there is.
+    } catch (e) {
       setSets(consoleRows);
-      backendDown = true;
+      failed.push({ what: "The benchmarks could not be read", message: (e as Error).message });
     }
-    setUnread(consoleDown && backendDown);
+    setFailures(failed);
     const out: Record<string, Retired> = {};
     for (const a of agents) {
       const r = retiredOf(a.retired);
@@ -416,7 +410,7 @@ export function Evals() {
           ) : undefined
         }
       >
-        Evaluate an agent on representative cases, run through the production runtime and its controls. Results are graded by fixed checks and tied to the exact version assessed.
+        Evaluate an agent on representative cases, graded by fixed checks and tied to the exact version assessed. Each part below says whether the platform builds it yet.
       </GroupHeader>
 
       {building && (
@@ -433,27 +427,10 @@ export function Evals() {
 
       <div className="mt-6 flex flex-col gap-3">
         {sets === null && <p className="text-[12.5px] text-faint">Reading the benchmarks…</p>}
-        {/* A quiet console (lib/quiet.ts) does not call an unread list empty. */}
-        {sets?.length === 0 && !building && QUIET && unread && (
-          <>
-            <QuietNote />
-            {[
-              { title: "Benchmarks", meta: "one per agent and set of cases", line: "Benchmarks are listed here, each with the agent it measures, its cases, the model it runs on and its latest score." },
-              { title: "Score over time", meta: "pass rate per finished run", line: "The pass rate of each finished run is drawn here against the threshold the benchmark sets." },
-              { title: "Cases", meta: "expected against predicted", line: "The cases of the latest run are listed here: what was expected, what the agent answered, how long it took, pass or fail." },
-              { title: "Model comparison", meta: "every call pinned, same cases", line: "Models run on the same cases are compared here on accuracy, cost per case and time, with a recommendation." },
-            ].map((c) => (
-              <section key={c.title} className="overflow-hidden rounded-md border border-line bg-surface">
-                <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2">
-                  <span className="text-[12.5px] font-semibold text-fg">{c.title}</span>
-                  <span className="text-[11px] text-faint">{c.meta}</span>
-                </div>
-                <p className="px-4 py-5 text-[12px] leading-[1.55] text-faint">{c.line}</p>
-              </section>
-            ))}
-          </>
-        )}
-        {sets?.length === 0 && !building && !(QUIET && unread) && (
+        {failures.map((f) => (
+          <Failure key={f.what} what={f.what} message={f.message} />
+        ))}
+        {sets?.length === 0 && !building && failures.length === 0 && (
           <div className="flex flex-col items-start gap-3 rounded-md border border-dashed border-line-strong bg-surface px-5 py-6">
             <p className="text-[13px] font-medium text-fg">No evaluations have been created.</p>
             <p className="max-w-[60ch] text-[12px] leading-[1.6] text-dim">
@@ -487,9 +464,6 @@ export function Evals() {
 }
 
 /* ═══════════════════ the set builder ═══════════════════ */
-
-/** What the builder holds in place of a save's failure reason in a quiet console (lib/quiet.ts). */
-const NOT_SAVED = "\u0000not-saved";
 
 interface AgentOpt {
   id: string;
@@ -649,12 +623,11 @@ function SetBuilder({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ set }),
       });
-      const d = await res.json();
-      if (!res.ok || d.error) throw new Error(String(d.error ?? res.status));
+      const d = await res.json().catch(() => null);
+      if (!res.ok || !d || d.error) throw new Error(errorText(d, res, "POST", "/api/evals"));
       onDone(d.id);
     } catch (e) {
-      // A quiet console says the save is not connected; it does not print the reason.
-      setError(QUIET ? NOT_SAVED : (e as Error).message);
+      setError((e as Error).message);
       setBusy(false);
     }
   };
@@ -753,7 +726,7 @@ function SetBuilder({
         <>
           <Textarea value={jsonText} onChange={setJsonText} rows={14} mono aria-label="Benchmark as JSON" />
           <div className="flex items-center gap-3">
-            {error && (error === NOT_SAVED ? <QuietNote inline /> : <span className="text-[11.5px] text-err">{error}</span>)}
+            {error && <Failure inline message={error} />}
             <span className="grow" />
             <Button size="sm" variant="solid" onClick={importJson}>
               Apply to the form
@@ -1124,7 +1097,7 @@ function SetBuilder({
                 Add a case
               </Button>
               <span className="grow" />
-              {error && (error === NOT_SAVED ? <QuietNote inline /> : <span className="max-w-[44ch] truncate text-[11.5px] text-err">{error}</span>)}
+              {error && <Failure inline className="max-w-[44ch] truncate" message={error} />}
               <Button
                 size="sm"
                 variant="solid"
@@ -2034,7 +2007,7 @@ function Recommendation({
         </Button>
       </div>
       {applied && <span className="text-[11.5px] text-dim">{applied}</span>}
-      {applyError && (QUIET ? <QuietNote inline /> : <span className="text-[11.5px] text-err">{applyError}</span>)}
+      {applyError && (<span className="text-[11.5px] text-err">{applyError}</span>)}
       <ul className="flex flex-col gap-0.5 pl-4 text-[11.5px] leading-[1.5] text-dim">
         {reasons.map((r) => (
           <li key={r} className="list-disc">{r}</li>

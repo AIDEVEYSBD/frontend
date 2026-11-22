@@ -87,7 +87,7 @@ export function DecisionsPanel({ decisions, entries }: { decisions: SignedDecisi
   if (!decisions.length) return null;
   return (
     <div className="flex flex-col gap-1.5 rounded-md border border-line bg-surface px-3 py-2">
-      <span className="text-[11px] font-semibold text-dim">Signed decisions</span>
+      <span className="text-[11px] font-semibold text-dim">Decisions on record</span>
       {decisions.map((d) => {
         const entry = decisionEntry(entries, d);
         return (

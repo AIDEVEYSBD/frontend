@@ -1,4 +1,5 @@
 "use client";
+import { Failure } from "./pending";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -23,8 +24,6 @@ import {
 } from "@/lib/api/l4";
 import { api, errorText } from "@/lib/api/client";
 import { agentHref } from "@/lib/agent-link";
-import { QUIET } from "@/lib/quiet";
-import { QuietNote } from "./overlays";
 import { GroupHeader } from "./page-tabs";
 import { Button, Mono, Status, Tag } from "./ui";
 import { Pick } from "./select";
@@ -119,10 +118,10 @@ export function Applications() {
   const cost = priced.length ? priced.reduce((s, a) => s + (a.cost ?? 0), 0) : null;
   const pending = apps ? apps.filter((a) => !activity[a.id]).length : 0;
   // A quiet console (lib/quiet.ts): the register could not be read, so the page says it is not connected and counts nothing.
-  const unread = QUIET && Boolean(error) && (apps?.length ?? 0) === 0;
+  const unread = Boolean(error) && (apps?.length ?? 0) === 0;
 
   usePageFacts({
-    applications: unread ? "not connected" : apps ? apps.length : "loading",
+    applications: unread ? "not read" : apps ? apps.length : "loading",
     byClass: apps ? Object.fromEntries((["chatbot", "rag", "agent", "multi_agent"] as ApplicationClass[]).map((c) => [c, count(c)])) : null,
     blocked,
     controlsFired30d: fired,
@@ -159,8 +158,7 @@ export function Applications() {
           Every AI application this control plane governs, across the four classes. A chatbot or RAG app connects by pointing its OpenAI SDK at the gateway with the key minted here; the gateway screens every prompt and response, records every completion and enforces the policy on the row. Agents and multi-agent systems are listed from the Agents tab and the attached agents.
         </GroupHeader>
 
-        {error && !QUIET && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>}
-        {error && QUIET && (unread ? <QuietNote /> : <QuietNote inline />)}
+        {error && <Failure what="The applications register could not be read" message={error} />}
 
         {/* ── the band ── */}
         <div className="grid grid-cols-2 overflow-hidden rounded-md border border-line bg-surface sm:grid-cols-4 xl:grid-cols-7">
@@ -188,7 +186,7 @@ export function Applications() {
               >
                 <span className="truncate text-[10.5px] text-faint">{t.label}</span>
                 {unread ? (
-                  <span className="flex h-[22px] items-center text-[12px] text-faint">Not connected</span>
+                  <span className="flex h-[22px] items-center text-[12px] text-faint">Not read</span>
                 ) : (
                   <span className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]" style={t.tone ? { color: `var(--color-${t.tone})` } : undefined}>{t.value}</span>
                 )}
@@ -283,7 +281,7 @@ export function Applications() {
                 {apps && shown.length === 0 && (
                   <tr>
                     <td colSpan={11} className="px-4 py-8 text-center text-[11.5px] text-faint">
-                      {unread ? "Applications are listed here: class, owner, identity, policy, last seen, cost and controls fired." : apps.length ? "Nothing matches." : "Nothing is registered yet. Connect a chatbot or RAG app above; agents appear from the Agents tab once deployed."}
+                      {unread ? "The register was not read, so nothing is listed." : apps.length ? "Nothing matches." : "Nothing is registered yet. Connect a chatbot or RAG app above; agents appear from the Agents tab once deployed."}
                     </td>
                   </tr>
                 )}
@@ -476,7 +474,7 @@ function ConnectDialog({ onClose, onMinted }: { onClose: () => void; onMinted: (
         <Field label="System prompt (optional)" htmlFor="app-prompt" hint="Registered here and injected by the gateway; the app sends none. A response that echoes it is a screened hit.">
           <Textarea id="app-prompt" value={prompt} onChange={setPrompt} rows={4} />
         </Field>
-        {error && (QUIET ? <p className="md:col-span-2" role="status"><QuietNote inline /></p> : <p className="text-[11.5px] text-err md:col-span-2" role="alert">{error}</p>)}
+        {error && (<p className="text-[11.5px] text-err md:col-span-2" role="alert">{error}</p>)}
         <div className="flex justify-end gap-2 md:col-span-2">
           <Button variant="solid" tone="err" size="sm" onClick={onClose}>Cancel</Button>
           <Button variant="solid" tone="ink" size="sm" type="submit" permission="configure" loading={busy} disabled={!name.trim()}>Connect and mint the key</Button>

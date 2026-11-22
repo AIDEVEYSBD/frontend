@@ -1,4 +1,5 @@
 "use client";
+import { Failure } from "./pending";
 
 import { useEffect, useState } from "react";
 import { Button, Tag } from "./ui";
@@ -199,6 +200,9 @@ export function RunBoundaryPanel({
       }
     >
       <div className="max-h-[320px] overflow-y-auto border-t border-line">
+        <p className="border-b border-line px-4 py-1.5 text-[11px] leading-[1.5] text-faint">
+          This deployment runs model steps and approval waits only: it has no tool steps, no sandbox and no egress check, so the grants, ceilings and lists below are what the spec and the configuration say, not controls applied to this run.
+        </p>
         <div className="grid gap-px bg-line lg:grid-cols-[minmax(0,300px)_minmax(0,1fr)_minmax(0,300px)]">
           <dl className="flex min-w-0 flex-col divide-y divide-line/70 bg-surface">
             <Fact k="Executed in">
@@ -226,7 +230,7 @@ export function RunBoundaryPanel({
                   </span>
                 </>
               ) : (
-                <span className="text-faint">No step ran code in a sandbox: the journal records no isolated execution.</span>
+                <span className="text-faint">None: there is no sandbox on this deployment, and the journal records no isolated execution.</span>
               )}
             </Fact>
           </dl>
@@ -308,7 +312,7 @@ export function RunBoundaryPanel({
                   ))}
                 </span>
               ) : (
-                <span className="text-faint">{body ? "No data class ceiling is set in this spec: no step, sink or output is limited by class." : "Not known: there is no spec to read."}</span>
+                <span className="text-faint">{body ? "No data class ceiling is set in this spec. None would be applied: nothing checks data classes on this deployment." : "Not known: there is no spec to read."}</span>
               )}
             </Fact>
             <Fact k="Egress allowlist">
@@ -325,10 +329,10 @@ export function RunBoundaryPanel({
                     <span className="mt-0.5 block text-[10px] text-faint">The deployment&rsquo;s list as it is now; the run&rsquo;s record does not hold the list it ran under.</span>
                   </>
                 ) : (
-                  <span className="text-faint">No egress allowlist is set on this deployment.</span>
+                  <span className="text-faint">None listed. There is no egress check on this deployment, and runs make only model calls.</span>
                 )
               ) : egress.state === "error" ? (
-                <span className="text-err">Could not be read: {egress.message}</span>
+                <Failure inline what="Could not be read" message={egress.message} />
               ) : (
                 <span className="text-faint">Reading the deployment&rsquo;s configuration…</span>
               )}

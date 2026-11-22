@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Mono, Status, Tag } from "./ui";
-import { Banner, EmptyState, QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
+import { Banner, EmptyState } from "./overlays";
 import { Checkbox } from "./forms";
 import { Pick } from "./select";
 import { Chips, FilterBar, SearchBox, type Chip } from "./filters";
@@ -12,11 +11,11 @@ import { Figures, PageHeader, Section } from "./section";
 import { WindowPick, winMs, type Win } from "./window-pick";
 import { ApproveDialog } from "./approve";
 import { BudgetHolds, holdsOf } from "./budget-holds";
-import { useDoor } from "./pending";
+import { useDoor, Failure } from "./pending";
 import { Deadline, ShapeTag, useNow } from "./gate-form";
 import { listGates, type Gate } from "@/lib/api/l5";
 import { getEvidence, type SignedDecision } from "@/lib/api/l9";
-import { batchable, chainOf, countdown, escalationPath, gateAccess, type Who } from "@/lib/gates";
+import { batchable, countdown, escalationPath, gateAccess, gateDeadlineLine, type Who } from "@/lib/gates";
 import { useSession } from "@/lib/use-session";
 import { soon } from "@/lib/soon";
 import type { BudgetHoldList } from "@/lib/api/pending";
@@ -162,9 +161,10 @@ export function ApprovalsView() {
     return true;
   });
   const agents = [...new Set(all.map((g) => g.agent))].sort();
-  /* A quiet console (lib/quiet.ts) whose inbox was not read: no count stands in for it, on a chip or in a figure. */
-  const inboxOff = QUIET && gates === null && Boolean(error);
-  const off = <span className="text-[11.5px] font-normal text-faint">Not connected</span>;
+  /* An inbox that was not read: no count stands in for it, on a chip or in a figure. */
+  const inboxOff = gates === null && Boolean(error);
+  const off = <span className="text-[11.5px] font-normal text-faint">Not read</span>;
+  const notBuilt = <span className="text-[11.5px] font-normal text-faint">Not built</span>;
   const views: Chip[] = [
     { value: "all", label: "All waiting", count: inboxOff ? undefined : all.length, active: view === "all" },
     { value: "mine", label: "Mine to answer", count: inboxOff ? undefined : all.filter((g) => mayAnswer(g).ok).length, active: view === "mine" },
@@ -181,8 +181,8 @@ export function ApprovalsView() {
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
       <PageHeader title="Approvals">
-        Gates waiting for a person, the most urgent first. Open one to read what the run asks and the evidence it shows, and to answer it; the answer is signed with your sign-in. Runs paused at their budget wait
-        here too, for a decision to continue or stop. Below, the gates answered recently, with who answered and how.
+        Gates waiting for a person, the oldest first. Open one to read what the run asks and the evidence it shows, and to answer it; the answer is recorded under your sign-in. Below, the gates answered
+        recently, with who answered and how.
       </PageHeader>
 
       {error && (
@@ -197,8 +197,8 @@ export function ApprovalsView() {
           { k: "Overdue", v: gates ? all.filter(overdue).length : inboxOff ? off : "—" },
           { k: "Due within the hour", v: gates ? dueSoon : inboxOff ? off : "—" },
           { k: "Mine to answer", v: gates && who ? all.filter((g) => mayAnswer(g).ok).length : inboxOff ? off : "—" },
-          { k: "Paused at budget", v: holdsOk ? holdsWaiting : holds?.state === "pending" || (QUIET && holds?.state === "error") ? off : "—" },
-          { k: `Answered · ${win === "all" ? "all time" : win}`, v: answeredNow && !answeredNow.error ? answeredNow.decisions.length : QUIET && answeredNow?.error ? off : "—" },
+          { k: "Paused at budget", v: holdsOk ? holdsWaiting : holds?.state === "pending" ? notBuilt : holds?.state === "error" ? off : "—" },
+          { k: `Answered · ${win === "all" ? "all time" : win}`, v: answeredNow && !answeredNow.error ? answeredNow.decisions.length : answeredNow?.error ? off : "—" },
         ]}
       />
 
@@ -238,7 +238,6 @@ export function ApprovalsView() {
         </FilterBar>
 
         {gates === null && !error && <p className="text-[12px] text-faint">Reading the inbox…</p>}
-        {inboxOff && <p className="text-[12px] text-faint">Gates waiting for a person are listed here, the most urgent first.</p>}
         {gates && all.length === 0 && <EmptyState title="No gates are waiting" detail="When a run stops for a person, it is listed here with what it asks, who may answer and its deadline." />}
         {gates && all.length > 0 && shown.length === 0 && <p className="text-[12px] text-faint">No waiting gate matches these filters.</p>}
 
@@ -260,7 +259,6 @@ export function ApprovalsView() {
               <tbody>
                 {shown.map((g) => {
                   const access = mayAnswer(g);
-                  const chain = chainOf(g);
                   const since = Date.parse(g.waiting_since);
                   const path = escalationPath(g);
                   return (
@@ -304,6 +302,7 @@ export function ApprovalsView() {
                       <td className="max-w-[240px] px-3 py-2.5">
                         <span className="flex flex-col gap-1">
                           <span className="flex flex-wrap gap-1">{g.approvers.length ? g.approvers.map((r) => <Tag key={r}>{r}</Tag>) : <span className="text-dim">Anyone with the approve permission</span>}</span>
+                          <span className="text-[10.5px] leading-[1.4] text-faint">Never the person who started the run, nor the author of its version.</span>
                           {who && !access.ok && <span className="text-[11px] leading-[1.4] text-warn">Not yours to answer: it needs {g.approvers.join(" or ")}.</span>}
                         </span>
                       </td>
@@ -315,17 +314,7 @@ export function ApprovalsView() {
                       </td>
                       <td className="max-w-[230px] px-3 py-2.5">
                         <span className="flex flex-col gap-0.5 text-[11.5px] leading-[1.45] text-dim">
-                          {!g.deadline ? (
-                            <span>It waits; no deadline is set.</span>
-                          ) : chain.ahead.length ? (
-                            <span>
-                              Escalates to <span className="font-medium text-fg">{chain.ahead[0]}</span> at {when(g.deadline)}
-                            </span>
-                          ) : (
-                            <span>
-                              {g.on_timeout ? `On timeout: ${g.on_timeout}` : "No further role to escalate to"}, at {when(g.deadline)}
-                            </span>
-                          )}
+                          <span>{gateDeadlineLine(g.deadline, when)}</span>
                           {g.escalations > 0 && (
                             <span className="text-[10.5px] text-faint" title={path}>
                               Escalated {g.escalations}×{path ? `: ${path}` : ""}
@@ -353,8 +342,7 @@ export function ApprovalsView() {
         )}
       </Section>
 
-      {/* A quiet console whose inbox has not been read keeps this section to its heading and one line. */}
-      <BudgetHolds answer={holds} reload={reloadHolds} now={now} calm={QUIET && gates === null} />
+      <BudgetHolds answer={holds} reload={reloadHolds} now={now} calm={false} />
 
       <Section
         title="Answered"
@@ -363,8 +351,7 @@ export function ApprovalsView() {
         action={<WindowPick value={win} onChange={setWin} />}
       >
         {!answeredNow && <p className="text-[12px] text-faint">Reading the answered gates…</p>}
-        {answeredNow?.error && QUIET && (inboxOff ? <p className="text-[12px] text-faint">Gates answered in the window are listed here, with who answered and how.</p> : <QuietNote inline />)}
-        {answeredNow?.error && !QUIET && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">The answered gates could not be read: {answeredNow.error}</p>}
+        {answeredNow?.error && <Failure what="The answered gates could not be read" message={answeredNow.error} />}
         {answeredNow && !answeredNow.error && answeredNow.decisions.length === 0 && <p className="text-[12px] text-faint">No gate was answered in this window.</p>}
         {answeredNow && answeredNow.decisions.length > 0 && (
           <div className="-m-4 overflow-x-auto">

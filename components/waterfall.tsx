@@ -1,4 +1,5 @@
 "use client";
+import { ask, type Answer } from "@/lib/api/pending";
 
 import { useEffect, useState } from "react";
 import { ControlRef } from "./control-ref";
@@ -82,6 +83,8 @@ const KIND_LABEL: Record<SpanKind, string> = {
 export function useTrace(runId: string | null) {
   const [trace, setTrace] = useState<Trace | null>(null);
   const [state, setState] = useState<"idle" | "loading" | "failed">(runId ? "loading" : "idle");
+  /** The trace read as it answered when it did not give a trace: not built (501), or failed with its reason. */
+  const [failure, setFailure] = useState<Answer<unknown> | null>(null);
 
   // A change of run resets the trace during render; the fetch below fills it.
   const [seen, setSeen] = useState(runId);
@@ -94,22 +97,23 @@ export function useTrace(runId: string | null) {
   useEffect(() => {
     if (!runId) return;
     let stop = false;
-    fetch(`/api/observability?run=${encodeURIComponent(runId)}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (stop) return;
-        if (d.trace) {
-          setTrace(d.trace);
-          setState("idle");
-        } else setState("failed");
-      })
-      .catch(() => !stop && setState("failed"));
+    ask<{ trace?: Trace }>("observability", { query: { run: runId } }).then((a) => {
+      if (stop) return;
+      if (a.state === "ok" && a.data?.trace) {
+        setTrace(a.data.trace);
+        setFailure(null);
+        setState("idle");
+      } else {
+        setFailure(a.state === "ok" ? { state: "error", message: "GET /api/observability answered with no trace for this run" } : a);
+        setState("failed");
+      }
+    });
     return () => {
       stop = true;
     };
   }, [runId]);
 
-  return { trace, state };
+  return { trace, state, failure };
 }
 
 const ms = (n: number) =>

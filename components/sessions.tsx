@@ -4,14 +4,13 @@ import { Suspense, useCallback, useMemo, useState, type ReactNode } from "react"
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Status, Tag } from "./ui";
 import { Checkbox } from "./forms";
-import { Dialog, EmptyState, QuietNote } from "./overlays";
+import { Dialog, EmptyState } from "./overlays";
 import { PageHeader } from "./section";
 import { Chips, FilterBar, SearchBox } from "./filters";
 import { NotConnected, NotConnectedNote, useDoor } from "./pending";
 import { ago } from "./identity-shared";
 import { whenFull } from "./dataset-parts";
 import { Affected, KIND_WORD, STATE_TONE, SessionGlyph, SessionPanel, SessionState, clientWord, consequence, consequences, isLive, kindWord, sameWord, targetWord, until, whoLine } from "./sessions-parts";
-import { QUIET } from "@/lib/quiet";
 import { useSession } from "@/lib/use-session";
 import { SESSION_KINDS, SESSION_STATES, ask, type Door, type Session, type SessionKind, type SessionList, type SessionState as State, type SessionsEnded } from "@/lib/api/pending";
 
@@ -123,7 +122,7 @@ function SessionsPage() {
     reload();
   };
 
-  const noticeText: ReactNode = notice ? "door" in notice ? <NotConnectedNote door={notice.door} /> : notice.tone === "err" && QUIET ? <QuietNote inline /> : notice.text : null;
+  const noticeText: ReactNode = notice ? "door" in notice ? <NotConnectedNote door={notice.door} /> : notice.text : null;
 
   const kindTabs: { id: SessionKind | ""; label: string; count: number }[] = [
     { id: "", label: "All", count: SESSION_KINDS.reduce((n, k) => n + countOf(k), 0) },
@@ -146,7 +145,7 @@ function SessionsPage() {
 
       {notice && (
         <div className="relative flex flex-wrap items-center gap-3 overflow-hidden rounded-lg border border-line bg-surface py-2.5 pr-3 pl-4 elev-1">
-          {"tone" in notice && !(notice.tone === "err" && QUIET) && (
+          {"tone" in notice && (
             <>
               <span className={`absolute inset-y-0 left-0 w-[3px] ${notice.tone === "err" ? "bg-err" : "bg-ok"}`} />
               <Status tone={notice.tone}>{notice.tone === "err" ? "Refused" : "Done"}</Status>
@@ -313,7 +312,7 @@ function SessionsPage() {
             </NotConnected>
           </div>
         )}
-        {answer?.state === "error" && <div className="p-4">{QUIET ? <QuietNote /> : <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">The sessions could not be read: {answer.message}</p>}</div>}
+        {answer?.state === "error" && <div className="p-4">{<p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">The sessions could not be read: {answer.message}</p>}</div>}
         {connected && all.length === 0 && (
           <div className="p-4">
             <EmptyState title="No sessions" detail="The control plane holds no session right now. People, agents and connections to tool servers are listed here as they sign in or connect." />

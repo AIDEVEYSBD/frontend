@@ -4,7 +4,7 @@ import { IapAccess } from "./iap-access";
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button, Mono, Status, Tag, type Tone } from "./ui";
-import { Dialog, QuietNote } from "./overlays";
+import { Dialog } from "./overlays";
 import { PageHeader } from "./section";
 import { NotConnected, NotConnectedNote, useDoor } from "./pending";
 import { Card, ago } from "./identity-shared";
@@ -12,7 +12,6 @@ import { whenFull } from "./dataset-parts";
 import { until } from "./sessions-parts";
 import { ACTS_AS, REGISTRATIONS, ServerState, hasS256, subjectKind } from "./authorization-parts";
 import { AddAuthServerDialog } from "./authorization-add";
-import { QUIET } from "@/lib/quiet";
 import { useSession, type SessionInfo } from "@/lib/use-session";
 import { readUsers } from "@/lib/api/l2";
 import { ask, type Answer, type AuthServer, type AuthServerList, type Door } from "@/lib/api/pending";
@@ -94,7 +93,7 @@ function ConsoleSignIn({ now }: { now: number }) {
     <Card title="Console sign-in" meta={method ? <Status tone={method.tone}>{method.name}</Status> : undefined}>
       <p className="border-b border-line px-4 py-2.5 text-[12px] leading-[1.55] text-dim">Who signs people in to this console. It is set where the console is deployed, so it is shown here and not changed here.</p>
       {!loaded && <p className="px-4 py-3 text-[12px] text-faint">Reading the session…</p>}
-      {loaded && !me && <div className="p-4">{QUIET ? <QuietNote /> : <p className="text-[12px] text-err">The session door did not say who is signed in, so how sign-in works here is not known.</p>}</div>}
+      {loaded && !me && <div className="p-4">{<p className="text-[12px] text-err">The session door did not say who is signed in, so how sign-in works here is not known.</p>}</div>}
       {me && method && (
         <div className="grid gap-px bg-line lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
           <div className="flex flex-col bg-surface">
@@ -209,7 +208,7 @@ function ListState({ answer, count, pendingText, emptyText }: { answer: Answer<A
         </NotConnected>
       </div>
     );
-  if (answer.state === "error") return <div className="p-4">{QUIET ? <QuietNote /> : <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">The authorization servers could not be read: {answer.message}</p>}</div>;
+  if (answer.state === "error") return <div className="p-4">{<p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">The authorization servers could not be read: {answer.message}</p>}</div>;
   if (count === 0) return <p className="px-4 py-4 text-[12px] text-faint">{emptyText}</p>;
   return null;
 }
@@ -241,7 +240,7 @@ export function AuthorizationView() {
     reload();
   };
 
-  const noticeText: ReactNode = notice ? "door" in notice ? <NotConnectedNote door={notice.door} /> : notice.tone === "err" && QUIET ? <QuietNote inline /> : notice.text : null;
+  const noticeText: ReactNode = notice ? "door" in notice ? <NotConnectedNote door={notice.door} /> : notice.text : null;
   const count = (n: number) => (connected ? n.toLocaleString("en-GB") : undefined);
 
   return (
@@ -261,7 +260,7 @@ export function AuthorizationView() {
 
       {notice && (
         <div className="relative flex flex-wrap items-center gap-3 overflow-hidden rounded-lg border border-line bg-surface py-2.5 pr-3 pl-4 elev-1">
-          {"tone" in notice && !(notice.tone === "err" && QUIET) && (
+          {"tone" in notice && (
             <>
               <span className={`absolute inset-y-0 left-0 w-[3px] ${notice.tone === "err" ? "bg-err" : "bg-ok"}`} />
               <Status tone={notice.tone}>{notice.tone === "err" ? "Refused" : "Done"}</Status>

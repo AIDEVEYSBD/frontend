@@ -4,8 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Status, Tag } from "./ui";
-import { Banner, QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
+import { Banner } from "./overlays";
 import { Field, Input } from "./forms";
 import { Pick } from "./select";
 import { ControlRef } from "./control-ref";
@@ -170,8 +169,8 @@ function FrameworksPage() {
       { title: "Frameworks", rows: all.filter((f) => f.kind !== "regulation") },
     ];
   }, [frameworks]);
-  // A quiet console (lib/quiet.ts) whose framework catalogue did not answer says so once, with both panels drawn empty beneath it.
-  const quietDown = QUIET && Boolean(error) && !frameworks;
+  // A framework catalogue that did not answer: the failure is shown above, and both panels say they were not read.
+  const quietDown = Boolean(error) && !frameworks;
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
       <GroupHeader group="assurance" tab="frameworks">
@@ -184,7 +183,7 @@ function FrameworksPage() {
       )}
       <div className="grid items-start gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
         <Section title="Frameworks and regulations" hue="control">
-          {frameworks === null && <p className="text-[12px] text-faint">{quietDown ? "Regulations and frameworks are listed here. Pick one to read the estate through it." : "Reading the catalogue…"}</p>}
+          {frameworks === null && <p className="text-[12px] text-faint">{quietDown ? "Not read." : "Reading the catalogue…"}</p>}
           {frameworks?.length === 0 && <p className="text-[12px] text-faint">No framework or regulation is in the catalogue.</p>}
           {groups.map((g) =>
             g.rows.length ? (
@@ -211,7 +210,7 @@ function FrameworksPage() {
         <Section
           title={view?.framework.short ?? "View"}
           hue="control"
-          meta={view ? `${view.count} agent${view.count === 1 ? "" : "s"}` : (QUIET && error) || frameworks?.length === 0 ? undefined : "reading…"}
+          meta={view ? `${view.count} agent${view.count === 1 ? "" : "s"}` : error ? "not read" : frameworks?.length === 0 ? undefined : name ? "reading…" : "pick one"}
           action={
             name ? (
               <Button size="sm" variant="solid" tone="neutral" disabled={!view || isUnmapped(view.framework)} href={`/evidence?framework=${encodeURIComponent(name)}`}>
@@ -235,7 +234,7 @@ function FrameworksPage() {
               <Input type="datetime-local" value={to} onChange={setTo} />
             </Field>
           </div>
-          {view ? <FrameworkViewPanel view={view} /> : busy ? <p className="text-[12px] text-faint">Reading…</p> : quietDown ? <p className="text-[12px] text-faint">Each agent is listed here against the obligations of the framework, with the evidence that meets each.</p> : null}
+          {view ? <FrameworkViewPanel view={view} /> : busy ? <p className="text-[12px] text-faint">Reading…</p> : quietDown ? <p className="text-[12px] text-faint">Not read.</p> : null}
         </Section>
       </div>
     </div>

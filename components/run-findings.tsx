@@ -2,9 +2,7 @@
 
 import Link from "next/link";
 import { Button } from "./ui";
-import { NotConnected, useDoor } from "./pending";
-import { QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
+import { NotConnected, useDoor, Failure } from "./pending";
 import { FindingStatusMark, SEVERITIES, SEVERITY_META, SeverityTag, bySeverityThenRecent, count, severityMeta } from "./finding-marks";
 import type { Finding, FindingList } from "@/lib/api/pending";
 
@@ -59,13 +57,8 @@ export function RunFindings({ run }: { run: string }) {
       </div>
 
       {answer === null && <p className="px-3 py-2.5 text-[11.5px] text-faint">Reading the findings…</p>}
-      {answer?.state === "error" && QUIET && (
-        <p className="px-3 py-2.5">
-          <QuietNote inline />
-        </p>
-      )}
-      {answer?.state === "error" && !QUIET && <p className="px-3 py-2.5 text-[11.5px] text-err">Could not read this run&rsquo;s findings: {answer.message}</p>}
-      {answer?.state === "ok" && rows.length === 0 && <p className="px-3 py-2.5 text-[11.5px] text-faint">This run reported no findings.</p>}
+      {answer?.state === "error" && <Failure className="m-3" what="This run's findings could not be read" message={answer.message} />}
+      {answer?.state === "ok" && rows.length === 0 && <p className="px-3 py-2.5 text-[11.5px] text-faint">No finding is recorded for this run. Runs on this deployment do not record findings yet.</p>}
 
       {groups.map((g) => (
         <div key={g.severity} className="flex flex-col border-b border-line last:border-b-0">

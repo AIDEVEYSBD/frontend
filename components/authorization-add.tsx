@@ -3,9 +3,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Button, Mono, Status, Tag } from "./ui";
 import { Field, Input, Textarea } from "./forms";
-import { QuietNote } from "./overlays";
 import { NotConnectedNote } from "./pending";
-import { QUIET } from "@/lib/quiet";
 import { ACTS_AS, PURPOSES, REGISTRATIONS, ServerState, hasS256, subjectKind } from "./authorization-parts";
 import {
   ask,
@@ -417,7 +415,7 @@ export function AddAuthServerDialog({ onClose, onAdded }: { onClose: () => void;
                     </span>
                     <Published meta={meta} />
                     {probe?.state === "pending" && <NotConnectedNote door={probe.door} />}
-                    {probe?.state === "error" && (QUIET ? <QuietNote inline /> : <span className="text-[11.5px] leading-[1.5] text-err">The metadata could not be read: {probe.message}</span>)}
+                    {probe?.state === "error" && (<span className="text-[11.5px] leading-[1.5] text-err">The metadata could not be read: {probe.message}</span>)}
                     {noS256 && (
                       <span className="text-[11.5px] leading-[1.5] text-warn">
                         This issuer does not advertise PKCE with S256, the check that stops a stolen sign-in code from being used. A sign-in through it for an upstream service is weaker for that.
@@ -482,8 +480,8 @@ export function AddAuthServerDialog({ onClose, onAdded }: { onClose: () => void;
                   )}
 
                   {failed && (
-                    <div className={`flex flex-col gap-1.5 rounded-md border bg-surface px-3 py-2.5 ${"door" in failed || QUIET ? "border-dashed border-line-strong" : "border-err-line"}`}>
-                      {"door" in failed ? <NotConnectedNote door={failed.door} /> : QUIET ? <QuietNote inline /> : <span className="text-[12px] leading-[1.5] text-err">It was not added: {failed.message}</span>}
+                    <div className={`flex flex-col gap-1.5 rounded-md border bg-surface px-3 py-2.5 ${"door" in failed ? "border-dashed border-line-strong" : "border-err-line"}`}>
+                      {"door" in failed ? <NotConnectedNote door={failed.door} /> : <span className="text-[12px] leading-[1.5] text-err">It was not added: {failed.message}</span>}
                     </div>
                   )}
                 </>

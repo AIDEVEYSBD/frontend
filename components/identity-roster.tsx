@@ -306,7 +306,7 @@ export function IdentityRoster({
             {!loading && rows.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-5 text-center text-[12px] text-faint">
-                  {unread ? "People and non-human identities are listed here with their kind, role or owner, last seen and status." : entries.length === 0 ? "Nobody has signed in and no identity is on the register yet." : "Nothing matches these filters."}
+                  {unread ? "The roster could not be read in full, so it is not listed as empty." : entries.length === 0 ? "Nobody has signed in and no identity is on the register yet." : "Nothing matches these filters."}
                 </td>
               </tr>
             )}

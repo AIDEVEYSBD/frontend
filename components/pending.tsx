@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { DOORS, ask, type Answer, type Door, type DoorId } from "@/lib/api/pending";
+import { notBuiltDoorOf } from "@/lib/api/client";
 
 /**
  * A screen whose address the platform has not built yet (lib/api/pending.ts).
@@ -34,20 +35,31 @@ export function useDoor<T>(
   return { answer, reload };
 }
 
-/** What a panel shows while its door is not there. `door` is an id or the door itself (from a pending answer). */
-export function NotConnected({ door, title, children, compact = false }: { door: DoorId | Door; title?: string; children?: ReactNode; compact?: boolean }) {
-  const d: Door = typeof door === "string" ? DOORS[door] : door;
+/** An address read back from a "not built" message (lib/api/client.ts notBuiltText): no purpose is known for it, only where it is. */
+export interface NamedDoor {
+  method: string;
+  path: string;
+  purpose?: string;
+}
+
+const doorOf = (door: DoorId | Door | NamedDoor): NamedDoor => (typeof door === "string" ? DOORS[door] : door);
+
+/** What a panel shows while its door is not there. `door` is an id, the door itself (from a pending answer), or an address read from a message. */
+export function NotConnected({ door, title, children, compact = false }: { door: DoorId | Door | NamedDoor; title?: string; children?: ReactNode; compact?: boolean }) {
+  const d = doorOf(door);
+  const purpose = children ?? (d.purpose ? `${d.purpose}.` : null);
   return (
     <div className={`flex flex-col gap-1.5 rounded-lg border border-dashed border-line-strong bg-surface ${compact ? "px-4 py-3" : "px-6 py-8"}`} data-pending={d.path}>
       <span className="flex items-center gap-2">
         <span className="size-1.5 shrink-0 rounded-[2px] bg-faint" />
         <span className="text-[13px] font-semibold text-fg">{title ?? "Not built yet"}</span>
       </span>
-      <p className="max-w-[64ch] text-[12.5px] leading-[1.55] text-dim">{children ?? `${d.purpose}.`}</p>
+      {purpose && <p className="max-w-[64ch] text-[12.5px] leading-[1.55] text-dim">{purpose}</p>}
       <p className="text-[11.5px] leading-[1.5] text-faint">
         The platform answers{" "}
         <span className="font-mono text-[11px] text-dim">
-          {d.method} {d.path}
+          {d.method ? `${d.method} ` : ""}
+          {d.path}
         </span>{" "}
         with 501, not built. Nothing here is shown until it does.
       </p>
@@ -56,15 +68,57 @@ export function NotConnected({ door, title, children, compact = false }: { door:
 }
 
 /** One line for a form or a field whose door is not there. */
-export function NotConnectedNote({ door }: { door: DoorId | Door }) {
-  const d: Door = typeof door === "string" ? DOORS[door] : door;
+export function NotConnectedNote({ door }: { door: DoorId | Door | NamedDoor }) {
+  const d = doorOf(door);
   return (
     <span className="text-[11.5px] leading-[1.5] text-faint" data-pending={d.path}>
       Not built yet: the platform answers 501 to{" "}
       <span className="font-mono text-[11px] text-dim">
-        {d.method} {d.path}
+        {d.method ? `${d.method} ` : ""}
+        {d.path}
       </span>
       .
     </span>
   );
+}
+
+/**
+ * A read or a write that failed, as a person should see it. A "not built"
+ * answer (a message from lib/api/client.ts notBuiltText) is drawn as the
+ * not-built panel or note, naming the method, the address and the 501;
+ * anything else is drawn as a failure, in red, with the message, which names
+ * the status and the address. `what` leads the failure: "The runs could not
+ * be read".
+ */
+export function Failure({ message, what, inline = false, compact = true, className = "" }: { message: string; what?: string; inline?: boolean; compact?: boolean; className?: string }) {
+  const door = notBuiltDoorOf(message);
+  if (door) {
+    if (inline) return <NotConnectedNote door={door} />;
+    return (
+      <div className={className}>
+        <NotConnected door={door} compact={compact} />
+      </div>
+    );
+  }
+  const text = what ? `${what}: ${message}` : message;
+  if (inline) return <span className={`text-[11.5px] leading-[1.5] text-err ${className}`} role="alert">{text}</span>;
+  return (
+    <p className={`rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err ${className}`} role="alert">
+      {text}
+    </p>
+  );
+}
+
+/** The same for an `ask()` answer that is not `ok`: the not-built panel for a pending door, the failure for an error. */
+export function AnswerFailure({ answer, what, inline = false, compact = true, className = "" }: { answer: Answer<unknown>; what?: string; inline?: boolean; compact?: boolean; className?: string }) {
+  if (answer.state === "ok") return null;
+  if (answer.state === "pending") {
+    if (inline) return <NotConnectedNote door={answer.door} />;
+    return (
+      <div className={className}>
+        <NotConnected door={answer.door} compact={compact} />
+      </div>
+    );
+  }
+  return <Failure message={answer.message} what={what} inline={inline} compact={compact} className={className} />;
 }

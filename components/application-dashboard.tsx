@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { Failure } from "./pending";
 import {
   AUTONOMY_LABEL,
   CLASS_LABEL,
@@ -22,8 +23,6 @@ import { corporaOf, type StaleReport } from "@/lib/knowledge-stale";
 import { readStaleDocuments } from "@/lib/api/knowledge";
 import { WindowPick, winMs, type Win } from "./window-pick";
 import { Button, Mono, Status, Tag } from "./ui";
-import { QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
 import { CAT, Donut, RankBar } from "./charts";
 import { DrillModal, DrillTable } from "./drill";
 import { ControlRef, resolveControl } from "./control-ref";
@@ -240,11 +239,11 @@ export function ApplicationDashboard({ id }: { id: string }) {
       </div>
     );
   }
-  if (app === null && QUIET && error) {
-    // A quiet console (lib/quiet.ts): the row was not read, which is not the same as there being none.
+  if (app === null && error) {
+    // The row was not read, which is not the same as there being none.
     return (
       <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7" data-hue="blue">
-        <QuietNote />
+        <Failure what={`Application ${id} could not be read`} message={error} />
         <div>
           <Button variant="solid" tone="ink" size="sm" href="/applications">Back to the register</Button>
         </div>
@@ -328,7 +327,7 @@ export function ApplicationDashboard({ id }: { id: string }) {
           )}
         </header>
 
-        {error && (QUIET ? <QuietNote inline /> : <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>)}
+        {error && (<p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>)}
 
         {/* ── the band ── */}
         <div className={`grid grid-cols-2 overflow-hidden rounded-md border border-line bg-surface sm:grid-cols-3 ${bandCols}`}>

@@ -2,20 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "./ui";
-import { QuietNote } from "./overlays";
 import { GroupHeader } from "./page-tabs";
 import { Chips, FilterBar } from "./filters";
 import { Pick } from "./select";
 import { CAT } from "./charts";
 import { Card, Nothing, ReadError } from "./overview-parts";
-import { NotConnectedNote, useDoor } from "./pending";
+import { NotConnectedNote, useDoor, AnswerFailure } from "./pending";
 import { whenFull } from "./dataset-parts";
 import { usePageFacts } from "./assistant";
 import { IclLoad } from "./compliance-icl-load";
 import { ComplianceMatrix } from "./compliance-matrix";
 import { ICL, ICL_ID, STANDARD_COLS, coverage, plural, readCompliance, sameCustom, sameIds, tidyCustom, useFirings } from "./compliance-parts";
 import { CONTROLS, FAMILIES } from "@/lib/guardrails";
-import { QUIET } from "@/lib/quiet";
 import { useSession } from "@/lib/use-session";
 import { ask, type Compliance, type ComplianceSave, type ControlCustom, type Door, type IclControl } from "@/lib/api/pending";
 
@@ -261,12 +259,8 @@ export function ComplianceView() {
             hue="controls"
             meta={showFirings && firings.record ? `${plural(totalFired, "firing")} over ${plural(firings.record.runs, "run")} on record` : undefined}
           >
-            {firings.noRecord ? (
-              <p className="px-4 py-5">
-                <QuietNote inline />
-              </p>
-            ) : firings.failed ? (
-              <ReadError>The record of control firings could not be read.</ReadError>
+            {firings.failed && firings.answer ? (
+              <AnswerFailure className="px-4 py-4" answer={firings.answer} what="The record of control firings could not be read" />
             ) : !firings.record ? (
               <div className="h-14" />
             ) : totalFired === 0 ? (
@@ -317,20 +311,14 @@ export function ComplianceView() {
                 <NotConnectedNote door={answer.door} />
               </div>
             ) : answer.state === "error" ? (
-              QUIET ? (
-                <p className="px-4 py-5">
-                  <QuietNote inline />
+              <div className="flex flex-wrap items-center gap-3 px-4 py-4">
+                <p role="alert" className="min-w-0 grow text-[12px] leading-[1.55] text-err">
+                  The list and its mapping could not be read: {answer.message}
                 </p>
-              ) : (
-                <div className="flex flex-wrap items-center gap-3 px-4 py-4">
-                  <p role="alert" className="min-w-0 grow text-[12px] leading-[1.55] text-err">
-                    The list and its mapping could not be read: {answer.message}
-                  </p>
-                  <Button size="sm" variant="solid" tone="neutral" onClick={reload}>
-                    Try again
-                  </Button>
-                </div>
-              )
+                <Button size="sm" variant="solid" tone="neutral" onClick={reload}>
+                  Try again
+                </Button>
+              </div>
             ) : !server.icl ? (
               <Nothing>No list is loaded yet. Load the {ICL} as a CSV file to map the catalogue to it. Until then the {ICL} column of the matrix stays empty.</Nothing>
             ) : (

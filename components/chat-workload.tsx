@@ -5,9 +5,7 @@ import Link from "next/link";
 import { Button, Mono, Status } from "./ui";
 import { Pick } from "./select";
 import { Markdown } from "./markdown";
-import { NotConnected, useDoor } from "./pending";
-import { QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
+import { NotConnected, useDoor, Failure } from "./pending";
 import { WORKLOADS, ask, type Door, type WorkloadList, type WorkloadOffer } from "@/lib/api/pending";
 import { profileOf } from "@/lib/workloads";
 
@@ -87,7 +85,7 @@ export function WorkloadChat() {
     <section className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
       <div data-hue="blue" className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-raise/55 px-4 py-2.5">
         <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Ask a workload to do something</span>
-        <span className="text-[11px] leading-[1.55] text-faint">a request in plain words to an approved security workload, submitted under your own permissions</span>
+        <span className="text-[11px] leading-[1.55] text-faint">a request in plain words to a security workload this deployment offers, submitted under your own permissions</span>
       </div>
 
       <div className="grid min-w-0 gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -107,7 +105,7 @@ export function WorkloadChat() {
               loading={offered === null}
               value={chosen ? String(chosen.id) : ""}
               onChange={setWorkload}
-              options={chosen ? available.map((w) => ({ value: String(w.id), label: w.agent ? `${nameOf(w)} · ${w.agent}` : nameOf(w) })) : [{ value: "", label: offered?.state === "ok" ? "No workload is available" : "Not connected" }]}
+              options={chosen ? available.map((w) => ({ value: String(w.id), label: w.agent ? `${nameOf(w)} · ${w.agent}` : nameOf(w) })) : [{ value: "", label: offered?.state === "ok" ? "No workload is available" : offered?.state === "pending" ? "Not built" : "Not read" }]}
             />
             {connected && waiting > 0 && (
               <span className="text-[11.5px] text-faint">
@@ -131,11 +129,10 @@ export function WorkloadChat() {
               Gates on this workload: {chosen.gates.map((g) => `${g.name} (${g.role}, ${g.when})`).join("; ")}.
             </span>
           )}
-          {error && QUIET && <QuietNote inline />}
-          {error && !QUIET && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>}
+          {error && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>}
           <div className="flex items-start gap-3">
             <span className="min-w-0 grow pt-1 text-[11.5px] leading-[1.5] text-faint">
-              {offered === null ? "Asking which workloads this deployment offers…" : off ? "The composer opens once this deployment is connected." : "The request runs with what you are permitted to start, and nothing more."}
+              {offered === null ? "Asking which workloads this deployment offers…" : off ? "The composer opens once a workload is offered here." : "The request runs with what you are permitted to start, and nothing more."}
             </span>
             <span className="shrink-0">
               <Button type="submit" size="sm" variant="solid" tone="ink" permission="run" loading={busy} disabled={off || !draft.trim()}>
@@ -146,13 +143,12 @@ export function WorkloadChat() {
         </form>
 
         <div className="flex min-w-0 flex-col gap-3">
-          {offered?.state === "error" && QUIET && <QuietNote />}
-          {offered?.state === "error" && !QUIET && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">The workloads could not be read: {offered.message}</p>}
+          {offered?.state === "error" && <Failure what="The workloads could not be read" message={offered.message} />}
           {offered?.state === "ok" && available.length === 0 && !absent && (
             <p className="rounded-md border border-line bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-faint">No workload is available on this deployment yet, so there is nothing to ask.</p>
           )}
           {(offered?.state === "pending" || absent) && (
-            <NotConnected door="chatStart" compact>
+            <NotConnected door={absent ?? (offered?.state === "pending" ? offered.door : "chatStart")} compact>
               You will be able to ask a security workload to do something here in plain words ({WORKLOADS.map((w) => w.name.toLowerCase()).join(", ")}). The request is submitted under your own permissions; the
               workload&rsquo;s inputs and approval gates still apply, and the run it starts is on the record like any other.
             </NotConnected>

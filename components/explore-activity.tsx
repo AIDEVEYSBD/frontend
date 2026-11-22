@@ -4,13 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { RunRow } from "@/lib/api/client";
 import { Button, Mono, RUN_STATE, Status } from "./ui";
-import { EmptyState, QuietNote } from "./overlays";
+import { EmptyState } from "./overlays";
 import { ControlMark } from "./control-ref";
 import { Skeleton } from "./loaders";
 import { listAgents, type AgentSummary } from "@/lib/api/l2";
 import { agentHref } from "@/lib/agent-link";
 import { soon } from "@/lib/soon";
-import { QUIET } from "@/lib/quiet";
 import {
   Card,
   EVENT,
@@ -81,29 +80,6 @@ const EVENT_FACETS: FacetDef<RunEvent>[] = [
 const runWords = (r: RunRow) => `${r.id} ${agentOf(r)} ${r.state} ${(r.models ?? []).join(" ")} ${r.source ?? ""}`;
 const runFailed = (r: RunRow) => r.state === "failed";
 
-/** The view with no ledger behind it on a quiet console (lib/quiet.ts): its cards, empty. */
-export function AgentActivityQuiet({ win }: { win: Win }) {
-  return (
-    <QuietFrame
-      title={`Runs, ${windowWords(win)}`}
-      line="Runs are counted here over time, by when each was last active."
-      sections={[
-        { title: "Runs", labels: ["Agent", "Run state", "Model", "Started from"] },
-        { title: "Events on those runs", labels: EVENT_FACETS.map((f) => f.label) },
-      ]}
-      placeholder="Search run, agent or model"
-    >
-      <div className="grid items-start gap-4 @[1180px]:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
-        <Card title="Agents" hue="agent" meta="runs and calls from the ledger, steps from the journals read">
-          <QuietTable columns={["Agent", "Runs", "Steps", "Model calls", "Tool calls", "Failed runs", "Last active"]} line="Each agent is listed here with its runs, steps and calls in the window." />
-        </Card>
-        <Card title="Recent events" hue="activity" meta="newest first">
-          <p className="px-4 py-6 text-[11.5px] text-faint">What happened on those runs is listed here: started, a gate opened or answered, a refusal, ended.</p>
-        </Card>
-      </div>
-    </QuietFrame>
-  );
-}
 
 export function AgentActivityView({ ledger, win, now, address }: ViewProps) {
   const { rows, error } = ledger;
@@ -312,7 +288,7 @@ export function AgentActivityView({ ledger, win, now, address }: ViewProps) {
       {eventRuns.length === 0 && <p className="px-4 py-6 text-[11.5px] text-faint">{one && cut.chips.length === 1 ? `This agent has no run in ${windowWords(win)}, so there is nothing to list.` : "No run matches these filters, so there is nothing to list."}</p>}
       {eventRuns.length > 0 && allEvents.length === 0 && (
         <div className="px-4 py-4">
-          {own.pending > 0 ? <Skeleton lines={4} /> : own.failed.length && QUIET ? <QuietNote inline /> : <p className="text-[11.5px] text-faint">{own.failed.length ? `The journals did not read: ${own.failed[0].message}` : "The journals read hold no run start, gate, refusal or run end."}</p>}
+          {own.pending > 0 ? <Skeleton lines={4} /> : <p className="text-[11.5px] text-faint">{own.failed.length ? `The journals did not read: ${own.failed[0].message}` : "The journals read hold no run start, gate, refusal or run end."}</p>}
         </div>
       )}
       {allEvents.length > 0 && events.length === 0 && <p className="px-4 py-6 text-[11.5px] text-faint">No event on these runs matches the event filters.</p>}
@@ -371,7 +347,7 @@ export function AgentActivityView({ ledger, win, now, address }: ViewProps) {
     return <EmptyState title="No agents and no runs yet" detail="Activity is read from the run ledger. Once an agent is saved and has run, it is listed here." action={<Button size="sm" variant="solid" tone="ink" href="/agents">Open agents</Button>} />;
   }
 
-  const registryNote = registryError && !QUIET ? <ErrorLine what="The agent registry did not answer, so only agents with a run are listed" message={registryError} /> : null;
+  const registryNote = registryError ? <ErrorLine what="The agent registry did not answer, so only agents with a run are listed" message={registryError} /> : null;
 
   // No run in the window (or no ledger): the agents alone, which say when each last ran.
   if (!domain || inWin.length === 0) {

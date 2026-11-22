@@ -88,7 +88,7 @@ export function ChangeDialog({ act, data, busy, onConfirm, onClose }: { act: Act
         {picked.length > 0 &&
           (taking ? (
             <span>
-              <span className="font-medium text-fg">{agent}</span> can no longer {rightsPhrase(picked)} <span className="font-medium text-fg">{store}</span>. Runs in flight that try will be refused.
+              <span className="font-medium text-fg">{agent}</span> can no longer {rightsPhrase(picked)} <span className="font-medium text-fg">{store}</span>. The revocation is recorded; agents do not retrieve on this deployment yet, so it changes no run today.
             </span>
           ) : (
             <span>
@@ -130,7 +130,7 @@ export function ChangeDialog({ act, data, busy, onConfirm, onClose }: { act: Act
       >
         {taking ? (
           <span>
-            <span className="font-medium text-fg">{agent}</span> can no longer read from, write to or delete in any store it holds. Runs in flight that try will be refused.
+            <span className="font-medium text-fg">{agent}</span> can no longer read from, write to or delete in any store it holds. The revocation is recorded; agents do not retrieve on this deployment yet, so it changes no run today.
           </span>
         ) : (
           <span>
@@ -160,7 +160,7 @@ export function ChangeDialog({ act, data, busy, onConfirm, onClose }: { act: Act
         onConfirm={(reason) => onConfirm({ door: "retrieverDisable", store: s.id, body: { reason }, done: `Retrieval from ${name} is switched off for every agent.` })}
       >
         <span>
-          No agent can retrieve from <span className="font-medium text-fg">{name}</span> any more. Runs in flight that try will be refused.
+          Retrieval from <span className="font-medium text-fg">{name}</span> is switched off: every search and answer from it on the Knowledge page is refused until it is switched back on.
         </span>
         {rows.length > 0 ? (
           <>

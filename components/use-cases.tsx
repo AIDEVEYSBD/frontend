@@ -3,11 +3,10 @@
 import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
 import { Button, Status, Tag } from "./ui";
-import { Dialog, QuietNote } from "./overlays";
+import { Dialog } from "./overlays";
 import { Section } from "./section";
-import { NotConnected, NotConnectedNote, useDoor } from "./pending";
+import { NotConnected, NotConnectedNote, useDoor, Failure } from "./pending";
 import { RegisterDialog, tierLabel } from "./use-cases-dialog";
-import { QUIET } from "@/lib/quiet";
 import { DATA_CLASS_TONE } from "@/lib/bom";
 import { otherOffers, workloadHref } from "@/lib/workloads";
 import { WORKLOADS, ask, type Answer, type Door, type UseCase, type UseCaseChange, type UseCaseGate, type UseCaseList, type UseCaseState, type WorkloadList } from "@/lib/api/pending";
@@ -58,7 +57,7 @@ function Gate({ gate: g }: { gate: UseCaseGate }) {
       </span>
       {g.threshold && <span className="leading-[1.45] text-dim">Applies when: {g.threshold}</span>}
       <span className="leading-[1.45] text-dim">
-        Waits {waitText(g.timeout_minutes)}, then {g.on_timeout === "stop" ? "the run stops" : g.escalate_to ? `escalates to ${g.escalate_to}` : "escalates"}
+        Recorded: waits {waitText(g.timeout_minutes)}, then {g.on_timeout === "stop" ? "the run stops" : g.escalate_to ? `escalates to ${g.escalate_to}` : "escalates"}. Runs are not yet held to it.
       </span>
     </li>
   );
@@ -93,7 +92,7 @@ export function UseCases({ workloads, calm }: { /** The workloads door's answer,
     reload();
   };
 
-  const noticeText: ReactNode = notice ? "door" in notice ? <NotConnectedNote door={notice.door} /> : notice.tone === "err" && QUIET ? <QuietNote inline /> : notice.text : null;
+  const noticeText: ReactNode = notice ? "door" in notice ? <NotConnectedNote door={notice.door} /> : notice.text : null;
   const waiting = rows.filter((u) => u.state === "awaiting_approval").length;
 
   return (
@@ -110,7 +109,7 @@ export function UseCases({ workloads, calm }: { /** The workloads door's answer,
     >
       {notice && (
         <div className="flex flex-wrap items-center gap-3 rounded-md border border-line bg-surface px-3 py-2">
-          {"tone" in notice && !(notice.tone === "err" && QUIET) && <Status tone={notice.tone}>{notice.tone === "err" ? "Refused" : "Done"}</Status>}
+          {"tone" in notice && <Status tone={notice.tone}>{notice.tone === "err" ? "Refused" : "Done"}</Status>}
           <span className="min-w-0 text-[12.5px] leading-[1.5] text-fg">{noticeText}</span>
           <span className="grow" />
           <Button size="sm" variant="solid" tone="neutral" onClick={() => setNotice(null)}>
@@ -122,7 +121,7 @@ export function UseCases({ workloads, calm }: { /** The workloads door's answer,
       {answer === null && <p className="text-[12px] text-faint">Reading the registered use cases…</p>}
       {answer?.state === "pending" && (calm ? <p className="text-[12px] text-faint">{WHAT}</p> : <NotConnected door={answer.door} compact>{WHAT}</NotConnected>)}
       {answer?.state === "error" &&
-        (QUIET ? calm ? <p className="text-[12px] text-faint">{WHAT}</p> : <QuietNote inline /> : <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">The registered use cases could not be read: {answer.message}</p>)}
+        <Failure what="The registered use cases could not be read" message={answer.message} />}
       {connected && rows.length === 0 && <p className="text-[12px] text-faint">No use case is registered. Register one to record its owner, the data it handles, its autonomy level and the gates where a person decides.</p>}
 
       {rows.length > 0 && (
@@ -244,7 +243,7 @@ export function UseCases({ workloads, calm }: { /** The workloads door's answer,
           onClose={() => !busy && setMoving(null)}
         >
           {moving.to === "approved"
-            ? "Runs may start under this use case with the owner, data classes, autonomy level and gates it lists. The approval is recorded with your name."
+            ? "The approval is recorded with your name. The use case is a record of what was agreed: runs are not yet held to its owner, data classes, autonomy level or gates."
             : "It moves from draft to awaiting approval, and a person with the approve permission decides. It stays as registered until then."}
         </Dialog>
       )}

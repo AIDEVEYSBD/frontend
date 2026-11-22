@@ -50,8 +50,7 @@ interface Answer {
 
 function refusal(error: unknown, res: Response): DoorError {
   const page = typeof error === "string";
-  let message = errorText(page && error.trimStart().startsWith("<") ? null : error, res);
-  if (/answered (404|502|503)/.test(message) && !obj(error).error) message = `${message}: this door is served by the backend; this deployment may not have named it (BACKEND_ORIGIN)`;
+  const message = errorText(page && error.trimStart().startsWith("<") ? null : error, res);
   return new DoorError(message, res.status, obj(error));
 }
 

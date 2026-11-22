@@ -1,8 +1,8 @@
 "use client";
+import { Failure } from "./pending";
+import { notBuiltDoorOf } from "@/lib/api/client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
 import { Pick } from "./select";
 import { kindOf, type Provider } from "@/lib/providers";
 import { DATA_CLASSES, type DataClass } from "@/lib/api/pending";
@@ -52,26 +52,18 @@ export function PermittedClassNote() {
   );
 }
 
-/** One calm line for a Configuration panel whose record was not read (a quiet console, lib/quiet.ts). */
-export function PanelNote() {
-  return (
-    <div className="px-4 py-3">
-      <QuietNote inline />
-    </div>
-  );
-}
 
-/** A read or a write that failed inside a Configuration panel: its plain reason, or the one calm line in a quiet console. */
+/** A read or a write that failed inside a Configuration panel: its plain reason with the status and the address, or the not-built note for a 501. */
 export function PanelFailure({ title, children }: { title: string; children: ReactNode }) {
+  if (typeof children === "string" && notBuiltDoorOf(children))
+    return (
+      <p className="border-b border-line px-4 py-2.5 last:border-b-0">
+        <Failure inline message={children} />
+      </p>
+    );
   return (
     <p className="border-b border-line px-4 py-2.5 text-[11.5px] leading-[1.5] whitespace-pre-wrap text-err last:border-b-0">
-      {QUIET ? (
-        <QuietNote inline />
-      ) : (
-        <>
-          <span className="font-medium">{title}.</span> {children}
-        </>
-      )}
+      <span className="font-medium">{title}.</span> {children}
     </p>
   );
 }
@@ -122,14 +114,11 @@ export function Providers({ bare = false, onQuiet }: { bare?: boolean | null; on
   useConfigChanges(refresh);
 
   const none = (config?.providers ?? []).length === 0;
-  // Quiet: nothing was read from anywhere (the console is bare, or the read failed), so the panel does not say there are none.
-  const unread = none && (bare === true || (QUIET && Boolean(error) && !config));
   const settled = config !== null || Boolean(error);
   useEffect(() => {
-    if (settled) onQuiet?.(unread);
-  }, [settled, unread, onQuiet]);
+    if (settled) onQuiet?.(false);
+  }, [settled, onQuiet]);
 
-  if (unread) return <PanelNote />;
   // Not known yet whether anything is behind the console: no "none connected" in the meantime.
   if (!config || (none && bare === null)) {
     return error && config === null ? <PanelFailure title="The providers could not be read">{error}</PanelFailure> : <p className="px-4 py-3 text-[11.5px] text-faint">Reading the configuration&hellip;</p>;

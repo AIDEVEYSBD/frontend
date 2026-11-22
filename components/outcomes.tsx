@@ -1,6 +1,5 @@
 "use client";
 
-import { QUIET } from "@/lib/quiet";
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Button, Status } from "./ui";
@@ -10,7 +9,7 @@ import { WindowPick, type Win } from "./window-pick";
 import { NotConnected, useDoor } from "./pending";
 import { FINDING_STATUSES, FindingStatusMark, RunLink, SEVERITIES, SeverityBar, count, runStateMeta, shortWhen } from "./finding-marks";
 import { hueFor } from "@/lib/hue";
-import { WORKLOADS, type Answer, type FindingsSummary } from "@/lib/api/pending";
+import { WORKLOADS, type Answer, type FindingsSummary, type WorkloadList } from "@/lib/api/pending";
 
 /**
  * The Results summary (feature 2.4): each security workload over a time
@@ -83,8 +82,8 @@ function WorkloadCard({ id, name, line, entry, state, win }: { id: string; name:
       <div className="flex flex-col gap-4 p-4">
         {state === "reading" && <p className="text-[12px] text-faint">Reading the summary…</p>}
         {state === "pending" && <p className="text-[12px] text-faint">No figures: the platform does not build the summary yet.</p>}
-        {state === "error" && <p className="text-[12px] text-faint">{QUIET ? "No figures: the platform does not build the summary yet." : "No figures: the summary could not be read."}</p>}
-        {state === "ok" && nothing && <p className="text-[12px] text-faint">No runs yet{win === "all" ? "" : " in this window"}.</p>}
+        {state === "error" && <p className="text-[12px] text-faint">No figures: the summary could not be read.</p>}
+        {state === "ok" && nothing && <p className="text-[12px] text-faint">No findings recorded{win === "all" ? "" : " in this window"}.</p>}
         {state === "ok" && !nothing && (
           <>
             <div className="grid grid-cols-[repeat(2,minmax(0,150px))_minmax(0,1fr)] gap-px overflow-hidden rounded-md border border-line bg-line">
@@ -141,6 +140,9 @@ function WorkloadCard({ id, name, line, entry, state, win }: { id: string; name:
  */
 export function OutcomesBody({ win, figures, compact = false }: { win: Win; figures?: (answer: Answer<FindingsSummary> | null) => ReactNode; /** The smaller form of the not-connected note. */ compact?: boolean }) {
   const { answer, reload } = useDoor<FindingsSummary>("findingsSummary", { query: { window: win } });
+  // Which of the four workloads this deployment offers: the cards are the four the console is built for, and say so.
+  const { answer: offered } = useDoor<WorkloadList>("workloads");
+  const offeredIds = offered?.state === "ok" && Array.isArray(offered.data?.workloads) ? new Set(offered.data.workloads.map((w) => String(w.id))) : null;
   const entries: Entry[] = answer?.state === "ok" && Array.isArray(answer.data?.workloads) ? answer.data.workloads : [];
   const state = answer === null ? "reading" : answer.state;
   const known = new Set<string>(WORKLOADS.map((w) => w.id));
@@ -156,6 +158,18 @@ export function OutcomesBody({ win, figures, compact = false }: { win: Win; figu
       )}
 
       {figures?.(answer)}
+
+      <p className="text-[11.5px] leading-[1.55] text-faint">
+        {offeredIds === null
+          ? offered?.state === "pending"
+            ? "The four security workloads this console is built for. Which of them this deployment offers is not built yet (GET /api/workloads answers 501)."
+            : offered?.state === "error"
+              ? `The four security workloads this console is built for. Which of them this deployment offers could not be read: ${offered.message}`
+              : "The four security workloads this console is built for."
+          : offeredIds.size === 0
+            ? "The four security workloads this console is built for. None of them is offered on this deployment yet; they are separate products with their own consoles."
+            : `The four security workloads this console is built for; ${offeredIds.size} of them ${offeredIds.size === 1 ? "is" : "are"} offered on this deployment.`}
+      </p>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {WORKLOADS.map((w) => (
@@ -184,7 +198,7 @@ export function OutcomesView() {
           </span>
         }
       >
-        What each security workload produced over the window: its runs, how the last one ended, and its findings by severity and by status. A figure opens the findings it counts.
+        What each security workload reported over the window: its findings by severity and by status, and the runs that recorded them. A figure opens the findings it counts. Runs on this deployment do not record findings yet: no engine step writes one.
       </GroupHeader>
 
       <OutcomesBody win={win} />

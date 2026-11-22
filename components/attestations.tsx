@@ -1,11 +1,11 @@
 "use client";
+import { Failure } from "./pending";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Status, Tag } from "./ui";
-import { Banner, QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
+import { Banner } from "./overlays";
 import { Field, Switch, Textarea } from "./forms";
 import { Pick } from "./select";
 import { DigestChip } from "./digest-chip";
@@ -155,7 +155,7 @@ function AttestForm({ agent, list, onDone }: { agent: string; list: AttestationL
           Attest
         </Button>
         {!may && <span className="text-[11px] text-faint">{why}.</span>}
-        {error && (QUIET ? <QuietNote inline /> : <span className="text-[11.5px] text-err">{error}</span>)}
+        {error && (<span className="text-[11.5px] text-err">{error}</span>)}
       </span>
     </div>
   );
@@ -174,8 +174,8 @@ function AgentAttestations({ agent, onChanged }: { agent: string; onChanged: () 
   }, [agent]);
   useEffect(() => soon(load), [load]);
   return (
-    <Section title={agent} hue="approvals" meta={list ? `${list.count} on record` : QUIET && error ? undefined : "reading…"}>
-      {error && (QUIET ? <QuietNote inline /> : <p className="text-[11.5px] text-err">{error}</p>)}
+    <Section title={agent} hue="approvals" meta={list ? `${list.count} on record` : error ? "not read" : "reading…"}>
+      {error && <Failure what="This agent's attestations could not be read" message={error} />}
       {list && (
         <>
           <span className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-dim">
@@ -229,8 +229,8 @@ function AttestationsPage() {
   }, []);
   const rows = (standings?.agents ?? []).filter((r) => !overdueOnly || r.overdue);
   const never = (standings?.agents ?? []).filter((r) => !r.last).length;
-  // A quiet console (lib/quiet.ts) whose attestations door did not answer says so once, with the figures and the table drawn empty beneath it.
-  const quietDown = QUIET && Boolean(error) && !standings;
+  // The attestations door did not answer: the failure is shown once above, and every figure and table says it was not read.
+  const quietDown = Boolean(error) && !standings;
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
       <GroupHeader group="assurance" tab="attestations">
@@ -242,7 +242,7 @@ function AttestationsPage() {
         </Banner>
       )}
       <>
-      {quietDown && <Figures items={["deployed agents", "overdue", "never attested"].map((k) => ({ k, v: <span className="flex h-[15px] items-center text-[12px] font-normal text-faint">Not connected</span> }))} />}
+      {quietDown && <Figures items={["deployed agents", "overdue", "never attested"].map((k) => ({ k, v: <span className="flex h-[15px] items-center text-[12px] font-normal text-faint">Not read</span> }))} />}
       {standings && (
         <Figures
           items={[
@@ -262,20 +262,7 @@ function AttestationsPage() {
           <StandingsTable rows={[...rows].sort((a, b) => Number(b.overdue) - Number(a.overdue))} selected={agent} />
         ) : quietDown ? (
           <>
-            <div className="overflow-x-auto rounded-md border border-line">
-              <table className="w-full min-w-[760px] border-collapse text-[11.5px]">
-                <thead>
-                  <tr className="bg-raise/40 text-left text-[10.5px] text-faint">
-                    {["Agent", "Standing", "Owner", "Last attested", "Due"].map((h) => (
-                      <th key={h} className="px-3 py-1.5 font-medium">
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-              </table>
-            </div>
-            <p className="text-[12px] text-faint">Every deployed agent is listed here with its owner, when it was last attested and when the next is due.</p>
+            <p className="text-[12px] text-faint">Not read.</p>
           </>
         ) : (
           <p className="text-[12px] text-faint">Reading…</p>

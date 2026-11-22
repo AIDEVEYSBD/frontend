@@ -1,4 +1,5 @@
 "use client";
+import { Failure } from "./pending";
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -67,7 +68,9 @@ export function useRunTree(runId: string | undefined, live: boolean) {
         setStatus(e instanceof DoorError ? e.status : 0);
       });
   }, [runId]);
-  const moving = live || (tree ? inFlightNodes(tree).length > 0 : false);
+  // A tree the platform does not build (501) is asked once: it is not read again every few seconds.
+  const notBuilt = status === 501;
+  const moving = !notBuilt && (live || (tree ? inFlightNodes(tree).length > 0 : false));
   useEffect(() => {
     if (!runId) return;
     const first = setTimeout(load, 0);
@@ -219,7 +222,7 @@ export function KillReceiptView({ receipt, onDismiss }: { receipt: KillReceipt; 
   return (
     <div className="flex flex-col border-t border-err/40 bg-surface">
       <div className="flex flex-wrap items-center gap-2 px-4 py-2">
-        <Status tone="err">Kill reached {receipt.reached.length}</Status>
+        <Status tone="err">Kill requested</Status>
         <span className="min-w-0 grow text-[11.5px] leading-[1.5] text-dim">{killSummary(receipt)}</span>
         {receipt.kill.reason && <span className="text-[10.5px] text-faint">reason: {receipt.kill.reason}</span>}
         {onDismiss && (
@@ -393,12 +396,17 @@ export function RunTreePanel({ runId, live }: { runId?: string; live: boolean })
         </span>
         <span className="text-[11.5px] font-medium">Run tree</span>
         <span className={`min-w-0 text-[10.5px] ${tree && tree.rollup.refusals ? "text-err" : "text-faint"}`}>
-          {tree ? treeSummary(tree) : error ? (status === 403 ? "not visible to this key" : status === 404 ? "no record of this run yet" : "could not be read") : "reading the tree…"}
+          {tree ? treeSummary(tree) : error ? (status === 501 ? "not built" : status === 403 ? "not visible to this key" : status === 404 ? "no record of this run yet" : "could not be read") : "reading the tree…"}
         </span>
         {moving.length > 0 && <Status tone="run">{moving.length} in flight</Status>}
         <span className="grow" />
         {tree?.trace_id && <span className="tnum font-mono text-[10px] text-ghost">trace {tree.trace_id}</span>}
       </button>
+      {shown && !tree && error && (
+        <div className="px-4 pb-3">
+          <Failure what="The run tree could not be read" message={error} />
+        </div>
+      )}
       {shown && tree && (
         <RunTreeBody
           tree={tree}

@@ -7,6 +7,8 @@ import { Pick } from "./select";
 import { listOfferedModels, steerRun, type OfferedModel, type SteerResult } from "@/lib/api/l5";
 import { CURRENT_USER } from "@/lib/user";
 import { signerName, useSession } from "@/lib/use-session";
+import { notBuiltDoorOf } from "@/lib/api/client";
+import { Failure, NotConnected, type NamedDoor } from "./pending";
 
 /**
  * Steering a live run.
@@ -45,6 +47,8 @@ export function SteerPanel({ runId, holdBlocked }: { runId: string; holdBlocked?
   const [busy, setBusy] = useState<"guidance" | "hold" | "model" | null>(null);
   const [receipts, setReceipts] = useState<{ what: string; r: SteerResult }[]>([]);
   const [error, setError] = useState("");
+  /** The platform answered 501 to the steer: the panel becomes the not-built panel, with no form that cannot be acted on. */
+  const [notBuilt, setNotBuilt] = useState<NamedDoor | null>(null);
 
   useEffect(() => {
     let stop = false;
@@ -65,12 +69,21 @@ export function SteerPanel({ runId, holdBlocked }: { runId: string; holdBlocked?
       if (what === "guidance") setGuidance("");
       return true;
     } catch (e) {
-      setError((e as Error).message);
+      const door = notBuiltDoorOf((e as Error).message);
+      if (door) setNotBuilt(door);
+      else setError((e as Error).message);
       return false;
     } finally {
       setBusy(null);
     }
   };
+
+  if (notBuilt)
+    return (
+      <NotConnected door={notBuilt} compact title="Steering a run is not built yet">
+        The platform does not take guidance or a model for a run in flight yet.
+      </NotConnected>
+    );
 
   return (
     <div className="relative flex flex-col gap-3 overflow-hidden rounded-md border border-line bg-surface p-3 pl-4">
@@ -80,30 +93,12 @@ export function SteerPanel({ runId, holdBlocked }: { runId: string; holdBlocked?
         <span className="text-[10.5px] text-faint">{holdBlocked ? "waiting at a gate · taken on the agent's next control poll" : "applies to the next step"}</span>
       </span>
 
-      <Field label="Guidance for the next step" hint="Appended to the next model prompt, journalled with your name.">
+      <Field label="Guidance for the next step" hint="Sent to the platform for the run's next model call; its answer is shown below.">
         <Textarea rows={2} value={guidance} onChange={setGuidance} placeholder="What the next step should bear in mind." disabled={busy !== null} />
       </Field>
       <Button size="sm" variant="solid" tone="ink" permission="run" className="self-start" loading={busy === "guidance"} disabled={!guidance.trim() || busy !== null} onClick={() => send("guidance", { guidance: guidance.trim() }, "Guidance")}>
         Send guidance
       </Button>
-
-      <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
-        <span className="flex flex-col">
-          <span className="text-[12.5px] font-medium text-mist">Hold at next gate</span>
-          <span className={`text-[11px] ${holdBlocked && !hold ? "text-warn" : "text-faint"}`}>
-            {hold ? "Asked. The next call at or above write waits for a person; a hold cannot be withdrawn." : holdBlocked || "The next call at or above write waits for a person, even if no gate names it."}
-          </span>
-        </span>
-        <Switch
-          checked={hold}
-          disabled={busy !== null || hold || Boolean(holdBlocked)}
-          onChange={async (on) => {
-            if (!on) return;
-            if (await send("hold", { hold_at_next_gate: true }, "Hold at next gate")) setHold(true);
-          }}
-          label={hold ? "holding" : "not holding"}
-        />
-      </div>
 
       <div className="flex flex-col gap-1.5 border-t border-line pt-3">
         <span className="text-[12.5px] font-medium text-mist">Model for the next model call</span>
@@ -123,7 +118,7 @@ export function SteerPanel({ runId, holdBlocked }: { runId: string; holdBlocked?
         </div>
       </div>
 
-      {error && <p className="text-[11.5px] leading-[1.5] text-err">{error}</p>}
+      {error && <Failure inline message={error} />}
       {receipts.length > 0 && (
         <div className="flex flex-col gap-1 border-t border-line pt-2">
           {receipts.map(({ what, r }, i) => (

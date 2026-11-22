@@ -1,12 +1,12 @@
 "use client";
 
 import { ControlsInForce } from "./controls-in-force";
+import { GATE_TIMEOUT_LINE, GATE_TIMEOUT_SHORT } from "@/lib/gates";
 import { AgentHeader, AgentStatus } from "./agent-header";
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Mono, Status, Tag, type Tone } from "./ui";
-import { Banner, QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
+import { Banner } from "./overlays";
 import { Section } from "./section";
 import { Pick } from "./select";
 import { DigestChip } from "./digest-chip";
@@ -168,10 +168,10 @@ function Code({ children }: { children: ReactNode }) {
 /* ═══════════════════ sections ═══════════════════ */
 
 const BUDGET: { key: BudgetKey; label: string; hint: string; unset: string; placeholder?: string }[] = [
-  { key: "cost_usd", label: "Cost (USD)", hint: "Tokens at the price recorded for each model. A model with no price costs the budget nothing.", unset: "No limit set" },
-  { key: "tokens", label: "Tokens", hint: "Counted from every model reply, in and out.", unset: "No limit set" },
-  { key: "tool_calls", label: "Tool calls", hint: "200 when the document sets none.", unset: "200 (the default)", placeholder: "200" },
-  { key: "wall_clock_s", label: "Wall clock (seconds)", hint: "From the run's start. Time spent waiting at a gate is not counted.", unset: "No limit set" },
+  { key: "cost_usd", label: "Cost (USD)", hint: "Tokens at the price set for each model on the Models tab, checked after each model reply.", unset: "No limit set" },
+  { key: "tokens", label: "Tokens", hint: "Counted from every model reply, in and out, and checked after each reply.", unset: "No limit set" },
+  { key: "tool_calls", label: "Tool calls", hint: "Kept in the document and not counted: tool steps are not built on this deployment.", unset: "Not counted", placeholder: "200" },
+  { key: "wall_clock_s", label: "Wall clock (seconds)", hint: "From the run's start, checked between steps. Time spent waiting at a gate is not counted.", unset: "No limit set" },
 ];
 
 function Limits({ form }: { form: Form }) {
@@ -193,7 +193,7 @@ function Limits({ form }: { form: Form }) {
         ))}
       </div>
       <Hint>
-        One tally for the whole run: every step, every fan-out copy and every sub-run it starts count on it. The limits are checked before each tool and model call; reaching one is recorded as a refusal against the budget and ends the run as failed, naming the limit. Leave a field empty for no limit.
+        One tally for the whole run, across every step. Tokens and cost are checked after each model reply (the call that crosses the line has been made and is in the journal), wall-clock time between steps. Reaching a limit ends the run as failed, naming the limit. Leave a field empty for no limit.
       </Hint>
     </Section>
   );
@@ -202,16 +202,6 @@ function Limits({ form }: { form: Form }) {
 function Bounds({ form, steps }: { form: Form; steps: StepRow[] }) {
   return (
     <Section title="Bounds" hue="run" meta="how far each step and the agent as a whole may go">
-      <FieldText
-        form={form}
-        k="delegation.max_depth"
-        label="Delegation depth"
-        numeric
-        placeholder="3"
-        unset="3 (the default)"
-        className="max-w-[420px]"
-        hint="How many levels of work may sit below this agent: the sub-runs it starts, the tasks it hands a peer, and theirs. 3 when the document sets none; 0 hands nothing on. Under a caller that allows fewer, the caller's limit holds."
-      />
       <div className="overflow-x-auto rounded-md border border-line">
         <table className="w-full min-w-[820px] border-collapse text-[11.5px]">
           <thead>
@@ -249,11 +239,7 @@ function Bounds({ form, steps }: { form: Form; steps: StepRow[] }) {
                   </td>
                   <td className="px-3 py-2.5">
                     {loop ? (
-                      <span className="flex flex-col gap-1">
-                        <TextValue value={form.value(limit)} onChange={(v) => form.set(limit, v)} edit={form.edit} label={`Step limit of ${s.label}`} numeric placeholder="12" unset="12 (the default)" invalid={Boolean(form.problem(limit))} />
-                        {form.problem(limit) && <span className="text-[11px] text-err">{form.problem(limit)}</span>}
-                        {form.edited(limit) && !form.problem(limit) && <span className="text-[10.5px] font-medium text-queue">changed</span>}
-                      </span>
+                      <span className="text-faint">Not built: delegate steps do not run on this deployment</span>
                     ) : s.harness === "sequence" ? (
                       <span className="text-faint">{plural(s.fixed, "fixed step")}</span>
                     ) : (
@@ -262,10 +248,7 @@ function Bounds({ form, steps }: { form: Form; steps: StepRow[] }) {
                   </td>
                   <td className="px-3 py-2.5">
                     {loop ? (
-                      <span className="flex flex-col gap-1">
-                        <TextValue value={form.value(stop)} onChange={(v) => form.set(stop, v)} edit={form.edit} label={`Stop condition of ${s.label}`} mono placeholder="none: the step limit stands alone" unset="None: the step limit stands alone" />
-                        {form.edited(stop) && <span className="text-[10.5px] font-medium text-queue">changed</span>}
-                      </span>
+                      <span className="text-faint">Not built</span>
                     ) : s.harness === "sequence" ? (
                       <span className="text-faint">Ends after its last step</span>
                     ) : (
@@ -286,7 +269,7 @@ function Bounds({ form, steps }: { form: Form; steps: StepRow[] }) {
         </table>
       </div>
       <Hint>
-        A step where the model decides stops at its step limit, which the model does not control, and earlier when its stop condition holds. A stop condition is a guard expression, checked after every turn over what the step has emitted (the structured fields of its replies, latest value wins) and observed: <Code>step</Code>, <Code>tool_calls</Code>, <Code>denials</Code>, <Code>tools_used</Code>. It may use comparisons, <Code>and</Code>, <Code>or</Code>, <Code>not</Code>, <Code>in</Code>, field names, literals and literal lists; no calls, attributes or subscripts. For example <Code>{'"case.dispose" in tools_used or tool_calls >= 5'}</Code>. A condition written as prose is not a guard: the journal records it as not enforced and the step limit stands alone.
+        A fixed sequence runs its steps in order and a wait step resumes when it is answered; the engine also caps how many times one run may enter the same step. A step where the model decides (a delegate step) and a tool step are not built on this deployment.
       </Hint>
     </Section>
   );
@@ -345,16 +328,10 @@ function Gates({ form, doc, steps, baseGates, gates, setGates }: { form: Form; d
     <Section
       title="Gates"
       meta="where a person decides before the agent goes on"
-      action={
-        form.edit ? (
-          <Button size="sm" variant="solid" permission="deploy" onClick={() => setGates((g) => [...g, { ...NEW_GATE }])}>
-            Add a gate
-          </Button>
-        ) : undefined
-      }
     >
-      <span className="text-[12px] font-semibold text-fg">On tool calls</span>
-      {gates.length === 0 && <p className="text-[12.5px] text-dim">This agent declares no gate on tool calls.</p>}
+      {/* Gates on tool calls are kept in the document and shown, never offered for adding: tool steps are not built on this deployment, so no such gate is consulted. */}
+      {gates.length > 0 && <span className="text-[12px] font-semibold text-fg">On tool calls</span>}
+      {gates.length > 0 && <p className="text-[12.5px] text-dim">The document declares gates on tool calls. They are kept as written and not consulted: tool steps are not built on this deployment.</p>}
       {gates.map((g, i) => (
         <GateCard
           key={g.src === null ? `new-${i}` : `gate-${g.src}`}
@@ -367,11 +344,8 @@ function Gates({ form, doc, steps, baseGates, gates, setGates }: { form: Form; d
           onRemove={() => setGates((list) => list.filter((_, j) => j !== i))}
         />
       ))}
-      <Hint>
-        The gates are consulted in order: one whose condition does not hold steps aside and the next is read. A condition is a guard expression over the call&rsquo;s arguments and three facts the runtime reads off the call: <Code>external_recipients</Code> (an address outside the deployment&rsquo;s internal domains), <Code>recipient_domains</Code> and <Code>tool_impact</Code> (the tool&rsquo;s impact tags). For example <Code>amount &gt; 5000 or external_recipients</Code>, or <Code>&apos;ot&apos; in tool_impact</Code>. An argument the call did not carry counts as not holding.
-      </Hint>
-
       <span className="mt-1 text-[12px] font-semibold text-fg">Approval steps</span>
+      <p className="text-[11.5px] leading-[1.55] text-faint">{GATE_TIMEOUT_LINE}</p>
       {approvals.length === 0 && <p className="text-[12.5px] text-dim">This agent has no step that waits for a person.</p>}
       {approvals.map((s) => {
         const into = edges.filter((e) => str(e.target) === s.id);
@@ -395,12 +369,12 @@ function Gates({ form, doc, steps, baseGates, gates, setGates }: { form: Form; d
               </span>
             )}
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <FieldText form={form} k={k("target")} label="Approver roles" mono unset="The agent's owner" hint="Roles, separated by commas." />
-              <FieldText form={form} k={k("timeout_h")} label="Unanswered after (hours)" numeric placeholder="24" unset="24 (the default)" />
-              <Cell label="Then" edited={form.edited(k("on_timeout"))}>
+              <FieldText form={form} k={k("target")} label="Approver roles" mono unset="Anyone with the approve permission" hint="Roles, separated by commas. Never the person who started the run, nor the author of its version." />
+              <FieldText form={form} k={k("timeout_h")} label="Unanswered after (hours)" numeric placeholder="24" unset="No deadline" hint={GATE_TIMEOUT_SHORT} />
+              <Cell label="Then" edited={form.edited(k("on_timeout"))} hint="A gate never proceeds by itself.">
                 <ChoiceValue value={form.value(k("on_timeout"))} onChange={(v) => form.set(k("on_timeout"), v)} edit={form.edit} label={`What ${s.label} does unanswered`} options={UNANSWERED} />
               </Cell>
-              <FieldText form={form} k={k("escalate_to")} label="Escalates to" mono unset="Nobody further" hint="Roles, in order." />
+              <FieldText form={form} k={k("escalate_to")} label="Escalates to" mono unset="Nobody further" hint="Roles, in order. When the chain is spent the run ends as failed." />
             </div>
           </div>
         );
@@ -484,7 +458,7 @@ function Tools({ doc }: { doc: Doc }) {
           </tbody>
         </table>
       </div>
-      <Hint>A step may call only what it was granted. Risk is declared on the tool and read at call time; scope is the argument values a call may carry.</Hint>
+      <Hint>The grants, risks and scopes the document declares, as written. They are not applied: tool steps are not built on this deployment, so no step calls a tool.</Hint>
     </Section>
   );
 }
@@ -526,7 +500,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 /** What a save did, in a line: saved, never deployed. */
 function savedText(saved: AgentSaved, running: number | null): string {
   const v = saved.version !== null ? `Version ${saved.version}` : "This version";
-  if (saved.draft || running !== null) return `${v} is saved, not deployed. Production keeps running ${running !== null ? `version ${running}` : "its deployed version"} until this one passes the deploy gate.`;
+  if (saved.draft || running !== null) return `${v} is saved, not deployed. Production keeps running ${running !== null ? `version ${running}` : "its deployed version"} until this one is deployed from the Versions tab.`;
   return `${v} is saved, not deployed. The agent has no deployment yet.`;
 }
 
@@ -641,7 +615,7 @@ function AgentForm({ edit, saved, onSaved }: { edit: EditableDocument; saved: Ag
       )}
       {edit.draft && (
         <Banner tone="neutral" title={`This page shows draft version ${edit.version ?? "?"}, the latest save`}>
-          Production runs version {a.deployed_version ?? "?"}. A save here adds another draft; nothing production runs changes until a version passes the deploy gate on the Versions tab.
+          Production runs version {a.deployed_version ?? "?"}. A save here adds another draft; nothing production runs changes until a version is deployed from the Versions tab.
         </Banner>
       )}
       {loaded && !canEdit && <p className="rounded-md border border-line bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-faint">Read only. Changing the limits, bounds and gates needs the &ldquo;deploy&rdquo; permission.</p>}
@@ -656,18 +630,14 @@ function AgentForm({ edit, saved, onSaved }: { edit: EditableDocument; saved: Ag
       {canEdit && (dirty || saved || refusal) && (
         <div className="sticky bottom-3 z-10 mr-[104px] flex flex-col gap-2 rounded-lg border border-line-strong bg-surface px-4 py-3 elev-3" role="region" aria-label="Save">
           {refusal && (
-            QUIET ? (
-              <p role="status"><QuietNote inline /></p>
-            ) : (
             <p role="alert" className="text-[12.5px] leading-[1.55] whitespace-pre-wrap text-err">
               <span className="font-medium">The save was refused.</span> {refusal}
             </p>
-            )
           )}
           {!dirty && saved && !refusal && (
             <div className="flex flex-wrap items-center gap-3">
               <Status tone="queue">Saved, not deployed</Status>
-              <span className="min-w-0 text-[12.5px] leading-[1.55] text-dim">{savedText(saved, a.deployed_version)} The deploy gate is on the Versions tab.</span>
+              <span className="min-w-0 text-[12.5px] leading-[1.55] text-dim">{savedText(saved, a.deployed_version)} Deploy it from the Versions tab.</span>
               <span className="grow" />
               <Button size="sm" variant="solid" tone="ink" href={`/lifecycle?agent=${enc}`}>
                 Open Versions
@@ -698,7 +668,12 @@ function AgentForm({ edit, saved, onSaved }: { edit: EditableDocument; saved: Ag
       )}
 
       {/* Mount point for the controls-in-force panel of this agent (another builder's). */}
-      <div data-slot="controls-in-force" data-agent={a.id}>
+      <div data-slot="controls-in-force" data-agent={a.id} className="flex flex-col gap-2">
+        {edit.draft && (
+          <p className="text-[11.5px] leading-[1.5] text-faint">
+            The controls below are read from the latest save, version {edit.version ?? "?"}. Production runs version {a.deployed_version ?? "?"}.
+          </p>
+        )}
         <ControlsInForce agent={a.id} />
       </div>
     </>
@@ -743,7 +718,7 @@ function AgentConfig({ id }: { id: string }) {
   }
   return (
     <>
-      {error && !QUIET && (
+      {error && (
         <Banner tone="err" title="The agent could not be read again">
           {error}
         </Banner>

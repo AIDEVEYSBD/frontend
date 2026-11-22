@@ -1,12 +1,13 @@
 "use client";
+import { Failure, AnswerFailure } from "./pending";
+import { ask, type Answer } from "@/lib/api/pending";
 
 import { agentHref } from "@/lib/agent-link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, IconButton, Label, Mono, Status, Tag } from "./ui";
-import { Banner, QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
+import { Banner } from "./overlays";
 import { useDismiss } from "./dismiss";
 import { Sparkline } from "./data";
 import { CAT } from "./charts";
@@ -22,7 +23,7 @@ import { soon } from "@/lib/soon";
 import { WindowPick, nextWin, winMs, type Win } from "./window-pick";
 import { Pick } from "./select";
 import { Checkbox } from "./forms";
-import { api, type RunRow as LedgerRow } from "@/lib/api/client";
+import { api, type RunRow as LedgerRow, errorText } from "@/lib/api/client";
 import { listAttached, readQueue, type QueueSummary } from "@/lib/api/l2";
 import type { AttachedAgent } from "@/lib/attached";
 import { getLifecycle, STAGE_NAMES, type Lifecycle } from "@/lib/api/l8";
@@ -308,7 +309,7 @@ const fmtMs = (ms: number | null) =>
   ms === null ? "—" : ms >= 60_000 ? `${(ms / 60_000).toFixed(1)}m` : `${(ms / 1000).toFixed(1)}s`;
 
 const fmtCost = (c: number | null) =>
-  c === null ? "$0.00" : c === 0 ? "$0.00" : c < 0.005 ? "<$0.01" : `$${c.toFixed(2)}`;
+  c === null ? "—" : c === 0 ? "$0.00" : c < 0.005 ? "<$0.01" : `$${c.toFixed(2)}`;
 
 const fmtTokens = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n));
 
@@ -424,6 +425,9 @@ export function Control() {
   }, []);
 
   const [queue, setQueue] = useState<QueueData | null>(null);
+  /** The estate read as it answered; `estateNotBuilt` stops asking once it has said 501. */
+  const [estateAnswer, setEstateAnswer] = useState<Answer<unknown> | null>(null);
+  const estateNotBuilt = useRef(false);
   // What is in flight, from the backend's run ledger; null until it answers.
   const [liveRows, setLiveRows] = useState<LedgerRow[] | null>(null);
   // The clock the windows are cut against: stamped when the data arrives, so a
@@ -431,18 +435,21 @@ export function Control() {
   const [now, setNow] = useState(0);
 
   const load = useCallback(async () => {
-    try {
-      const res = await fetch("/api/control");
-      // An answer that is not the estate's JSON (a proxy's page, an empty body) is said in a short plain line, never as a parser's complaint about the page it was handed.
-      const d = await res.json().catch(() => null);
-      if (!d || typeof d !== "object") throw new Error(`the estate read answered ${res.status} with nothing this page can read`);
-      if (d.error) throw new Error(String(d.error));
-      setRaw(d);
+    // The estate is one read (GET /api/control). While the platform answers 501 it is not asked again: the page says it is not built.
+    if (estateNotBuilt.current) return;
+    const a = await ask<ControlData>("control");
+    setEstateAnswer(a);
+    if (a.state === "pending") {
+      estateNotBuilt.current = true;
+      setRaw(null);
+      setError("");
+      return;
+    }
+    if (a.state === "ok" && a.data && typeof a.data === "object") {
+      setRaw(a.data);
       setNow(Date.now());
       setError("");
-    } catch (e) {
-      setError((e as Error).message);
-    }
+    } else setError(a.state === "error" ? a.message : "GET /api/control answered with something that is not the estate");
     // The trigger queue is its own read: the intake can be healthy while the
     // estate read is slow, and the other way round.
     try {
@@ -542,11 +549,11 @@ export function Control() {
         } catch (e) {
           // Everything in flight already stopping on an earlier kill is that, not a refusal.
           const refusal = killRefusalOf(e);
-          notice(refusal?.already.length ? alreadySummary(refusal) : QUIET ? "Not connected on this deployment." : `Kill refused: ${(e as Error).message.slice(0, 120)}`);
+          notice(refusal?.already.length ? alreadySummary(refusal) : `Kill refused: ${(e as Error).message.slice(0, 120)}`);
         }
         await load();
       } catch (e) {
-        notice(QUIET ? "Not connected on this deployment." : `Kill failed: ${(e as Error).message.slice(0, 120)}`);
+        notice(`Kill failed: ${(e as Error).message.slice(0, 120)}`);
       } finally {
         setKilling(null);
       }
@@ -557,10 +564,9 @@ export function Control() {
   const askKill = useCallback((id: string) => setKillAsk({ id }), []);
 
   const t = data?.totals;
-  /* A quiet console (lib/quiet.ts). `regOff`: the registry behind the estate did not answer, so nothing is said about agents, grants or peers.
-     `off`: nor is there a run on record, so no figure on the page was read from anything; each panel says what it will hold, under one note. */
-  const regOff = QUIET && ((!raw && Boolean(error)) || (raw !== null && raw.store !== "db" && raw.agents.length === 0));
-  const off = regOff && (!raw || (raw.runs.length === 0 && raw.ledger.entries === 0));
+  /* The estate was not read (not built, or failed): no panel fed by it is drawn, and no figure stands in for it. */
+  const regOff = !raw && (Boolean(error) || estateAnswer?.state === "pending");
+  const off = regOff;
   usePageFacts(
     data
       ? {
@@ -574,8 +580,10 @@ export function Control() {
   const locked = Boolean(lockdown?.on);
   const statusLine = locked
     ? `lockdown${lockdown?.reason ? ` · ${lockdown.reason}` : ""}${data && t!.active > 0 ? ` · ${t!.active} in flight` : ""}`
-    : off
-      ? "not connected"
+    : estateAnswer?.state === "pending"
+      ? "the estate read is not built"
+      : off
+      ? "the estate could not be read"
       : !data
       ? "reading the estate…"
       : t!.active > 0
@@ -641,12 +649,12 @@ export function Control() {
         )}
       </div>
 
-      {error && !QUIET && <p className="mt-4 text-[12.5px] text-err">{error}</p>}
-      {regOff && (
+      {estateAnswer && estateAnswer.state === "pending" && (
         <div className="mt-4">
-          <QuietNote />
+          <AnswerFailure answer={estateAnswer} compact={false} />
         </div>
       )}
+      {error && <Failure className="mt-4" what={raw ? "The estate stopped answering; the figures below are as it last answered" : "The estate could not be read"} message={error} />}
 
       {/* ── Lockdown: the banner stays while it is on ── */}
       {locked && (
@@ -660,6 +668,8 @@ export function Control() {
         <AttentionPanel onAnswer={answerRun} onOpenRun={(id) => open({ kind: "run", id })} onNotice={notice} />
       </div>
 
+      {/* Every panel from here to the inbox is cut from the estate read: none is drawn until it has answered. */}
+      {data && (<>
       {/* ── KPI band — every tile opens its records ── */}
       <div className="mt-6 grid grid-cols-2 overflow-hidden rounded-md border border-line bg-surface sm:grid-cols-4 xl:grid-cols-8">
         <Kpi off={regOff} label="Deployed agents" value={t ? String(t.deployed) : "…"} sub={t ? `${t.registered} registered` : ""}
@@ -772,8 +782,10 @@ export function Control() {
           </p>
         )}
       </section>
+      </>)}
 
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
+        {data && (<>
         {/* ── The estate ── */}
         <section className="flex h-fit flex-col overflow-hidden rounded-md border border-line bg-surface">
           <PanelHead
@@ -981,14 +993,16 @@ export function Control() {
             </div>
           </div>
         </section>
+        </>)}
 
         {/* ── Right rail: what needs a person, and what is running ── */}
         <div className="flex flex-col gap-4">
+          {data && (<>
           {/* Live now */}
           <section className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">
             <PanelHead
               title="Live now"
-              right={<Mono className="text-[10px] text-ghost">SIGTERM, journalled</Mono>}
+              right={<Mono className="text-[10px] text-ghost">stop requested, journalled</Mono>}
               pulse={Boolean(data?.live.length)}
             />
             {(data?.live ?? []).map((r) => (
@@ -1019,6 +1033,7 @@ export function Control() {
               </p>
             )}
           </section>
+          </>)}
 
           {/* The inbox: every gate waiting, as the approvals door lays it out.
               The attention queue above ranks what needs a person; this is
@@ -1092,15 +1107,17 @@ export function Control() {
                   {/* Answering happens here. It used to link to the run page,
                       which is where a run is *started* — the one place a person
                       with a gate to answer should never be sent. */}
-                  <Button permission="approve" size="sm" variant="outline" tone="warn" onClick={() => setAnswering([g])}>
+                  <Button permission="approve" size="sm" variant="solid" tone="warn" onClick={() => setAnswering([g])}>
                     Answer
                   </Button>
                 </div>
               ))}
-              {gates && gates.length === 0 && QUIET && gatesFailed && (
-                <p className="px-3 py-4 text-[12px] text-faint">When a workflow suspends for a person, it queues here with an Answer button.</p>
+              {gatesFailed && (
+                <div className="px-3 py-3">
+                  <Failure what="The inbox could not be read" message={gatesFailed} />
+                </div>
               )}
-              {gates && gates.length === 0 && !(QUIET && gatesFailed) && (
+              {gates && gates.length === 0 && !gatesFailed && (
                 <p className="px-3 py-4 text-[12px] text-faint">
                   No gates open. When a workflow suspends for a person, it queues here with an
                   Answer button.
@@ -1110,6 +1127,7 @@ export function Control() {
             </div>
           </section>
 
+          {data && (<>
           {/* Guardrails — the record of "no" */}
           <section className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">
             <PanelHead title="Guardrails" meta="policy in action, 7 days" />
@@ -1138,9 +1156,11 @@ export function Control() {
 
           {/* FinOps — the gateway's own balance, and the budget beside the burn */}
           <FinOpsPanel finops={data?.finops ?? null} window={win} onSaved={load} off={off} />
+          </>)}
         </div>
       </div>
 
+      {data && (<>
       {/* ── The lower boards: one masonry flow. Columns pack panels by their
           real height — no panel is ever stretched to a neighbour's, so there
           is no void to stretch into. ── */}
@@ -1351,18 +1371,12 @@ export function Control() {
         </section>
 
       </div>
+      </>)}
 
-      {/* A quiet console prints no storage failure and no price assumed for a model the deployment may not have; with nothing on record there is no cost to give a basis for. */}
-      {!off && (
+      {data && (
         <p className="mt-4 flex items-center gap-2 text-[10.5px] text-ghost">
           <Icon name="database" size={11} />
-          {!data
-            ? QUIET && error
-              ? ""
-              : "reading the estate…"
-            : QUIET
-              ? `${data.store === "db" ? "db · " : ""}cost basis: ${data.costBasis.replace(/; list price assumed for [^;]*/, "")}`
-              : `${data.store} · cost basis: ${data.costBasis}`}
+          {`${data.store} · cost basis: ${data.costBasis}`}
         </p>
       )}
 
@@ -1393,7 +1407,7 @@ export function Control() {
       {killAsk?.id && (
         <KillDialog
           title="Kill this run?"
-          what={`${(data?.live ?? []).find((l) => l.id === killAsk.id)?.system ?? "run"} · ${killAsk.id}. The backend cancels it before its next model or tool call, and the kill reaches everything it set off: in-process sub-runs, child runs wherever they run, queued children. The journal records the reason and your name.`}
+          what={`${(data?.live ?? []).find((l) => l.id === killAsk.id)?.system ?? "run"} · ${killAsk.id}. A worker running it stops before its next model call, step or node; a call already in flight finishes. A run waiting for a person stops at once. Child runs it started are not stopped. The journal records the reason and your name.`}
           confirm="Kill run"
           busy={killing !== null}
           onClose={() => setKillAsk(null)}
@@ -1438,7 +1452,7 @@ export function Control() {
 
 /* ═══════════════════ pieces ═══════════════════ */
 
-/** FinOps: what Azure billed for the resource, what the journal says was
+/** FinOps: what the billing source billed for the resource, what the journal says was
     spent, and a budget to burn against. Billed lags usage by up to a day and
     is the truth; journalled is tokens times the configured price and is now. */
 function FinOpsPanel({
@@ -1457,6 +1471,7 @@ function FinOpsPanel({
   const [value, setValue] = useState("");
   const [period, setPeriod] = useState<"day" | "week" | "month">("month");
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const azure = finops?.azure ?? null;
   const billed = azure?.configured && azure.error === null ? azure.last7d : null;
   const cur = azure?.currency ?? "USD";
@@ -1477,7 +1492,7 @@ function FinOpsPanel({
     <section className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">
       <PanelHead
         title="Costs"
-        meta={azure?.configured ? `Azure billed · ${azure.scope === "resource" ? "Foundry resource" : "subscription"} · burn vs budget` : "journalled burn vs budget"}
+        meta={azure?.configured ? "billed · journalled burn vs budget" : "journalled burn vs budget"}
       />
       {off && <p className="border-b border-line px-3 py-3 text-[12px] text-faint">What was billed and what the journals priced show here, beside the budget.</p>}
       <div className={off ? "hidden" : "grid grid-cols-4 divide-x divide-line border-b border-line"}>
@@ -1544,17 +1559,25 @@ function FinOpsPanel({
                 const n = Number(value);
                 if (!Number.isFinite(n) || n < 0) return;
                 setSaving(true);
+                setSaveError("");
                 try {
-                  await fetch("/api/control", {
+                  const res = await fetch("/api/control", {
                     method: "POST",
                     headers: { "content-type": "application/json" },
                     body: JSON.stringify({ budget_usd: n, period }),
-                  }).catch(() => {});
+                  });
+                  // A refusal is shown and the editor stays open: nothing is closed as if it were saved.
+                  if (!res.ok) {
+                    setSaveError(errorText(await res.json().catch(() => null), res, "POST", "/api/control"));
+                    return;
+                  }
+                  setEditing(false);
+                  onSaved();
+                } catch (e) {
+                  setSaveError(`the backend did not answer POST /api/control (${(e as Error).message})`);
                 } finally {
                   setSaving(false);
                 }
-                setEditing(false);
-                onSaved();
               }}
             >
               Set
@@ -1574,18 +1597,17 @@ function FinOpsPanel({
                 setEditing(true);
               }}
             >
-              {finops?.budget != null ? "Change budget" : "Set a weekly budget"}
+              {finops?.budget != null ? "Change budget" : "Set a budget"}
             </Button>
             <span className="grow" />
-            <span className="truncate text-[10px] text-ghost" title={QUIET ? undefined : (azure?.error ?? azure?.missing.join(", ") ?? "")}>
-              {QUIET && (!azure?.configured || azure.error)
-                ? ""
-                : !azure?.configured
-                ? `Azure billing not connected: set ${azure?.missing.join(", ") ?? "the AZURE_* variables"}`
+            <span className="truncate text-[10px] text-ghost" title={azure?.error ?? ""}>
+              {!azure?.configured
+                ? "This deployment has no billing source."
                 : azure.error
-                  ? `Azure Cost Management: ${azure.error}`
-                  : `Azure figures as of ${azure.fetchedAt ? new Date(azure.fetchedAt).toLocaleTimeString() : "now"}; billing lags usage by up to a day`}
+                  ? `The billing source did not answer: ${azure.error}`
+                  : `Billed figures as of ${azure.fetchedAt ? new Date(azure.fetchedAt).toLocaleTimeString() : "now"}; billing lags usage by up to a day`}
             </span>
+            {saveError && <Failure inline message={saveError} />}
           </>
         )}
       </div>
@@ -2261,7 +2283,7 @@ function renderDrill(
       title: drill.id,
       body: (
         <div className="flex flex-col">
-          <Fact k="Where it runs" v={m?.local ? "no model, $0" : "Azure AI Foundry"} tone={m?.local ? "text-ok" : undefined} />
+          <Fact k="Where it runs" v={m?.local ? "no model, $0" : "the deployment's model endpoint"} tone={m?.local ? "text-ok" : undefined} />
           <Fact k={`Tokens · ${data.window}`} v={m ? `${fmtTokens(m.in)} in · ${fmtTokens(m.out)} out` : "—"} />
           <Fact k={`Cost · ${data.window}`} v={fmtCost(m?.cost ?? null)} />
           <Fact k="Runs that used it" v={String(m?.runs ?? modelRuns.length)} />
@@ -2705,7 +2727,6 @@ type QueueData = QueueSummary;
  * the oldest queued age says how far behind the estate is right now.
  */
 function QueuePanel({ queue, now }: { queue: QueueData | null; now: number }) {
-  if (!queue && QUIET) return <p className="px-3 py-4 text-[12px] text-faint">What external systems post queues here by agent, with the workers draining it.</p>;
   if (!queue) return <p className="px-3 py-4 text-[12px] text-faint">The queue needs the registry database.</p>;
   const rows = Object.entries(queue.agents);
   const age = (iso: string | null | undefined) => {

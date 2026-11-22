@@ -1,11 +1,10 @@
 "use client";
+import { Failure } from "./pending";
+import { notBuiltDoorOf } from "@/lib/api/client";
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Button, Mono, Status, Tag } from "./ui";
-import { QuietNote } from "./overlays";
-import { PanelNote } from "./providers";
-import { QUIET } from "@/lib/quiet";
 import { Pick } from "./select";
 import { ControlRef } from "./control-ref";
 import { DigestChip } from "./digest-chip";
@@ -91,8 +90,7 @@ function PeerStatusTag({ status }: { status: Peer["status"] }) {
 
 /** A refusal from the registry: the message, and the control it names in the register's words. */
 function Refusal({ error }: { error: Error }) {
-  // A quiet console (lib/quiet.ts) does not print why the door did not answer; a refusal that names a control is content and stays.
-  if (QUIET && !(error instanceof DoorError && error.control)) return <QuietNote inline />;
+  if (notBuiltDoorOf(error.message)) return <Failure inline message={error.message} />;
   const control = error instanceof DoorError ? error.control ?? "" : "";
   return (
     <span className="flex flex-wrap items-center gap-2 text-[11.5px] leading-[1.5] text-err">
@@ -439,7 +437,6 @@ export function PeerList({ peers, twoPerson, me, error, refresh, bare = false }:
   const approvalRule = twoPerson ? "Two-person approval is on: whoever registers a peer cannot approve its card." : "One approval admits a peer; two-person approval is off on this deployment.";
 
   // Quiet (lib/quiet.ts): a registry that could not be read is not shown as an empty one with zero counts.
-  if (none && !adding && (bare === true || (QUIET && Boolean(error)))) return <PanelNote />;
   // Not known yet whether anything is behind the console: no "no peer is registered" in the meantime.
   if (peers === null || (none && bare === null && !adding && !error)) return <p className="px-4 py-3 text-[11.5px] text-faint">Reading the registry&hellip;</p>;
 
@@ -499,7 +496,7 @@ export function PeerList({ peers, twoPerson, me, error, refresh, bare = false }:
         </div>
       )}
 
-      {error && !QUIET && <p className="border-b border-line px-4 py-2.5 text-[11.5px] text-err">{error}</p>}
+      {error && <p className="border-b border-line px-4 py-2.5 text-[11.5px] text-err">{error}</p>}
       {shown.map((p) => (
         <PeerRow key={p.id} peer={p} twoPerson={twoPerson} me={me} onChanged={refresh} />
       ))}

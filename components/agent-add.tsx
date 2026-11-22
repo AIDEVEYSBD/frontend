@@ -75,7 +75,7 @@ export function AddAgent({ onSaved }: { onSaved?: () => void }) {
       {open && (
         <DrillModal
           title="Add an agent"
-          subtitle="An agent arrives as a definition document: the JSON file its author hands over. It is checked before anything is saved. A document that names an agent already here is saved as its next version."
+          subtitle="An agent arrives as a definition document: the JSON file its author hands over. It is checked before anything is saved; delegate steps and tool steps are not built on this deployment. A document that names an agent already here is saved as its next version."
           onClose={close}
           actions={
             <div className="flex items-center gap-2">

@@ -3,11 +3,9 @@
 import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
 import { Button, Meter, Status } from "./ui";
-import { QuietNote } from "./overlays";
 import { Section } from "./section";
-import { NotConnected, NotConnectedNote } from "./pending";
+import { NotConnected, NotConnectedNote, Failure } from "./pending";
 import { DecideDialog, amount, holdAgent, measureLabel, usedLine, waited } from "./budget-holds-parts";
-import { QUIET } from "@/lib/quiet";
 import { ask, type Answer, type BudgetHold, type BudgetHoldDecision, type BudgetHoldList, type Door } from "@/lib/api/pending";
 
 /**
@@ -118,13 +116,13 @@ export function BudgetHolds({ answer, reload, now, calm }: { answer: Answer<Budg
     reload();
   };
 
-  const noticeText: ReactNode = notice ? "door" in notice ? <NotConnectedNote door={notice.door} /> : notice.tone === "err" && QUIET ? <QuietNote inline /> : notice.text : null;
+  const noticeText: ReactNode = notice ? "door" in notice ? <NotConnectedNote door={notice.door} /> : notice.text : null;
 
   return (
     <Section title="Paused at budget" hue="approvals" meta={connected ? `${waiting.length.toLocaleString("en-GB")} waiting${decided.length ? ` · ${decided.length.toLocaleString("en-GB")} decided` : ""}` : undefined}>
       {notice && (
         <div className="flex flex-wrap items-center gap-3 rounded-md border border-line bg-surface px-3 py-2">
-          {"tone" in notice && !(notice.tone === "err" && QUIET) && <Status tone={notice.tone}>{notice.tone === "err" ? "Refused" : "Done"}</Status>}
+          {"tone" in notice && <Status tone={notice.tone}>{notice.tone === "err" ? "Refused" : "Done"}</Status>}
           <span className="min-w-0 text-[12.5px] leading-[1.5] text-fg">{noticeText}</span>
           <span className="grow" />
           <Button size="sm" variant="solid" tone="neutral" onClick={() => setNotice(null)}>
@@ -135,8 +133,7 @@ export function BudgetHolds({ answer, reload, now, calm }: { answer: Answer<Budg
 
       {answer === null && <p className="text-[12px] text-faint">Reading the runs paused at budget…</p>}
       {answer?.state === "pending" && (calm ? <p className="text-[12px] text-faint">{WHAT}</p> : <NotConnected door={answer.door} compact>{WHAT}</NotConnected>)}
-      {answer?.state === "error" &&
-        (QUIET ? calm ? <p className="text-[12px] text-faint">{WHAT}</p> : <QuietNote inline /> : <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">The runs paused at budget could not be read: {answer.message}</p>)}
+      {answer?.state === "error" && <Failure what="The runs paused at budget could not be read" message={answer.message} />}
       {connected && waiting.length === 0 && <p className="text-[12px] text-faint">No run is paused at its budget. A run that reaches a ceiling and waits for a person is listed here with what it reached.</p>}
 
       {(waiting.length > 0 || decided.length > 0) && (

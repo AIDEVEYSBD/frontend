@@ -1,4 +1,5 @@
 "use client";
+import { Failure } from "./pending";
 
 import { IapAccess } from "./iap-access";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
@@ -10,8 +11,6 @@ import { usePageFacts } from "./assistant";
 import { CURRENT_USER } from "@/lib/user";
 import { useSession, signerName } from "@/lib/use-session";
 import { soon } from "@/lib/soon";
-import { QUIET } from "@/lib/quiet";
-import { QuietNote } from "./overlays";
 import { disconnectIdentity, mintKey, readIdentities, readUsers, removeVaultKey, revokeKey as revokeKeyDoor, setAttachedPolicy, setIdentityOwner, setUserAccess, signOutUser } from "@/lib/api/l2";
 import {
   Card,
@@ -253,17 +252,15 @@ function IamPage() {
   const auditDown = people?.store === "db unreachable";
   const auditError = peopleError || (auditDown ? "the store that holds people and the audit trail is not reachable on this deployment" : "");
   const loading = !reg && !people && !regError && !peopleError;
-  /* A quiet console (lib/quiet.ts) does not print why a door failed. With neither door read the page is its header and one note;
-     with one read, the panels of the other are left out and one line says so. */
-  const quietDown = QUIET && Boolean(regError || peopleError);
-  const noReg = QUIET && Boolean(regError) && !reg;
-  const noPeople = QUIET && Boolean(peopleError) && !people;
-  /* What an unread card says: on a quiet console the one line saying what it will hold. */
-  const notRead = (line: string) => (QUIET ? line : "Not read.");
+  /* A door that failed is shown with its reason above; every panel it feeds says it was not read, and nothing is counted as zero. */
+  const quietDown = Boolean(regError || peopleError);
+  const noReg = Boolean(regError) && !reg;
+  const noPeople = Boolean(peopleError) && !people;
+  const notRead = (what: string) => (what ? "Not read." : "");
 
   const strip: { label: string; value: string; sub: string; go: () => void }[] = [
-    { label: "People", value: peopleRead ? String(persons.length) : "—", sub: people ? (people.sso.configured ? "signed in through the identity provider" : "sign-in is off") : "", go: () => show({ groups: ["people"] }) },
-    { label: "Sessions open", value: peopleRead ? String(sessionsOpen) : "—", sub: "server-side, cookie-bound", go: () => show({ groups: ["people"], statuses: ["signed in"] }) },
+    { label: "People", value: people ? String(persons.length) : "—", sub: people ? (people.sso.configured ? "signed in through the identity provider" : "sign-in is off") : "", go: () => show({ groups: ["people"] }) },
+    { label: "Sessions open", value: people ? String(sessionsOpen) : "—", sub: "", go: () => show({ groups: ["people"], statuses: ["signed in"] }) },
     { label: "Non-human identities", value: reg ? String(live.length) : "—", sub: reg ? `${KINDS.filter((k) => live.some((i) => i.kind === k)).length} kinds on the register` : "", go: () => show({ groups: ["agents", "machines"] }) },
     { label: "With a named owner", value: reg ? `${live.length ? Math.round((owned / live.length) * 100) : 0}%` : "—", sub: reg ? `${unowned} without one` : "", go: () => show({ flags: ["unowned"] }) },
     { label: "Credentials to review", value: reg ? String(toReview) : "—", sub: "keys unused, idle or past 90 days", go: () => show({ flags: ["review"] }) },
@@ -278,15 +275,7 @@ function IamPage() {
     },
   ];
 
-  const noticeBar = notice && (QUIET && notice.tone === "err" ? (
-    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface py-2.5 pr-3 pl-4 elev-1">
-      <QuietNote inline />
-      <span className="grow" />
-      <Button size="sm" variant="solid" tone="neutral" onClick={() => setNotice(null)}>
-        Dismiss
-      </Button>
-    </div>
-  ) : (
+  const noticeBar = notice && (
     <div className="relative flex flex-wrap items-center gap-3 overflow-hidden rounded-lg border border-line bg-surface py-2.5 pr-3 pl-4 elev-1">
       <span className={`absolute inset-y-0 left-0 w-[3px] ${notice.tone === "err" ? "bg-err" : notice.tone === "warn" ? "bg-warn" : "bg-ok"}`} />
       <Status tone={notice.tone}>{notice.tone === "err" ? "Refused" : "Done"}</Status>
@@ -304,11 +293,11 @@ function IamPage() {
         Dismiss
       </Button>
     </div>
-  ));
-  const errorLines = QUIET ? null : (
+  );
+  const errorLines = (
     <>
-      {regError && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[12px] leading-[1.5] text-err">The identity register could not be read: {regError}</p>}
-      {peopleError && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[12px] leading-[1.5] text-err">People and the audit trail could not be read: {peopleError}</p>}
+      {regError && <Failure what="The identity register could not be read" message={regError} />}
+      {peopleError && <Failure what="People and the audit trail could not be read" message={peopleError} />}
     </>
   );
 
@@ -328,7 +317,7 @@ function IamPage() {
         {errorLines}
         {noticeBar}
         {quietDown && !entry ? (
-          <QuietNote />
+          <p className="text-[12.5px] text-faint">The roster could not be read, so this identity cannot be shown.</p>
         ) : entry ? (
           <IdentityPage
             key={entry.key}
@@ -383,8 +372,6 @@ function IamPage() {
       {/* Who the proxy lets in: read from Google IAP itself, so it stands whether or not the control plane is connected. */}
       <IapAccess />
 
-      {/* A quiet console says once that it is not connected, then draws every panel empty beneath the note. */}
-      {quietDown && <QuietNote />}
       <>
       {/* ── posture: each figure narrows the roster to what it counts ── */}
       <section className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line elev-1 sm:grid-cols-3 xl:grid-cols-6">
@@ -413,7 +400,7 @@ function IamPage() {
         meta={reg ? <Tag tone={errs ? "err" : warns ? "warn" : "neutral"}>{findings.length}</Tag> : null}
       >
         {!reg && !regError && <p className="px-4 py-3 text-[12px] text-faint">Reading the register…</p>}
-        {noReg && <p className="px-4 py-3 text-[12px] text-faint">Findings are listed here, the ones to fix now first, each with the action that clears it.</p>}
+        {noReg && <p className="px-4 py-3 text-[12px] text-faint">Not read.</p>}
         {reg && findings.length === 0 && <p className="px-4 py-3 text-[12px] text-dim">No findings on this read.</p>}
         {(["err", "warn", "info"] as const).map((sev) => {
           const group = findings.filter((f) => f.severity === sev);
@@ -452,9 +439,9 @@ function IamPage() {
           onOpen={(key) => open(key)}
           onAssignOwner={(key) => open(key, true)}
           ownerStoreDown={ownerStoreDown}
-          unread={noReg && noPeople}
+          unread={noReg || noPeople}
         />
-        {ownerStoreDown && !QUIET && <p className="border-t border-line px-4 py-2 text-[11.5px] leading-[1.5] text-warn">Owners cannot be read or saved: the register&rsquo;s own table is not reachable on this deployment.</p>}
+        {ownerStoreDown && <p className="border-t border-line px-4 py-2 text-[11.5px] leading-[1.5] text-warn">Owners cannot be read or saved: the register&rsquo;s own table is not reachable on this deployment.</p>}
         {reg?.basis && <p className="border-t border-line px-4 py-2 text-[11px] leading-[1.5] text-faint">{reg.basis}</p>}
       </Card>
 
@@ -602,7 +589,7 @@ function IamPage() {
         meta={people && !auditDown ? <Tag>{people.events.length} events</Tag> : null}
       >
         {!people && <p className="px-4 py-3 text-[12px] text-faint">{peopleError ? notRead("Sign-ins, sign-outs, denials and privileged actions are listed here, newest first.") : "Reading…"}</p>}
-        {people && auditDown && (QUIET ? <p className="px-4 py-3"><QuietNote inline /></p> : <p className="px-4 py-3 text-[12px] text-err">The audit trail could not be read: {auditError}.</p>)}
+        {people && auditDown && (<p className="px-4 py-3 text-[12px] text-err">The audit trail could not be read: {auditError}.</p>)}
         {people && !auditDown && people.events.length === 0 && <p className="px-4 py-3 text-[12px] text-dim">No sign-in or action has been recorded yet.</p>}
         {(people?.events ?? []).map((e) => (
           <EventLine key={e.id} event={e} now={now} />

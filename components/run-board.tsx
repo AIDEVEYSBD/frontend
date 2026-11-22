@@ -648,7 +648,7 @@ function Tile({ v, live, maxT, suspended, style, roomy = false, lines = 2, focus
 
         {!v.ghost ? (
           <span className="mt-auto flex flex-wrap items-center gap-x-2.5 gap-y-1 pt-1 font-mono text-[10.5px] text-ghost">
-            <span className="tnum flex items-center gap-1 whitespace-nowrap" title={`${tools.length} tool calls`}><Icon name="plug" size={11} className="text-faint" />{tools.length}</span>
+            {tools.length > 0 && <span className="tnum flex items-center gap-1 whitespace-nowrap" title={`${tools.length} tool calls`}><Icon name="plug" size={11} className="text-faint" />{tools.length}</span>}
             <span className="tnum flex items-center gap-1 whitespace-nowrap" title={`${thoughts.length} model calls`}><Icon name="prompt" size={11} className="text-faint" />{thoughts.length}</span>
             {refused > 0 && <span className="tnum flex items-center gap-1 whitespace-nowrap text-err" title={`${refused} refused or failed`}><Icon name="cross" size={11} strokeWidth={2.2} />{refused}</span>}
             {tokens > 0 && <span className="tnum flex items-center gap-1 whitespace-nowrap" title={`${tokens.toLocaleString()} tokens in and out`}><Icon name="chip" size={11} className="text-faint" />{fmtK(tokens)}</span>}
@@ -771,7 +771,7 @@ function LedgerModal({ visit: v, live, maxT, initial, onClose }: { visit: Visit;
   return (
     <DrillModal
       title={`${v.label}${v.count > 1 ? ` · ${v.count} visits` : v.index > 1 ? ` · ${v.index}` : ""}`}
-      subtitle={`${v.sub ? `${v.sub.agent} sub-run · ` : ""}${harness?.name ?? v.kind}${v.model ? ` on ${v.model}` : ""} · ${state} · ${tools} tool call${tools === 1 ? "" : "s"}${refused ? ` · ${refused} refused` : ""}${v.fanCount ? ` · fan-out ×${v.fanCount}` : ""}`}
+      subtitle={`${v.sub ? `${v.sub.agent} sub-run · ` : ""}${harness?.name ?? v.kind}${v.model ? ` on ${v.model}` : ""} · ${state}${tools ? ` · ${tools} tool call${tools === 1 ? "" : "s"}` : ""}${refused ? ` · ${refused} refused` : ""}${v.fanCount ? ` · fan-out ×${v.fanCount}` : ""}`}
       count={shown.length}
       onClose={onClose}
       actions={

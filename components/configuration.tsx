@@ -1,4 +1,7 @@
 "use client";
+import { ask, type Answer } from "@/lib/api/pending";
+import { errorText } from "@/lib/api/client";
+import { Failure, AnswerFailure } from "./pending";
 
 import { VertexDetected, useVertex } from "./vertex-detected";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -17,8 +20,6 @@ import { Pick } from "./select";
 import { soon } from "@/lib/soon";
 import type { AttachedAgent } from "@/lib/attached";
 import { JOB_STATUS_META, queueTotals } from "@/lib/queue";
-import { QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
 import { Providers, useConfigChanges } from "./providers";
 import { Keys, OfferedModels } from "./settings";
 import { PeerList, meOf, usePeers } from "./peers";
@@ -124,7 +125,7 @@ const TABS: { id: TabId; panels: string[]; about: string }[] = [
   {
     id: "models",
     panels: ["vertex", "providers", "models"],
-    about: "Where model calls can go and which models teams may pick from; providers and offered models are managed here.",
+    about: "The model endpoints this deployment was set up with, and which models teams may pick from; the offered models and their prices are managed here.",
   },
   {
     id: "tools",
@@ -233,10 +234,12 @@ function ConfigurationTabs() {
   const asked = params.get("tab");
   const tab: TabId = TABS.find((t) => t.id === asked)?.id ?? "models";
   const [data, setData] = useState<Data | null>(null);
-  const [failed, setFailed] = useState(false);
+  /** Why the configuration record was not read, when it was not: shown with its status and address. */
+  const [failed, setFailed] = useState("");
   const [agent, setAgent] = useState<string>("");
   const [q, setQ] = useState("");
-  const [mcpFailed, setMcpFailed] = useState(false);
+  /** The platform's own MCP server description (GET /api/mcp/server), as asked; null until it answers. */
+  const [mcpAnswer, setMcpAnswer] = useState<Answer<unknown> | null>(null);
   const [mcp, setMcp] = useState<{ endpoint: string; transport: string; auth: string; tools: { name: string; description: string; action: boolean }[]; client: Record<string, unknown> } | null>(null);
   const [folded, setFolded] = useState<Record<string, boolean>>({});
   /** A panel drawn in its empty form (a quiet console, nothing behind it) is open: the ones shut on this visit. Not remembered. */
@@ -301,14 +304,10 @@ function ConfigurationTabs() {
 
   useEffect(() => {
     window.addEventListener("hashchange", arrive);
-    fetch("/api/mcp/server")
-      .then((r) => {
-        // An answer that is not a success carries an error body, not the tool list this page reads.
-        if (!r.ok) throw new Error(`answered ${r.status}`);
-        return r.json();
-      })
-      .then(setMcp)
-      .catch(() => setMcpFailed(true));
+    ask<NonNullable<typeof mcp>>("mcpServer").then((a) => {
+      setMcpAnswer(a);
+      if (a.state === "ok") setMcp(a.data);
+    });
     const timer = setTimeout(() => setWaited(true), 400);
     return () => {
       window.removeEventListener("hashchange", arrive);
@@ -371,14 +370,12 @@ function ConfigurationTabs() {
       .then(async (r) => {
         const d = await r.json().catch(() => null);
         if (stop) return;
-        // A refusal or a fault answers without the record: say so, and show no rows.
-        if (!r.ok || !d || !Array.isArray(d.sources)) return void (again || setFailed(true));
-        // Quiet (lib/quiet.ts): a record assembled with nothing behind the console is not read as zeros and empty lists.
-        if (QUIET && d.connected === false) return void (again || setFailed(true));
+        // A refusal or a fault answers without the record: say so, with the status and the address, and show no rows.
+        if (!r.ok || !d || !Array.isArray(d.sources)) return void (again || setFailed(errorText(d, r, "GET", "/api/configuration")));
         setData(d);
-        setFailed(false);
+        setFailed("");
       })
-      .catch(() => !stop && !again && setFailed(true));
+      .catch((e) => !stop && !again && setFailed(`the backend did not answer GET /api/configuration (${(e as Error).message})`));
     return () => {
       stop = true;
     };
@@ -406,39 +403,37 @@ function ConfigurationTabs() {
   const sources = useMemo(() => (data?.sources ?? []).filter((s) => !agent || s.agent === agent), [data, agent]);
   const tools = useMemo(() => (data?.tools ?? []).filter((t) => !agent || t.agent === agent), [data, agent]);
   const used = sources.filter((s) => s.calls > 0).length;
-  /** Quiet (lib/quiet.ts): the record was not read; each panel that depends on it says so in one line, without the reason. */
-  const quiet = QUIET && failed;
-  /** For the panels that read their own doors: whether the console has nothing behind it (null until the record answers). */
-  const bare = data ? false : failed ? QUIET : null;
+  /** The panels that read the page's record show its failure themselves; none is drawn in an empty form. */
+  const quiet = false;
+  /** For the panels that read their own doors: false once the record has answered or failed, null until then. */
+  const bare = data || failed ? false : null;
   const peerCount = peerCounts(peers.peers ?? []);
 
   /* Which panels show nothing but their not-connected line. The ones that read
      the page's record follow it; the ones with a door of their own say so
      themselves once they have read it, and until then are taken to follow a
      console with nothing behind it. */
-  const own = (id: string) => said[id] ?? bare === true;
-  const vertexShown = Boolean(vertex.answer && (vertex.answer.connected || !QUIET));
+  const own = (id: string) => said[id] ?? false;
+  const vertexShown = Boolean(vertex.answer || vertex.error);
   const down: Record<string, boolean> = {
     vertex: false,
     providers: own("providers"),
     models: own("models"),
-    registry: QUIET && registry.servers !== null && registry.servers.length === 0 && Boolean(registry.error),
+    registry: false,
     tools: quiet,
-    mcp: QUIET && mcpFailed && !mcp,
+    mcp: false,
     sources: quiet,
-    peers: (peers.peers ?? []).length === 0 && (bare === true || (QUIET && Boolean(peers.error))),
+    peers: false,
     agents: own("agents"),
     egress: quiet,
     credentials: own("credentials"),
     ingress: quiet,
     gates: quiet,
     deployment: quiet,
-    appearance: bare === true,
+    appearance: false,
   };
-  /** A panel that is not connected is drawn in its empty form, in a quiet console only. */
-  const off = (id: string) => QUIET && Boolean(down[id]);
-  /** A tab with such a panel says so once, in one note under the header. */
-  const calm = Object.fromEntries(TABS.map((t) => [t.id, t.panels.some(off)])) as Record<TabId, boolean>;
+  /** No panel is drawn in an empty form: a failed read shows its failure. */
+  const off = (id: string) => (id ? false : Boolean(down[id]));
   /** A panel's fold: the remembered one, or, in its empty form, open until its heading is shut on this visit. */
   const fold = (id: string) =>
     off(id)
@@ -538,26 +533,19 @@ function ConfigurationTabs() {
           {TABS.find((t) => t.id === tab)?.about}
         </GroupHeader>
 
-        {/* Every tab stays mounted, so the one note is the open tab's and sits here, outside the panes. */}
-        {calm[tab] && !settling && <QuietNote />}
-
-        {failed && !QUIET && (
-          <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">
-            The configuration could not be read, so the deployment, connections, tools, gates and ingress show nothing.
-          </p>
-        )}
+        {failed && <Failure what="The configuration could not be read, so the deployment, connections, tools, gates and ingress show nothing" message={failed} />}
 
         {/* ═══════════════════ models ═══════════════════ */}
         {pane(
           "models",
           <>
-            {/* ── what the deployment's own Google identity can see, before any provider is added: the one place it is shown ── */}
+            {/* ── what the deployment's own Google identity can see on Vertex AI: the one place it is shown ── */}
             {vertexShown && (
               <Panel
                 id="vertex"
                 {...fold("vertex")}
                 title={TITLES.vertex}
-                caption="What this deployment's own Google identity can see on Vertex AI, before any provider is added."
+                caption="What this deployment's own Google identity can see on Vertex AI."
                 className="has-[#vertex-body:empty]:hidden"
               >
                 <VertexDetected />
@@ -568,8 +556,8 @@ function ConfigurationTabs() {
               id="providers"
               {...fold("providers")}
               title={TITLES.providers}
-              caption="Where model calls can go. Add a provider, discover what it serves and offer the models you want."
-              how="A provider is a chat-completions endpoint, the name of the vault key that authenticates to it, and whether it is served on your own hardware. The runtime routes every call to the provider its model names, with that provider's credential from the vault. Local providers are priced by the hardware hour, not per token, and the Costs page uses that rate."
+              caption="The endpoints this deployment was set up with. They are set when the platform is deployed, not here."
+              how="A provider is a chat-completions endpoint the platform was deployed with. Its credential comes from the deployment's environment or its Google identity, never from this page. The runtime routes every call to the endpoint its model is served from."
             >
               {off("providers") && <EmptyBar action="Add provider">Providers are listed here, each with its endpoint, its vault key and the models offered from it.</EmptyBar>}
               <Kept off={off("providers")}>
@@ -582,7 +570,7 @@ function ConfigurationTabs() {
               {...fold("models")}
               title={TITLES.models}
               caption="What teams may pick from, the tier each sits in, and the price cost figures are computed against. Every model choice in the console shows exactly this list."
-              how="Tick what this deployment offers, from what its catalogue lists and what was offered from a provider under Providers. A workflow names a model, never a provider. Record the price per million tokens beside each offered model; a model with no price makes its runs unpriced rather than free."
+              how="Tick what this deployment offers, from what its catalogue lists and what was offered from a provider under Providers. A workflow names a model, never a provider. Record the price per million tokens beside each offered model; a run's cost is counted at the prices recorded here."
             >
               {off("models") && <Holds>Offered models are listed here, each with its provider, its tier and its price per million tokens.</Holds>}
               <Kept off={off("models")}>
@@ -682,16 +670,17 @@ function ConfigurationTabs() {
               id="mcp"
               {...fold("mcp")}
               title={TITLES.mcp}
-              caption="Other agents and tools can read this deployment and start its workflows over the Model Context Protocol. Every call needs a key, goes through the policy engine and is written to the journal."
-              meta={<Tag tone="ok" solid>MCP</Tag>}
+              caption={mcp ? "Other agents and tools can read this deployment over the Model Context Protocol, as the server describes itself below." : "The platform's own MCP server, as it describes itself."}
+              meta={mcp ? <Tag tone="neutral">MCP</Tag> : undefined}
             >
-              <div className="grid gap-px bg-line lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+              {!mcp && (mcpAnswer && mcpAnswer.state !== "ok" ? <AnswerFailure className="p-4" answer={mcpAnswer} what="The MCP server description could not be read" /> : <span className="block px-4 py-3 text-[11.5px] text-faint">Reading the server description…</span>)}
+              {mcp && <div className="grid gap-px bg-line lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
                 <div className="flex flex-col bg-surface">
                   <div className="grid gap-px border-b border-line bg-line sm:grid-cols-3">
                     {[
-                      { k: "Endpoint", v: mcp?.endpoint ?? MCP_ENDPOINT, mono: true },
-                      { k: "Transport", v: mcp ? "Streamable HTTP · JSON-RPC 2.0" : off("mcp") ? "Not connected" : "—", faint: !mcp && off("mcp") },
-                      { k: "Authentication", v: "Bearer API key · same keys as ingress" },
+                      { k: "Endpoint", v: mcp.endpoint || MCP_ENDPOINT, mono: true },
+                      { k: "Transport", v: mcp.transport || "—", faint: !mcp.transport },
+                      { k: "Authentication", v: mcp.auth || "—" },
                     ].map((f) => (
                       <div key={f.k} className="flex flex-col gap-0.5 bg-surface px-4 py-2.5">
                         <span className="text-[10.5px] text-ghost">{f.k}</span>
@@ -707,18 +696,14 @@ function ConfigurationTabs() {
                       <Tag tone={t.action ? "warn" : "neutral"}>{t.action ? "action" : "read"}</Tag>
                     </span>
                   ))}
-                  {!mcp && (QUIET && mcpFailed ? <Holds>The tools this server exposes are listed here, each marked as a read or an action.</Holds> : <span className="px-4 py-3 text-[11.5px] text-faint">Reading the server description…</span>)}
                 </div>
                 <div className="flex flex-col bg-surface">
                   <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">Connect a client</span>
                   <pre className="m-0 overflow-x-auto px-4 py-3 font-mono text-[10.5px] leading-[1.6] text-dim">
-                    {JSON.stringify((mcp?.client as { claude?: unknown } | undefined)?.claude ?? { mcpServers: { "agent-factory": { type: "http", url: MCP_ENDPOINT, headers: { Authorization: "Bearer <api key>" } } } }, null, 2)}
+                    {JSON.stringify((mcp.client as { claude?: unknown } | undefined)?.claude ?? mcp.client ?? {}, null, 2)}
                   </pre>
-                  <span className="border-t border-line px-4 py-2.5 text-[11px] leading-[1.55] text-faint">
-                    Reading tools accept any active key. Starting a workflow needs a key scoped to that workflow, exactly as the trigger endpoint does, because the same key is forwarded to it. Until the first key is minted the server refuses every call, like ingress.
-                  </span>
                 </div>
-              </div>
+              </div>}
             </Panel>
           </>,
         )}
@@ -736,9 +721,7 @@ function ConfigurationTabs() {
                 data
                   ? `${rows.length === 1 ? "1 connection" : `${rows.length} connections`} configured in the workflows saved on this deployment, ${used} called at least once · ${data.deployment.runs} runs on record.`
                   : failed
-                    ? QUIET
-                      ? "The connections configured in the workflows saved on this deployment."
-                      : "not read"
+                    ? "not read"
                     : "reading the workflows…"
               }
               howLabel="How to read this table"
@@ -760,7 +743,7 @@ function ConfigurationTabs() {
               )}
 
               {!data && !failed && <p className="px-4 py-3 text-[11.5px] text-faint">Reading the workflows&hellip;</p>}
-              {failed && (QUIET ? <EmptyTable min="min-w-[980px]" cols={["Source", "Mode", "Tool", "Held by", "Calls", "Last used", "Reaches", "Use"]}>Each connection a saved workflow configures is listed here with its mode, its tool and its calls.</EmptyTable> : <p className="px-4 py-3 text-[11.5px] text-faint">The connections could not be read.</p>)}
+              {failed && <p className="px-4 py-3 text-[11.5px] text-faint">Not read: the configuration record failed (above).</p>}
               {data && rows.length === 0 && (
                 <p className="px-4 py-6 text-[12px] leading-[1.55] text-dim">
                   No workflow on this deployment configures a connection yet. A connection appears here once a saved workflow names one.
@@ -884,7 +867,7 @@ function ConfigurationTabs() {
             >
               <div className="flex flex-col gap-2 px-4 py-3">
                 {!data && !failed && <span className="text-[11.5px] text-faint">Reading the deployment&hellip;</span>}
-                {failed && <span className="text-[11.5px] text-faint">{QUIET ? "The hosts an outbound request may reach are listed here." : "The allowlist could not be read."}</span>}
+                {failed && <span className="text-[11.5px] text-faint">The allowlist could not be read.</span>}
                 {data && data.deployment.egress.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
                     {data.deployment.egress.map((h) => (

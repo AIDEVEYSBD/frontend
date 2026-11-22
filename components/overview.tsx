@@ -1,11 +1,11 @@
 "use client";
+import { Failure } from "./pending";
 
 import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Button, Status } from "./ui";
 import { Banner } from "./overlays";
-import { QUIET } from "@/lib/quiet";
 import { PageHeader } from "./section";
 import { usePageFacts } from "./assistant";
 import { WINDOWS, WindowPick, type Win } from "./window-pick";
@@ -94,9 +94,11 @@ function Overview() {
   const latest = runs?.[0]?.at ?? null;
   const loading = runs === null && !estate.runsError;
   const unread = runs === null && Boolean(estate.runsError);
-  /* A quiet console (lib/quiet.ts): a read that failed leaves its panel saying what it will hold, under the one note at the top, and no figure stands in for it. */
-  const off = QUIET && unread;
-  const gatesOff = QUIET && gates === null && Boolean(estate.gatesError);
+  /* A read that failed leaves its figures unset: each tile says it was not read. */
+  const off = unread;
+  const gatesOff = gates === null && Boolean(estate.gatesError);
+  /* A ledger that answered once and then failed: the figures stay as of then, and say so. */
+  const stale = runs !== null && Boolean(estate.runsError);
   const chip = WINDOWS.find((w) => w.id === win)!.label;
 
   /* Rankings. */
@@ -144,7 +146,6 @@ function Overview() {
   /** What a ranking says in place of rows (null when it has rows to show): `ranks` is what the list will hold once there are runs, `none` what it says of runs that give it nothing. */
   const noRows = (has: boolean, ranks: string, none: string) => {
     if (loading) return <Nothing>Reading the run ledger.</Nothing>;
-    if (off) return <Nothing>{ranks}</Nothing>;
     if (unread) return <Nothing>The run ledger could not be read.</Nothing>;
     if (!rows.length) return <Nothing>{runs?.length ? `No runs in ${windowWords(win)}.` : `No runs yet. ${ranks}`}</Nothing>;
     return has ? null : <Nothing>{none}</Nothing>;
@@ -157,14 +158,14 @@ function Overview() {
     ) : toolCalls.pending ? (
       <Nothing>Reading tool calls from {plural(toolRuns.length, "run")}.</Nothing>
     ) : !readable || (toolCalls.read === 0 && toolCalls.unread > 0) ? (
-      <Nothing>{QUIET ? "Tools rank here by calls, or by the time spent in them." : "The journals of these runs cannot be read from this console, so their tool calls are not counted."}</Nothing>
+      <Nothing>The run trace is not read on this deployment, so tool calls are not counted.</Nothing>
     ) : (
       <Nothing>These runs made no tool calls.</Nothing>
     ));
   const toolsNote = [
     tools.top.length ? `${tools.top.length} of ${plural(tools.of, "tool")}` : "",
     toolRuns.length && rows.length > toolRuns.length ? `the ${toolRuns.length} most recent of ${fmtCount(rows.length)} runs` : "",
-    toolCalls.unread && !QUIET ? `${plural(toolCalls.unread, "run")} not readable` : "",
+    toolCalls.unread ? `${plural(toolCalls.unread, "run")} not readable` : "",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -188,12 +189,22 @@ function Overview() {
           </span>
         }
       >
-        What the estate is doing and what is waiting on a person. Each figure is counted from the run ledger, the approvals inbox and the attention queue, and leads to the page behind it.
+        What the estate is doing and what is waiting on a person. Each figure is counted from the run ledger and the approvals inbox, and leads to the page behind it.
       </PageHeader>
 
       {unread && (
         <Banner tone="err" title="The run ledger could not be read">
           {estate.runsError}. The figures below stay empty until it answers.
+        </Banner>
+      )}
+      {stale && (
+        <Banner tone="err" title="The run ledger stopped answering">
+          {estate.runsError}. The figures below are stale: they are as the ledger last answered, at {new Date(estate.runsAt).toLocaleTimeString("en-GB")}.
+        </Banner>
+      )}
+      {estate.gatesError && gates !== null && (
+        <Banner tone="err" title="The approvals inbox stopped answering">
+          {estate.gatesError}. The gates below are as it last answered.
         </Banner>
       )}
       {runs && runs.length === 0 && (
@@ -308,7 +319,7 @@ function Overview() {
             }
           >
             {off ? (
-              <Nothing>The median run time, the time 95 in 100 runs finish within, and the slowest run show here.</Nothing>
+              <Nothing>The run ledger could not be read.</Nothing>
             ) : (
               <>
                 <div className="grid grid-cols-3 gap-4 px-4 pt-4 pb-3">
@@ -346,7 +357,7 @@ function Overview() {
             }
           >
             {off ? (
-              <Nothing>The share of runs that failed, and the failed runs per {trend.unit === "30 days" ? "span" : trend.unit}, show here.</Nothing>
+              <Nothing>The run ledger could not be read.</Nothing>
             ) : (
               <>
                 <div className="grid grid-cols-3 gap-4 px-4 pt-4 pb-3">
@@ -372,7 +383,7 @@ function Overview() {
             meta={needs.length ? `${fmtCount(needs.length)} open` : undefined}
             footer={
               <>
-                <FootNote>{needs.length > 5 ? `5 of ${fmtCount(needs.length)}, most urgent first` : estate.attentionError && !nobodyAnswered && !QUIET ? "The attention queue could not be read" : "Open items and pending gates"}</FootNote>
+                <FootNote>{needs.length > 5 ? `5 of ${fmtCount(needs.length)}, most urgent first` : estate.attentionError && !nobodyAnswered ? "The attention queue was not read" : "Open items and pending gates"}</FootNote>
                 <Button size="sm" href="/control">
                   Control
                 </Button>
@@ -382,12 +393,18 @@ function Overview() {
               </>
             }
           >
-            {nobodyAnswered && QUIET ? (
-              <Nothing>Open items and the gates waiting on a person list here, most urgent first.</Nothing>
-            ) : nobodyAnswered ? (
-              <ReadError>The attention queue and the inbox could not be read: {estate.attentionError || estate.gatesError}.</ReadError>
+            {nobodyAnswered ? (
+              <div className="flex flex-col gap-2 p-4">
+                {estate.attentionError && <Failure what="The attention queue could not be read" message={estate.attentionError} />}
+                {estate.gatesError && <Failure what="The approvals inbox could not be read" message={estate.gatesError} />}
+              </div>
             ) : attention === null && gates === null ? (
               <Nothing>Reading the attention queue.</Nothing>
+            ) : needs.length === 0 && (estate.attentionError || estate.gatesError) ? (
+              <div className="flex flex-col gap-2 p-4">
+                {estate.attentionError && <Failure what="The attention queue could not be read" message={estate.attentionError} />}
+                {estate.gatesError && <Failure what="The approvals inbox could not be read" message={estate.gatesError} />}
+              </div>
             ) : needs.length === 0 ? (
               <Nothing>Nothing is waiting on a person.</Nothing>
             ) : (

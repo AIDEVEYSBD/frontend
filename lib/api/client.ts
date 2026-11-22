@@ -47,20 +47,57 @@ export function consolePath(url: string, origin: string = typeof window === "und
   }
 }
 
+/** What a failed answer is read from: its status, and the address it came from when the response carries one. */
+export interface Answered {
+  status: number;
+  statusText?: string;
+  url?: string;
+}
+
+/** The address an answer came from, as the console's path without its query. */
+function addressOf(response: Answered | undefined, path?: string): string {
+  const p = path ?? (response?.url ? consolePath(response.url) : "");
+  return p.split("?")[0];
+}
+
+/** The sentence every "not built" answer becomes, wherever it was asked. `notBuiltDoorOf` reads it back. */
+export function notBuiltText(method: string | undefined, path: string): string {
+  return `not built yet: the platform answers 501 to ${method ? `${method} ` : ""}${path}`;
+}
+
+const NOT_BUILT_SENTENCE = /not built yet: the platform answers 501 to (?:(GET|POST|PUT|PATCH|DELETE) )?(\/[^\s,;)]*[^\s,;).])/;
+
+/** The method and address a "not built" message names, or null when the message is another failure. */
+export function notBuiltDoorOf(message: unknown): { method: string; path: string } | null {
+  if (typeof message !== "string") return null;
+  const m = NOT_BUILT_SENTENCE.exec(message);
+  return m ? { method: m[1] ?? "", path: m[2] } : null;
+}
+
 /**
- * The message in an error the backend answered with, or a plain reading of
- * the status. openapi-fetch hands back `error` as the parsed body when the
- * status is 4xx/5xx; the proxy's own refusals (401 sign in, 403 cross-origin)
- * carry the same `{error}` shape.
+ * A failed answer in one line that names its status and its address.
+ *
+ * A 501 is the platform's "not built" and reads as `notBuiltText`. A body
+ * with an `error` is the backend's own sentence, followed by the status and
+ * the address. Anything else (a page, a proxy's plain text, an empty body)
+ * means the backend did not answer the request, and says so with the status.
+ * openapi-fetch hands back `error` as the parsed body when the status is
+ * 4xx/5xx; the proxy's own refusals (401 sign in, 403 cross-origin) carry
+ * the same `{error}` shape.
  */
-export function errorText(error: unknown, response?: { status: number; statusText?: string }): string {
+export function errorText(error: unknown, response?: Answered, method?: string, path?: string): string {
+  const at = addressOf(response, path);
+  const where = [method, at].filter(Boolean).join(" ");
+  if (response?.status === 501) return notBuiltText(method, at || "this address");
+  let said = "";
   if (error && typeof error === "object" && "error" in error) {
     const e = (error as { error?: unknown }).error;
-    if (typeof e === "string" && e) return e;
+    if (typeof e === "string" && e) said = e;
   }
-  // A page (Next's own 404, a proxy's 502) is no message: it is read as the status alone, never printed.
+  if (said) return response ? `${said} (${response.status}${where ? ` from ${where}` : ""})` : said;
+  if (response) return `the backend did not answer${where ? ` ${where}` : ""} (${response.status}${response.statusText ? ` ${response.statusText}` : ""})`;
+  // No answer at all: a plain message a caller passed in.
   if (typeof error === "string" && error.trim() && !error.trimStart().startsWith("<")) return error.slice(0, 300);
-  if (response) return `the backend answered ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`;
   return "the request failed";
 }
 
@@ -114,8 +151,12 @@ export function decodeRunEvent(event: string, data: string): RunEvent | null {
 export interface RunEventHandlers {
   onEntry: (entry: JournalEntry) => void;
   onEnd: (end: RunEnd) => void;
-  /** The stream could not be opened or was lost for good; the run itself may still be going. */
+  /** The stream could not be opened or was lost for good; the run itself may still be going. The message names the status. */
   onError?: (message: string) => void;
+  /** The connection dropped and the browser is trying again (true), or it is back (false). */
+  onReconnecting?: (reconnecting: boolean) => void;
+  /** A frame arrived that could not be read; the running count of such frames. */
+  onDropped?: (count: number) => void;
 }
 
 /**
@@ -123,9 +164,11 @@ export interface RunEventHandlers {
  *
  * An EventSource reconnects on its own when a proxy drops the connection,
  * and the backend answers every (re)connection with the whole journal so
- * far, so entries are deduplicated by id here and a reconnect is invisible
- * to the caller. The stream is closed on `end`: the backend closes its side
- * then, and an EventSource left open would reconnect and replay forever.
+ * far, so entries are deduplicated by id here. The caller is told while the
+ * browser is reconnecting, told how many frames could not be read, and told
+ * when the stream is lost for good, with the status the address answered.
+ * The stream is closed on `end`: the backend closes its side then, and an
+ * EventSource left open would reconnect and replay forever.
  *
  * Returns the function that closes the stream; call it on unmount.
  */
@@ -134,14 +177,25 @@ export function subscribeRunEvents(runId: string, handlers: RunEventHandlers): (
   const es = new EventSource(url, { withCredentials: true });
   const seen = new Set<string>();
   let closed = false;
+  let dropped = 0;
+  let reconnecting = false;
   const close = () => {
     if (closed) return;
     closed = true;
     es.close();
   };
+  const drop = () => {
+    dropped += 1;
+    handlers.onDropped?.(dropped);
+  };
+  es.onopen = () => {
+    if (!reconnecting) return;
+    reconnecting = false;
+    handlers.onReconnecting?.(false);
+  };
   es.addEventListener("entry", (ev) => {
     const decoded = decodeRunEvent("entry", (ev as MessageEvent<string>).data);
-    if (!decoded || decoded.type !== "entry") return;
+    if (!decoded || decoded.type !== "entry") return drop();
     if (seen.has(decoded.entry.id)) return;
     seen.add(decoded.entry.id);
     handlers.onEntry(decoded.entry);
@@ -150,13 +204,34 @@ export function subscribeRunEvents(runId: string, handlers: RunEventHandlers): (
     const decoded = decodeRunEvent("end", (ev as MessageEvent<string>).data);
     close();
     if (decoded && decoded.type === "end") handlers.onEnd(decoded.end);
+    else {
+      drop();
+      handlers.onError?.(`the live stream for run ${runId} ended with a closing frame that could not be read`);
+    }
   });
+  // A frame under no event name the console knows is counted, never silently passed over.
+  es.onmessage = () => drop();
   es.onerror = () => {
-    // CONNECTING means it is retrying on its own; CLOSED means the server
-    // refused (401, 404, not an event stream) and nothing more will come.
-    if (closed || es.readyState !== EventSource.CLOSED) return;
+    if (closed) return;
+    // CONNECTING: the browser is retrying on its own. Say so until it is back.
+    if (es.readyState !== EventSource.CLOSED) {
+      if (!reconnecting) {
+        reconnecting = true;
+        handlers.onReconnecting?.(true);
+      }
+      return;
+    }
+    // CLOSED: the address refused (401, 404, 5xx, not an event stream) and nothing more will come. Ask it once more for its status.
     closed = true;
-    handlers.onError?.(`the event stream for run ${runId} could not be opened — the run may not exist, or you may need to sign in again`);
+    if (reconnecting) handlers.onReconnecting?.(false);
+    const ctl = new AbortController();
+    globalThis
+      .fetch(url, { credentials: "include", cache: "no-store", signal: ctl.signal })
+      .then((r) => {
+        ctl.abort();
+        handlers.onError?.(r.ok ? `the live stream for run ${runId} closed and the browser stopped retrying (GET ${url} answers ${r.status})` : `the live stream for run ${runId} was lost: GET ${url} answered ${r.status}`);
+      })
+      .catch(() => handlers.onError?.(`the live stream for run ${runId} was lost: GET ${url} did not answer`));
   };
   return close;
 }

@@ -220,7 +220,7 @@ export function GatePanel({
 }) {
   return (
     <div className="flex flex-col gap-3">
-      <Banner tone="err" title="The promotion gate refused this deploy">
+      <Banner tone="err" title="The platform refused this deploy">
         {gateSummary(refusal)}
         <span className="mt-0.5 block font-mono text-[10.5px] text-faint">
           decision {refusal.decision || "not recorded"} · digest {shortDigest(refusal.digest)}
@@ -240,7 +240,7 @@ export function GatePanel({
 export function DeployedReceipt({ d }: { d: Deployed }) {
   return (
     <Banner tone={d.override ? "warn" : "ok"} title={`Version ${d.version ?? "?"} deployed to ${d.environment}`}>
-      {d.environment === "production" ? (d.override ? overrideLine(d.override) : "The promotion gate passed on its own records.") : "Recorded for that environment; production runs what it ran."}
+      {d.environment === "production" ? (d.override ? overrideLine(d.override) : "Deployed. Production runs this version from its next run.") : "Recorded for that environment; production runs what it ran."}
       <span className="mt-0.5 block font-mono text-[10.5px] text-faint">
         digest {shortDigest(d.digest)} · deployment {d.deployment}
         {d.decision ? ` · decision ${d.decision}` : ""} · {whenText(d.at)}
@@ -316,8 +316,8 @@ export function DeployDialog({
             Deploy {label} to production
           </h3>
           <p className="text-[12.5px] leading-[1.55] text-dim">
-            The promotion gate reads its own records for exactly this version&rsquo;s digest: an eval at or above the spec&rsquo;s threshold, an approving review by someone
-            who did not author it, nothing open for the agent, and no regression against what production runs now.
+            No promotion gate runs on this deployment: no eval, review or regression is checked before a deploy. The version you deploy becomes what production runs. If the
+            platform refuses the deploy, its reason is shown here.
           </p>
         </div>
         <div className="flex min-h-0 grow flex-col gap-3 overflow-y-auto p-5">

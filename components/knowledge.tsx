@@ -14,9 +14,8 @@ import { Donut } from "./charts";
 import { PipelineView } from "./pipeline";
 import { AskCorpus } from "./ask";
 import { FetchModal } from "./fetch-modal";
-import { Dialog, EmptyState, QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
-import { NotConnectedNote } from "./pending";
+import { Dialog, EmptyState } from "./overlays";
+import { NotConnectedNote, Failure } from "./pending";
 import { usePageFacts } from "./assistant";
 import { DATA_CLASSES, DOORS, ask, doorUrl, type DataClass, type Door, type DoorId } from "@/lib/api/pending";
 import {
@@ -61,6 +60,8 @@ import {
 
 interface Source extends SourceClassFields {
   id: string;
+  /** `upload` for a document a person uploaded: the platform marks every upload's licence "open", which says nothing about the document, so it is shown as their own. */
+  kind?: string;
   name: string;
   publisher: string;
   family: string;
@@ -116,6 +117,8 @@ interface Data {
   staged?: Staged[];
   admissions?: { document_id: string; source_id: string; admitted: boolean; by_whom: string; note: string; chunks: number; at: string; title: string }[];
   totals?: { chunks: number; documents: number; admitted: number; tokens: number; sources: number };
+  /** Whether retrieval from this corpus's store is switched on (Retrieval access); while it is off, every search and answer is refused. */
+  retrieval?: { state: string; reason?: string };
   index?: {
     store: string;
     model: string;
@@ -310,11 +313,13 @@ export function Knowledge() {
   const totals = data?.totals;
   /** The store answered: figures are measured. Otherwise they are unknown, not zero. */
   const ready = data?.ready === true;
-  /** Quiet (lib/quiet.ts): the read failed or the store did not answer. The page says so once, without the reason, and draws every card empty: a figure says "Not connected", a list says what it will hold. */
-  const off = QUIET && (Boolean(failed) || (data !== null && !ready));
-  const offFigure = <span className="mt-1 flex h-[30px] items-center text-[12px] text-faint">Not connected</span>;
+  /** The read failed or the store did not answer: the failure is shown above, and every figure says it was not read. */
+  const off = Boolean(failed) || (data !== null && !ready);
+  const offFigure = <span className="mt-1 flex h-[30px] items-center text-[12px] text-faint">Not read</span>;
   /** A row of the index card: what the read gave, or that it was not read. */
-  const orOff = (v: string | null | undefined) => (off ? v || "Not connected" : (v ?? "—"));
+  const orOff = (v: string | null | undefined) => (off ? v || "not read" : (v ?? "—"));
+  /** Retrieval from this store switched off: the chunks are held, and nothing can retrieve them. */
+  const retrievalOff = data?.retrieval && data.retrieval.state && data.retrieval.state !== "enabled" ? data.retrieval : null;
   const shown = useMemo(() => {
     const term = q.trim().toLowerCase();
     return sources.filter((s) => inFamily(s, family) && hasTerm(s, term));
@@ -326,7 +331,8 @@ export function Knowledge() {
 
   const byLicence = LICENCES.map((l) => ({
     label: LICENCE_NOTE[l].split(".")[0],
-    value: sources.filter((s) => s.licence === l).length,
+    // Uploads are left out: the platform marks every upload "open", which says nothing of the document.
+    value: sources.filter((s) => s.licence === l && s.kind !== "upload").length,
     color: LICENCE_COLOR[l],
   }));
   const indexed = sources.filter((s) => Number(s.chunks) > 0).length;
@@ -385,7 +391,7 @@ export function Knowledge() {
             </>
           }
         >
-          The sources agents on this deployment may retrieve from. A person adds a source, a copy of it is fetched, and a person admits that copy before any of it can be retrieved. Each
+          The sources people can search here; agents do not retrieve on this deployment yet. A person adds a source, a copy of it is fetched, and a person admits that copy before any of it can be searched. Each
           engagement has its own corpus; the one open here is <span className="font-mono text-[11.5px] text-fg">{ns}</span>.
         </GroupHeader>
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-4 py-2.5 elev-1">
@@ -393,16 +399,20 @@ export function Knowledge() {
           <span className="text-[11.5px] leading-[1.5] text-faint">Everything below is this corpus&rsquo;s and no other&rsquo;s.</span>
         </div>
 
-        {off && <QuietNote />}
-        {failed && !QUIET && <p className="rounded-md border border-err/40 bg-surface px-3 py-2.5 text-[11.5px] leading-[1.5] text-err">The knowledge base could not be read: {failed}</p>}
-        {data && !data.ready && !QUIET && (
+        {failed && <Failure what="The knowledge base could not be read" message={failed} />}
+        {retrievalOff && (
+          <p className="rounded-md border border-warn/40 bg-surface px-3 py-2.5 text-[11.5px] leading-[1.5] text-warn">
+            Retrieval from this corpus&rsquo;s store is switched off{retrievalOff.reason ? `: ${retrievalOff.reason}` : ""}. Every search and answer here is refused until it is switched back on under Retrieval access.
+          </p>
+        )}
+        {data && !data.ready && (
           <p className="rounded-md border border-err/40 bg-surface px-3 py-2.5 text-[11.5px] leading-[1.5] text-err">
             {data.error} Which sources this corpus holds, and what is indexed, is not known until the store answers.
           </p>
         )}
         {notice && (
-          <p className={`rounded-md border px-3 py-2 text-[11.5px] leading-[1.5] ${notice.ok || QUIET ? "border-line bg-surface text-faint" : "border-err/40 bg-surface text-err"}`}>
-            {QUIET && !notice.ok ? <QuietNote inline /> : notice.text}
+          <p className={`rounded-md border px-3 py-2 text-[11.5px] leading-[1.5] ${notice.ok ? "border-line bg-surface text-faint" : "border-err/40 bg-surface text-err"}`}>
+            {notice.text}
           </p>
         )}
 
@@ -452,12 +462,12 @@ export function Knowledge() {
             <span className="text-[11px] font-medium tracking-[0.06em] text-faint uppercase">Indexed</span>
             {off ? offFigure : <span className="tnum mt-1 text-[30px] leading-none font-semibold tracking-[-0.025em]">{ready && totals ? count(totals.chunks) : "—"}</span>}
             <span className="mt-1 text-[11.5px] text-faint">
-              {ready && totals ? `chunk${totals.chunks === 1 ? "" : "s"} retrievable now, from ${count(totals.admitted)} admitted document${totals.admitted === 1 ? "" : "s"}` : "chunks retrievable now"}
+              {ready && totals ? `chunk${totals.chunks === 1 ? "" : "s"} ${retrievalOff ? "held, with retrieval switched off" : "retrievable now"}, from ${count(totals.admitted)} admitted document${totals.admitted === 1 ? "" : "s"}` : "chunks indexed"}
             </span>
             <div className="mt-4 flex flex-col gap-2 border-t border-line pt-3 text-[11.5px]">
               <Row k="Store" v={orOff(data?.index?.store)} faint={off && !data?.index?.store} />
               <Row k="Embedding" v={orOff(data?.index?.model)} mono={!off || Boolean(data?.index?.model)} faint={off && !data?.index?.model} />
-              <Row k="Provider" v={data?.index?.embedding ? (data.index.embedding.host || (QUIET ? (off ? "Not connected" : "not connected") : "not configured")) : orOff(null)} mono={!off || Boolean(data?.index?.embedding?.host)} faint={off && !data?.index?.embedding?.host} />
+              <Row k="Provider" v={data?.index?.embedding ? (data.index.embedding.host || "not configured") : orOff(null)} mono={!off || Boolean(data?.index?.embedding?.host)} faint={off && !data?.index?.embedding?.host} />
               <Row
                 k="Dimensions"
                 v={
@@ -473,7 +483,7 @@ export function Knowledge() {
             {/* Integrity: recomputed on this read against what the latest admission recorded. */}
             <div className="mt-3 flex flex-col gap-2 border-t border-line pt-3">
               {data?.index?.integrity === undefined || data?.index?.integrity === null ? (
-                <span className="text-[11px] text-faint">{off ? "The index is checked here against the latest admission." : data?.ready === false ? "Integrity is checked once the index is reachable." : data ? "No integrity result came with this read." : "Integrity: reading…"}</span>
+                <span className="text-[11px] text-faint">{off ? "Integrity: not read." : data?.ready === false ? "Integrity is checked once the index is reachable." : data ? "No integrity result came with this read." : "Integrity: reading…"}</span>
               ) : (
                 <span className="flex flex-col gap-0.5">
                   <Status tone={data.index.integrity.ok === true ? "ok" : data.index.integrity.ok === false ? "err" : "neutral"}>
@@ -560,7 +570,7 @@ export function Knowledge() {
                               </span>
                             </td>
                             <td className="px-3 py-2.5 whitespace-nowrap">
-                              <span title={LICENCE_NOTE[s.licence]}><Status tone={LICENCE_TONE[s.licence] ?? "neutral"}>{s.licence}</Status></span>
+                              {s.kind === "upload" ? <span title="A document uploaded by a person on this deployment"><Status tone="neutral">own document</Status></span> : <span title={LICENCE_NOTE[s.licence]}><Status tone={LICENCE_TONE[s.licence] ?? "neutral"}>{s.licence}</Status></span>}
                             </td>
                             <td className="max-w-[300px] px-3 py-2.5 text-[11px] leading-[1.45] text-faint">{s.use_for}</td>
                             {classed && (
@@ -705,7 +715,7 @@ export function Knowledge() {
                               </span>
                             </td>
                             <td className="px-3 py-2 whitespace-nowrap">
-                              <span title={LICENCE_NOTE[s.licence]}><Status tone={LICENCE_TONE[s.licence] ?? "neutral"}>{s.licence}</Status></span>
+                              {s.kind === "upload" ? <span title="A document uploaded by a person on this deployment"><Status tone="neutral">own document</Status></span> : <span title={LICENCE_NOTE[s.licence]}><Status tone={LICENCE_TONE[s.licence] ?? "neutral"}>{s.licence}</Status></span>}
                             </td>
                             <td className="max-w-[320px] px-3 py-2 text-[11px] leading-[1.45] text-faint">
                               {s.use_for}
@@ -724,25 +734,15 @@ export function Knowledge() {
                   </div>
                 )}
                 {offered.length > 0 && offerShown.length === 0 && <p className="px-4 py-4 text-[12px] text-faint">No public source matches.</p>}
-                {offered.length === 0 && <p className="px-4 py-4 text-[12px] text-faint">{ready ? "Every public source on offer is already in this corpus." : off ? "Published standards, frameworks and regulation are offered here, each ready to add." : QUIET ? <QuietNote inline /> : "The list of public sources did not come with this read."}</p>}
-                {!ready && !QUIET && offered.length > 0 && <p className="border-t border-line px-4 py-2.5 text-[11.5px] text-faint">Adding waits for the store: a source is added by writing it to this corpus&rsquo;s register.</p>}
+                {offered.length === 0 && <p className="px-4 py-4 text-[12px] text-faint">{ready ? "Every public source on offer is already in this corpus." : off ? "Published standards, frameworks and regulation are offered here, each ready to add." : "The list of public sources did not come with this read."}</p>}
+                {!ready && offered.length > 0 && <p className="border-t border-line px-4 py-2.5 text-[11.5px] text-faint">Adding waits for the store: a source is added by writing it to this corpus&rsquo;s register.</p>}
               </div>
             )}
           </section>
         )}
 
         {/* ── ask it ── */}
-        {QUIET && ready && totals && totals.chunks > 0 && data?.index?.embeddingReady === false ? (
-          // Quiet (lib/quiet.ts): with no embedding provider behind it a question cannot be answered, so the box is not offered and no failed attempt is put on record.
-          <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
-            <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2.5">
-              <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Search and answer from this corpus</span>
-            </div>
-            <p className="px-4 py-4">
-              <QuietNote inline />
-            </p>
-          </section>
-        ) : ready && totals && totals.chunks > 0 ? (
+        {ready && totals && totals.chunks > 0 ? (
           <AskCorpus
             namespace={ns}
             onLocate={(documentId, body) => {
@@ -752,7 +752,7 @@ export function Knowledge() {
             onResult={setAskFacts}
           />
         ) : off ? (
-          // Quiet (lib/quiet.ts), store not read: the box is drawn as it stands with nothing indexed, and takes no question.
+          // Store not read: the box takes no question; the failure is shown above.
           <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
             <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2.5">
               <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Search and answer from this corpus</span>
@@ -1170,7 +1170,7 @@ function DocumentModal({ id, namespace, locate, onClose, onDone }: { id: string;
           <Button size="sm" variant="solid" tone="err" onClick={onClose}>Close</Button>
         </header>
 
-        {failed && (QUIET ? <div className="p-4"><QuietNote /></div> : <p className="px-4 py-4 text-[12px] text-err">{failed}</p>)}
+        {failed && (<p className="px-4 py-4 text-[12px] text-err">{failed}</p>)}
 
         {doc && (
           <>
@@ -1252,7 +1252,7 @@ function DocumentModal({ id, namespace, locate, onClose, onDone }: { id: string;
                   />
                   <Button size="sm" variant="solid" tone="ink" permission="configure" loading={busy === "admit"} disabled={Boolean(busy)} onClick={() => decide(true)}>Admit and index</Button>
                   <Button size="sm" variant="solid" tone="err" permission="configure" loading={busy === "refuse"} disabled={Boolean(busy)} onClick={() => decide(false)}>Refuse</Button>
-                  {error && (QUIET ? <span className="basis-full"><QuietNote inline /></span> : <span className="basis-full text-[11.5px] text-err">{error}</span>)}
+                  {error && (<span className="basis-full text-[11.5px] text-err">{error}</span>)}
                 </>
               ) : (
                 <span className="text-[11.5px] text-faint">
@@ -1523,10 +1523,10 @@ function SourceDialog({
               <span id="source-class-label" className="text-[12.5px] font-medium text-mist">Data class</span>
               <ClassChips value={cls} onChange={setCls} disabled={pending || saving} labelledBy="source-class-label" />
             </div>
-            <Field label="Entitled" hint="Names a caller must hold one of, separated by commas: an agent's id is one. Leave it empty for no named restriction, and the data class alone decides.">
+            <Field label="Entitled" hint="Names an agent must hold one of to retrieve from it, separated by commas. It applies to agent retrieval only, which is not built yet; people with either console role read every class and every source.">
               <Input value={entitled} onChange={setEntitled} disabled={pending || saving} autoComplete="off" />
             </Field>
-            {error && (QUIET ? <p><QuietNote inline /></p> : <p role="alert" className="text-[11.5px] leading-[1.5] text-err">{error}</p>)}
+            {error && (<p role="alert" className="text-[11.5px] leading-[1.5] text-err">{error}</p>)}
             <span className="flex flex-wrap items-center gap-2">
               <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={pending || !cls || !changed || there === "asking"} loading={saving} onClick={save}>
                 Save class and entitlement
@@ -1643,7 +1643,7 @@ function AddSourceDialog({ namespace, namespaces, onClose, onDone }: { namespace
             <span className="text-[11.5px] text-faint">The classification of its content, as your organisation labels it.</span>
           </div>
         </div>
-        {error && (QUIET ? <p className="rounded-md border border-dashed border-line-strong bg-surface px-3 py-2"><QuietNote inline /></p> : <p role="alert" className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>)}
+        {error && (<p role="alert" className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>)}
       </div>
     </Frame>
   );
@@ -1745,7 +1745,7 @@ function UploadDocumentDialog({ namespace, namespaces, onClose, onDone }: { name
         <Field label="Corpus" hint="The namespace it goes into.">
           <Pick<string> size="md" value={into} disabled={off} onChange={setInto} options={corpora.map((n) => ({ value: n, label: n }))} />
         </Field>
-        {error && (QUIET ? <p className="rounded-md border border-dashed border-line-strong bg-surface px-3 py-2"><QuietNote inline /></p> : <p role="alert" className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>)}
+        {error && (<p role="alert" className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>)}
       </div>
     </Frame>
   );

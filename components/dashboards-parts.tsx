@@ -4,10 +4,9 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { BarSpark } from "./data";
 import { Button, Status, Tag } from "./ui";
 import { NavIcon } from "./nav-icons";
-import { useDoor } from "./pending";
+import { useDoor, AnswerFailure } from "./pending";
 import { Card, FootNote, Nothing, ReadError } from "./overview-parts";
 import { fmtAge, fmtCount } from "./overview-data";
-import { QUIET } from "@/lib/quiet";
 import { SEVERITIES, type CloudFinding, type CloudFindingList, type Severity } from "@/lib/api/pending";
 
 /**
@@ -137,7 +136,7 @@ export function CloudFindingsCard({ now }: { /** The board's clock, stamped when
   const worst = SEVERITIES.map((s) => ({ s, n: active.filter((f) => f.severity === s).length })).filter((x) => x.n > 0);
   const shown = all ? findings : findings.slice(0, FINDINGS_SHOWN);
   const source = answer?.state === "ok" ? answer.data?.source : undefined;
-  const off = answer?.state === "pending" || (QUIET && answer?.state === "error");
+  const off = answer?.state === "pending";
 
   return (
     <Card
@@ -160,8 +159,10 @@ export function CloudFindingsCard({ now }: { /** The board's clock, stamped when
     >
       {answer === null ? (
         <Nothing>Reading the cloud security findings.</Nothing>
-      ) : off ? (
-        <Nothing>The cloud security centre&rsquo;s findings for this deployment&rsquo;s resources list here once it is connected.</Nothing>
+      ) : answer.state === "pending" ? (
+        <div className="p-4">
+          <AnswerFailure answer={answer} />
+        </div>
       ) : answer.state === "error" ? (
         <ReadError>The cloud security findings could not be read: {answer.message}</ReadError>
       ) : findings.length === 0 ? (

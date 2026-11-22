@@ -1,4 +1,5 @@
 "use client";
+import { notBuiltDoorOf } from "@/lib/api/client";
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -368,11 +369,12 @@ export function CanaryPanel({ agent, versions, production, retired, onChanged }:
       )}
       {refusal && <CanaryRefusalView refusal={refusal} />}
 
-      {!retired && (
+      {/* While the canary is not built (its read answers 501), no form offers to start one. */}
+      {!retired && !notBuiltDoorOf(readError) && (
         <div className="flex flex-col gap-2.5 rounded-md border border-line bg-canvas/60 p-3">
           <span className="text-[12.5px] font-semibold text-fg">{canary?.active ? "Replace it with another" : "Run a version beside production"}</span>
           <span className="text-[11.5px] leading-[1.5] text-dim">
-            The version must have passed the promotion gate: an eval at its threshold, an approving review, nothing open; regression is read and shown, not required. One canary per agent: starting one ends the one standing.
+            One canary per agent: starting one ends the one standing.
           </span>
           {production === null ? (
             <p className="text-[12px] text-faint">Nothing of {agent} is deployed to production yet: a canary runs beside production.</p>

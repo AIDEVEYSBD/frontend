@@ -449,9 +449,7 @@ export function leakWindowLine(c: LeakCheck): string {
 /* ═══════════════════ calls ═══════════════════ */
 
 function fail(error: unknown, response: Response): Error {
-  const text = errorText(error, response);
-  if (/answered (404|502|503)/.test(text)) return new Error(`${text}: the applications register is served by the backend; this deployment may not have named it (BACKEND_ORIGIN)`);
-  return new Error(text);
+  return new Error(errorText(error, response));
 }
 
 export async function listApplications(cls?: ApplicationClass): Promise<Application[]> {

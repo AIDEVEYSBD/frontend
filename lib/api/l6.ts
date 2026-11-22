@@ -382,11 +382,10 @@ export function maskUrlPasswords(text: string): string {
  * 502) is no message at all, and a bare 404, 502 or 503 means no backend
  * answered the door.
  */
-export function registryErrorOf(status: number, body: unknown, statusText = ""): RegistryError {
+export function registryErrorOf(status: number, body: unknown, statusText = "", method?: string, path?: string): RegistryError {
   const o = obj(body);
   const page = typeof body === "string" && body.trimStart().startsWith("<");
-  let message = maskUrlPasswords(errorText(page ? null : body, { status, statusText }));
-  if (/answered (404|502|503)/.test(message)) message = `${message}: the MCP registry is served by the backend; this deployment may not have named it (BACKEND_ORIGIN)`;
+  const message = maskUrlPasswords(errorText(page ? null : body, { status, statusText }, method, path));
   const server = isObj(o.server) ? serverOf(o.server) : null;
   return new RegistryError(message, status, str(o.control), (Array.isArray(o.hits) ? o.hits : []).map(hitOf), str(o.field), server && server.id ? server : null);
 }
@@ -406,7 +405,7 @@ async function call<T>(req: RegistryRequest, parse: (v: unknown) => T): Promise<
   } catch {
     json = null;
   }
-  if (!res.ok) throw registryErrorOf(res.status, json ?? text, res.statusText);
+  if (!res.ok) throw registryErrorOf(res.status, json ?? text, res.statusText, req.method, req.path);
   return parse(json);
 }
 

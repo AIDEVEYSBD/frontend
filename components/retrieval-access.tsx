@@ -6,14 +6,13 @@ import { useSearchParams } from "next/navigation";
 import { Button, Mono, Status, Tag } from "./ui";
 import { Switch } from "./forms";
 import { Pick } from "./select";
-import { EmptyState, QuietNote } from "./overlays";
+import { EmptyState } from "./overlays";
 import { Section } from "./section";
 import { GroupHeader } from "./page-tabs";
-import { NotConnected, NotConnectedNote, useDoor } from "./pending";
+import { NotConnected, NotConnectedNote, useDoor, Failure } from "./pending";
 import { agoText, whenFull } from "./dataset-parts";
 import { ChangeDialog, type Act, type Change } from "./retrieval-access-dialog";
 import { EVENT_WORD, RightCell, heldOf, inOrder, namesOf, ownerName, revokedOf } from "./retrieval-access-parts";
-import { QUIET } from "@/lib/quiet";
 import { RETRIEVAL_RIGHTS, ask, type Door, type RetrievalAccess, type RetrievalGrant, type RetrievalStore } from "@/lib/api/pending";
 
 /**
@@ -120,7 +119,7 @@ function RetrievalAccessPage() {
     reload();
   };
 
-  const noticeText: ReactNode = notice ? "door" in notice ? <NotConnectedNote door={notice.door} /> : notice.tone === "err" && QUIET ? <QuietNote inline /> : notice.text : null;
+  const noticeText: ReactNode = notice ? "door" in notice ? <NotConnectedNote door={notice.door} /> : notice.text : null;
 
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
@@ -133,12 +132,13 @@ function RetrievalAccessPage() {
           </Button>
         }
       >
-        Stop an agent reading from, writing to or deleting in a knowledge store or data store, or switch retrieval from a store off for every agent; a change made here acts at once.
+        Switch retrieval from a knowledge store off, which refuses every search and answer from it on the Knowledge page at once, or record that an agent may no longer read, write or delete in a store. Agents do not
+        retrieve on this deployment yet, so a revocation is recorded and changes no run today.
       </GroupHeader>
 
       {notice && (
         <div className="relative flex flex-wrap items-center gap-3 overflow-hidden rounded-lg border border-line bg-surface py-2.5 pr-3 pl-4 elev-1">
-          {"tone" in notice && !(notice.tone === "err" && QUIET) && (
+          {"tone" in notice && (
             <>
               <span className={`absolute inset-y-0 left-0 w-[3px] ${notice.tone === "err" ? "bg-err" : "bg-ok"}`} />
               <Status tone={notice.tone}>{notice.tone === "err" ? "Refused" : "Done"}</Status>
@@ -161,8 +161,8 @@ function RetrievalAccessPage() {
             it; the row then says who switched it off, when and why. The agents and the history below wait for the same door.
           </NotConnected>
         )}
-        {answer?.state === "error" && (QUIET ? <QuietNote /> : <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">Retrieval access could not be read: {answer.message}</p>)}
-        {connected && stores.length === 0 && <EmptyState title="No stores" detail="This deployment has no knowledge store or data store that an agent retrieves from. Each one is listed here once it exists." />}
+        {answer?.state === "error" && <Failure what="Retrieval access could not be read" message={answer.message} />}
+        {connected && stores.length === 0 && <EmptyState title="No stores" detail="This deployment has no knowledge store or data store. Each one is listed here once it exists." />}
         {stores.length > 0 && (
           <div className="-m-4 overflow-x-auto">
             <table className="w-full min-w-[720px] border-collapse text-left text-[12px] xl:min-w-[900px]">
@@ -246,7 +246,7 @@ function RetrievalAccessPage() {
         </div>
 
         {!connected && <p className="text-[12px] text-faint">Each agent is listed here with the stores it holds: what its definition grants it there (read, write, delete) and what of that is revoked now.</p>}
-        {connected && data.grants.length === 0 && <p className="text-[12px] text-faint">No agent holds access to a store. An agent appears here once its definition grants it a right in one.</p>}
+        {connected && data.grants.length === 0 && <p className="text-[12px] text-faint">No agent holds access to a store. Agents do not retrieve on this deployment yet.</p>}
         {connected && data.grants.length > 0 && groups.length === 0 && <p className="text-[12px] text-faint">{revokedOnly && !agentF && !storeF ? "Nothing is revoked at the moment." : "No agent and store match these filters."}</p>}
 
         {groups.length > 0 && (

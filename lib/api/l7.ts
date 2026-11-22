@@ -901,8 +901,7 @@ async function call<T>(method: "GET" | "POST" | "PUT", path: string, body: unkno
   }
   if (!res.ok) {
     const page = typeof json !== "object" || json === null;
-    let message = errorText(page ? (text.trimStart().startsWith("<") ? null : text) : json, res);
-    if (/answered (404|502|503)/.test(message) && !obj(json).error) message = `${message}: this door is served by the backend; this deployment may not have named it (BACKEND_ORIGIN)`;
+    const message = errorText(page ? (text.trimStart().startsWith("<") ? null : text) : json, res, method, path);
     const b = obj(json);
     const retry = res.headers?.get?.("retry-after") ?? null;
     throw new DoorError(message, res.status, res.status === 429 && retry ? { ...b, retry_after_header: retry } : b);

@@ -6,7 +6,7 @@ import { RunSourceTag } from "./run-source";
 import { Field, Input, Textarea } from "./forms";
 import { Pick } from "./select";
 import type { Evidence, Gate, GateField, Shape, VerdictItem } from "@/lib/api/l5";
-import { allowedVerdicts, bulkVerdict, chainOf, countdown, historyOf, type FormState } from "@/lib/gates";
+import { allowedVerdicts, bulkVerdict, chainOf, countdown, historyOf, type FormState, GATE_TIMEOUT_LINE } from "@/lib/gates";
 
 /**
  * The parts of a gate's interface, shared by every place one is answered:
@@ -108,10 +108,11 @@ export function GateMeta({ gate, now }: { gate: Gate; now: number }) {
           {gate.on_timeout && <span className="text-ghost">· on timeout: {gate.on_timeout}</span>}
         </span>
       )}
+      {(gate.deadline || c.ahead.length > 0) && <span className="text-[11px] text-faint">{GATE_TIMEOUT_LINE}</span>}
       {gate.escalations > 0 && (
         <span className="text-[11px]">
           Escalated {gate.escalations}× along the chain
-          {c.ahead.length ? `; next ${c.ahead[0]} if this deadline passes` : gate.on_timeout === "escalate" ? "; the chain is spent, so when this deadline passes the gate is aborted and the run fails" : ""}
+
         </span>
       )}
       <EscalationHistoryList gate={gate} />

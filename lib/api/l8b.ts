@@ -716,14 +716,13 @@ async function call<T>(req: DoorRequest, parse: (v: unknown) => T): Promise<T> {
   } catch {
     json = null;
   }
-  if (!res.ok) throw refusalOf(res, text, json);
+  if (!res.ok) throw refusalOf(res, text, json, req.method, req.path);
   return parse(json);
 }
 
-function refusalOf(res: Response, text: string, json: unknown): DoorError {
+function refusalOf(res: Response, text: string, json: unknown, method?: string, path?: string): DoorError {
   const page = typeof json !== "object" || json === null;
-  let message = errorText(page ? (text.trimStart().startsWith("<") ? null : text) : json, res);
-  if (/answered (404|502|503)/.test(message) && !obj(json).error) message = `${message}: this door is served by the backend; this deployment may not have named it (BACKEND_ORIGIN)`;
+  const message = errorText(page ? (text.trimStart().startsWith("<") ? null : text) : json, res, method, path);
   return new DoorError(message, res.status, obj(json));
 }
 

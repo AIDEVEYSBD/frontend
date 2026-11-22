@@ -1,4 +1,5 @@
 "use client";
+import { Failure } from "./pending";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -6,8 +7,6 @@ import { Button, Meter, Status, Tag } from "./ui";
 import { Checkbox, Field, Input, Switch, Textarea } from "./forms";
 import { Pick } from "./select";
 import { ChipEditor } from "./gate-form";
-import { QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
 import { OpenChanges, ProposalNote } from "./policy";
 import { hueFor } from "@/lib/hue";
 import { soon } from "@/lib/soon";
@@ -53,9 +52,6 @@ function ago(iso: string): string {
 
 type Filter = "all" | "acted" | "attention";
 
-/** Quiet (lib/quiet.ts): the limits form drawn with nothing read, every control locked. */
-const BLANK: GuardianForm = { enabled: false, model: "", allAgents: false, agents: [], hold: false, block: false, redirect: false, max_actions_per_hour: "", min_confidence: "", rubric: "", every_entries: "", every_s: "" };
-
 export function Guardian() {
   const { can, loaded } = useSession();
   const editable = !loaded || can("configure");
@@ -79,6 +75,8 @@ export function Guardian() {
   /** Read by the poll: a form being edited is not overwritten by the next read. */
   const dirtyRef = useRef(false);
 
+  /** The actions read fails on its own; its reason is kept apart from the limits read's. */
+  const [actionsError, setActionsError] = useState("");
   const load = useCallback(() => {
     getGuardian()
       .then((v) => {
@@ -89,8 +87,11 @@ export function Guardian() {
       })
       .catch((e) => setError((e as Error).message));
     listGuardianActions({ limit: 200 })
-      .then((r) => setActions(r.actions))
-      .catch((e) => setError((e as Error).message));
+      .then((r) => {
+        setActions(r.actions);
+        setActionsError("");
+      })
+      .catch((e) => setActionsError((e as Error).message));
   }, []);
   useEffect(() => {
     const cancel = soon(load);
@@ -153,9 +154,9 @@ export function Guardian() {
 
   const shown = (actions ?? []).filter((a) => filter === "all" || a.outcome === filter);
   const s = view?.stats;
-  // A quiet console (lib/quiet.ts) whose guardian door did not answer says so once, and draws every panel empty beneath the note.
-  const quietDown = QUIET && Boolean(error) && !view;
-  const f = form ?? (quietDown ? BLANK : null);
+  // A guardian door that did not answer: its failure is shown above, and every panel says it was not read; no default stands in for a setting.
+  const quietDown = Boolean(error) && !view;
+  const f = form;
   const locked = !editable || quietDown;
 
   return (
@@ -174,12 +175,8 @@ export function Guardian() {
         </div>
       </header>
 
-      {error && !QUIET && <p className="mt-4 text-[12.5px] text-err">{error}</p>}
-      {quietDown && (
-        <div className="mt-4">
-          <QuietNote />
-        </div>
-      )}
+      {error && <Failure className="mt-4" what="The guardian's limits could not be read" message={error} />}
+      {actionsError && <Failure className="mt-2" what="The guardian's verdicts could not be read" message={actionsError} />}
 
       <>
       <div className="mt-5 grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
@@ -188,10 +185,12 @@ export function Guardian() {
           <div data-hue={hueFor("approvals person")} className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2.5">
             <span className="text-[12px] font-semibold">Limits</span>
             <span className="text-[11px] text-faint">
-              {view ? (view.set_by ? `set by ${view.set_by} ${ago(view.set_at)}${auditLine(view.audit_id)}` : "never set: the defaults (off, no agents, may do nothing)") : quietDown ? "" : "reading…"}
+              {view ? (view.set_by ? `set by ${view.set_by} ${ago(view.set_at)}${auditLine(view.audit_id)}` : "never set: the defaults (off, no agents, may do nothing)") : quietDown ? "not read" : "reading…"}
             </span>
           </div>
-          {!f || (!view && !quietDown) ? (
+          {quietDown ? (
+            <p className="px-4 py-4 text-[12px] text-faint">Not read.</p>
+          ) : !f || !view ? (
             <p className="px-4 py-4 text-[12px] text-faint">Reading the guardian&rsquo;s limits…</p>
           ) : (
             <div className="flex flex-col gap-4 px-4 py-4">
@@ -287,7 +286,7 @@ export function Guardian() {
                     {proposedLine(saved)}
                   </Link>
                 )}
-                {saveError && (QUIET && !refused ? <QuietNote inline /> : <span className="text-[11.5px] text-err">{saveError}</span>)}
+                {saveError && <Failure inline message={saveError} />}
               </div>
             </div>
           )}
@@ -329,17 +328,7 @@ export function Guardian() {
               </div>
             </div>
           ) : quietDown ? (
-            <div className="flex flex-col">
-              <div className="grid grid-cols-4 gap-px border-b border-line bg-line">
-                {["judged", "ok", "acted", "raised", "unparseable", "model errors", "repeated", "watching"].map((k) => (
-                  <div key={k} className="flex flex-col gap-0.5 bg-surface px-3 py-2">
-                    <span className="flex h-[15px] items-center text-[10.5px] whitespace-nowrap text-faint">Not connected</span>
-                    <span className="text-[10px] text-faint">{k}</span>
-                  </div>
-                ))}
-              </div>
-              <p className="px-4 py-3 text-[11px] text-faint">What it judged, acted on and raised is counted here, with its acts this hour against the cap.</p>
-            </div>
+            <p className="px-4 py-4 text-[12px] text-faint">Not read.</p>
           ) : (
             <p className="px-4 py-4 text-[12px] text-faint">Reading…</p>
           )}
@@ -350,7 +339,7 @@ export function Guardian() {
       <section className="mt-4 flex flex-col overflow-hidden rounded-md border border-line bg-surface">
         <div data-hue={hueFor("guardrail")} className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2.5">
           <span className="text-[12px] font-semibold">Verdicts it acted on or raised</span>
-          <span className="text-[11px] text-faint">{actions ? `${actions.length} on record, newest first` : QUIET && error ? "" : "reading…"}</span>
+          <span className="text-[11px] text-faint">{actions ? `${actions.length} on record, newest first` : actionsError ? "not read" : "reading…"}</span>
           <span className="grow" />
           <span role="radiogroup" aria-label="Show" className="inline-flex items-center gap-px rounded-md border border-line bg-raise p-px">
             {(["all", "acted", "attention"] as Filter[]).map((f) => (
@@ -369,7 +358,7 @@ export function Guardian() {
         </div>
         <div className="overflow-x-auto">
           <GuardianActionsTable actions={shown} />
-          {!actions && QUIET && Boolean(error) && <p className="px-4 py-4 text-[12px] text-faint">Verdicts it acted on or raised are listed here, newest first.</p>}
+          {!actions && actionsError && <p className="px-4 py-4 text-[12px] text-faint">Not read.</p>}
           {actions && shown.length === 0 && (
             <p className="px-4 py-4 text-[12px] text-faint">
               {actions.length ? "None of this kind." : "Nothing yet: a verdict of ok leaves no row; an act, or a verdict it could not act on, lands here."}

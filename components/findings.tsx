@@ -4,8 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } f
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Tag } from "./ui";
-import { Banner, EmptyState, QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
+import { Banner, EmptyState } from "./overlays";
 import { Field, Textarea } from "./forms";
 import { Pick } from "./select";
 import { ActiveFilters, SearchBox } from "./filters";
@@ -129,8 +128,7 @@ function Triage({ finding, disabled = false, onChanged }: { finding: Finding | n
           <Button size="sm" variant="solid" tone="ink" permission="approve" disabled={disabled || !ready} loading={busy} onClick={submit}>
             Change status
           </Button>
-          {error && QUIET && <QuietNote inline />}
-          {error && !QUIET && <span className="text-[11.5px] text-err">{error}</span>}
+          {error && <span className="text-[11.5px] text-err">{error}</span>}
         </span>
         {(disabled || pending) && <NotConnectedNote door={pending ?? "findingTriage"} />}
       </div>
@@ -516,13 +514,13 @@ function FindingsPage() {
             <NotConnected door={answer.door} />
           </div>
         )}
-        {answer?.state === "error" && !QUIET && <p className="px-4 py-6 text-[12px] text-faint">Nothing to show: the findings could not be read.</p>}
+        {answer?.state === "error" && <p className="px-4 py-6 text-[12px] text-faint">Nothing to show: the findings could not be read.</p>}
         {answer?.state === "ok" && shown.length === 0 && (
           <div className="p-4">
             {rows.length === 0 ? (
               <EmptyState
                 title={set > 0 ? "No finding matches these filters" : "No findings yet"}
-                detail={set > 0 ? "Nothing on record has this workload, status, agent, run and owner." : "A finding appears here when a run of a security workload reports one."}
+                detail={set > 0 ? "Nothing on record has this workload, status, agent, run and owner." : "Runs on this deployment do not record findings yet: no engine step writes one."}
               />
             ) : (
               <EmptyState title="No finding matches" detail="The findings read do not include one with this severity and search text." />

@@ -6,7 +6,7 @@ import { Checkbox, Field, Input, Textarea } from "./forms";
 import { Pick } from "./select";
 import { CURRENT_USER } from "@/lib/user";
 import { useSession, signerName } from "@/lib/use-session";
-import { answerGate, answerGates, DoorError, listGates, mintLink, type Answer, type AnswerResult, type Gate, type MintedLink } from "@/lib/api/l5";
+import { answerGate, DoorError, listGates, mintLink, type Answer, type AnswerResult, type Gate, type MintedLink } from "@/lib/api/l5";
 import { SAMPLE_SIZE, batchCount, batchable, declaresNote, emptyForm, gateAccess, nextSample, refusalErrors, sampleGates, validateForm, validateVerdicts, type Access, type FormState } from "@/lib/gates";
 import { Deadline, EvidencePanel, GateFields, GateMeta, ShapeTag, SignerLine, VerdictTable, useNow } from "./gate-form";
 import { ReportGateDeliverables } from "./deliverables";
@@ -40,18 +40,18 @@ export type { Gate } from "@/lib/api/l5";
 /** The inbox, re-read every `everyMs` while `active`: a gate escalates, times out or is answered elsewhere without a click here. */
 export function useGates(active = true, everyMs = 8000) {
   const [gates, setGates] = useState<Gate[] | null>(null);
-  /* Whether the last read failed: a caller that must not read an empty list as "no gates open" (a quiet console, lib/quiet.ts) asks this. */
-  const [failed, setFailed] = useState(false);
+  /* Why the last read failed, when it did: a caller must not read an empty list as "no gates open". */
+  const [failed, setFailed] = useState("");
 
   const load = () => {
     listGates()
       .then((d) => {
         setGates(d.pending);
-        setFailed(false);
+        setFailed("");
       })
-      .catch(() => {
+      .catch((e) => {
         setGates((cur) => cur ?? []);
-        setFailed(true);
+        setFailed((e as Error).message);
       });
   };
 
@@ -180,8 +180,14 @@ export function ApproveDialog({
       if (!batch) {
         out.push(await answerGate(gate.run, shared.answer!, draft.note.trim()));
       } else {
-        if (sharedRuns.length === 1) out.push(await answerGate(sharedRuns[0], shared.answer!, draft.note.trim()));
-        else if (sharedRuns.length > 1) out.push(...(await answerGates(sharedRuns, shared.answer!, draft.note.trim(), by)).results);
+        // Each gate goes to its own address (POST /api/approvals/{run}); the batch address is not built.
+        for (const run of sharedRuns) {
+          try {
+            out.push(await answerGate(run, shared.answer!, draft.note.trim()));
+          } catch (e) {
+            out.push({ run, ok: false, state: "", continuing: false, delivered: "", error: (e as Error).message });
+          }
+        }
         for (const o of own) {
           try {
             out.push(await answerGate(o.run, o.answer, o.note));

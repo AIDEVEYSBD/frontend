@@ -137,8 +137,8 @@ export function FigureTile({
   chip?: string;
   /** The figure, or null while it is being read (or could not be). */
   value: string | null;
-  /** A quiet console whose read failed: the tile says it is not connected, with no figure and no reason. */
-  off?: boolean;
+  /** A read that failed or is not built: the tile says so in place of a figure ("Not read" unless a word is given, such as "Not built"). */
+  off?: boolean | string;
   sub: string;
   href: string;
   /** A tone on the figure, only when the state warrants it. */
@@ -151,7 +151,7 @@ export function FigureTile({
         {chip && <span className="rounded-[3px] border border-line bg-canvas px-1 font-mono text-[9px] leading-[14px] text-dim">{chip}</span>}
       </span>
       {off && value === null ? (
-        <span className="flex h-[22px] items-center text-[12px] text-faint">Not connected</span>
+        <span className="flex h-[22px] items-center text-[12px] text-faint">{typeof off === "string" ? off : "Not read"}</span>
       ) : (
         <span className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]" style={tone && value !== null ? { color: `var(--color-${tone})` } : undefined}>
           {value ?? "—"}

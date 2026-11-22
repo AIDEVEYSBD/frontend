@@ -4,9 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "./ui";
 import { Field, Input } from "./forms";
 import { Pick, PickMany } from "./select";
-import { QuietNote } from "./overlays";
 import { NotConnectedNote } from "./pending";
-import { QUIET } from "@/lib/quiet";
 import { BASELINE } from "@/lib/baseline-policies";
 import { TIERS } from "@/lib/api/l9";
 import { DATA_CLASSES, ask, type DataClass, type Door, type UseCase, type UseCaseGate, type UseCaseRegistration } from "@/lib/api/pending";
@@ -132,7 +130,7 @@ export function RegisterDialog({ workloads, onDone, onClose }: { workloads: { va
           <h3 id="af-use-case-title" className="text-[16px] font-semibold tracking-tight">
             Register a use case
           </h3>
-          <p className="text-[12.5px] leading-[1.5] text-dim">It is registered as a draft. Nothing runs under it until it has been sent for approval and approved.</p>
+          <p className="text-[12.5px] leading-[1.5] text-dim">It is registered as a draft, then sent for approval. It is a record of what was agreed: runs are not yet held to it.</p>
         </div>
 
         <div className="flex min-h-0 grow flex-col gap-4 overflow-y-auto px-5 py-4">
@@ -150,7 +148,7 @@ export function RegisterDialog({ workloads, onDone, onClose }: { workloads: { va
               <Pick size="md" aria-label="Workload it uses" value={workload} onChange={setWorkload} options={[{ value: "", label: "Choose a workload" }, ...workloads]} disabled={busy} invalid={tried && !workload} />
             </Field>
             <div className="sm:col-span-2">
-              <Field label="Autonomy level" error={need(!autonomy, "Choose an autonomy level.")} hint={tried && !autonomy ? undefined : tier?.means ? `${tier.label}: ${tier.means}.` : "How much a run of it may do without a person."}>
+              <Field label="Autonomy level" error={need(!autonomy, "Choose an autonomy level.")} hint={tried && !autonomy ? undefined : tier ? `${tier.label}: a label, recorded with the use case and not applied to runs.` : "A label for how much a run of it may do without a person; recorded, not applied."}>
                 <Pick size="md" aria-label="Autonomy level" value={autonomy} onChange={setAutonomy} options={[{ value: "", label: "Choose a level" }, ...TIER_CHOICES.map((t) => ({ value: t.value, label: t.label }))]} disabled={busy} invalid={tried && !autonomy} />
               </Field>
             </div>
@@ -190,12 +188,12 @@ export function RegisterDialog({ workloads, onDone, onClose }: { workloads: { va
                   <Field label="Timeout, in minutes" error={need(minutesOf(g.timeout) <= 0, "A whole number of minutes above zero.")}>
                     <Input value={g.timeout} onChange={(v) => setGate(g.key, { timeout: v })} disabled={busy} autoComplete="off" />
                   </Field>
-                  <Field label="If nobody answers in time" hint="A gate never lets the run proceed by itself.">
+                  <Field label="If nobody answers in time" hint="Recorded with the use case; runs are not yet held to it.">
                     <Pick size="md" aria-label="If nobody answers in time" value={g.on_timeout} onChange={(v) => setGate(g.key, { on_timeout: v })} options={ON_TIMEOUT} disabled={busy} />
                   </Field>
                   {g.on_timeout === "escalate" && (
                     <div className="sm:col-span-2">
-                      <Field label="Escalate to" error={need(!g.escalate_to.trim(), "Name the role it escalates to.")} hint={tried && !g.escalate_to.trim() ? undefined : "The role the gate goes to once the timeout has passed."}>
+                      <Field label="Escalate to" error={need(!g.escalate_to.trim(), "Name the role it escalates to.")} hint={tried && !g.escalate_to.trim() ? undefined : "Recorded with the use case; runs are not yet held to it."}>
                         <Input value={g.escalate_to} onChange={(v) => setGate(g.key, { escalate_to: v })} disabled={busy} autoComplete="off" />
                       </Field>
                     </div>
@@ -208,7 +206,7 @@ export function RegisterDialog({ workloads, onDone, onClose }: { workloads: { va
 
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-line px-5 py-3">
           <span className="min-w-0 grow basis-[40%] text-[11.5px] leading-[1.5] text-faint">
-            {waits ? <NotConnectedNote door={waits} /> : error ? QUIET ? <QuietNote inline /> : <span className="text-err">The use case was not registered: {error}</span> : tried && !ready ? <span className="text-err">Some fields above still need an answer.</span> : null}
+            {waits ? <NotConnectedNote door={waits} /> : error ? <span className="text-err">The use case was not registered: {error}</span> : tried && !ready ? <span className="text-err">Some fields above still need an answer.</span> : null}
           </span>
           <Button variant="solid" tone="err" size="sm" onClick={onClose} disabled={busy}>
             Cancel

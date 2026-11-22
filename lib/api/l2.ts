@@ -35,11 +35,9 @@ export type VaultList = Schemas["VaultList"];
 export type VaultKeyView = Schemas["VaultKeyView"];
 export type QueueView = Schemas["QueueView"];
 
-/** The refusal a call rejects with: the backend's message, or a plain reading of the status, with a hint when no backend answered at all. */
-export function doorError(error: unknown, response: Response): Error {
-  const text = errorText(error, response);
-  if (/answered (502|503)/.test(text)) return new Error(`${text}: this door is served by the backend; this deployment may not have named it (BACKEND_ORIGIN)`);
-  return new Error(text);
+/** The refusal a call rejects with: the backend's message with the status and the address, "not built" for a 501, or that the backend did not answer (lib/api/client.ts errorText). */
+export function doorError(error: unknown, response: Response, method?: string): Error {
+  return new Error(errorText(error, response, method));
 }
 
 /* ═══════════════════ agents ═══════════════════ */

@@ -1,4 +1,6 @@
 "use client";
+import { errorText } from "@/lib/api/client";
+import { Failure } from "./pending";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -8,8 +10,6 @@ import { ActiveFilters, Chips, FilterBar, SearchBox, type Chip } from "./filters
 import { usePageFacts } from "./assistant";
 import { DrillModal, DrillTable } from "./drill";
 import { Pick } from "./select";
-import { QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
 import { hueFor } from "@/lib/hue";
 import { kindOf, type Provider } from "@/lib/providers";
 import { WindowPick, winMs, type Win } from "./window-pick";
@@ -51,7 +51,7 @@ interface Data { now: string; config: Config; agents: AgentSpec[]; runs: Run[]; 
 /* ═══════════════════ formatting ═══════════════════ */
 
 const fmtCost = (c: number | null, precise = false) =>
-  c === null ? "$0.00" : c === 0 ? "$0.00" : c < 0.01 && precise ? `$${c.toFixed(4)}` : c < 0.005 ? "<$0.01" : c < 100 ? `$${c.toFixed(2)}` : `$${Math.round(c).toLocaleString("en-GB")}`;
+  c === null ? "—" : c === 0 ? "$0.00" : c < 0.01 && precise ? `$${c.toFixed(4)}` : c < 0.005 ? "<$0.01" : c < 100 ? `$${c.toFixed(2)}` : `$${Math.round(c).toLocaleString("en-GB")}`;
 const fmtTokens = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k` : String(Math.round(n)));
 const fmtMs = (ms: number | null) => (ms === null ? "—" : ms < 1000 ? `${Math.round(ms)}ms` : ms < 60_000 ? `${(ms / 1000).toFixed(1)}s` : `${(ms / 60_000).toFixed(1)}m`);
 const pct = (x: number) => `${Math.round(x * 100)}%`;
@@ -135,20 +135,16 @@ export function FinOps() {
       .then(async (r) => {
         // A page (a proxy's 502, Next's own 404) is no ledger and no message: the status alone is the reason.
         const d = (await r.json().catch(() => null)) as Data | null;
-        if (!d) throw new Error(`the server answered ${r.status}`);
-        // A refusal with an empty body, or an answer without the ledger's shape, is a failed read, never a ledger to draw.
-        if (!(d as unknown as { error?: string }).error && (!r.ok || !d.config)) throw new Error(`the server answered ${r.status}`);
+        // A refusal, a 501, an empty body or an answer without the ledger's shape is a failed read, never a ledger to draw.
+        if (!r.ok || !d || (d as unknown as { error?: string }).error || !d.config) throw new Error(errorText(d, r, "GET", "/api/finops"));
         return d;
       })
       .then((d: Data) => {
-        if ((d as unknown as { error?: string }).error) throw new Error((d as unknown as { error: string }).error);
-        // Quiet (lib/quiet.ts): a ledger assembled with nothing behind the console is not read as zero spend.
-        if (QUIET && (d as unknown as { connected?: boolean }).connected === false) throw new Error("not connected");
         setData(d);
         setRoutes(d.config.node_routes ?? {});
         setRoutesDirty(false);
       })
-      .catch((e) => setError(String(e)));
+      .catch((e) => setError((e as Error).message));
   }, []);
   useEffect(load, [load]);
 
@@ -568,8 +564,8 @@ export function FinOps() {
   const windowDays = winFor("kpi") === "all" ? Math.max(1, spanDays("all", kpiCalls)) : winMs(winFor("kpi")) / 86_400_000;
   const windowBudget = data?.budget != null ? (data.budget * windowDays) / PERIOD_DAYS[data.period] : null;
 
-  // Quiet (lib/quiet.ts): every card here is cut from the one read. When it was not read the page keeps its whole layout under one calm note: every card empty, no figure, no reason.
-  const off = QUIET && Boolean(error) && !data;
+  // Every card here is cut from the one read. When it was not read, the failure is shown and no card is drawn: no figure stands in for spend that was not read.
+  const off = Boolean(error) && !data;
   const kpi = (v: string) => (data ? v : off ? null : "…");
 
   return (
@@ -591,8 +587,8 @@ export function FinOps() {
           </div>
         </header>
 
-        {off && <QuietNote />}
-        {error && !QUIET && <p className="text-[12.5px] text-err">{error}</p>}
+        {error && <Failure what="The cost ledger could not be read" message={error} />}
+        {!off && (<>
 
         {/* ── Filters ── */}
         <div className="flex flex-col gap-2 rounded-lg border border-line bg-surface px-4 py-3 elev-1">
@@ -985,7 +981,7 @@ export function FinOps() {
         <Section id="routing" title="Model routing" caption="Where each step's calls go. A route set here outranks the step's own model in its spec and the tier defaults; a forced model for a measurement outranks everything. Saved routes apply to the next run of the workflow." folded={folds.routing} onToggle={() => toggleFold("routing")}
           meta={
             <span className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-              {saved && (QUIET && saved.startsWith("could not") ? <QuietNote inline /> : <span className={`text-[11px] ${saved.startsWith("could not") ? "text-err" : "text-ok"}`}>{saved}</span>)}
+              {saved && <span className={`text-[11px] ${saved.startsWith("could not") ? "text-err" : "text-ok"}`}>{saved}</span>}
               {routesDirty && <Button size="sm" variant="quiet" onClick={() => { setRoutes(data?.config.node_routes ?? {}); setRoutesDirty(false); }}>Discard</Button>}
               <Button size="sm" variant="solid" permission="configure" loading={saving} disabled={!routesDirty} onClick={saveRoutes}>Save routes</Button>
             </span>
@@ -1062,11 +1058,6 @@ export function FinOps() {
                   </button>
                 );
               })}
-              <Link href="/configuration#models" className="focusable flex min-h-[96px] flex-col items-center justify-center gap-1 rounded-md border border-dashed border-line-strong p-3 text-[11.5px] text-dim hover:bg-raise/40">
-                <span className="text-[18px] leading-none">+</span>
-                Add a provider in Configuration
-                <span className="text-[10px] text-faint">Foundry, Vertex, Bedrock, vLLM, Ollama, LM Studio…</span>
-              </Link>
             </div>
           </Section>
 
@@ -1074,6 +1065,7 @@ export function FinOps() {
             <Billing key={`${data?.budget ?? ""}/${data?.period ?? ""}`} off={off} data={data} totals={totals} windowBudget={windowBudget} window={winFor("kpi")} onSaved={load} />
           </Section>
         </div>
+        </>)}
       </div>
 
       {drill && (
@@ -1187,7 +1179,7 @@ function Billing({ data, totals, windowBudget, window, onSaved, off = false }: {
       {st && (st.shadow_spent ?? 0) > 0 && <Fact k={`Shadow runs · this ${data?.period ?? "period"}`} v={shadowSpentLine(st.shadow_spent, (n) => fmtCost(n))} tone="text-faint" />}
       {shadowWindow.runs > 0 && <Fact k={`Shadow runs · ${window}`} v={shadowBesideLine(shadowWindow, (n) => fmtCost(n))} tone="text-faint" />}
       <Fact k="Run rate · month" v={off ? "Not connected" : fmtCost(totals.monthly)} tone={off ? "text-faint" : undefined} />
-      <Fact k="Cloud billed · month to date" v={az?.configured && !az.error ? `${az.currency ?? ""} ${az.mtd?.toFixed(2) ?? "—"}` : QUIET ? "Not connected" : "billing connector not configured"} tone={az?.configured ? undefined : "text-faint"} />
+      <Fact k="Cloud billed · month to date" v={az?.configured && !az.error ? `${az.currency ?? ""} ${az.mtd?.toFixed(2) ?? "—"}` : "no billing source on this deployment"} tone={az?.configured ? undefined : "text-faint"} />
       <Fact k="Cloud billed · 7d" v={az?.configured && !az.error ? `${az.currency ?? ""} ${az.last7d?.toFixed(2) ?? "—"}` : off ? "Not connected" : "—"} tone={off ? "text-faint" : undefined} />
       <div className="flex items-center gap-2 px-4 py-3">
         <label className="flex items-center gap-2 text-[11.5px] text-dim">
@@ -1263,7 +1255,7 @@ function DrillView({ drill, data, book, profiles, evidence, verdicts, routes, on
     const rows = profiles.flatMap((p) => p.rows.filter((c) => c.model === drill.id));
     const steps = profiles.filter((p) => p.rows.some((c) => c.model === drill.id));
     return (
-      <DrillModal title={drill.id} subtitle={info ? `${info.label} · ${info.local ? `local on ${info.provider?.label ?? "local hardware"}` : info.provider?.label ?? "Azure AI Foundry"}${info.tier ? ` · ${info.tier} tier` : ""}` : "not in the offered list — costed at the estimate rate"} count={rows.length} onClose={onClose}>
+      <DrillModal title={drill.id} subtitle={info ? `${info.label} · ${info.local ? `local on ${info.provider?.label ?? "local hardware"}` : info.provider?.label ?? "the deployment's model endpoint"}${info.tier ? ` · ${info.tier} tier` : ""}` : "not in the offered list — costed at the estimate rate"} count={rows.length} onClose={onClose}>
         <div className="grid grid-cols-2 gap-x-6 border-b border-line px-4 py-2 sm:grid-cols-4">
           <Fact k="$/M in" v={info?.price_in === null || !info ? `$${(data?.estimate?.in ?? 0).toFixed(2)} est.` : `$${info.price_in}${info.estimated ? " est." : ""}`} />
           <Fact k="$/M out" v={info?.price_out === null || !info ? `$${(data?.estimate?.out ?? 0).toFixed(2)} est.` : `$${info.price_out}${info.estimated ? " est." : ""}`} />

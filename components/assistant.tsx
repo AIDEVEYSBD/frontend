@@ -1,6 +1,5 @@
 "use client";
 
-import { QUIET } from "@/lib/quiet";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Mono, Spinner } from "./ui";
@@ -65,10 +64,9 @@ const TOOL_LABEL: Record<string, string> = {
 /** The bubble at the bottom right, and the panel it opens. */
 export function Assistant() {
   const [open, setOpen] = useState(false);
-  // A quiet console with no model for the assistant leaves the button out, so nobody opens a drawer that cannot answer.
-  const [available, setAvailable] = useState(!QUIET);
+  // The button is offered only once GET /api/assistant says the assistant is there; while the platform answers 501 (not built), or the read fails, nobody opens a drawer that cannot answer.
+  const [available, setAvailable] = useState(false);
   useEffect(() => {
-    if (!QUIET) return;
     let live = true;
     fetch("/api/assistant", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))

@@ -1,12 +1,12 @@
 "use client";
+import { Failure } from "./pending";
 
 import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Mono, Status, Tag } from "./ui";
-import { Banner, QuietNote } from "./overlays";
+import { Banner } from "./overlays";
 import { GroupHeader } from "./page-tabs";
-import { QUIET } from "@/lib/quiet";
 import { Field, Input } from "./forms";
 import { Pick } from "./select";
 import { DigestChip } from "./digest-chip";
@@ -163,7 +163,7 @@ export function ReportGateDeliverables({ gate }: { gate: Pick<Gate, "control" | 
 
 /** The deliverables listed. Presentational. */
 export function DeliverablesListView({ list, selected, onSelect }: { list: DeliverableList; selected?: string | null; onSelect?: (id: string) => void }) {
-  if (!list.deliverables.length) return <p className="text-[12px] text-faint">No deliverable matches. A run that writes a document (documents.write, a json or document output) registers one.</p>;
+  if (!list.deliverables.length) return <p className="text-[12px] text-faint">No deliverable is recorded. Runs on this deployment do not record deliverables yet.</p>;
   return (
     <ul className="flex flex-col overflow-hidden rounded-md border border-line">
       {list.deliverables.map((d) => (
@@ -314,10 +314,10 @@ function DeliverablesPage() {
   const [registers, setRegisters] = useState<RegisterList | null>(null);
   const [items, setItems] = useState<RegisterItems | null>(null);
   const [itemsError, setItemsError] = useState("");
-  /* A quiet console (lib/quiet.ts): a list that was not read is not shown as an empty one. */
-  const [registersFailed, setRegistersFailed] = useState(false);
-  const listOff = QUIET && Boolean(error);
-  const registersOff = QUIET && registersFailed;
+  /* A list that was not read is not shown as an empty one: its failure is shown in its place. */
+  const [registersFailed, setRegistersFailed] = useState("");
+  const listOff = Boolean(error);
+  const registersOff = Boolean(registersFailed);
   const [agents, setAgents] = useState<AgentSummary[]>([]);
 
   const go = useCallback(
@@ -336,15 +336,15 @@ function DeliverablesPage() {
       setList(await listDeliverables(deliverableQuery({ state, agent, run })));
       setError("");
     } catch (e) {
-      setList({ deliverables: [], count: 0, states: {} });
+      setList(null);
       setError((e as Error).message);
     }
     try {
       setRegisters(await listRegisters());
-      setRegistersFailed(false);
-    } catch {
-      setRegisters({ registers: [], count: 0 });
-      setRegistersFailed(true);
+      setRegistersFailed("");
+    } catch (e) {
+      setRegisters(null);
+      setRegistersFailed((e as Error).message);
     }
   }, [state, agent, run]);
   useEffect(() => soon(load), [load]);
@@ -399,8 +399,8 @@ function DeliverablesPage() {
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7" data-hue="violet">
       <GroupHeader group="results" tab="deliverables">
-        What runs write, as records: each document with its state (draft, reviewed, published or withdrawn), its history and its file, and the registers a records backend wrote to. A reviewer
-        approves a deliverable by answering its report gate in the approvals inbox.
+        The documents runs record, each with its state (draft, reviewed, published or withdrawn), its history and its file, and the registers a records backend wrote to. Runs on this deployment do not
+        record deliverables yet: no engine step writes one.
       </GroupHeader>
       {error && (
         <Banner tone="err" title="Could not read the deliverables">
@@ -431,18 +431,17 @@ function DeliverablesPage() {
               Apply
             </Button>
           </div>
-          {listOff ? <p className="text-[12px] text-faint">Each document a run writes is listed here with its state.</p> : list ? <DeliverablesListView list={list} selected={selected} onSelect={(id) => go({ id })} /> : <p className="text-[12px] text-faint">Reading the deliverables…</p>}
+          {listOff ? <p className="text-[12px] text-faint">Not read.</p> : list ? <DeliverablesListView list={list} selected={selected} onSelect={(id) => go({ id })} /> : <p className="text-[12px] text-faint">Reading the deliverables…</p>}
         </Section>
-        <Section title="Deliverable" meta={shownDetail ? shownDetail.id : selected ? (QUIET && detailError ? undefined : "reading…") : "pick one"}>
+        <Section title="Deliverable" meta={shownDetail ? shownDetail.id : selected ? (detailError ? "not read" : "reading…") : "pick one"}>
           {!selected && <p className="text-[12px] text-faint">Pick a deliverable to read its history and download its file.</p>}
-          {detailError && QUIET && <QuietNote inline />}
-          {detailError && !QUIET && <span className="text-[11.5px] text-err">{detailError}</span>}
+          {detailError && <Failure inline what="This deliverable could not be read" message={detailError} />}
           {shownDetail && <DeliverableDetailView deliverable={shownDetail} />}
         </Section>
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
         <Section title="Registers" meta={registers && !registersOff ? `${registers.count} on record` : undefined}>
-          {registersOff ? <p className="text-[12px] text-faint">Each register a records backend wrote to is listed here with its items.</p> : registers ? <RegistersView list={registers} selected={register} onSelect={(name) => go({ register: name })} /> : <p className="text-[12px] text-faint">Reading the registers…</p>}
+          {registersOff ? <Failure what="The registers could not be read" message={registersFailed} /> : registers ? <RegistersView list={registers} selected={register} onSelect={(name) => go({ register: name })} /> : <p className="text-[12px] text-faint">Reading the registers…</p>}
         </Section>
         <Section title={register ? `Register ${register}` : "Register items"} meta={shownItems ? `${shownItems.count} · ${statesLine(shownItems.states)}` : undefined}>
           {!register && <p className="text-[12px] text-faint">Pick a register to read its items and their states.</p>}
@@ -452,8 +451,7 @@ function DeliverablesPage() {
               {DELIVERABLE_STATES.map((s) => stateButton(s, deliverableStateMeta(s).label, itemState === s, () => setItemState(s)))}
             </span>
           )}
-          {itemsError && QUIET && <QuietNote inline />}
-          {itemsError && !QUIET && <span className="text-[11.5px] text-err">{itemsError}</span>}
+          {itemsError && <span className="text-[11.5px] text-err">{itemsError}</span>}
           {shownItems && <RegisterItemsView items={shownItems} />}
         </Section>
       </div>

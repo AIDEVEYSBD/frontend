@@ -1,12 +1,13 @@
 "use client";
+import { Failure } from "./pending";
+import { ask } from "@/lib/api/pending";
+import { notBuiltText } from "@/lib/api/client";
 
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Mono, Status, Tag, type Tone } from "./ui";
 import { ControlMark, ControlRef, resolveControl } from "./control-ref";
 import { Skeleton } from "./loaders";
-import { QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
 import { hueFor } from "@/lib/hue";
 import { soon } from "@/lib/soon";
 import { agentHref } from "@/lib/agent-link";
@@ -147,7 +148,8 @@ function span(seconds: number): string {
   return `${Math.round(seconds / 86400)} days`;
 }
 
-const timeoutLine = (s: number | null, then: string): string => (s === null ? "" : `after ${span(s)} unanswered it ${then === "abort" ? "is aborted" : then === "escalate" ? "escalates" : then === "approve" ? "is approved" : then ? `takes "${then}"` : "times out"}`);
+/* A declared timeout is acted on when it passes (lib/gates.ts GATE_TIMEOUT_LINE). */
+const timeoutLine = (s: number | null, then: string): string => (s === null ? "" : `after ${span(s)} unanswered it ${then === "escalate" ? "escalates to the next role on its chain, or the run is ended as failed when none is left" : "is ended as failed"}`);
 
 const shown = (v: unknown): string => (v === null || v === undefined ? "unset" : typeof v === "string" ? v || "none" : Array.isArray(v) ? (v.length ? v.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join(", ") : "none") : typeof v === "object" ? (Object.keys(v as object).length ? JSON.stringify(v) : "none") : String(v));
 
@@ -158,23 +160,23 @@ export function declaredControls(g: Governed): { control: string; why: string }[
   const out: { control: string; why: string }[] = [];
   const granted = new Set(g.grants.flatMap((x) => x.tools));
   const grantedTools = [...granted].map((n) => g.tools.get(n)).filter((t): t is SpecTool => Boolean(t));
-  if (granted.size) out.push({ control: "AF-AC-01", why: `${granted.size} tool${granted.size === 1 ? "" : "s"} granted across ${g.grants.length} step${g.grants.length === 1 ? "" : "s"}; a tool that is not granted is refused` });
+  if (granted.size) out.push({ control: "AF-AC-01", why: `${granted.size} tool${granted.size === 1 ? "" : "s"} granted across ${g.grants.length} step${g.grants.length === 1 ? "" : "s"} in the spec` });
   const scoped = grantedTools.filter((t) => t.scoped).length + g.grants.filter((x) => x.scoped).length;
   if (scoped) out.push({ control: "AF-AC-02", why: `${scoped} grant${scoped === 1 ? " carries" : "s carry"} a scope on ${scoped === 1 ? "its" : "their"} arguments` });
   if (g.injection?.prohibited) out.push({ control: "AF-AC-03", why: `${g.injection.prohibited} prohibited action${g.injection.prohibited === 1 ? "" : "s"} declared` });
   const taints = grantedTools.filter((t) => t.taints).length;
   if (taints) out.push({ control: "AF-DP-01", why: `${taints} granted tool${taints === 1 ? " returns" : "s return"} content authored outside the system` });
   const sinks = grantedTools.filter((t) => t.sink).length;
-  if (g.blockTaintedSinks) out.push({ control: "AF-DP-02", why: `untrusted content is stopped at the ${sinks} granted tool${sinks === 1 ? " that acts" : "s that act"} outside` });
-  if (g.injection?.patterns) out.push({ control: "AF-DP-04", why: `${g.injection.patterns} block phrase${g.injection.patterns === 1 ? "" : "s"} screened; a hit is ${g.injection.action === "flag" ? "flagged" : "blocked"}` });
+  if (g.blockTaintedSinks) out.push({ control: "AF-DP-02", why: `the spec asks that untrusted content be stopped at the ${sinks} granted tool${sinks === 1 ? " that acts" : "s that act"} outside` });
+  if (g.injection?.patterns) out.push({ control: "AF-DP-04", why: `the spec declares ${g.injection.patterns} block phrase${g.injection.patterns === 1 ? "" : "s"}` });
   if (grantedTools.some((t) => t.maxDataClass || t.dataClass)) out.push({ control: "AF-DP-06", why: "granted tools declare a data class or a ceiling" });
   const people = g.gates.length + g.waits.filter((w) => w.kind === "approval").length;
   if (people) out.push({ control: "AF-HO-01", why: `${people} gate${people === 1 ? " waits" : "s wait"} for a person` });
   if (g.typed) out.push({ control: "AF-IN-01", why: `${g.typed} step${g.typed === 1 ? " declares what it emits" : "s declare what they emit"}; an output that does not match is a breach` });
   for (const [k] of g.extra) {
-    if (k === "budget") out.push({ control: "AF-RS-01", why: "the policy sets a budget" });
-    if (k === "limits") out.push({ control: "AF-AC-05", why: "the policy sets argument limits" });
-    if (k === "mass_action") out.push({ control: "AF-RS-04", why: "the policy gates mass actions" });
+    if (k === "budget") out.push({ control: "AF-RS-01", why: "the policy sets a budget; tokens, cost and wall-clock time are checked, tool calls are not counted" });
+    if (k === "limits") out.push({ control: "AF-AC-05", why: "the policy declares argument limits" });
+    if (k === "mass_action") out.push({ control: "AF-RS-04", why: "the policy declares a mass-action gate" });
   }
   return out.filter((x) => resolveControl(x.control));
 }
@@ -202,17 +204,12 @@ function Block({ title, where, meta, children }: { title: string; where?: { href
 const Line = ({ children }: { children: ReactNode }) => <li className="flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-line px-3 py-1.5 text-[11.5px] leading-[1.55] text-dim last:border-b-0">{children}</li>;
 const List = ({ children }: { children: ReactNode }) => <ul className="flex flex-col overflow-hidden rounded-md border border-line">{children}</ul>;
 const None = ({ children }: { children: ReactNode }) => <p className="text-[11.5px] leading-[1.55] text-faint">{children}</p>;
-// A quiet console (lib/quiet.ts) prints no reason a read failed: the block says in one faint line that it is not connected.
-const Failed = ({ what, message }: { what: string; message: string }) =>
-  QUIET ? (
-    <p>
-      <QuietNote inline />
-    </p>
-  ) : (
-    <p role="alert" className="text-[11.5px] leading-[1.55] text-err">
-      {what}: {message}
-    </p>
-  );
+// A block whose read failed: the not-built note for a 501, otherwise the failure with its status and address.
+const Failed = ({ what, message }: { what: string; message: string }) => (
+  <p>
+    <Failure inline what={what} message={message} />
+  </p>
+);
 
 function ToolChip({ tool }: { tool: SpecTool | undefined; }) {
   if (!tool) return null;
@@ -284,11 +281,12 @@ export function ControlsInForce({ agent, bare = false }: { agent: string; /** Qu
   const fleet = bare ? IDLE : fleetRead;
   const firedRead = useLoad<Counted>(
     () =>
-      bare ? Promise.reject(new Error("")) : fetch("/api/guardrails", { cache: "no-store" }).then(async (r) => {
-        const body = (await r.json().catch(() => null)) as Counted | null;
-        if (!r.ok || !body) throw new Error(body?.error || `the server answered ${r.status}`);
-        return body;
-      }),
+      bare
+        ? Promise.reject(new Error(""))
+        : ask<Counted>("guardrails").then((a) => {
+            if (a.state === "ok") return a.data;
+            throw new Error(a.state === "pending" ? notBuiltText(a.door.method, a.door.path) : a.message);
+          }),
     "fired",
   );
   const fired = bare ? IDLE : firedRead;
@@ -308,8 +306,6 @@ export function ControlsInForce({ agent, bare = false }: { agent: string; /** Qu
   const beyondRead = g ? [...granted].filter((n) => (g.tools.get(n)?.risk ?? "read") !== "read").length : 0;
   const evidence = (control: string) => `/evidence?control=${encodeURIComponent(control)}&agent=${encodeURIComponent(agent)}`;
 
-  // With the agent's own spec unread there is no block to fill: a quiet console says so once, in place of a note per block.
-  if (QUIET && spec.state === "error") return <QuietNote />;
 
   return (
     <section className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1" aria-label={`Controls in force on ${agent}`}>
@@ -355,7 +351,7 @@ export function ControlsInForce({ agent, bare = false }: { agent: string; /** Qu
               ))}
             </List>
           )}
-          {g && <p className="text-[10.5px] leading-[1.5] text-ghost">Approvers are roles: whoever holds the role when the gate opens may sign, and the answer is signed with their identity.</p>}
+          {g && <p className="text-[10.5px] leading-[1.5] text-ghost">Approvers are roles: whoever holds the role when the gate opens may answer, except the person who started the run and the author of its version. The answer is recorded under their sign-in.</p>}
         </Block>
 
         {/* ── tools ── */}
@@ -466,12 +462,12 @@ export function ControlsInForce({ agent, bare = false }: { agent: string; /** Qu
                   ))}
                   <Line>
                     <span className="w-full font-medium text-fg sm:w-[150px] sm:shrink-0">Sink protection</span>
-                    <span className="min-w-0 grow basis-[240px]">{g.blockTaintedSinks ? "Untrusted content is refused at a tool that acts outside." : "Not declared: untrusted content is not stopped at a sink by this spec."}</span>
+                    <span className="min-w-0 grow basis-[240px]">{g.blockTaintedSinks ? "Declared in the spec and not applied: this deployment runs no tool steps and does not track untrusted content." : "Not declared. This deployment does not track untrusted content."}</span>
                   </Line>
                   <Line>
                     <span className="w-full font-medium text-fg sm:w-[150px] sm:shrink-0">Screening</span>
                     <span className="min-w-0 grow basis-[240px]">
-                      {g.injection ? `${g.injection.patterns} block phrase${g.injection.patterns === 1 ? "" : "s"}, ${g.injection.prohibited} prohibited action${g.injection.prohibited === 1 ? "" : "s"}; a hit is ${g.injection.action === "flag" ? "flagged and let through" : "blocked"}.` : "The spec declares no phrases of its own; the estate's screener rules still apply."}
+                      {g.injection ? `${g.injection.patterns} block phrase${g.injection.patterns === 1 ? "" : "s"} and ${g.injection.prohibited} prohibited action${g.injection.prohibited === 1 ? "" : "s"} declared in the spec and not applied: no prompt or response screening runs on this deployment.` : "No prompt or response screening runs on this deployment."}
                     </span>
                   </Line>
                   {g.extra.map(([k, v]) => (
@@ -570,7 +566,7 @@ export function ControlsInForce({ agent, bare = false }: { agent: string; /** Qu
               ))}
             </List>
           )}
-          <p className="text-[10.5px] leading-[1.5] text-ghost">A control is listed because the spec declares what it enforces. Firings are counted from run journals, across every version of the agent.</p>
+          <p className="text-[10.5px] leading-[1.5] text-ghost">A control is listed because the spec declares it; declaring is not enforcing. This deployment carries out model steps, approval waits, output contracts and the token, cost and time budget; tool grants, scopes, screening, sink protection and argument limits are recorded and not applied. Firings are counted from run journals, across every version of the agent.</p>
         </Block>
         </div>
       </div>

@@ -1,23 +1,19 @@
 import { CONTROLS, type Reference } from "@/lib/guardrails";
 
 /**
- * The baseline policy set: what the platform does before anyone has changed
- * a setting.
- *
- * Every line here is a default that lives in code (the runtime's policy
- * engine and spec defaults, the backend's settings), read out of it and
- * written in words. Nothing is an aspiration and nothing is a sample: a
- * deployment that has made no policy change behaves exactly like this. That
- * is why it can be shown with nothing connected, and why it is the one set
- * of content this console ships with.
+ * The baseline policy set: the catalogue of policies a deployment starts
+ * with, written in words.
  *
  * Each policy names the catalogue controls (lib/guardrails.ts) that carry it,
  * and takes its standards references from them, so a citation is stated once
  * and in one place. `kind` says how firmly it holds:
  *
- *   fixed    the engine does it for every agent; no setting loosens it
- *   default  a setting with this value until a policy change says otherwise
- *   off      nothing happens until someone turns it on or sets a value
+ *   fixed    the catalogue gives it no setting that loosens it
+ *   default  a setting the catalogue starts at this value
+ *   off      the catalogue starts it off, until someone sets it
+ *
+ * It is a catalogue: nothing here says what a deployment enforces. The
+ * Policy tab says so at the top while the platform does not report it.
  *
  * `changes` is the only way the default moves: a policy change (proposed,
  * approved by a second person, applied), or the agent's own definition
@@ -136,8 +132,6 @@ export const BASELINE: BaselinePolicy[] = [
       { name: "Weaker signals (role override, exfiltration, hidden text, encoded content)", value: "flag at two or more" },
       { name: "Screener cannot be reached", value: "block" },
       { name: "Runs taken from the queue by a worker", value: "screened against the agent's and the estate's own phrases; none are set by default" },
-      { name: "With Google Model Armor: unsafe content, injection, malicious links", value: "block" },
-      { name: "With Google Model Armor: sensitive data", value: "flag, naming the type" },
     ],
     changes: "policy change",
     controls: ["AF-DP-04"],
@@ -150,7 +144,7 @@ export const BASELINE: BaselinePolicy[] = [
     kind: "default",
     settings: [
       { name: "Keys, tokens, passwords, private keys", value: "redacted at every data class" },
-      { name: "Email addresses, phone numbers, payment card numbers, Aadhaar and PAN numbers", value: "redacted from internal data upwards" },
+      { name: "Email addresses, phone numbers, payment card numbers, national identity numbers", value: "redacted from internal data upwards" },
       { name: "Content with no data class", value: "read as internal" },
       { name: "Vault values in a record", value: "masked" },
     ],
@@ -412,11 +406,11 @@ export function controlsOf(p: BaselinePolicy): { id: string; title: string }[] {
   });
 }
 
-export const KIND_LABEL: Record<BaselineKind, string> = { fixed: "Always on", default: "Default setting", off: "Off until set" };
+export const KIND_LABEL: Record<BaselineKind, string> = { fixed: "No setting", default: "Default setting", off: "Off until set" };
 export const KIND_MEANS: Record<BaselineKind, string> = {
-  fixed: "The engine does this for every agent. No setting loosens it.",
-  default: "Set to this value until it is changed.",
-  off: "Nothing happens until someone turns it on or sets a value.",
+  fixed: "The catalogue gives it no setting that loosens it.",
+  default: "The catalogue starts it at this value.",
+  off: "The catalogue starts it off; it takes effect once someone sets it.",
 };
 export const CHANGES_LABEL: Record<BaselinePolicy["changes"], string> = {
   "policy change": "A policy change: proposed by one person, approved by another.",

@@ -94,9 +94,11 @@ export interface Estate {
   observed: boolean;
   /** The clock the window is cut against: stamped when the ledger answered. */
   now: number;
+  /** When the ledger last answered; a later failure leaves `runs` as of then, and the page marks it stale. */
+  runsAt: number;
 }
 
-const EMPTY: Estate = { runs: null, runsError: "", names: {}, gates: null, gatesError: "", attention: null, attentionError: "", observability: null, observed: false, now: 0 };
+const EMPTY: Estate = { runs: null, runsError: "", names: {}, gates: null, gatesError: "", attention: null, attentionError: "", observability: null, observed: false, now: 0, runsAt: 0 };
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -146,7 +148,9 @@ export function useEstate(everyMs = 15_000): Estate {
       observability: extra ? extra.observability : prev.observability,
       observed: prev.observed || extra !== null,
       names: extra && Object.keys(extra.names).length ? extra.names : prev.names,
-      now: Date.now(),
+      // The window is cut against when the ledger last answered: a failed read moves neither the figures nor their clock.
+      now: runs ? Date.now() : prev.now || Date.now(),
+      runsAt: runs ? Date.now() : prev.runsAt,
     }));
   }, []);
 

@@ -887,9 +887,7 @@ async function call<T>(method: "GET" | "POST" | "DELETE", path: string, body?: u
     json = null;
   }
   if (!res.ok) {
-    const e = errorText(json ?? text, res);
-    const hint = /answered (404|502|503)/.test(e) ? `${e}: this door is served by the backend; this deployment may not have named it (BACKEND_ORIGIN)` : e;
-    throw new DoorError(hint, res.status, obj(json));
+    throw new DoorError(errorText(json ?? text, res, method, path), res.status, obj(json));
   }
   return parse(json);
 }

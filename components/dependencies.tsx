@@ -1,11 +1,11 @@
 "use client";
+import { Failure } from "./pending";
+import { notBuiltDoorOf } from "@/lib/api/client";
 
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Status, Tag } from "./ui";
-import { QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
 import { GroupHeader } from "./page-tabs";
 import { hueFor } from "@/lib/hue";
 import { DoorError } from "@/lib/api/l5";
@@ -102,8 +102,8 @@ function DependenciesInner() {
   const pick = (id: string) => router.replace(id ? `/dependencies?node=${encodeURIComponent(id)}` : "/dependencies", { scroll: false });
   const byId = useMemo(() => new Map((map?.nodes ?? []).map((n) => [n.id, n])), [map]);
   const node = picked ? byId.get(picked) ?? null : null;
-  // Quiet (lib/quiet.ts): a map that could not be read is one calm note, not counts that never arrive and a map that reads forever.
-  const quiet = QUIET && Boolean(error) && !map;
+  // A map that could not be read: its failure is shown, never counts that never arrive and a map that reads forever.
+  const quiet = Boolean(error) && !map;
 
   return (
     <div className="mx-auto w-full max-w-[1520px] px-5 py-7" data-hue="indigo">
@@ -137,11 +137,6 @@ function DependenciesInner() {
         models it uses, and the applications built on them. Pick a node for its blast radius: everything that fails if it does.
       </GroupHeader>
 
-      {quiet && (
-        <div className="mt-5">
-          <QuietNote />
-        </div>
-      )}
 
       <section className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-4">
         {[
@@ -151,7 +146,7 @@ function DependenciesInner() {
           { k: "Declared, never seen", v: map?.counts.declared_only },
         ].map((x) => (
           <div key={x.k} className="flex flex-col gap-0.5 bg-surface px-3 py-2.5">
-            {quiet ? <span className="flex h-[17px] items-center text-[12px] text-faint">Not connected</span> : <span className="tnum text-[17px] leading-none font-semibold">{x.v ?? "…"}</span>}
+            {quiet ? <span className="flex h-[17px] items-center text-[12px] text-faint">Not read</span> : <span className="tnum text-[17px] leading-none font-semibold">{x.v ?? "…"}</span>}
             <span className="text-[10.5px] text-faint">{x.k}</span>
           </div>
         ))}
@@ -159,7 +154,7 @@ function DependenciesInner() {
 
       <Legend />
 
-      {error && !QUIET && <p className="mt-4 text-[12.5px] text-err">{error}</p>}
+      {error && <Failure className="mt-4" what="The dependency map could not be read" message={error} />}
 
       <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
         <MapView map={map} picked={picked} lit={lit && lit.node === picked ? lit.ids : null} onPick={pick} quiet={quiet} />
@@ -234,7 +229,7 @@ export function MapView({ map, picked, lit, onPick, quiet = false }: { map: DepM
     return (
       <div className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">
         <span className="border-b border-line bg-raise/55 px-4 py-2.5 text-[12px] font-semibold">Dependency map</span>
-        <p className="px-4 py-6 text-[12px] text-faint">Agents, the tools and servers they call, their models and the applications built on them are mapped here, with a line for every dependency.</p>
+        <p className="px-4 py-6 text-[12px] text-faint">Not read.</p>
       </div>
     );
   }
@@ -491,7 +486,7 @@ function Blast({ id, window, byId, onPick, onLit }: { id: string; window: string
         <p className="px-4 py-2.5 text-[11.5px] text-faint">Asking the backend…</p>
       ) : !b ? (
         <div className="flex flex-col gap-1.5 px-4 py-2.5">
-          {QUIET && current.status !== 403 ? <QuietNote inline /> : <p className={`text-[11.5px] leading-[1.55] ${current.status === 403 ? "text-warn" : "text-err"}`}>{current.error}</p>}
+          {notBuiltDoorOf(current.error) ? <Failure inline message={current.error} /> : <p className={`text-[11.5px] leading-[1.55] ${current.status === 403 ? "text-warn" : "text-err"}`}>{current.error}</p>}
           {current.candidates.length > 0 && (
             <span className="flex flex-wrap gap-1.5">
               {current.candidates.map((c) => (

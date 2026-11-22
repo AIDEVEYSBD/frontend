@@ -1,12 +1,12 @@
 "use client";
+import { errorText } from "@/lib/api/client";
 
-import { DATA_CLASS_ENFORCED, PanelFailure, PanelNote, PermittedClass, PermittedClassNote, announceConfig } from "./providers";
+import { DATA_CLASS_ENFORCED, PanelFailure, PermittedClass, PermittedClassNote, announceConfig } from "./providers";
 import type { DataClass } from "@/lib/api/pending";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Status } from "./ui";
 import { Checkbox, Input, Segmented } from "./forms";
-import { QUIET } from "@/lib/quiet";
 import { Pick } from "./select";
 import { Cross, Row, Text } from "./builder/controls";
 import { listVault, removeVaultKey, setVaultKey } from "@/lib/api/l2";
@@ -86,17 +86,15 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
       .then(async (r) => {
         const d = await r.json().catch(() => null);
         // A refusal or a fault answers without the list: the status, or the door's own words, is the reason.
-        if (!d || !Array.isArray(d.models)) throw new Error(String(d?.error ?? `the server answered ${r.status}`));
+        if (!r.ok || !d || !Array.isArray(d.models)) throw new Error(errorText(d, r, "GET", "/api/config"));
         return d as Config;
       })
       .then((d) => {
         setUnread("");
         setConfig(d);
       })
-      .catch((e) => {
-        setUnread((e as Error).message);
-        setConfig({ models: [], default_model: "" });
-      });
+      // The list was not read: nothing is counted and nothing is said to be offered or not.
+      .catch((e) => setUnread((e as Error).message));
   }, []);
   useEffect(() => {
     reloadConfig();
@@ -104,7 +102,7 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
       .then(async (r) => {
         // A page (a proxy's 502, Next's own 404) is no answer and no message: the status alone is the reason.
         const d = await r.json().catch(() => null);
-        if (!d) throw new Error(`the server answered ${r.status}`);
+        if (!r.ok || !d) throw new Error(errorText(d, r, "GET", "/api/models"));
         return d;
       })
       .then((d) => {
@@ -113,19 +111,17 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
         setCatalogue(d.models ?? []);
       })
       .catch((e) => {
-        setCatalogueError(String(e));
+        setCatalogueError((e as Error).message);
         setCatalogue([]);
       });
   }, [reloadConfig]);
 
   const chosen = useMemo(() => new Set((config?.models ?? []).map((m) => m.id)), [config]);
   const none = (config?.models.length ?? 0) === 0;
-  // Quiet, with nothing behind the console: the offered list was not read from anywhere, so the panel does not say none is offered.
-  const quietUnread = none && (bare === true || (QUIET && Boolean(unread)));
-  const settled = config !== null;
+  const settled = config !== null || Boolean(unread);
   useEffect(() => {
-    if (settled) onQuiet?.(quietUnread);
-  }, [settled, quietUnread, onQuiet]);
+    if (settled) onQuiet?.(false);
+  }, [settled, onQuiet]);
   // A deployment with no endpoint to list is not a fault: the service says none is connected, and the panel says there is nothing to browse.
   const noCatalogue = !connected;
   const providerLabel = useCallback((id?: string) => (config?.providers ?? []).find((p) => p.id === id), [config]);
@@ -226,14 +222,14 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
     save({ ...config, models, default_model }, { models, default_model });
   };
 
-  if (quietUnread) return <PanelNote />;
+  if (!config && unread) return <PanelFailure title="The offered models could not be read">{unread}</PanelFailure>;
   // Not known yet whether anything is behind the console: no "none offered" in the meantime.
   if (catalogue === null || !config || (none && bare === null)) return <p className="px-4 py-3 text-[11.5px] text-faint">Reading the offered models&hellip;</p>;
 
   const chip = "shrink-0 rounded-[3px] border border-line-strong px-1 py-px font-mono text-[9px] font-semibold text-dim uppercase";
 
   // Nothing offered and nothing to browse: one line, no search over an empty list.
-  if (none && catalogue.length === 0 && !unread && (QUIET || noCatalogue || !catalogueError)) {
+  if (none && catalogue.length === 0 && !unread && (noCatalogue || !catalogueError)) {
     return (
       <p className="px-4 py-3 text-[12px] leading-[1.55] text-dim">
         No model is offered on this deployment yet, and {noCatalogue ? "no model endpoint is connected to pick from" : "its endpoints list no model to pick from"}. Endpoints are set when the platform
@@ -258,7 +254,7 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
           }}
         >
           <span className="text-[11px] text-faint">Sort</span>
-          <Segmented options={["Name", "Price", "Context"]} defaultValue="Name" />
+          <Segmented options={["Name"]} defaultValue="Name" />
         </div>
         <span className="grow" />
         <span className={`text-[11px] transition-opacity ${savedTick ? "text-ok opacity-100" : "opacity-0"}`}>saved</span>
@@ -267,7 +263,7 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
 
       {unread && <PanelFailure title="The offered models could not be read">{unread}</PanelFailure>}
       {refused && <PanelFailure title="The change was not saved">{refused}</PanelFailure>}
-      {catalogueError && !noCatalogue && !QUIET && (
+      {catalogueError && !noCatalogue && (
         <p className="border-b border-line px-4 py-2.5 text-[11.5px] leading-[1.5] text-warn">
           <span className="font-medium">The catalogue could not be read.</span> {catalogueError}. The offered list still works; only browsing is unavailable.
         </p>
@@ -463,13 +459,10 @@ export function Keys({ bare = false, onChanged, onQuiet }: { bare?: boolean | nu
   };
 
   const none = (keys?.length ?? 0) === 0;
-  // Quiet: the vault was not read (the console is bare, or the read failed), so the panel does not say it is empty.
-  const quiet = none && !adding && (bare === true || (QUIET && Boolean(unread)));
   const settled = keys !== null || Boolean(unread);
   useEffect(() => {
-    if (settled) onQuiet?.(quiet);
-  }, [settled, quiet, onQuiet]);
-  if (quiet) return <PanelNote />;
+    if (settled) onQuiet?.(false);
+  }, [settled, onQuiet]);
   if (keys === null && unread) return <PanelFailure title="The vault could not be read">{unread}</PanelFailure>;
   // Not known yet whether anything is behind the console: no "the vault is empty" in the meantime.
   if (keys === null || (none && bare === null && !adding)) return <p className="px-4 py-3 text-[11.5px] text-faint">Reading the vault&hellip;</p>;

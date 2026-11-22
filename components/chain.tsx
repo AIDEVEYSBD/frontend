@@ -1,11 +1,11 @@
 "use client";
+import { Failure } from "./pending";
 
 import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Button, Mono, Status } from "./ui";
 import { Banner } from "./overlays";
-import { QUIET } from "@/lib/quiet";
 import { Field, Input } from "./forms";
 import { Pick } from "./select";
 import { DigestChip } from "./digest-chip";
@@ -72,14 +72,13 @@ export function RunChain({ run, tick = 0 }: { run: string; tick?: number }) {
       stop = true;
     };
   }, [run, tick]);
-  // A quiet console (lib/quiet.ts) prints no reason a read failed: the run page has said once that it is not connected.
-  if (error) return QUIET ? null : <p className="text-[11px] text-faint">The chain could not be read: {error}</p>;
+  if (error) return <Failure inline what="The chain could not be read" message={error} />;
   return reading ? <RunChainView reading={reading} /> : null;
 }
 
 /** The walk, row by row. Presentational. */
 export function LedgerWalk({ ledger }: { ledger: LedgerVerification }) {
-  if (!ledger.walk.length) return <p className="text-[12px] text-faint">No anchor in this view. A run writes its first when it comes to rest.</p>;
+  if (!ledger.walk.length) return <p className="text-[12px] text-faint">No anchor in this view.</p>;
   return (
     <div className="overflow-x-auto rounded-md border border-line">
       <table className="w-full min-w-[860px] border-collapse text-[11.5px]">
@@ -211,7 +210,7 @@ function LedgerPage() {
   const [ledger, setLedger] = useState<LedgerVerification | null>(null);
   const [retention, setRetention] = useState<RetentionView | null>(null);
   /** The retention door did not answer: a quiet console says so in place of "Reading" for good. */
-  const [retentionDown, setRetentionDown] = useState(false);
+  const [retentionDown, setRetentionDown] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const walk = useCallback(() => {
@@ -231,35 +230,20 @@ function LedgerPage() {
       .catch(() => setAgents([]));
     getRetention()
       .then(setRetention)
-      .catch(() => {
+      .catch((e) => {
         setRetention(null);
-        setRetentionDown(true);
+        setRetentionDown((e as Error).message);
       });
   }, []);
   const head = ledger ? ledgerHeadline(ledger) : null;
   const notes = ledger ? ledgerNotes(ledger) : [];
-  // A quiet console whose ledger door did not answer says so once under the header, with the walk and the retention drawn empty beneath it.
-  const unread = <span className="flex h-[15px] items-center text-[12px] font-normal text-faint">Not connected</span>;
-  const headRow = (cols: string[], min: number) => (
-    <div className="overflow-x-auto rounded-md border border-line">
-      <table className="w-full border-collapse text-[11.5px]" style={{ minWidth: min }}>
-        <thead>
-          <tr className="bg-raise/40 text-left text-[10.5px] text-faint">
-            {cols.map((h) => (
-              <th key={h} className="px-3 py-1.5 font-medium">
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-      </table>
-    </div>
-  );
-  const quietDown = QUIET && Boolean(error) && !ledger;
+  // A ledger door that did not answer: the failure is shown under the header, and every figure says it was not read.
+  const unread = <span className="flex h-[15px] items-center text-[12px] font-normal text-faint">Not read</span>;
+  const quietDown = Boolean(error) && !ledger;
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
       <GroupHeader group="assurance" tab="ledger">
-        Every run&rsquo;s journal is hash-chained, and its last hash is anchored here in order, each run&rsquo;s first entry naming the anchor before it. Walking the ledger verifies every run and shows any record that is not what was written.
+        Each run&rsquo;s journal is hash-chained. Anchoring each run&rsquo;s last hash in one ledger, and walking that ledger to verify every run, are not built on the platform yet.
       </GroupHeader>
       {error && (
         <Banner tone="err" title="Could not walk the ledger">
@@ -305,8 +289,7 @@ function LedgerPage() {
         {quietDown && (
           <>
             <Figures items={[{ k: "anchors", v: unread }, { k: "runs", v: unread }, ...CHAIN_STATES.map((c) => ({ k: CHAIN_META[c].label.toLowerCase(), v: unread }))]} />
-            {headRow(["Seq", "Run", "Row", "Reading", "Entries", "Anchor", "At"], 860)}
-            <p className="text-[12px] text-faint">Each anchor is listed here in order, with the run it closes and the reading of its chain.</p>
+            <p className="text-[12px] text-faint">Not read.</p>
           </>
         )}
       </Section>
@@ -322,11 +305,8 @@ function LedgerPage() {
       >
         {retention ? (
           <RetentionPanel view={retention} />
-        ) : QUIET && retentionDown ? (
-          <>
-            {headRow(["Record", "Class", "Deleted", "Digest of what was deleted"], 720)}
-            <p className="text-[12px] text-faint">How long each class of record is kept is shown here, with a tombstone for every record deleted.</p>
-          </>
+        ) : retentionDown ? (
+          <Failure what="The retention record could not be read" message={retentionDown} />
         ) : (
           <p className="text-[12px] text-faint">Reading…</p>
         )}

@@ -71,7 +71,7 @@ export function Login({ next, error }: { next: string; error: string }) {
         <BrandLockup />
         <span className="flex flex-col gap-1">
           <span className="text-[20px] leading-tight font-semibold tracking-[-0.01em]">Sign in</span>
-          <span className="text-[12.5px] leading-[1.55] text-faint">Continue to AutoX single sign-on to access Agent Factory.</span>
+          <span className="text-[12.5px] leading-[1.55] text-faint">Continue to single sign-on to access Agent Factory.</span>
         </span>
 
         {error && ERRORS[error] && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[12px] leading-[1.5] text-err">{ERRORS[error]}</p>}
@@ -101,7 +101,7 @@ const REASONS: Record<string, { title: string; body: string }> = {
   provisioning: { title: "Agent Factory could not complete account provisioning", body: "Your identity was authenticated, but Agent Factory could not create or update the corresponding user record. Contact the platform team; diagnostic information is available in the identity and access audit trail." },
   "iap-missing": { title: "This console is reached through Google sign-in", body: "The request arrived without the header Identity-Aware Proxy adds, so it did not come through the proxy. Open the console at its published address. If you did, the proxy in front of this deployment is not switched on; contact the platform team." },
   "iap-invalid": { title: "Your Google sign-in could not be verified", body: "Identity-Aware Proxy named you, but its assertion did not verify for this deployment: it was signed for a different service, has expired, or the keys could not be read. Try again; if it continues, contact the platform team." },
-  disabled: { title: "Your access to Agent Factory has been disabled", body: "Your identity remains valid, but an Agent Factory administrator has disabled your access to this deployment. Contact an administrator to request reinstatement." },
+  disabled: { title: "An administrator has ended your access", body: "An administrator of this console has ended your access to it. Your Google sign-in still works, but this console no longer lets you in. Ask an administrator if you need access again." },
 };
 
 export function NoAccess({ reason }: { reason: string }) {

@@ -21,7 +21,8 @@ import { BASELINE, BASELINE_AREAS, CHANGES_LABEL, KIND_LABEL, KIND_MEANS, contro
 const KIND_TONE: Record<BaselineKind, "ok" | "neutral" | "warn"> = { fixed: "ok", default: "neutral", off: "warn" };
 const KINDS: BaselineKind[] = ["fixed", "default", "off"];
 
-export function PolicyBaseline() {
+/** `unconnected`: the platform answers 501 for the policy addresses, so nothing reports what this deployment enforces. */
+export function PolicyBaseline({ unconnected = false }: { unconnected?: boolean }) {
   const [open, setOpen] = useState<string | null>(null);
   const [std, setStd] = useState("");
   const [kind, setKind] = useState<BaselineKind | "">("");
@@ -41,11 +42,15 @@ export function PolicyBaseline() {
       id="baseline"
       title="Baseline policies"
       hue="controls"
-      meta={`${BASELINE.length} predefined · ${BASELINE.filter((p) => p.kind === "fixed").length} always on · ${BASELINE.filter((p) => p.kind === "default").length} default settings · ${BASELINE.filter((p) => p.kind === "off").length} off until set`}
+      meta={`${BASELINE.length} in the catalogue · ${BASELINE.filter((p) => p.kind === "fixed").length} with no setting · ${BASELINE.filter((p) => p.kind === "default").length} with a default · ${BASELINE.filter((p) => p.kind === "off").length} off until set`}
     >
+      {unconnected && (
+        <p className="max-w-[96ch] rounded-md border border-line bg-surface px-3 py-2.5 text-[12px] leading-[1.55] text-dim">
+          Enforcement is not connected in this release: the platform does not report which of these policies it applies, so this is the catalogue a deployment starts with, not a statement of what this deployment does.
+        </p>
+      )}
       <p className="max-w-[96ch] text-[12.5px] leading-[1.6] text-dim">
-        The policy set every deployment starts with. Each line is the platform&rsquo;s own default: it applies from the first run and depends on no setting anyone has made. A
-        default changes only the way its row says, and each row names the{" "}
+        The policy set a deployment starts with, as the catalogue writes it. A default changes only the way its row says, and each row names the{" "}
         <Link href="/guardrails" className="focusable font-medium text-fg underline underline-offset-2">
           catalogue controls
         </Link>{" "}

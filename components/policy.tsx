@@ -1,12 +1,13 @@
 "use client";
+import { Failure } from "./pending";
+import { notBuiltDoorOf } from "@/lib/api/client";
 
 import { PolicyBaseline } from "./policy-baseline";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Mono, Status, Tag } from "./ui";
-import { Banner, QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
+import { Banner } from "./overlays";
 import { Field, Input, Switch, Textarea } from "./forms";
 import { Pick } from "./select";
 import { ChipEditor } from "./gate-form";
@@ -227,7 +228,7 @@ export function ChangeDetail({ change, who, onMoved }: { change: PolicyChange; w
           </span>
         </div>
       )}
-      {error && (QUIET ? <QuietNote inline /> : <p className="text-[11.5px] text-err">{error}</p>)}
+      {error && (<p className="text-[11.5px] text-err">{error}</p>)}
       {ask === "reject" && (
         <TextDialog
           title={`Reject ${c.id}?`}
@@ -461,7 +462,7 @@ function ProposalFields({ target, id, current, inherits, onProposed }: { target:
         {changed.length > 0 && !reason.trim() && <span className="text-[11px] text-faint">A change needs a reason.</span>}
         {changed.length > 0 && reason.trim() && <span className="text-[11px] text-faint">Sends only {changed.join(", ")}; the rest keep their value.</span>}
       </span>
-      {error && (QUIET ? <QuietNote inline /> : <p className="text-[11.5px] text-err">{error}</p>)}
+      {error && (<p className="text-[11.5px] text-err">{error}</p>)}
       {sim && <SimulationView result={sim} />}
     </div>
   );
@@ -515,7 +516,7 @@ function ProposeForm({ targets, agents, kind, onKind, onProposed }: { targets: T
           </Field>
         )}
       </div>
-      {error && (QUIET ? <QuietNote inline /> : <p className="text-[11.5px] text-err">{error}</p>)}
+      {error && (<p className="text-[11.5px] text-err">{error}</p>)}
       {current?.key === key && <ProposalFields key={key} target={target} id={picked} current={current.rules} inherits={current.inherits} onProposed={onProposed} />}
     </div>
   );
@@ -694,10 +695,9 @@ function SimulatePanel({ agents, preset, quiet = false }: { agents: AgentSummary
         <Button size="sm" variant="solid" tone="ink" disabled={!picked || !text.trim()} loading={busy} onClick={run}>
           Simulate
         </Button>
-        <span className="text-[11px] text-faint">Every recorded call is ruled again by the runtime&rsquo;s own enforcer. Nothing is executed.</span>
+        <span className="text-[11px] text-faint">Nothing is executed. The platform says whether it builds the simulation.</span>
       </span>
-      {/* What the person typed not parsing is theirs to fix and is said; a door that did not answer is not, in a quiet console. */}
-      {error && (QUIET && (shown?.error ? shown.door : true) ? <QuietNote inline /> : <p className="text-[11.5px] text-err">{error}</p>)}
+      {error && <Failure inline message={error} />}
       {shown?.result && <SimulationView result={shown.result} />}
     </div>
   );
@@ -811,8 +811,8 @@ function PolicyPage() {
   const open = (id: string) => router.push(`/policy?change=${encodeURIComponent(id)}`);
   const pending = list ? (list.states.pending ?? 0) : null;
   const waiting = list ? (list.states.approved ?? 0) : null;
-  // A quiet console (lib/quiet.ts) whose policy door did not answer says so once under the header, with every section drawn empty beneath it.
-  const quietDown = QUIET && Boolean(error) && !list && !targets;
+  // A policy door that did not answer: its failure is shown first, and every section says it was not read.
+  const quietDown = Boolean(error) && !list && !targets;
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
       <GroupHeader group="controls" tab="policy">
@@ -820,21 +820,15 @@ function PolicyPage() {
         spec&rsquo;s own policy keeps its path through versions and reviews; simulate it here first.
       </GroupHeader>
 
-      {/* Quiet: the one note sits directly under the header. */}
-      {QUIET && error && (
+      {/* The policy door's failure comes first, above the catalogue, so the first screenful shows it. */}
+      {error && (
         <Banner tone="err" title="Could not read the policy door">
           {error}
         </Banner>
       )}
 
-      {/* What the platform does before any change: shown whether or not the policy door answers. */}
-      <PolicyBaseline />
-
-      {!QUIET && error && (
-        <Banner tone="err" title="Could not read the policy door">
-          {error}
-        </Banner>
-      )}
+      {/* The catalogue a deployment starts with: shown whether or not the policy door answers, and said to be a catalogue while it does not. */}
+      <PolicyBaseline unconnected={Boolean(notBuiltDoorOf(error))} />
       {notice && (
         <Banner tone="ok" title="Proposed">
           {notice}
@@ -843,7 +837,7 @@ function PolicyPage() {
 
       <>
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <Section title="Changes" hue="approvals" meta={list ? `${list.count} shown · ${pending} awaiting review · ${waiting} approved, not yet effective` : QUIET && error ? undefined : "reading…"}>
+        <Section title="Changes" hue="approvals" meta={list ? `${list.count} shown · ${pending} awaiting review · ${waiting} approved, not yet effective` : error ? "not read" : "reading…"}>
           <div className="flex flex-wrap items-end gap-3">
             <div className="w-56">
               <Field label="State">
@@ -856,11 +850,11 @@ function PolicyPage() {
               </Field>
             </div>
           </div>
-          {list ? <ChangesListView list={list} selected={selected} onSelect={open} filtered={Boolean(state || target)} /> : QUIET && error ? <p className="text-[12px] text-faint">Proposed changes are listed here, newest first, each with its target and its state.</p> : <p className="text-[12px] text-faint">Reading the history…</p>}
+          {list ? <ChangesListView list={list} selected={selected} onSelect={open} filtered={Boolean(state || target)} /> : error ? <p className="text-[12px] text-faint">Not read.</p> : <p className="text-[12px] text-faint">Reading the history…</p>}
         </Section>
         <Section title="Change" hue="approvals" meta={selected ?? "pick one to review it"}>
-          {detailError && (QUIET ? <QuietNote inline /> : <p className="text-[11.5px] text-err">{detailError}</p>)}
-          {!selected && <p className="text-[12px] text-faint">{quietDown ? "A change picked from the list is shown here with its diff, and is reviewed here." : "Nothing picked. A change waiting on you is in the list."}</p>}
+          {detailError && (<p className="text-[11.5px] text-err">{detailError}</p>)}
+          {!selected && <p className="text-[12px] text-faint">{quietDown ? "Not read." : "Nothing picked. A change waiting on you is in the list."}</p>}
           {selected && change?.id === selected && (
             <ChangeDetail
               key={`${change.id}:${change.state}`}
@@ -890,21 +884,8 @@ function PolicyPage() {
                 open(c.id);
               }}
             />
-          ) : QUIET && error ? (
-            <div className="flex flex-col gap-3">
-              <div className="grid gap-3 md:grid-cols-2">
-                <Field label="Target">
-                  <Pick value="" onChange={() => {}} options={[{ value: "", label: "Targets are picked here" }]} disabled />
-                </Field>
-              </div>
-              <ProposalNote reason="" onReason={() => {}} effective="" onEffective={() => {}} disabled />
-              <span className="flex flex-wrap items-center gap-2">
-                <Button size="sm" variant="solid" tone="ink" disabled>
-                  Propose
-                </Button>
-                <span className="text-[11px] text-faint">The rules of the target picked are edited here, and the change waits for a second person.</span>
-              </span>
-            </div>
+          ) : error ? (
+            <p className="text-[12px] text-faint">Not read.</p>
           ) : (
             <p className="text-[12px] text-faint">Reading the targets…</p>
           )}
@@ -929,8 +910,8 @@ function PolicyPage() {
               />
             ))}
           </div>
-        ) : QUIET && error ? (
-          <p className="text-[12px] text-faint">The rules in force on each target are shown here, each with the door a change to it goes through.</p>
+        ) : error ? (
+          <p className="text-[12px] text-faint">Not read.</p>
         ) : (
           <p className="text-[12px] text-faint">Reading…</p>
         )}

@@ -1,10 +1,9 @@
 "use client";
+import { Failure } from "./pending";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Status } from "./ui";
 import { Markdown } from "./markdown";
-import { QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
 import { AssistantChart, ChartDrawing, parseChart } from "./assistant-charts";
 
 /**
@@ -208,7 +207,7 @@ export function AskCorpus({
   return (
     <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
       <div className="flex flex-col gap-1 border-b border-line px-4 py-3">
-        <span className="text-[13px] font-semibold tracking-[-0.005em]">Ask the corpus what an agent would</span>
+        <span className="text-[13px] font-semibold tracking-[-0.005em]">Search and answer from this corpus</span>
         <span className="max-w-[100ch] text-[11.5px] leading-[1.55] text-faint">
           Search runs the retrieval stages and shows the passages: hybrid search over meaning and words, a re-rank against the question by a
           chat model when this deployment offers one, and the guardrails in the query. Answer runs the whole loop: it judges the evidence,
@@ -233,7 +232,7 @@ export function AskCorpus({
         </span>
       </div>
 
-      {notice && <p className="border-t border-line px-4 py-2.5 text-[11.5px] text-faint">{QUIET && fault ? <QuietNote inline /> : notice}</p>}
+      {notice && (fault ? <div className="border-t border-line px-4 py-2.5"><Failure inline message={notice} /></div> : <p className="border-t border-line px-4 py-2.5 text-[11.5px] text-faint">{notice}</p>)}
 
       {/* ── the loop, as it turns ── */}
       {mode === "answer" && (live.length > 0 || answer) && (

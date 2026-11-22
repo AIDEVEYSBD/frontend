@@ -3,41 +3,85 @@
 import { useEffect, useState } from "react";
 import { Button, Status, Tag } from "./ui";
 import { Card } from "./identity-shared";
-import { QUIET } from "@/lib/quiet";
 import { roleLabel } from "@/lib/permissions";
-import type { IapAccessAnswer, IapPrincipal } from "@/app/api/auth/access/route";
+import { ask, type Answer } from "@/lib/api/pending";
+import { AnswerFailure } from "./pending";
+
+/** One entry on IAP's access list, as GET /api/auth/access answers it. */
+export interface IapPrincipal {
+  /** As IAM writes it: user:a@b.com, group:g@b.com, domain:b.com, serviceAccount:… */
+  member: string;
+  kind: "person" | "group" | "domain" | "service_account" | "other";
+  name: string;
+  /** Where the grant sits. */
+  level: "service" | "kind" | "project";
+  /** The console role the mapping gives this entry; null when it gives none, and for a group, where it is decided per person at sign-in. */
+  role: string | null;
+  /** True when the role is the default because the mapping names no role for this entry. */
+  defaulted: boolean;
+  /** An IAM condition on the grant, in its own words, when there is one. */
+  condition?: string;
+}
+
+/** What GET /api/auth/access answers. */
+export interface IapAccessAnswer {
+  /** IAP sign-in is on for this deployment. */
+  enabled: boolean;
+  /** The access lists were read. */
+  readable: boolean;
+  /** The IAP resource this console sits behind, as IAP names it. */
+  resource: string;
+  /** Which levels answered. */
+  levels: { level: IapPrincipal["level"]; label: string; read: boolean }[];
+  principals: IapPrincipal[];
+  /** Entries the role mapping names that IAP does not let through at any level read. */
+  mappedOnly: string[];
+  checkedAt: string;
+}
 
 /**
- * Who Google IAP lets through to this console (app/api/auth/access/route.ts).
+ * Who Google IAP lets through to this console (GET /api/auth/access).
  *
  * Read from IAP's own access lists, so it is the people, groups and domains
  * as they were granted, each beside the console role the deployment's
  * mapping gives it. A group or a domain is one row: its members are the
- * directory's to list. Where IAP sign-in is off, or the lists cannot be
- * read, a quiet console draws nothing here and any other says which.
+ * directory's to list. Where the platform does not build the read, or the
+ * read fails, the card says so; it is never simply left out.
  */
 
 const KIND: Record<IapPrincipal["kind"], string> = { person: "Person", group: "Group", domain: "Domain", service_account: "Service account", other: "Other" };
 
 export function IapAccess() {
   const [answer, setAnswer] = useState<IapAccessAnswer | null>(null);
+  const [failed, setFailed] = useState<Answer<unknown> | null>(null);
   const [busy, setBusy] = useState(false);
   const [tick, setTick] = useState(0);
   useEffect(() => {
     let live = true;
-    fetch(`/api/auth/access${tick ? "?fresh=1" : ""}`, { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: IapAccessAnswer | null) => live && d && Array.isArray(d.principals) && setAnswer(d))
-      .catch(() => {})
+    ask<IapAccessAnswer>("authAccess", { query: tick ? { fresh: 1 } : {} })
+      .then((a) => {
+        if (!live) return;
+        if (a.state === "ok" && a.data && Array.isArray(a.data.principals)) {
+          setAnswer(a.data);
+          setFailed(null);
+        } else setFailed(a.state === "ok" ? { state: "error", message: "GET /api/auth/access answered with something that is not the access list" } : a);
+      })
       .finally(() => live && setBusy(false));
     return () => {
       live = false;
     };
   }, [tick]);
 
+  if (failed && !answer)
+    return (
+      <Card title="Who can open this console">
+        <div className="px-4 py-3">
+          <AnswerFailure answer={failed} what="The console's access list could not be read" />
+        </div>
+      </Card>
+    );
   if (!answer || !answer.enabled) return null;
   if (!answer.readable) {
-    if (QUIET) return null;
     return (
       <Card title="Who can open this console">
         <p className="px-4 py-3 text-[12.5px] leading-[1.55] text-dim">

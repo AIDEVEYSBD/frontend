@@ -1,11 +1,11 @@
 "use client";
+import { Failure } from "./pending";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Mono, Status, Tag } from "./ui";
-import { Banner, QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
+import { Banner } from "./overlays";
 import { Field } from "./forms";
 import { Pick } from "./select";
 import { DigestChip } from "./digest-chip";
@@ -230,55 +230,13 @@ export function BomView({ bom }: { bom: AiBom }) {
   );
 }
 
-/** The bill of materials drawn empty: what a quiet console shows under its one note while nothing is read. */
-function BomBlank() {
-  const off = <span className="text-[12px] font-normal text-faint">Not connected</span>;
-  const table = (cols: string[], line: string) => (
-    <div className="overflow-x-auto rounded-md border border-line">
-      <table className="w-full min-w-[820px] border-collapse text-[11.5px]">
-        <thead>
-          <tr className="border-b border-line bg-raise/40 text-left text-[10.5px] text-faint">
-            {cols.map((c) => (
-              <th key={c} className="px-3 py-1.5 font-medium">{c}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td colSpan={cols.length} className="px-3 py-4 text-[11.5px] text-faint">{line}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  );
-  return (
-    <div className="flex flex-col gap-4">
-      <Figures items={["models", "tools", "servers", "peers"].map((k) => ({ k, v: off }))} />
-      <Section title="Models" hue="model" meta="deployment and route">
-        <p className="text-[11.5px] text-faint">The models the agent calls are listed here, each with its deployment, its route and the steps that use it.</p>
-      </Section>
-      <Section title="Tools and data classes" hue="tool" meta="what each returns, and what each sink takes">
-        {table(["Tool", "Risk", "Returns", "Takes up to", "Sources and peers"], "Tools are listed here with their risk and the data classes they return and accept.")}
-      </Section>
-      <Section title="Servers" hue="mcp" meta="names, versions and pinned tool lists">
-        {table(["Server", "serverInfo", "Status", "Transport", "Tool list", "Tools"], "Tool servers are listed here with their version, transport and pinned tool list digest.")}
-      </Section>
-      <Section title="Peers" hue="peer" meta="with their card digests">
-        {table(["Peer", "Status", "URL", "Card", "Takes up to"], "Peer agents are listed here with their address and card digest.")}
-      </Section>
-      <Section title="Templates and digests" hue="ledger">
-        <p className="text-[11.5px] text-faint">The template the agent was cut from and every digest of its parts are listed here.</p>
-      </Section>
-    </div>
-  );
-}
 
 function BomPage() {
   const params = useSearchParams();
   const router = useRouter();
   const [agents, setAgents] = useState<AgentSummary[] | null>(null);
   /** The registry did not answer: a quiet console says it is not connected, never that no agent is saved. */
-  const [agentsDown, setAgentsDown] = useState(false);
+  const [agentsDown, setAgentsDown] = useState("");
   const [versions, setVersions] = useState<VersionView[]>([]);
   const [bom, setBom] = useState<AiBom | null>(null);
   const [error, setError] = useState("");
@@ -303,9 +261,9 @@ function BomPage() {
   useEffect(() => {
     listAgents()
       .then(setAgents)
-      .catch(() => {
+      .catch((e) => {
         setAgents([]);
-        setAgentsDown(true);
+        setAgentsDown((e as Error).message);
       });
   }, []);
   useEffect(() => {
@@ -333,19 +291,7 @@ function BomPage() {
           Choose an agent to read what it is made of: its models and routes, its tools with their data classes, the servers and peers behind them, and the digest of each.
         </ChooseAgentHeader>
         {agentsDown ? (
-          QUIET ? (
-            <>
-              <QuietNote />
-              <div className="max-w-[320px]">
-                <Field label="Agent">
-                  <Pick value="" onChange={() => {}} options={[{ value: "", label: "Choose an agent" }]} disabled />
-                </Field>
-              </div>
-              <BomBlank />
-            </>
-          ) : (
-            <p className="text-[12.5px] text-err">The agents could not be read.</p>
-          )
+          <Failure what="The agents could not be read" message={agentsDown} />
         ) : (
           <>
             <div className="max-w-[320px]">
@@ -360,7 +306,6 @@ function BomPage() {
     );
   }
 
-  const quietDown = QUIET && agentsDown && !bom;
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
       <AgentHeader
@@ -391,18 +336,7 @@ function BomPage() {
       >
         What this agent is made of: its models and routes, its tools with their data classes, the servers and peers behind them, and the digest of each.
       </AgentHeader>
-      {quietDown && (
-        <>
-          <QuietNote />
-          <div className="max-w-[320px]">
-            <Field label="Version">
-              <Pick value="" onChange={() => {}} options={versionOptions} disabled />
-            </Field>
-          </div>
-          <BomBlank />
-        </>
-      )}
-      {!quietDown && (
+      {(
         <>
           <div className="max-w-[320px]">
             <Field label="Version">

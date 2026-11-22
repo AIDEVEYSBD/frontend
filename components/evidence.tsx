@@ -4,8 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Button, Mono, Tag } from "./ui";
-import { Banner, QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
+import { Banner } from "./overlays";
 import { Field, Input } from "./forms";
 import { Pick } from "./select";
 import { ControlMark, ControlRef } from "./control-ref";
@@ -271,33 +270,6 @@ export function EvidencePackView({ pack }: { pack: EvidencePack }) {
   );
 }
 
-/** Quiet (lib/quiet.ts): the pack's sections with nothing in them, each saying what it holds. */
-function EvidencePackEmpty() {
-  const line = (text: string) => <p className="text-[12px] text-faint">{text}</p>;
-  return (
-    <div className="flex flex-col gap-4">
-      <Section title="Firings" hue="control">
-        <Rows head={["When", "Run", "Control", "What", "Detail"]}>{null}</Rows>
-        {line("Each time the control fired in the period is listed here, with the run and the journal entry.")}
-      </Section>
-      <Section title="Signed decisions" hue="approvals" meta="each answer stamped with the controls that opened the gate">
-        <Rows head={["Run", "Decision", "Controls", "Digest"]}>{null}</Rows>
-        {line("The gates a person answered in the period are listed here, each with its digest.")}
-      </Section>
-      <Section title="Policy in force" hue="guardrail">
-        <Rows head={["Agent", "Version", "Digest", "Saved", "Reviews"]} min={620}>{null}</Rows>
-        {line("The spec versions, deployments and policy changes that touch the period are listed here.")}
-      </Section>
-      <Section title="Identities" hue="identity" meta="who acted, as what">
-        {line("Everyone who acted in the period is listed here, with the role they acted in.")}
-      </Section>
-      <Section title="Runs cited" hue="ledger">
-        <Rows head={["Run", "State", "Chain", "Anchor", "Started"]}>{null}</Rows>
-        {line("Every run the pack cites is listed here with the verification of its chain.")}
-      </Section>
-    </div>
-  );
-}
 
 function EvidencePage() {
   const params = useSearchParams();
@@ -355,12 +327,12 @@ function EvidencePage() {
   const controls = useMemo(() => [{ value: "", label: "No single control" }, ...(catalogue?.controls ?? []).map((c) => ({ value: c.id, label: `${c.id} · ${c.title}` }))], [catalogue]);
   const frameworks = useMemo(() => [{ value: "", label: "No framework" }, ...(catalogue?.frameworks ?? []).map((f) => ({ value: f.id, label: f.short }))], [catalogue]);
   const picked = catalogue?.frameworks.find((f) => f.id === form.framework);
-  // A quiet console (lib/quiet.ts) whose catalogue did not answer says so once; the form and the pack's sections are drawn empty beneath it.
-  const quietDown = QUIET && Boolean(loadError) && !catalogue;
+  // A catalogue that did not answer: the failure is shown above, and the form says it was not read.
+  const quietDown = Boolean(loadError) && !catalogue;
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
       <GroupHeader group="assurance" tab="evidence">
-        An assessor&rsquo;s pack for a control or a framework over a period: what fired, the signed decisions, the policy in force, who acted, and the chain verification of every run cited. It downloads as a zip with a SHA-256 for each file.
+        An assessor&rsquo;s pack for a control or a framework over a period: what fired, the decisions, the policy in force, who acted, and the chain verification of every run cited, as a zip with a SHA-256 for each file. The pack is built by the platform, which says below whether it does so yet.
       </GroupHeader>
       {loadError && (
         <Banner tone="err" title="Could not read the controls catalogue">
@@ -368,7 +340,7 @@ function EvidencePage() {
         </Banner>
       )}
       <>
-      <Section title="Build a pack" hue="control" meta={catalogue ? `${catalogue.count} controls · ${catalogue.frameworks.length} frameworks` : quietDown ? undefined : "reading the catalogue…"}>
+      <Section title="Build a pack" hue="control" meta={catalogue ? `${catalogue.count} controls · ${catalogue.frameworks.length} frameworks` : quietDown ? "the catalogue was not read" : "reading the catalogue…"}>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <Field label="Control">
             <Pick value={form.control} onChange={(v) => edit({ control: v })} options={controls} />
@@ -398,7 +370,7 @@ function EvidencePage() {
           </Button>
           {problem && <span className="text-[11px] text-faint">{problem}</span>}
           {saved && <Mono className="text-[10.5px] break-all text-faint">{saved}</Mono>}
-          {error && (QUIET ? <QuietNote inline /> : <span className="text-[11.5px] text-err">{error}</span>)}
+          {error && (<span className="text-[11.5px] text-err">{error}</span>)}
         </span>
       </Section>
       {pack ? (
@@ -406,7 +378,6 @@ function EvidencePage() {
       ) : (
         !busy && !error && <p className="text-[12px] text-faint">Name a control or a framework to build a pack.</p>
       )}
-      {quietDown && !pack && <EvidencePackEmpty />}
       </>
     </div>
   );

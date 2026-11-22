@@ -1,18 +1,18 @@
 "use client";
+import { notBuiltDoorOf } from "@/lib/api/client";
 
 import { Suspense, useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Button, Meter } from "./ui";
 import { Banner } from "./overlays";
-import { QUIET } from "@/lib/quiet";
 import { PageHeader } from "./section";
 import { usePageFacts } from "./assistant";
 import { WINDOWS, WindowPick, type Win } from "./window-pick";
 import { OutcomesBody } from "./outcomes";
 import { failureTrend, fmtAge, fmtCount, fmtMoney, inWindow, leaders, oldestGate, totalsOf, windowWords } from "./overview-data";
 import { Card, CardFigure, FigureTile, FootNote, Nothing, RankList, TrendBars } from "./overview-parts";
-import { bucketsOf, cutCost, rankControls, rankRefusals, resultTotals, useCost, useSecurity } from "./dashboards-data";
+import { bucketsOf, cutCost, rankControls, rankRefusals, resultTotals, useCost, useSecurity, staleOf } from "./dashboards-data";
 import { BoardNote, BoardSwitch, CloudFindingsCard, ValueBars } from "./dashboards-parts";
 import type { Answer, FindingsSummary } from "@/lib/api/pending";
 
@@ -174,7 +174,7 @@ function SecurityBoard({ win, setWin }: BoardProps) {
     unread(lockdown) ? `the lockdown (${lockdown.error})` : "",
     unread(firings) ? `the control firings (${firings.error})` : "",
   ].filter(Boolean);
-  const off = (r: { data: unknown; error: string }) => QUIET && unread(r);
+  const off = (r: { data: unknown; error: string }) => (unread(r) ? (notBuiltDoorOf(r.error) ? "Not built" : "Not read") : false);
   const ledgerSub = (said: string) => (reading(runs) ? "reading the ledger" : unread(runs) ? "ledger not read" : !rows.length ? "no runs in this window" : said);
 
   usePageFacts(
@@ -207,6 +207,20 @@ function SecurityBoard({ win, setWin }: BoardProps) {
 
   return (
     <>
+      {[runs, gates, lockdown, firings].some(staleOf) && (
+        <Banner tone="err" title="Some of this board stopped answering">
+          Stale:{" "}
+          {[
+            staleOf(runs) ? `the run ledger (${runs.error})` : "",
+            staleOf(gates) ? `the approvals inbox (${gates.error})` : "",
+            staleOf(lockdown) ? `the lockdown (${lockdown.error})` : "",
+            staleOf(firings) ? `the control firings (${firings.error})` : "",
+          ]
+            .filter(Boolean)
+            .join("; ")}
+          . Their figures are as each last answered, not current.
+        </Banner>
+      )}
       {failures.length > 0 && (
         <Banner tone="err" title="Some of this board could not be read">
           Not read: {failures.join("; ")}. Their figures stay empty until they answer.
@@ -408,7 +422,7 @@ function CostBoard({ win, setWin }: BoardProps) {
   const data = ledger.data;
   const unread = data === null && Boolean(ledger.error);
   const reading = data === null && !ledger.error;
-  const off = QUIET && unread;
+  const off = unread ? (notBuiltDoorOf(ledger.error) ? "Not built" : "Not read") : false;
 
   const cut = useMemo(() => (data ? cutCost(data, names, win) : null), [data, names, win]);
   const agents = useMemo(() => leaders(cut?.byAgent ?? []), [cut]);
@@ -459,6 +473,11 @@ function CostBoard({ win, setWin }: BoardProps) {
       {unread && (
         <Banner tone="err" title="The cost ledger could not be read">
           {ledger.error}. The figures below stay empty until it answers.
+        </Banner>
+      )}
+      {staleOf(ledger) && (
+        <Banner tone="err" title="The cost ledger stopped answering">
+          {ledger.error}. The figures below are stale: they are as it last answered{ledger.at ? `, at ${new Date(ledger.at).toLocaleTimeString("en-GB")}` : ""}.
         </Banner>
       )}
       {data && data.runs.length === 0 && <BoardNote>No agent has run on this deployment yet. Spend shows here from the first model call.</BoardNote>}
@@ -598,8 +617,8 @@ function CostBoard({ win, setWin }: BoardProps) {
 function ResultFigures({ answer, win }: { answer: Answer<FindingsSummary> | null; win: Win }) {
   const chip = chipOf(win);
   const t = resultTotals(answer);
-  /* The door is not there, or (a quiet console) did not answer: the tiles say so and carry no figure. */
-  const off = answer?.state === "pending" || (QUIET && answer?.state === "error");
+  /* The door is not there, or did not answer: the tiles say so and carry no figure. */
+  const off = answer?.state === "pending" ? "Not built" : answer?.state === "error" ? "Not read" : false;
   const sub = (said: string) => (answer === null ? "reading the summary" : t ? said : "summary not read");
   return (
     <FigureBand>

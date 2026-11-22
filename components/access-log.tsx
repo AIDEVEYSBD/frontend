@@ -8,8 +8,6 @@ import { Chips, type Chip } from "./filters";
 import { PageHeader, Section } from "./section";
 import { WindowPick, winMs, type Win } from "./window-pick";
 import { NotConnected } from "./pending";
-import { QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
 import { ask, type AccessEvent, type AccessLog, type Answer } from "@/lib/api/pending";
 import { readUsers } from "@/lib/api/l2";
 
@@ -261,8 +259,7 @@ export function AccessLogView() {
                 The record of who opened which run, evidence pack, deliverable or document, and when. Each open, download and export will be a row here, under the filters above.
               </NotConnected>
             )}
-            {shown?.state === "error" && QUIET && <QuietNote />}
-            {shown?.state === "error" && !QUIET && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">The access log could not be read: {shown.message}</p>}
+            {shown?.state === "error" && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">The access log could not be read: {shown.message}</p>}
             {shown?.state === "ok" && events.length === 0 && <p className="text-[12px] text-faint">{filtered ? "No access was recorded for these filters." : "No access has been recorded in this time range."}</p>}
             {shown?.state === "ok" && events.length > 0 && total > events.length && (
               <Button size="sm" variant="solid" tone="neutral" onClick={() => setLimit((l) => l + PAGE)} loading={loading}>

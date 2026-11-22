@@ -295,33 +295,23 @@ export function spendRows(spec: Rec | null, facts: RunFacts, entries: LimitEntry
   const wall = metered("wall_clock_s") ?? clocked ?? journalClock;
   return [
     {
-      key: "tool_calls",
-      label: "Tool calls",
-      used: calls ?? toolCalls,
-      usedText: String(calls ?? toolCalls),
-      ceiling: callCeiling,
-      ceilingText: callCeiling === null ? none : String(callCeiling),
-      basis: `${calls !== null ? "metered by the runtime" : "counted from the journal"}${spec && ceiling("tool_calls") === null ? " · ceiling is the runtime default, the spec sets none" : ""}`,
-      stopped: stopped?.kind === "tool_calls",
-    },
-    {
       key: "tokens",
       label: "Tokens",
       used: tok ?? tokens,
       usedText: (tok ?? tokens).toLocaleString("en-GB"),
       ceiling: ceiling("tokens"),
       ceilingText: ceiling("tokens") === null ? none : (ceiling("tokens") as number).toLocaleString("en-GB"),
-      basis: tok !== null ? "metered by the runtime" : "in and out, summed from the journal's model calls",
+      basis: tok !== null ? "counted by the runtime, checked after each model reply" : "in and out, summed from the journal's model calls",
       stopped: stopped?.kind === "tokens",
     },
     {
       key: "cost_usd",
       label: "Cost",
       used: usd,
-      usedText: usd === null ? "not priced" : fmtUsd(usd),
+      usedText: usd === null ? "not priced" : usd === 0 ? "$0 (no model price set)" : fmtUsd(usd),
       ceiling: ceiling("cost_usd"),
       ceilingText: ceiling("cost_usd") === null ? none : fmtUsd(ceiling("cost_usd") as number),
-      basis: metered("cost_usd") !== null ? "metered by the runtime" : cost !== null ? "priced as the ledger prices it" : "the ledger has no price for this run",
+      basis: metered("cost_usd") !== null ? "counted by the runtime at the prices set on the Models tab" : cost !== null ? "priced as the ledger prices it" : "the ledger has no price for this run",
       stopped: stopped?.kind === "cost_usd",
     },
     {
@@ -331,7 +321,7 @@ export function spendRows(spec: Rec | null, facts: RunFacts, entries: LimitEntry
       usedText: wall === null ? "not recorded" : dur(wall),
       ceiling: ceiling("wall_clock_s"),
       ceilingText: ceiling("wall_clock_s") === null ? none : dur(ceiling("wall_clock_s") as number),
-      basis: metered("wall_clock_s") !== null ? "metered by the runtime" : clocked !== null ? "from the record's start and finish" : "the journal's clock, which restarts when a run resumes",
+      basis: metered("wall_clock_s") !== null ? "counted by the runtime, checked between steps" : clocked !== null ? "from the record's start and finish" : "the journal's clock, which restarts when a run resumes",
       stopped: stopped?.kind === "wall_clock_s",
     },
   ];
@@ -414,7 +404,7 @@ export function BoundsView({ spec, steps, stopped, visits }: { spec: Rec | null;
                     ) : s.wait ? (
                       <>
                         Waits for a person{s.wait.timeout_s !== null ? `, up to ${dur(s.wait.timeout_s)}` : ""}
-                        {s.wait.on_timeout && <span className="block text-[10px] text-faint">then: {s.wait.on_timeout}</span>}
+                        {s.wait.timeout_s !== null && <span className="block text-[10px] text-faint">then: {s.wait.on_timeout === "escalate" ? "escalates, or the run is ended as failed when no role is left" : "the run is ended as failed"}</span>}
                       </>
                     ) : s.harness === "sequence" ? (
                       <>
@@ -479,23 +469,6 @@ export function BoundsView({ spec, steps, stopped, visits }: { spec: Rec | null;
         </table>
       </div>
       <dl className="grid grid-cols-1 gap-x-6 gap-y-2 border-t border-line px-3 py-2.5 sm:grid-cols-3">
-        <div className="flex flex-col gap-0.5">
-          <dt className="text-[10px] font-medium text-faint">Delegation depth</dt>
-          <dd className="text-[11.5px] text-dim">
-            {!spec ? (
-              <span className="text-faint">{unknown}</span>
-            ) : depth !== null ? (
-              <>
-                <span className="tnum text-fg">{depth}</span> level{depth === 1 ? "" : "s"} below this run
-              </>
-            ) : (
-              <>
-                Not set in the spec
-                <span className="block text-[10px] text-faint">the runtime default of {RUNTIME_DEFAULT.max_depth} levels applies</span>
-              </>
-            )}
-          </dd>
-        </div>
         <div className="flex flex-col gap-0.5">
           <dt className="flex items-center gap-2 text-[10px] font-medium text-faint">
             Wall clock
@@ -596,8 +569,8 @@ export function RunLimitsPanel({
   const cost = own ? (own.listed?.cost ?? own.cost) : null;
   const rows = spendRows(spec.body, facts, entries, cost, stopped);
   const steps = stepBounds(spec.body, entries, facts.visits);
-  const calls = rows[0];
-  const usd = rows[2];
+  const tokRow = rows[0];
+  const usd = rows[1];
   const from = specLine(spec);
   return (
     <RunStrip
@@ -609,8 +582,8 @@ export function RunLimitsPanel({
       }}
       summary={
         <>
-          {calls.usedText}
-          {calls.ceiling !== null ? ` of ${calls.ceilingText}` : ""} tool calls · {usd.usedText}
+          {tokRow.usedText}
+          {tokRow.ceiling !== null ? ` of ${tokRow.ceilingText}` : ""} tokens · {usd.usedText}
           {usd.ceiling !== null ? ` of ${usd.ceilingText}` : usd.used !== null ? `, ${usd.ceilingText}` : ""}
           {live ? " · so far" : ""}
         </>
@@ -636,7 +609,7 @@ export function RunLimitsPanel({
             </h3>
             <SpendView rows={rows} />
             <p className="px-4 py-2 text-[10px] leading-[1.45] text-faint">
-              The ceiling is the run&rsquo;s whole budget (the spec&rsquo;s <span className="font-mono">policy.budget</span>): a sub-run spends against its parent&rsquo;s.
+              The ceiling is the run&rsquo;s whole budget (the spec&rsquo;s <span className="font-mono">policy.budget</span>). Tool calls are not counted: tool steps are not built on this deployment.
             </p>
           </section>
         </div>

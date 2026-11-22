@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import { CONTROLS, STANDARDS, type Control } from "@/lib/guardrails";
 import { GROUPINGS, type Domain } from "@/lib/control-domains";
-import { QUIET } from "@/lib/quiet";
-import type { Compliance, ControlCustom, IclControl } from "@/lib/api/pending";
+import { ask, type Answer, type Compliance, type ControlCustom, type IclControl } from "@/lib/api/pending";
 
 /**
  * What the Compliance view counts from, and nothing that holds a record.
@@ -149,30 +148,34 @@ interface FiringRecord {
  * read; a quiet console with no run and no deployed workflow has no record to
  * count from, so nothing is drawn as zero.
  */
-export function useFirings(): { record: FiringRecord | null; failed: boolean; noRecord: boolean; fired: (c: Control) => number | null } {
+export function useFirings(): { record: FiringRecord | null; failed: boolean; noRecord: boolean; answer: Answer<unknown> | null; fired: (c: Control) => number | null } {
   const [record, setRecord] = useState<FiringRecord | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [answer, setAnswer] = useState<Answer<unknown> | null>(null);
   useEffect(() => {
     let stop = false;
-    fetch("/api/guardrails")
-      .then(async (r) => {
-        const d = (await r.json().catch(() => null)) as FiringRecord | null;
-        if (!r.ok || !d || typeof d.counts !== "object" || !d.posture) throw new Error("no record");
-        if (!stop) setRecord(d);
-      })
-      .catch(() => !stop && setFailed(true));
+    ask<FiringRecord>("guardrails").then((a) => {
+      if (stop) return;
+      // An answer that is not the record is a failed read, never a record to draw.
+      if (a.state === "ok" && (!a.data || typeof a.data.counts !== "object" || !a.data.posture)) {
+        setAnswer({ state: "error", message: "GET /api/guardrails answered with something that is not the record of firings" });
+        return;
+      }
+      setAnswer(a);
+      if (a.state === "ok") setRecord(a.data);
+    });
     return () => {
       stop = true;
     };
   }, []);
+  const failed = answer !== null && answer.state !== "ok";
   // A control is counted under its journal key and under its catalogue id, as the Catalogue tab counts it.
   const fired = (c: Control) => {
     if (c.journal === "—") return null;
     const keys = c.journal === c.id ? [c.id] : [c.journal, c.id];
     return keys.reduce((n, k) => n + (record?.counts?.[k] ?? 0), 0);
   };
-  const noRecord = QUIET && (failed || (record !== null && record.runs === 0 && record.posture.agents === 0));
-  return { record, failed, noRecord, fired };
+  const noRecord = false;
+  return { record, failed, noRecord, answer, fired };
 }
 
 /* ═══════════════════ the list file ═══════════════════ */

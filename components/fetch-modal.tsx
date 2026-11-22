@@ -3,8 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, Status } from "./ui";
 import { BrandMark } from "./brand";
-import { QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
 import { CURRENT_USER } from "@/lib/user";
 import { useSession, signerName } from "@/lib/use-session";
 
@@ -132,30 +130,14 @@ export function FetchModal({
     };
   }, [sourceId, namespace]);
 
-  /* ── 2. the raw record arrives line by line, and the pane follows it ── */
+  /* ── 2. both reads have finished: the record is shown at once, never played back as if it were arriving ── */
   useEffect(() => {
     if (phase !== "raw" || !lines.length) return;
-    const total = lines.length;
-    const step = Math.max(1, Math.ceil(total / 160));
-    let n = 0;
-    let raf = 0;
-    let last = 0;
-    const frame = (t: number) => {
-      if (t - last >= 16) {
-        last = t;
-        n = Math.min(total, n + step);
-        setShownLines(n);
-        const el = rawPane.current;
-        if (el) el.scrollTop = el.scrollHeight;
-      }
-      if (n < total) raf = requestAnimationFrame(frame);
-      else {
-        setTimeout(() => setPhase("morph"), 500);
-        setTimeout(() => setPhase("table"), 1100);
-      }
-    };
-    raf = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(raf);
+    const t = setTimeout(() => {
+      setShownLines(lines.length);
+      setPhase("table");
+    }, 0);
+    return () => clearTimeout(t);
   }, [phase, lines]);
 
   useEffect(() => {
@@ -204,7 +186,7 @@ export function FetchModal({
               {phase === "fetching" && <Status tone="run">fetching · {elapsed}s</Status>}
               {(phase === "raw" || phase === "morph") && <Status tone="run">reading the record</Status>}
               {settled && doc && <Status tone={doc.status === "staged" ? "warn" : staged?.unchanged ? "neutral" : "ok"}>{doc.status === "staged" ? "staged · awaiting a person" : doc.status}</Status>}
-              {phase === "failed" && !QUIET && <Status tone="err">failed</Status>}
+              {phase === "failed" && <Status tone="err">failed</Status>}
             </span>
             <span className="truncate text-[11px] text-faint">
               {phase === "fetching"
@@ -217,7 +199,7 @@ export function FetchModal({
           <Button size="sm" variant="solid" tone="err" onClick={onClose}>Close</Button>
         </header>
 
-        {phase === "failed" && (QUIET ? <div className="p-4"><QuietNote /></div> : <p className="px-4 py-4 text-[12px] text-err">{error}</p>)}
+        {phase === "failed" && (<p className="px-4 py-4 text-[12px] text-err">{error}</p>)}
 
         {phase === "fetching" && (
           <div className="flex grow flex-col items-center justify-center gap-3 px-6 text-center">
@@ -356,7 +338,7 @@ export function FetchModal({
                 />
                 <Button size="sm" variant="solid" tone="ink" permission="configure" loading={busy === "admit"} disabled={Boolean(busy)} onClick={() => decide(true)}>Admit and index</Button>
                 <Button size="sm" variant="solid" tone="err" permission="configure" loading={busy === "refuse"} disabled={Boolean(busy)} onClick={() => decide(false)}>Refuse</Button>
-                {decideError && (QUIET ? <span className="basis-full"><QuietNote inline /></span> : <span className="basis-full text-[11.5px] text-err">{decideError}</span>)}
+                {decideError && (<span className="basis-full text-[11.5px] text-err">{decideError}</span>)}
               </>
             ) : (
               <span className="text-[11.5px] text-faint">

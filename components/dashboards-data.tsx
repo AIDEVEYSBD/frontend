@@ -8,7 +8,6 @@ import { SEVERITIES, type Answer, type FindingsSummary } from "@/lib/api/pending
 import { agentHref } from "@/lib/agent-link";
 import { CONTROLS } from "@/lib/guardrails";
 import { productionRuns } from "@/lib/production";
-import { QUIET } from "@/lib/quiet";
 import { soon } from "@/lib/soon";
 import type { RankRow } from "./overview-data";
 import { winMs, type Win } from "./window-pick";
@@ -34,15 +33,26 @@ import { winMs, type Win } from "./window-pick";
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-/** One door's answer: `data` null with no `error` while it is being read, null with an `error` when it could not be. A later failure keeps the last answer. */
+/**
+ * One door's answer: `data` null with no `error` while it is being read, null
+ * with an `error` when it could not be. A later failure keeps the last answer
+ * with its `error` set and `at` left at when it last answered, and the board
+ * marks those figures stale.
+ */
 export interface Read<T> {
   data: T | null;
   error: string;
+  /** When the door last answered (ms), 0 before it ever has. */
+  at?: number;
 }
 
-const UNREAD = { data: null, error: "" };
+const UNREAD = { data: null, error: "", at: 0 };
 
-const settle = <T,>(prev: Read<T>, r: PromiseSettledResult<T>): Read<T> => (r.status === "fulfilled" ? { data: r.value, error: "" } : { data: prev.data, error: message(r.reason) });
+const settle = <T,>(prev: Read<T>, r: PromiseSettledResult<T>): Read<T> =>
+  r.status === "fulfilled" ? { data: r.value, error: "", at: Date.now() } : { data: prev.data, error: message(r.reason), at: prev.at ?? 0 };
+
+/** A read that answered once and has failed since: its figures are as of `at`. */
+export const staleOf = (r: Read<unknown>): boolean => r.data !== null && Boolean(r.error);
 
 /** Agent id → its name in the registry; empty when the registry did not answer (the ids are shown instead). */
 async function readNames(): Promise<Record<string, string>> {
@@ -85,10 +95,8 @@ async function readLedger(): Promise<RunRow[]> {
 async function readFirings(): Promise<Firings> {
   const res = await fetch("/api/guardrails");
   const d = (await res.json().catch(() => null)) as (Partial<Firings> & { posture?: { agents?: number }; error?: string }) | null;
-  // An answer that is not the record (a refusal, a page) is a failed read, never a record to count.
-  if (!res.ok || !d || typeof d.counts !== "object" || d.counts === null) throw new Error(d?.error || `the server answered ${res.status}`);
-  // Quiet (lib/quiet.ts): a console with no run and no deployed workflow behind it has no record to count from.
-  if (QUIET && !d.runs && !d.posture?.agents) throw new Error("not connected");
+  // An answer that is not the record (a refusal, a page, a 501) is a failed read, never a record to count.
+  if (!res.ok || !d || typeof d.counts !== "object" || d.counts === null) throw new Error(errorText(d, res, "GET", "/api/guardrails"));
   return { runs: Number(d.runs) || 0, counts: d.counts, recent: Array.isArray(d.recent) ? d.recent : [] };
 }
 
@@ -192,11 +200,8 @@ export interface CostLedger {
 async function readCost(): Promise<CostLedger> {
   const res = await fetch("/api/finops");
   const d = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!d) throw new Error(`the server answered ${res.status}`);
-  if (typeof d.error === "string" && d.error) throw new Error(d.error);
-  if (!res.ok || !Array.isArray(d.calls) || !Array.isArray(d.runs)) throw new Error(`the server answered ${res.status}`);
-  // Quiet (lib/quiet.ts): a ledger assembled with nothing behind the console is not read as zero spend.
-  if (QUIET && d.connected === false) throw new Error("not connected");
+  if (!res.ok || !d || (typeof d.error === "string" && d.error)) throw new Error(errorText(d, res, "GET", "/api/finops"));
+  if (!Array.isArray(d.calls) || !Array.isArray(d.runs)) throw new Error(`GET /api/finops answered ${res.status} without the cost ledger`);
   const models = (d.config as { models?: { id: string; label?: string }[] } | undefined)?.models;
   const st = d.budgetState as Partial<NonNullable<CostLedger["state"]>> | undefined;
   const period = (["day", "week", "month"] as const).find((p) => p === d.period) ?? "month";

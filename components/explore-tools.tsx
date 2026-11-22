@@ -69,28 +69,6 @@ const when = (c: ToolCall) => c.at;
 const words = (c: ToolCall) => `${c.tool} ${c.agent} ${c.node} ${c.run} ${c.control} ${c.detail}`;
 const stopped = (c: ToolCall) => c.outcome === "refused" || c.outcome === "failed";
 
-/** The view with no ledger behind it on a quiet console (lib/quiet.ts): its cards, empty. */
-export function ToolCallsQuiet({ win }: { win: Win }) {
-  return (
-    <QuietFrame title={`Tool calls, ${windowWords(win)}`} line="Tool calls are counted here over time, with the ones that did not run marked." sections={[{ labels: FACETS.map((f) => f.label) }]} placeholder="Search tool, step, run or control">
-      <QuietTiles
-        tiles={[
-          { label: "Tool calls", sub: "in the runs in the window" },
-          { label: "Ran", sub: "returned a result" },
-          { label: "Refusals", sub: "stopped by a control" },
-          { label: "Failures", sub: "the tool did not complete" },
-          { label: "No result recorded", sub: "the journal holds the call only" },
-        ]}
-      />
-      <Card title="Most-called tools" hue="tool">
-        <p className="px-4 py-4 text-[11.5px] text-faint">Tools rank here by how often they are called.</p>
-      </Card>
-      <Card title="Calls" hue="tool" meta="newest first · a time is the run's start plus the entry's offset">
-        <QuietTable columns={["When", "Run", "Agent", "Step", "Tool", "Outcome", "Duration"]} line="Tool calls are listed here, newest first, each opening its run at that entry." />
-      </Card>
-    </QuietFrame>
-  );
-}
 
 export function ToolCallsView({ rows, win, now, address }: ViewProps & { rows: RunRow[] }) {
   const router = useRouter();

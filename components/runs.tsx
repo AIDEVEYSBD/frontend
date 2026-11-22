@@ -10,8 +10,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button, IconButton, Kbd, Label, Mono, RUN_STATE, Status, Tag } from "./ui";
 import { Skeleton, Thinking } from "./loaders";
 import { Field, Textarea } from "./forms";
-import { Banner, QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
+import { Banner } from "./overlays";
+import { gateDeadlineLine } from "@/lib/gates";
+import { Failure, AnswerFailure } from "./pending";
 import { Icon } from "./builder/icons";
 import { Pick } from "./select";
 import { fromDocument, HARNESS, inputKeysOf, toDocument, type AgentSystem, type Kind } from "@/lib/spec";
@@ -157,6 +158,56 @@ function RunsInner() {
   return <Launcher />;
 }
 
+/* ═══════════════════ The live stream's own state ═══════════════════ */
+
+interface StreamState {
+  reconnecting: boolean;
+  lost: string;
+  dropped: number;
+  setReconnecting: (on: boolean) => void;
+  setLost: (message: string) => void;
+  setDropped: (n: number) => void;
+  reset: () => void;
+}
+
+/** What the run screen says about its live stream: reconnecting, lost (with the status), and frames it could not read. */
+function useStreamState(): StreamState {
+  const [reconnecting, setReconnecting] = useState(false);
+  const [lost, setLost] = useState("");
+  const [dropped, setDropped] = useState(0);
+  const reset = useCallback(() => {
+    setReconnecting(false);
+    setLost("");
+    setDropped(0);
+  }, []);
+  return useMemo(() => ({ reconnecting, lost, dropped, setReconnecting, setLost, setDropped, reset }), [reconnecting, lost, dropped, reset]);
+}
+
+/** The footer's line about the stream: following, reconnecting, or lost with a way to open it again; and a count of unreadable frames. */
+function StreamLine({ stream, following, onRetry }: { stream: StreamState; following: string; onRetry: () => void }) {
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      {stream.lost ? (
+        <>
+          <span className="min-w-0 truncate text-[12px] text-err" role="alert">Live stream lost: {stream.lost}</span>
+          <Button size="sm" variant="solid" tone="ink" onClick={onRetry}>
+            Open the stream again
+          </Button>
+        </>
+      ) : stream.reconnecting ? (
+        <span className="min-w-0 truncate text-[12px] text-warn" role="status">The live stream dropped; reconnecting… nothing new is shown until it is back.</span>
+      ) : (
+        <span className="min-w-0 truncate text-[12px] text-dim">{following}</span>
+      )}
+      {stream.dropped > 0 && (
+        <span className="shrink-0 text-[11px] text-err">
+          {stream.dropped} frame{stream.dropped === 1 ? "" : "s"} could not be read
+        </span>
+      )}
+    </span>
+  );
+}
+
 /* ═══════════════════ Launcher: pick something to run ═══════════════════ */
 
 interface SavedAgent {
@@ -191,9 +242,9 @@ const agentsOf = (r: unknown, system: string): string[] => {
   return Array.isArray(a) ? [...new Set(a.filter((x): x is string => typeof x === "string" && x !== "" && x !== system))] : [];
 };
 
+/* "My team" is not offered: the run ledger filters by `scope=mine` only. */
 const SCOPES: { id: Scope; label: string }[] = [
   { id: "mine", label: "Mine" },
-  { id: "team", label: "My team" },
   { id: "all", label: "All" },
 ];
 
@@ -213,19 +264,14 @@ function Launcher() {
   /** Whose runs: sent as `scope` on the list call once chosen. Offered only when the ledger's rows carry owners. */
   const [scope, setScope] = useState<Scope | "">("");
   const [owned, setOwned] = useState(false);
-  /* Which of the two reads failed. A quiet console (lib/quiet.ts) does not turn a failed read into "no workflow yet" or "no runs yet". */
-  const [agentsFailed, setAgentsFailed] = useState(false);
-  const [historyFailed, setHistoryFailed] = useState(false);
-  const agentsOff = QUIET && agentsFailed;
-  const historyOff = QUIET && historyFailed;
+  /* Why each of the two reads failed, when it did. A failed read is shown as the failure, never as "no workflow yet" or "no runs yet". */
+  const [agentsError, setAgentsError] = useState("");
+  const [historyError, setHistoryError] = useState("");
 
   useEffect(() => {
     listAgents()
       .then((rows) => setAgents(rows.map((a) => ({ id: a.id, name: a.name, description: a.description ?? "", nodes: a.nodes, retired: retiredOf(a.retired) }))))
-      .catch(() => {
-        setAgents([]);
-        setAgentsFailed(true);
-      });
+      .catch((e) => setAgentsError((e as Error).message));
   }, []);
 
   useEffect(() => {
@@ -233,17 +279,21 @@ function Launcher() {
     api
       // `scope` is ahead of the generated types: the ledger takes it once rows carry owners.
       .GET("/api/runs", scope ? { params: { query: { scope } as unknown as { agent?: string } } } : {})
-      .then(({ data }) => {
+      .then(({ data, error, response }) => {
         if (!live) return;
-        const rows = data?.runs ?? [];
-        setHistory(rows);
-        setHistoryFailed(!data);
-        if (rows.some((r) => ownerOf(r))) setOwned(true);
+        if (!data) {
+          setHistory(null);
+          setHistoryError(errorText(error, response, "GET"));
+          return;
+        }
+        setHistory(data.runs);
+        setHistoryError("");
+        if (data.runs.some((r) => ownerOf(r))) setOwned(true);
       })
-      .catch(() => {
+      .catch((e) => {
         if (!live) return;
-        setHistory([]);
-        setHistoryFailed(true);
+        setHistory(null);
+        setHistoryError(`the backend did not answer GET /api/runs (${(e as Error).message})`);
       });
     return () => {
       live = false;
@@ -256,19 +306,18 @@ function Launcher() {
         <header className="flex flex-col gap-1.5">
           <h1 className="text-[24px] font-semibold tracking-[-0.02em]">Runs</h1>
           <p className="max-w-[640px] text-[13.5px] leading-relaxed text-dim">
-            Launch a workflow and follow its execution as it happens. Review each model and tool
-            call, control decision, human approval and output in the resulting run record.
+            Launch a workflow and follow its execution as it happens. Review each model call, budget
+            decision, human approval and output in the resulting run record.
           </p>
         </header>
-
-        {(agentsOff || historyOff) && <QuietNote />}
 
         <section className="flex flex-col gap-3">
           <h2>
             <Label>Run a workflow</Label>
           </h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {agents === null &&
+            {agentsError && <Failure className="col-span-full" what="The workflows could not be read" message={agentsError} />}
+            {agents === null && !agentsError &&
               [0, 1, 2].map((i) => (
                 <div key={i} className="flex animate-pulse flex-col gap-3 rounded-lg border border-line bg-surface p-4">
                   <div className="flex items-center gap-2.5">
@@ -281,7 +330,7 @@ function Launcher() {
               ))}
             {agents?.length === 0 && (
               <p className="col-span-full rounded-lg border border-dashed border-line-strong px-5 py-8 text-[12.5px] text-faint">
-                {agentsOff ? "Deployed workflows are listed here, each ready to run." : "No workflow is on this deployment yet. Once one is deployed it can be run from here."}
+                No workflow is on this deployment yet. Once one is deployed it can be run from here.
               </p>
             )}
             {(agents ?? []).map((a) => (
@@ -361,7 +410,7 @@ function Launcher() {
                   }`}
                 >
                   {s ? (RUN_STATE[s]?.label ?? s) : "All"}
-                  {s && history && !historyOff ? ` (${history.filter((r) => r.state === s).length})` : ""}
+                  {s && history ? ` (${history.filter((r) => r.state === s).length})` : ""}
                 </button>
               ))}
               {shadows > 0 && (
@@ -377,13 +426,14 @@ function Launcher() {
             </div>
           </div>
           <div className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
-            {history === null && (
+            {historyError && <Failure className="m-3" what="The run ledger could not be read" message={historyError} />}
+            {history === null && !historyError && (
               <div role="status" aria-label="Reading the record" className="px-4 py-5">
                 <Skeleton lines={3} />
               </div>
             )}
             {history?.length === 0 && (
-              <p className="px-4 py-5 text-[12px] text-faint">{historyOff ? "Runs are listed here, newest first, each opening its record." : scope === "mine" ? "No run of yours is recorded." : scope === "team" ? "No run of your team is recorded." : "No runs recorded yet."}</p>
+              <p className="px-4 py-5 text-[12px] text-faint">{scope === "mine" ? "No run of yours is recorded." : "No runs recorded yet."}</p>
             )}
             {(history ?? [])
               .filter((r) => !stateFilter || r.state === stateFilter)
@@ -503,9 +553,8 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
   // call must not look like a hang.
   const startedAt = useRef(0);
   const [wallMs, setWallMs] = useState(0);
-  // The number an approver asks first: what did this run cost. Read from the
-  // control plane's price math once the journal is settled; unknown stays "—".
-  const [runCost, setRunCost] = useState<string | null>(null);
+  // The live stream: reconnecting while the browser retries, the reason once it is lost, and frames that could not be read.
+  const stream = useStreamState();
 
   useEffect(() => {
     if (phase !== "live") return;
@@ -574,25 +623,16 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
       setPhase("done");
     }
     if (end.error) setError(end.error);
-    if (id) {
-      fetch("/api/control")
-        .then((r) => r.json())
-        .then((d) => {
-          const row = (d.runs ?? []).find((x: { id: string }) => x.id === id);
-          if (!row) return;
-          setRunCost(
-            row.cost === null ? "cost —" : row.cost === 0 ? "$0.00" : row.cost < 0.005 ? "<$0.01" : `$${row.cost.toFixed(2)}`,
-          );
-        })
-        .catch(() => {});
-    }
   }, []);
 
   /** Follow the run's journal from the backend until it ends; a resumed leg joins the same transcript. */
   const follow = useCallback(
     (id: string) => {
       stop.current?.();
+      stream.reset();
       stop.current = subscribeRunEvents(id, {
+        onReconnecting: stream.setReconnecting,
+        onDropped: stream.setDropped,
         onEntry: (e) => {
           if (seen.current.has(e.id)) return;
           seen.current.add(e.id);
@@ -610,13 +650,12 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
             void settle({ state: data.state, error: data.error ?? "", result: data.result ?? {}, suspension: data.suspension ?? null });
             return;
           }
-          setError(message);
-          setPhase("done");
-          setFinalState(data?.state ?? "unknown");
+          // Still running, or its record could not be read: nothing more will arrive here until the stream is opened again.
+          stream.setLost(message);
         },
       });
     },
-    [settle],
+    [settle, stream],
   );
 
   /** POST /api/runs, then follow the stream. A saved workflow goes by name; a draft travels as its spec. */
@@ -762,8 +801,8 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
     <>
       {killAsk && (
         <KillDialog
-          title="Kill this run and its tree?"
-          what={`${system.name} · ${killAsk}. The backend cancels it before its next model or tool call, and the kill reaches everything it set off: in-process sub-runs stop with it, child runs are killed where they run, queued children are dead-lettered. The journal records the reason and your name.`}
+          title="Kill this run?"
+          what={`${system.name} · ${killAsk}. A worker running it stops before its next model call, step or node; a call already in flight finishes. A run waiting for a person stops at once. Child runs it started are not stopped. The journal records the reason and your name.`}
           onClose={() => setKillAsk(null)}
           onConfirm={(reason) => {
             const id = killAsk;
@@ -925,10 +964,8 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
       footer={
         phase === "live" && !suspension ? (
           <div className="flex h-11 shrink-0 items-center gap-3 border-t border-line bg-surface px-4">
-            <Thinking height={10} />
-            <span className="text-[12px] text-dim">
-              {killing ? "kill requested — the journal records it in a moment" : "running — every entry lands as the runtime writes it"}
-            </span>
+            {!stream.lost && <Thinking height={10} />}
+            <StreamLine stream={stream} onRetry={() => liveRunId && follow(liveRunId)} following={killing ? "kill requested — the journal records it in a moment" : "running — every entry lands as the runtime writes it"} />
             <span className="grow" />
             <Mono className="tnum text-[11px] text-faint">{clock(Math.max(journalMs, wallMs))}</Mono>
             <Button
@@ -936,23 +973,15 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
               variant="solid"
               size="sm"
               permission="run"
+              disabled={!liveRunId}
               onClick={() => {
-                if (runId.current) {
-                  // The real kill switch: the backend cancels the run, which
-                  // journals the reason and who threw it. The stream stays
-                  // open so the kill lands in the transcript in front of you.
-                  setKillAsk(runId.current);
-                } else {
-                  // Not started yet — the request is still on its way.
-                  abort.current?.abort();
-                  setPhase("done");
-                  setFinalState("killed");
-                  setError("stopped before the backend registered the run");
-                }
+                // The real kill switch: the backend records the request with the reason and who asked;
+                // the stream stays open so the kill lands in the transcript in front of you.
+                if (runId.current) setKillAsk(runId.current);
               }}
               loading={killing}
             >
-              {killing ? "Killing…" : "Kill run"}
+              {killing ? "Killing…" : liveRunId ? "Kill run" : "Starting…"}
             </Button>
           </div>
         ) : phase === "done" || suspension ? (
@@ -960,7 +989,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
             <StateBadge state={suspension ? "suspended" : finalState} />
             {error && <span className="min-w-0 truncate text-[11.5px] text-err">{error}</span>}
             <span className="grow" />
-            {runCost && <Mono className="tnum text-[11px] text-faint">{runCost}</Mono>}
+
             <Mono className="tnum text-[11px] text-faint">{clock(journalMs)}</Mono>
             <Button
               tone="ink"
@@ -1326,6 +1355,7 @@ function FollowTheater({
   const [receipt, setReceipt] = useState<KillReceipt | null>(null);
   const [already, setAlready] = useState<KillRefusal | null>(null);
   const stop = useRef<(() => void) | null>(null);
+  const stream = useStreamState();
   const [now, setNow] = useState(() => Date.now());
   const entries = useMemo(() => normalise(raw), [raw]);
   const nodes = useMemo(() => {
@@ -1377,7 +1407,10 @@ function FollowTheater({
 
   const follow = useCallback(() => {
     stop.current?.();
+    stream.reset();
     stop.current = subscribeRunEvents(id, {
+      onReconnecting: stream.setReconnecting,
+      onDropped: stream.setDropped,
       onEntry: (e) => {
         if (seen.current.has(e.id)) return;
         seen.current.add(e.id);
@@ -1391,10 +1424,10 @@ function FollowTheater({
           void settle({ state: data.state, error: data.error ?? "", result: data.result ?? {}, suspension: data.suspension ?? null });
           return;
         }
-        setError(message);
+        stream.setLost(message);
       },
     });
-  }, [id, settle]);
+  }, [id, settle, stream]);
 
   useEffect(() => {
     follow();
@@ -1413,10 +1446,8 @@ function FollowTheater({
     <>
       {killAsk && (
         <KillDialog
-          title="Kill this run and its tree?"
-          what={`${system || "run"} · ${id}. ${
-            sdk ? "The agent's SDK receives the kill on its control channel and stops before its next model or tool call" : "The backend cancels it before its next model or tool call"
-          }, and the kill reaches everything it set off: in-process sub-runs stop with it, child runs are killed where they run, queued children are dead-lettered. The journal records the reason and your name.`}
+          title="Kill this run?"
+          what={`${system || "run"} · ${id}. A worker running it stops before its next model call, step or node; a call already in flight finishes. A run waiting for a person stops at once. Child runs it started are not stopped. The journal records the reason and your name.`}
           onClose={() => setKillAsk(false)}
           onConfirm={(reason) => {
             setKillAsk(false);
@@ -1467,16 +1498,16 @@ function FollowTheater({
         footer={
           running ? (
             <div className="flex h-11 shrink-0 items-center gap-3 border-t border-line bg-surface px-4">
-              <Thinking height={10} />
-              <span className="min-w-0 truncate text-[12px] text-dim">
-                {sdk && (killing || killed)
-                  ? `kill requested${killed?.by ? ` by ${killed.by}` : ""} — the agent's SDK takes it on its next control poll and stops before its next model or tool call`
-                  : killing
-                    ? "kill requested — the journal records it in a moment"
-                    : sdk
-                      ? "following — the agent's SDK sends each entry as it is written"
-                      : "following — every entry lands as the runtime writes it"}
-              </span>
+              {!stream.lost && <Thinking height={10} />}
+              <StreamLine
+                stream={stream}
+                onRetry={follow}
+                following={
+                  killing || killed
+                    ? `kill requested${killed?.by ? ` by ${killed.by}` : ""} — the run stops before its next model call, step or node`
+                    : "following — every entry lands as the runtime writes it"
+                }
+              />
               {error && <span className="min-w-0 truncate text-[11.5px] text-err">{error}</span>}
               <span className="grow" />
               <Mono className="tnum text-[11px] text-faint">{clock(elapsed)}</Mono>
@@ -1733,13 +1764,14 @@ function Scrubber({
           <Kbd>→</Kbd> step node
         </span>
         <div className="grow" />
+        {/* Only the kinds this run's journal holds: a legend entry is never a claim that such a thing can happen here. */}
         {[
           ["tool.call", "tool"],
           ["model.call", "reasoning"],
           ["taint", "taint"],
           ["node.exit", "step done"],
           ["denied", "refused"],
-        ].map(([k, label]) => (
+        ].filter(([k]) => ticks.some((x) => x.kind === k)).map(([k, label]) => (
           <span key={k} className="flex items-center gap-1.5 text-[10.5px] text-faint">
             <span className={`size-1.5 rounded-[2px] ${TICK[k]}`} />
             {label}
@@ -1906,8 +1938,12 @@ function Theater({
         <div className="flex items-center gap-3 font-mono text-[11.5px] text-dim">
           <span className="tnum">{modelCalls} model calls</span>
           <span className="text-ghost">·</span>
-          <span className="tnum">{entries.filter((e) => e.kind === "tool.call").length} tool calls</span>
-          <span className="text-ghost">·</span>
+          {entries.some((e) => e.kind === "tool.call") && (
+            <>
+              <span className="tnum">{entries.filter((e) => e.kind === "tool.call").length} tool calls</span>
+              <span className="text-ghost">·</span>
+            </>
+          )}
           <span className={`tnum ${denied ? "font-semibold text-err" : ""}`}>{denied} refused</span>
         </div>
       </header>
@@ -2052,11 +2088,6 @@ function Theater({
               </div>
             )}
 
-            {artifacts.length === 0 && !suspension && !draftId && (
-              <span className="text-[12px] text-ghost">
-                Nothing written yet — files appear here the moment a node produces them.
-              </span>
-            )}
 
             {artifacts.map((a) => (
               <ArtifactRow key={a.name} a={a} />
@@ -2078,7 +2109,7 @@ function Theater({
             {finalState === "killed" && (
               <Banner tone="err" title="Killed by operator">
                 <span className="flex flex-col gap-1.5">
-                  <span>{error || "The kill switch was thrown; the runtime trapped it and persisted the partial record."}</span>
+                  <span>{error || "The run was stopped on a kill request. The journal holds what it did before it stopped."}</span>
                   <ControlRef control={KILL_CONTROL} size="md" />
                 </span>
               </Banner>
@@ -2097,7 +2128,7 @@ function Theater({
       )}
       {/* What the run found: its findings, once the control plane keeps them. */}
       {(traceOf ?? runId) && (
-        <RunStrip title="Findings" summary="what this run found, by severity" open={strip === "findings"} onToggle={() => setStrip(strip === "findings" ? "" : "findings")}>
+        <RunStrip title="Findings" summary="recorded for this run, by severity" open={strip === "findings"} onToggle={() => setStrip(strip === "findings" ? "" : "findings")}>
           <div className="px-4 py-3">
             <RunFindings run={(traceOf ?? runId)!} />
           </div>
@@ -2120,7 +2151,7 @@ function Theater({
  */
 function TracePanel({ runId }: { runId: string }) {
   const [open, setOpen] = useState(false);
-  const { trace, state } = useTrace(open ? runId : null);
+  const { trace, state, failure } = useTrace(open ? runId : null);
   const [span, setSpan] = useState<Span | null>(null);
 
   return (
@@ -2146,10 +2177,17 @@ function TracePanel({ runId }: { runId: string }) {
               ? "reading the journal…"
               : trace
                 ? `${trace.spans.length} spans · click one`
-                : "no journal for this run"
-            : "where the time and the money went"}
+                : failure?.state === "pending"
+                  ? "not built"
+                  : "could not be read"
+            : "how long each step took"}
         </span>
       </button>
+      {open && !trace && failure && (
+        <div className="border-t border-line px-4 py-3">
+          <AnswerFailure answer={failure} what="The trace could not be read" />
+        </div>
+      )}
       {open && trace && (
         <div className="grid gap-px border-t border-line bg-line lg:grid-cols-[minmax(0,1fr)_300px]">
           <div className="bg-surface">
@@ -2759,6 +2797,9 @@ function JournalRow({ e, entries, located = false, onLineage, onProvenance }: { 
     const why = explainControl(control);
     const refused = e.kind === "denied" || e.kind === "contract.breach";
     const tool = e.data?.tool ? String(e.data.tool) : "";
+    // A gate opening is shown as the gate itself (who may answer, its deadline), never as a catalogue sentence.
+    const gate = e.kind === "gate.open";
+    const approvers = Array.isArray(e.data?.approvers) ? (e.data!.approvers as unknown[]).map(String) : [];
     return (
       <div className="flex gap-3">
         <Mono className="w-9 shrink-0 pt-2 text-[10.5px] text-ghost">{clock(e.t)}</Mono>
@@ -2767,10 +2808,10 @@ function JournalRow({ e, entries, located = false, onLineage, onProvenance }: { 
             <span className="flex flex-wrap items-center gap-2">
               <span className={`size-1.5 shrink-0 rounded-[2px] ${refused ? "bg-err" : "bg-warn"}`} />
               <span className={`text-[10.5px] font-medium ${refused ? "text-err" : "text-warn"}`}>
-                {refused ? "refused by" : "marked by"}
+                {gate ? "waits for" : refused ? "refused by" : "marked by"}
               </span>
-              <span className="text-[12.5px] font-medium text-fg">{why.name}</span>
-              <ControlRef control={control} />
+              <span className="text-[12.5px] font-medium text-fg">{gate ? (approvers.length ? approvers.join(" or ") : "anyone with the approve permission") : why.name}</span>
+              {!gate && <ControlRef control={control} />}
               {tool && <Mono className="text-[10.5px] text-mist">{tool}</Mono>}
               <span className="grow" />
               {lineageButton}
@@ -2781,7 +2822,8 @@ function JournalRow({ e, entries, located = false, onLineage, onProvenance }: { 
             {e.detail && (
               <span className="text-[11.5px] leading-[1.55] text-fg">{e.detail}</span>
             )}
-            {why.decides && (
+            {gate && <span className="text-[11px] leading-[1.5] text-faint">{gateDeadlineLine(typeof e.data?.deadline === "string" ? e.data.deadline : null, (iso) => new Date(iso).toLocaleString("en-GB"))}</span>}
+            {!gate && why.decides && (
               <span className="text-[11px] leading-[1.5] text-faint">
                 {why.name} decides: {why.decides}
               </span>

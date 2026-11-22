@@ -4,8 +4,6 @@ import Link from "next/link";
 import { useState } from "react";
 import { Button, Mono, Status, Tag } from "./ui";
 import { Field, Input } from "./forms";
-import { QUIET } from "@/lib/quiet";
-import { QuietNote } from "./overlays";
 import { Figures } from "./section";
 import {
   Card,
@@ -313,7 +311,7 @@ export function IdentityPage({
 
       {/* ── activity ── */}
       <Card id="activity" title="Activity" meta={events && events.length ? `${mine.length} of the last ${events.length} audit events name this identity` : undefined}>
-        {eventsError && (QUIET ? <p className="px-4 py-3"><QuietNote inline /></p> : <p className="px-4 py-3 text-[12px] text-err">The audit trail could not be read: {eventsError}.</p>)}
+        {eventsError && (<p className="px-4 py-3 text-[12px] text-err">The audit trail could not be read: {eventsError}.</p>)}
         {!events && !eventsError && <p className="px-4 py-3 text-[12px] text-faint">Reading the audit trail…</p>}
         {events && mine.length === 0 && (
           <p className="px-4 py-3 text-[12px] text-dim">
@@ -422,7 +420,7 @@ function IdentityAccess({ identity: i, now, busy, ownerStoreDown, editOwner, act
                   {i.owner ? "Change owner" : "Assign owner"}
                 </Button>
               )}
-              {ownerStoreDown && (QUIET ? <QuietNote inline /> : <span className="text-[11.5px] leading-[1.5] text-faint">Owners cannot be saved here: the register&rsquo;s own table is not reachable on this deployment.</span>)}
+              {ownerStoreDown && (<span className="text-[11.5px] leading-[1.5] text-faint">Owners cannot be saved here: the register&rsquo;s own table is not reachable on this deployment.</span>)}
             </>
           )}
         </form>

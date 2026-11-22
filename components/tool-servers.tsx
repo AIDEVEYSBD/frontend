@@ -1,9 +1,9 @@
 "use client";
+import { Failure } from "./pending";
+import { notBuiltDoorOf } from "@/lib/api/client";
 
 import { useEffect, useRef, useState } from "react";
 import { Button, Mono, Status, Tag } from "./ui";
-import { QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
 import { ControlRef } from "./control-ref";
 import { DigestChip } from "./digest-chip";
 import { AddServerDialog } from "./add-server-dialog";
@@ -118,8 +118,7 @@ export function HitsTable({ hits }: { hits: ScreenHit[] }) {
 
 /** A refusal from the registry: the message, and the control it names in the register's words. */
 function Refusal({ error }: { error: RegistryError | Error }) {
-  // A quiet console (lib/quiet.ts) does not print why the registry did not answer; a refusal that names a control or carries screening hits is content and stays.
-  if (QUIET && !(error instanceof RegistryError && (error.control || error.hits.length))) return <QuietNote inline />;
+  if (notBuiltDoorOf(error.message)) return <Failure inline message={error.message} />;
   const control = error instanceof RegistryError ? error.control : "";
   const hits = error instanceof RegistryError ? error.hits : [];
   return (
@@ -562,8 +561,8 @@ export function ToolServers({
   const rows = added && servers !== null && !listed.some((s) => s.id === added.id) ? [...listed, added] : listed;
   const count = (st: McpServer["status"]) => rows.filter((s) => s.status === st).length;
   const shown = [...rows].sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || a.label.localeCompare(b.label));
-  /** Quiet (lib/quiet.ts): the registry was not read, so no counts and no two-person claim: one calm line beside the button. */
-  const unread = QUIET && Boolean(error) && rows.length === 0;
+  /** The registry was not read: no counts and no two-person claim, only the failure. */
+  const unread = Boolean(error) && rows.length === 0;
 
   return (
     <div className="flex flex-col">
@@ -571,7 +570,7 @@ export function ToolServers({
         {servers === null ? (
           <span className="text-[11px] text-faint">Reading the registry…</span>
         ) : unread ? (
-          <span className="text-[11.5px] leading-[1.5] text-faint">Tool servers are listed here with their state and their pinned tool lists.</span>
+          <span className="text-[11.5px] leading-[1.5] text-faint">Not read.</span>
         ) : (
           <span className="flex flex-wrap items-center gap-3">
             <Status tone="ok">{count("approved")} approved</Status>
@@ -618,7 +617,7 @@ export function ToolServers({
         </div>
       )}
 
-      {error && !QUIET && <p className="border-b border-line px-4 py-2.5 text-[11.5px] text-err">{error}</p>}
+      {error && <p className="border-b border-line px-4 py-2.5 text-[11.5px] text-err">{error}</p>}
       {shown.map((s) => (
         <ServerRow
           key={s.id}

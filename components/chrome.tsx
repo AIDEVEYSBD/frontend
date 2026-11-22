@@ -410,7 +410,7 @@ function NoRole({ roles }: { roles: string[] }) {
 
 export function Chrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { session, loaded, can, signOut } = useSession();
+  const { session, loaded, failure, can, signOut } = useSession();
   const [denied, setDenied] = useState<string | null>(null);
   const [drawer, setDrawer] = useState(false);
 
@@ -453,9 +453,10 @@ export function Chrome({ children }: { children: React.ReactNode }) {
 
   // A page whose permission a person lacks leaves their navigation; opened by its address, it says which permission it needs.
   // A signed-in person with no role that reads the console sees no navigation and no page, only why.
+  // A session that could not be read changes nothing in the navigation: the failure is said in the sidebar, and the platform still decides every request.
   const noRole = loaded && Boolean(session) && !can("view");
-  const nav = noRole ? [] : NAV.filter((item) => !item.needs || !loaded || can(item.needs));
-  const barred = loaded ? NAV.find((item) => item.needs && !can(item.needs) && reach(item).some((h) => under(pathname, h))) : undefined;
+  const nav = noRole ? [] : NAV.filter((item) => !item.needs || !loaded || Boolean(failure) || can(item.needs));
+  const barred = loaded && !failure ? NAV.find((item) => item.needs && !can(item.needs) && reach(item).some((h) => under(pathname, h))) : undefined;
   const groups = groupsOf(nav, pathname);
   const hereGroup = groups.find((g) => g.here);
   const here = hereGroup?.here;
@@ -472,9 +473,28 @@ export function Chrome({ children }: { children: React.ReactNode }) {
   // alone; so does the external answer page, which an outside participant
   // opens with a signed link and no session (lib/route-policy.ts OPEN_PAGES).
   if (isOpenPage(pathname)) return <>{children}</>;
-  // Until the platform answers who this is, nobody is named; a failed read says so instead of inventing someone.
-  const who = session ?? { name: loaded ? CURRENT_USER.name : "Reading who you are…", initials: CURRENT_USER.initials, appRoles: [] as string[], sso: false, demoDefaultApplied: false, email: "" };
-  const roleLabel = who.sso ? (who.appRoles.length ? who.appRoles.map(roleName).join(", ") : "no role") : loaded ? CURRENT_USER.role : "";
+  // Three states, each said as it is: reading; failed, with the status and the platform's reason; or the person, as the platform named them.
+  const who = session ?? {
+    name: !loaded ? "Reading who you are…" : failure ? "Could not read who you are" : CURRENT_USER.name,
+    initials: CURRENT_USER.initials,
+    appRoles: [] as string[],
+    sso: false,
+    demoDefaultApplied: false,
+    email: "",
+  };
+  const roleLabel = session
+    ? who.sso
+      ? who.appRoles.length
+        ? who.appRoles.map(roleName).join(", ")
+        : session.disabled
+          ? "access ended by an administrator"
+          : "no role"
+      : CURRENT_USER.role
+    : !loaded
+      ? ""
+      : failure
+        ? `${failure.status ? `the platform answered ${failure.status}: ` : ""}${failure.reason}`
+        : CURRENT_USER.role;
   const me: Who = { name: who.name, initials: who.initials, email: who.email, role: roleLabel, sso: who.sso && session?.canSignOut !== false, signOut };
   return (
     <div className="flex h-screen bg-canvas">

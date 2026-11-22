@@ -97,6 +97,19 @@ export const DOORS = {
   useCaseRegister: { method: "POST", path: "/api/use-cases", purpose: "Registering a use case with its owner, data classes, autonomy level, workload and gates", rows: ["GUI 1.14"] },
   useCase: { method: "PATCH", path: "/api/use-cases/{id}", purpose: "Changing a registered use case, or moving it on: sending a draft for approval, approving it", rows: ["GUI 1.14"] },
 
+  /* ── screens first written for the console's own server, now read from the platform ── */
+  control: { method: "GET", path: "/api/control", purpose: "The estate in one read: every agent with its runs, spend, gates, limits and the activity behind them", rows: [] },
+  controlSave: { method: "POST", path: "/api/control", purpose: "Setting the deployment's budget for a period", rows: [] },
+  guardrails: { method: "GET", path: "/api/guardrails", purpose: "The record of control firings, counted from the run journals, and the injection and exfiltration watch", rows: [] },
+  evals: { method: "GET", path: "/api/evals", purpose: "The evaluations created on this deployment, with the history of their runs", rows: [] },
+  evalsSave: { method: "POST", path: "/api/evals", purpose: "Saving a benchmark", rows: [] },
+  observability: { method: "GET", path: "/api/observability", purpose: "A run's trace: how long each step took and what it cost; and the tools ranked across runs", rows: [] },
+  artifact: { method: "GET", path: "/api/artifact", purpose: "A file a run wrote", rows: [] },
+  logs: { method: "GET", path: "/api/logs", purpose: "Every run's journal as one download", rows: [] },
+  assistant: { method: "GET", path: "/api/assistant", purpose: "The console assistant", rows: [] },
+  mcpServer: { method: "GET", path: "/api/mcp/server", purpose: "The platform's own MCP server: the tools it exposes to an MCP client", rows: [] },
+  authAccess: { method: "GET", path: "/api/auth/access", purpose: "Who Google sign-in lets through to this console", rows: [] },
+
   /* ── cloud security findings (GUI access matrix 1.16) ── */
   cloudFindings: { method: "GET", path: "/api/security/findings", purpose: "The findings the cloud provider's security centre holds for this deployment's resources", rows: ["GUI 1.16"] },
 } as const satisfies Record<string, Door>;
@@ -759,7 +772,8 @@ export async function ask<T>(
   // Only the platform's own "not built" answer reads as not built. A 404 or 405 is a fault (an address or a
   // method the platform does not know) and is shown as one, with its status.
   if (res.status === 501) return { state: "pending", door };
-  if (!res.ok) return { state: "error", message: said || `the platform answered ${res.status} to ${door.method} ${door.path}`, status: res.status };
-  if (!parsed) return { state: "error", message: `the platform answered ${res.status} to ${door.method} ${door.path} with a body that is not JSON`, status: res.status };
+  const where = `${door.method} ${door.path}`;
+  if (!res.ok) return { state: "error", message: said ? `${said} (${res.status} from ${where})` : `the backend did not answer ${where} (${res.status})`, status: res.status };
+  if (!parsed) return { state: "error", message: `${where} answered ${res.status} with a body that is not JSON`, status: res.status };
   return { state: "ok", data: body as T };
 }

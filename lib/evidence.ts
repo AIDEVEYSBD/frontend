@@ -64,7 +64,7 @@ export const stampLine = (d: Pick<SignedDecision, "chained" | "disagrees">): str
   d.disagrees.length
     ? `The record's copy disagrees with the chain on ${d.disagrees.map((x) => x.field).join(", ")}: this is the chain's`
     : d.chained
-      ? "Read from the hash chain"
+      ? "Recorded on the run"
       : "Controls stamped on the record, outside the chain";
 
 /** Why a pack has no firing: said plainly, since an assessor reads silence as a pass. */

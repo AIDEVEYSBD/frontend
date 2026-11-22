@@ -98,7 +98,7 @@ export function DatasetUpload({ kind: fixedKind, onClose, onDone }: { kind?: Dat
     >
       {step === 1 ? (
         <div className="flex flex-col gap-3 p-4">
-          <p className="text-[12.5px] leading-[1.55] text-dim">Choose what the file is. A workload takes one kind of dataset as its input, so the kind decides where it can be used.</p>
+          <p className="text-[12.5px] leading-[1.55] text-dim">Choose what the file is. A workload is specified to take one kind of dataset as its input; runs on this deployment do not read datasets yet.</p>
           <div role="radiogroup" aria-label="What it is" className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {DATASET_KINDS.map((k) => {
               const on = kind === k.id;

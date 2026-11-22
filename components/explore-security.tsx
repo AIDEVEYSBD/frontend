@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Mono, Status } from "./ui";
-import { EmptyState, QuietNote } from "./overlays";
+import { EmptyState } from "./overlays";
 import { ControlMark } from "./control-ref";
 import { Skeleton } from "./loaders";
 import { WATCH_LABEL, type WatchEvent } from "@/lib/guardrails-watch";
@@ -15,7 +15,6 @@ import { readUsers } from "@/lib/api/l2";
 import type { RunRow } from "@/lib/api/client";
 import { useSession } from "@/lib/use-session";
 import { soon } from "@/lib/soon";
-import { QUIET } from "@/lib/quiet";
 import { winMs } from "./window-pick";
 import { Card, ErrorLine, MoreRow, RUN_BATCH, ROW_BATCH, RunLink, Tiles, agentOf, ago, clockText, count, lastActive, runHref, useDigests, windowWords, type RunDigest, type RunEvent } from "./observability-shared";
 import { ExploreFrame, QuietFrame, QuietTable, QuietTiles, Timeline, domainOf, fill, narrow, pageChips, type FacetDef } from "./explore-parts";
@@ -348,10 +347,6 @@ export function SecurityEventsView({ ledger, win, now, address, tick, onBusy }: 
   const unread = named.length - journals.digests.length - journals.pending - journals.failed.length;
   // No record, no count: a figure that could not be read is unknown, never zero.
   const dash = error && !data ? "unknown" : null;
-  // A quiet console (lib/quiet.ts) says once that it is not connected, whichever of the reads failed, and prints no reason.
-  // With nothing read into the stream there are no figures to show either: a count of zero would say nothing happened.
-  const quietGap = QUIET && Boolean(error || data?.error || gatesError || lockdownError || auditError || ledger.error);
-  const quietDown = quietGap && stream.length === 0;
 
   const tiles = (
     <Tiles
@@ -368,38 +363,16 @@ export function SecurityEventsView({ ledger, win, now, address, tick, onBusy }: 
 
   const notes = (
     <>
-      {quietGap && <QuietNote />}
-      {!QUIET && error && <ErrorLine what="The record of what the controls did could not be read" message={error} />}
-      {!QUIET && data?.error && <ErrorLine what="The record of what the controls did is incomplete" message={data.error} />}
-      {!QUIET && gatesError && <ErrorLine what="The approvals inbox did not answer, so gates still waiting are missing" message={gatesError} />}
-      {!QUIET && lockdownError && <ErrorLine what="The lockdown door did not answer, so its state is missing" message={lockdownError} />}
-      {!QUIET && auditError && <ErrorLine what="The audit trail could not be read, so kills and lockdown changes made outside a run are missing" message={auditError} />}
+      {ledger.error && <ErrorLine what="The run ledger could not be read, so kills and gates in the journals are missing" message={ledger.error} />}
+      {error && <ErrorLine what="The record of what the controls did could not be read" message={error} />}
+      {data?.error && <ErrorLine what="The record of what the controls did is incomplete" message={data.error} />}
+      {gatesError && <ErrorLine what="The approvals inbox did not answer, so gates still waiting are missing" message={gatesError} />}
+      {lockdownError && <ErrorLine what="The lockdown door did not answer, so its state is missing" message={lockdownError} />}
+      {auditError && <ErrorLine what="The audit trail could not be read, so kills and lockdown changes made outside a run are missing" message={auditError} />}
     </>
   );
 
-  // Nothing could be read on a quiet console: the note has said so once, and under it the view is drawn in its empty form.
-  if (quietDown) {
-    return (
-      <>
-        {notes}
-        <QuietFrame title={`Security events, ${windowWords(win)}`} line="Security events are counted here over time, with the ones that stopped something marked." sections={[{ labels: FACETS.map((f) => f.label) }]} placeholder="Search control, run, step or text">
-          <QuietTiles
-            tiles={[
-              { label: "Events listed", sub: "across the runs on record" },
-              { label: "Refusals", sub: "calls a control stopped" },
-              { label: "Screening", sub: "prompts and responses blocked or flagged" },
-              { label: "Gate events", sub: "opened and answered" },
-              { label: "Operator kills", sub: "runs stopped by a person" },
-              { label: "Lockdown", sub: "on or off, and who switched it" },
-            ]}
-          />
-          <Card title="Events" hue="control" meta="newest first · text is redacted of secrets">
-            <QuietTable columns={["When", "Event", "What fired", "Agent or application", "What it said", "Run"]} line="What the controls did is listed here, newest first, each opening its run at that entry." />
-          </Card>
-        </QuietFrame>
-      </>
-    );
-  }
+
 
   if (!ready) {
     return (
@@ -417,7 +390,7 @@ export function SecurityEventsView({ ledger, win, now, address, tick, onBusy }: 
       <>
         {notes}
         {/* Zeros beside a note that a door did not answer would read as "nothing happened": the figures wait for every door. */}
-        {!quietGap && tiles}
+        {!Boolean(error || data?.error || gatesError || lockdownError || auditError || ledger.error) && tiles}
         {nothing && !error && (
           <EmptyState
             title="No security events yet"
@@ -454,7 +427,7 @@ export function SecurityEventsView({ ledger, win, now, address, tick, onBusy }: 
             The door answers its 40 most recent firings and 300 most recent watch events; the ledger adds the runs it marks killed or refused. Journals are read for <span className="tnum font-medium text-fg">{count(journals.digests.length)}</span> of the{" "}
             <span className="tnum font-medium text-fg">{count(named.length)}</span> run{named.length === 1 ? "" : "s"} they name, {RUN_BATCH} at a time, to give each firing its entry and to find gate answers and kills.
             {journals.pending > 0 ? ` Reading ${count(journals.pending)} more…` : ""}
-            {journals.failed.length > 0 && !QUIET && (
+            {journals.failed.length > 0 && (
               <span className="text-err">
                 {" "}
                 {count(journals.failed.length)} did not read: {journals.failed[0].message}

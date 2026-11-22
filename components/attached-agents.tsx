@@ -1,11 +1,10 @@
 "use client";
+import { Failure } from "./pending";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button, Mono, Status, Tag } from "./ui";
 import { Pick } from "./select";
-import { QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
 import { Code, CopyButton } from "./code";
 import { OpenChanges, ProposalNote } from "./policy";
 import {
@@ -181,7 +180,8 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
   const [agents, setAgents] = useState<AttachedAgent[] | null>(null);
   const [store, setStore] = useState("");
   /** The register's read was refused or did not answer. A quiet console (lib/quiet.ts) says so instead of showing an empty register. */
-  const [unread, setUnread] = useState(false);
+  /** Why the register's read failed, when it did: shown in place of the register and its counts. */
+  const [unread, setUnread] = useState("");
   const [mode, setMode] = useState<AttachMode>("sdk");
   const [language, setLanguage] = useState<Language>("python");
   /** The install line, the snippets and the setup steps are folded away until asked for. */
@@ -218,18 +218,18 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
   const load = () =>
     listAttached()
       .then((d) => {
-        setUnread(false);
+        setUnread("");
         shown(d);
       })
-      // A refusal reads as an empty register, as it always has.
-      .catch(() => {
-        setUnread(true);
+      // A refusal is shown as the failure it is, never as an empty register.
+      .catch((e) => {
+        setUnread((e as Error).message);
         shown({ agents: [], store: "" });
       });
   const settled = agents !== null;
   useEffect(() => {
-    if (settled) onQuiet?.(QUIET && unread);
-  }, [settled, unread, onQuiet]);
+    if (settled) onQuiet?.(false);
+  }, [settled, onQuiet]);
   useEffect(() => {
     load();
     attachableTools()
@@ -377,7 +377,7 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
         <span className="min-w-0 max-w-[62ch] text-[11px] leading-[1.5] text-faint">{MODE_META[mode].blurb}</span>
         <span className="grow" />
         <span className="tnum whitespace-nowrap text-[10.5px] text-ghost">
-          {QUIET && unread ? "" : agents ? `${counts.total} attached · ${counts.sdk} over the SDK · ${counts.a2a} over A2A` : "reading the registry…"}
+          {unread ? "" : agents ? `${counts.total} attached · ${counts.sdk} over the SDK · ${counts.a2a} over A2A` : "reading the registry…"}
         </span>
         <Button size="sm" variant="solid" tone="neutral" onClick={() => setCode(!code)}>
           {code ? "Hide the code" : "Show the code"}
@@ -510,7 +510,7 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
           Attach
         </Button>
         {name.trim() && <Mono className="pb-1.5 text-[10.5px] text-ghost">id · {slugOf(name) || "—"}</Mono>}
-        {error && (QUIET ? <span className="basis-full"><QuietNote inline /></span> : <span className="basis-full text-[11px] text-err">{error}</span>)}
+        {error && (<span className="basis-full text-[11px] text-err">{error}</span>)}
         {minted && (
           <div className="mt-1 flex basis-full flex-wrap items-center gap-3 rounded-sm border border-ok-line bg-ok-bg px-3 py-2">
             <Status tone="ok">{minted.agent.name} attached</Status>
@@ -730,7 +730,7 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
             })}
             {agents && agents.length === 0 && (
               <tr>
-                <td colSpan={11} className="px-4 py-3 text-[11.5px] text-faint">{QUIET && unread ? "Attached agents are listed here with their owner, runs, cost and refusals." : "No third-party agent is attached. The first one appears here with its key."}</td>
+                <td colSpan={11} className="px-4 py-3 text-[11.5px] text-faint">{unread ? <Failure what="The third-party agents could not be read" message={unread} /> : "No third-party agent is attached. The first one appears here with its key."}</td>
               </tr>
             )}
             {!agents && (

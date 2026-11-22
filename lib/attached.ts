@@ -281,11 +281,7 @@ PATCH ${ENDPOINTS.origin}/api/attached     { "id": "${c.agent}", "secret_name": 
     body: "Point the agent's OpenAI-compatible base URL at the model gateway and give it the key. Every completion is forwarded to the deployment's own model resource and journalled with model, tokens and latency, priced from the model sheet. User and tool turns are screened before they leave; a blocked agent gets no answer. Streaming works; send x-agentfactory-run to group calls into one run.",
     snippet: (c) => `# OpenAI SDKs, LangChain, LlamaIndex, Vercel AI, Spring AI: anything that honours these
 OPENAI_BASE_URL=${ENDPOINTS.gateway}
-OPENAI_API_KEY=${KEY(c)}
-
-# Azure OpenAI SDKs
-AZURE_OPENAI_ENDPOINT=${ENDPOINTS.gateway}
-AZURE_OPENAI_API_KEY=${KEY(c)}`,
+OPENAI_API_KEY=${KEY(c)}`,
     lang: "env",
   },
   {

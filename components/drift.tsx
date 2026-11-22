@@ -1,13 +1,12 @@
 "use client";
+import { Failure } from "./pending";
 
 import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Status, Tag } from "./ui";
 import { Checkbox } from "./forms";
-import { QuietNote } from "./overlays";
 import { GroupHeader } from "./page-tabs";
-import { QUIET } from "@/lib/quiet";
 import { hueFor } from "@/lib/hue";
 import { getDrift, type AgentDrift, type DriftMeasure, type DriftReport } from "@/lib/api/l7";
 import { MEASURE_ASKS, MEASURE_LABEL, STATISTIC_LABEL, benchmarkEvalLine, dispositionField, driftVerdict, orderDrift, sideText, statText, thresholdText, windowsLine } from "@/lib/drift";
@@ -61,8 +60,8 @@ function DriftInner() {
   const thin = agents.filter((a) => !a.enough).length;
   const mix = report?.thresholds.mix_js ?? 0.2;
   const z = report?.thresholds.mean_z ?? 2;
-  // A quiet console (lib/quiet.ts) whose drift door did not answer says so once, in place of figures that would never settle.
-  const quietDown = QUIET && Boolean(error) && !report;
+  // A drift door that did not answer: no figure stands in for it, and the thresholds are not the console's own.
+  const quietDown = Boolean(error) && !report;
 
   return (
     <div className="mx-auto w-full max-w-[1520px] px-5 py-7" data-hue="amber">
@@ -92,20 +91,15 @@ function DriftInner() {
         Whether an agent still behaves as it did: its last {report?.windows.recent_h ?? 24} hours of finished runs against the {report?.windows.baseline_d ?? 30} days before, on how runs end, the confidence they report, what a run costs, which tools it calls and how often it meets a refusal. A shift past its threshold is raised in the attention queue.
       </GroupHeader>
 
-      {quietDown && (
-        <div className="mt-5">
-          <QuietNote />
-        </div>
-      )}
       <section className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-4">
         {[
           { k: "Drifted", v: report ? String(drifted) : "…", tone: drifted ? "text-err" : "" },
           { k: "Within thresholds", v: report ? String(compared) : "…", tone: "" },
           { k: "Not enough runs", v: report ? String(thin) : "…", tone: "" },
-          { k: "Thresholds", v: `JS ${mix} · z ±${z}`, tone: "" },
+          { k: "Thresholds", v: report ? `JS ${mix} · z ±${z}` : "…", tone: "" },
         ].map((x) => (
           <div key={x.k} className="flex flex-col gap-0.5 bg-surface px-3 py-2.5">
-            {quietDown ? <span className="flex h-[17px] items-center text-[12px] text-faint">Not connected</span> : <span className={`tnum text-[17px] leading-none font-semibold ${x.tone}`}>{x.v}</span>}
+            {quietDown ? <span className="flex h-[17px] items-center text-[12px] text-faint">Not read</span> : <span className={`tnum text-[17px] leading-none font-semibold ${x.tone}`}>{x.v}</span>}
             <span className="text-[10.5px] text-faint">{x.k}</span>
           </div>
         ))}
@@ -118,7 +112,7 @@ function DriftInner() {
         </p>
       )}
 
-      {error && !QUIET && <p className="mt-4 text-[12.5px] text-err">{error}</p>}
+      {error && <Failure className="mt-4" what="The drift report could not be read" message={error} />}
       {report && shown.length === 0 && !error && (
         <p className="mt-6 text-[12.5px] text-faint">{onlyDrifted ? "No agent drifted." : "No agent has finished runs in these windows yet."}</p>
       )}

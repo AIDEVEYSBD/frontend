@@ -1,4 +1,6 @@
 "use client";
+import { AnswerFailure } from "./pending";
+import { ask, type Answer } from "@/lib/api/pending";
 
 import { useEffect, useMemo, useState } from "react";
 import { soon } from "@/lib/soon";
@@ -11,8 +13,6 @@ import { CLIENT_RESPONSIBILITIES, CONTROLS, FAMILIES, RESIDUAL_RISK, STANDARDS, 
 import { GROUPINGS, GROUPING_BY_ID } from "@/lib/control-domains";
 import type { WatchEvent } from "@/lib/guardrails-watch";
 import { GuardrailsWatch } from "./guardrails-watch";
-import { QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
 import { GroupHeader } from "./page-tabs";
 
 /**
@@ -39,7 +39,7 @@ interface Data {
 }
 
 type View = "register" | "framework" | "watch";
-const VIEW_LABEL: Record<View, string> = { register: "What the platform enforces", framework: "Data security guardrails", watch: "Injection and exfiltration watch" };
+const VIEW_LABEL: Record<View, string> = { register: "The control catalogue", framework: "Data security guardrails", watch: "Injection and exfiltration watch" };
 
 const STD_TONE: Record<string, string> = {
   "OWASP Agentic": "var(--t-c2)", "OWASP LLM": "var(--t-c7)", "NIST AI RMF": "var(--t-c5)", "ISO/IEC 42001": "var(--t-c1)", "EU AI Act": "var(--t-c8)",
@@ -61,8 +61,9 @@ function Chip({ std, ref_, name }: { std: string; ref_: string; name: string }) 
 
 export function Guardrails() {
   const [data, setData] = useState<Data | null>(null);
-  /** The read came back with no record in it, or did not come back. */
-  const [failed, setFailed] = useState(false);
+  /** The firings read (GET /api/guardrails) as it answered: not built, failed, or the record. */
+  const [answer, setAnswer] = useState<Answer<unknown> | null>(null);
+  const failed = answer !== null && answer.state !== "ok";
   const [open, setOpen] = useState<string | null>(null);
   const [std, setStd] = useState("");
   const [view, setView] = useState<View>("register");
@@ -80,14 +81,16 @@ export function Guardrails() {
 
   useEffect(() => {
     let stop = false;
-    fetch("/api/guardrails")
-      .then(async (r) => {
-        // An answer that is not the record (a refusal, a page) is a failed read, never a record to draw.
-        const d = (await r.json().catch(() => null)) as Data | null;
-        if (!r.ok || !d || typeof d.counts !== "object" || !d.posture) throw new Error("no record");
-        if (!stop) setData({ ...d, recent: Array.isArray(d.recent) ? d.recent : [] });
-      })
-      .catch(() => !stop && setFailed(true));
+    ask<Data>("guardrails").then((a) => {
+      if (stop) return;
+      // An answer that is not the record is a failed read, never a record to draw.
+      if (a.state === "ok" && (!a.data || typeof a.data.counts !== "object" || !a.data.posture)) {
+        setAnswer({ state: "error", message: "GET /api/guardrails answered with something that is not the record of firings" });
+        return;
+      }
+      setAnswer(a);
+      if (a.state === "ok") setData({ ...a.data, recent: Array.isArray(a.data.recent) ? a.data.recent : [] });
+    });
     return () => { stop = true; };
   }, []);
 
@@ -119,11 +122,10 @@ export function Guardrails() {
   const sumOf = (m: Record<string, number> | undefined, c: Control) => keysOf(c).reduce((n, k) => n + (m?.[k] ?? 0), 0);
   const fired = (c: Control) => (c.journal === "—" ? null : sumOf(data?.counts, c));
   const totalFired = data ? Object.values(data.counts).reduce((a, b) => a + b, 0) : 0;
-  // A quiet console (lib/quiet.ts) with no run and no deployed workflow behind it has no record to count from:
-  // the register is shown as the catalogue it is, and the figures read from the record are left out, never drawn as zeros.
-  const noRecord = QUIET && (failed || (data !== null && data.runs === 0 && data.posture.agents === 0));
-  // Until the read settles, a quiet console draws the catalogue alone: no placeholder figure, and no note it may have to take back.
-  const bare = noRecord || (QUIET && data === null);
+  // Firings not read (the address is not built, or the read failed): the register is shown as the catalogue it is,
+  // and every figure read from the record is left out, never drawn as a zero.
+  const noRecord = failed;
+  const bare = noRecord || data === null;
   // The register can be read in the platform's own families or in another
   // framework's domains; the controls are the same, only the shelves move.
   const DOMAIN_PALETTE = ["var(--t-c1)", "var(--t-c2)", "var(--t-c5)", "var(--t-c7)", "var(--t-c8)", "var(--t-c3)", "var(--t-c6)", "var(--t-c9)", "var(--t-c4)"];
@@ -171,14 +173,21 @@ export function Guardrails() {
         }
       >
         {view === "watch"
-          ? "What the screener caught and what the taint rules stopped: every prompt or response the screener matched, every call where untrusted content reached a tool that acts outside the box, and every host the egress policy refused, read from the run journals with secrets redacted. Open an event for its lineage."
+          ? "The injection and exfiltration watch: prompts and responses a screener matched, untrusted content that reached a tool acting outside, and hosts an egress policy refused, read from the run journals. Screening, untrusted-content tracking and an egress check are not built on this deployment, so the journals hold no such events."
           : view === "register"
-            ? `The ${CONTROLS.length} platform controls applied to every workflow. Each documents its implementation, the evidence it produces and the standards it references; control decisions are kept in the run record.`
+            ? `The ${CONTROLS.length} controls in the catalogue a deployment starts with. Each documents how it is meant to be implemented, the evidence it would leave and the standards it references.`
             : `The framework used to assess data security. ${CORE_PRINCIPLE}`}
       </GroupHeader>
 
-      {/* Quiet (lib/quiet.ts), no record behind the register: said once, under the header. */}
-      {noRecord && view !== "framework" && <QuietNote />}
+      {/* While the platform does not report the controls it applies, the page says so before anything else. */}
+      {noRecord && answer && view !== "watch" && (
+        <div className="flex flex-col gap-2">
+          <p className="rounded-md border border-line bg-surface px-3 py-2.5 text-[12px] leading-[1.55] text-dim">
+            This is the catalogue a deployment starts with. Enforcement is not connected in this release: nothing on this page reports which of these controls this deployment applies, or how often one has fired.
+          </p>
+          <AnswerFailure answer={answer} what="The record of control firings could not be read" />
+        </div>
+      )}
 
       {view === "register" && (
         <>
@@ -188,13 +197,13 @@ export function Guardrails() {
               {[
                 { label: "Controls", value: String(CONTROLS.length), sub: `${FAMILIES.length} families` },
                 { label: "Standards cited", value: String(STANDARDS.length), sub: "sources, not examiners" },
-                { label: "Workflows covered", value: noRecord ? "" : data ? String(data.posture.agents) : "—", sub: "every one deployed" },
+                { label: "Workflows on record", value: noRecord ? "" : data ? String(data.posture.agents) : "—", sub: "deployed" },
                 { label: "Tools registered", value: noRecord ? "" : data ? String(data.posture.tools) : "—", sub: data && !noRecord ? `${data.posture.sinks} act outside` : "" },
                 { label: "Runs on record", value: noRecord ? "" : data ? String(data.runs) : "—", sub: "the evidence base" },
                 { label: "Control firings", value: noRecord ? "" : data ? String(totalFired) : "—", sub: "refusals, marks, gates" },
               ].slice(0, bare && !noRecord ? 2 : 6).map((k) => (
                 <div key={k.label} className="flex flex-col justify-center gap-0.5 bg-surface px-4 py-3">
-                  {k.value ? <span className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]">{k.value}</span> : <span className="flex h-[22px] items-center text-[12px] text-faint">Not connected</span>}
+                  {k.value ? <span className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]">{k.value}</span> : <span className="flex h-[22px] items-center text-[12px] text-faint">Not read</span>}
                   <span className="text-[11px] text-faint">{k.label}</span>
                   {k.sub && <span className="truncate text-[9.5px] text-ghost">{k.sub}</span>}
                 </div>
@@ -203,7 +212,7 @@ export function Guardrails() {
             {noRecord ? (
               <section className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4 elev-1">
                 <span className="text-[11px] font-medium tracking-[0.06em] text-faint uppercase">Firings by family</span>
-                <p className="text-[11.5px] leading-[1.55] text-faint">Firings are counted here for each family of controls, from the run journals.</p>
+                <p className="text-[11.5px] leading-[1.55] text-faint">Not read: firings are not reported in this release.</p>
                 {FAMILIES.map((f) => (
                   <span key={f.id} className="flex items-center gap-1.5 text-[11px] text-fg">
                     <span className="size-1.5 rounded-[2px]" style={{ background: FAMILY_COLOR[f.id] }} />
@@ -355,7 +364,7 @@ export function Guardrails() {
               <span className="text-[11px] font-medium tracking-[0.06em] text-faint uppercase">Who implements what</span>
               <Donut data={resp} size={110} />
               <span className="text-[11px] leading-[1.5] text-faint">
-                Every guardrail listed is implemented by a named control in the register. Platform means the control covers it in full; shared means the platform does its part and the deployment completes it.
+                Each guardrail names the catalogue controls meant to carry it. Platform means the catalogue gives it to the platform in full; shared means the platform does its part and the deployment completes it. Enforcement is not connected in this release.
               </span>
             </section>
             <section className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line elev-1 sm:grid-cols-3">
@@ -363,7 +372,7 @@ export function Guardrails() {
                 { label: "Guardrails", value: String(GUARDRAILS.length), sub: `${DOMAINS.length} domains` },
                 { label: "Critical", value: String(GUARDRAILS.filter((g) => g.priority === "Critical").length), sub: "must hold at release" },
                 { label: "Release gates", value: String(GUARDRAILS.filter((g) => g.gate).length), sub: "one per guardrail" },
-                { label: "Platform enforces", value: String(resp[0].value), sub: "a control implements it" },
+                { label: "Given to the platform", value: String(resp[0].value), sub: "in the catalogue" },
                 { label: "Shared", value: String(resp[1].value), sub: "platform plus deployment" },
                 { label: "Register controls", value: String(new Set(GUARDRAILS.flatMap((g) => g.implementedBy)).size), sub: "implementing them" },
               ].map((k) => (
@@ -436,7 +445,7 @@ export function Guardrails() {
         </>
       )}
 
-      {view === "watch" && (noRecord ? <GuardrailsWatch events={null} quiet /> : <GuardrailsWatch events={data ? data.events ?? [] : null} />)}
+      {view === "watch" && (noRecord && answer ? <AnswerFailure answer={answer} compact={false} what="The watch could not be read" /> : <GuardrailsWatch events={data ? data.events ?? [] : null} />)}
 
       {/* ── the open control, as a dialog rather than a card that grows ── */}
       {openControl && (
@@ -456,9 +465,8 @@ export function Guardrails() {
             {openControl.references.map((r) => <Chip key={`${r.std}${r.ref}`} std={r.std} ref_={r.ref} name={r.name} />)}
           </div>
           <div className="grid gap-px bg-line md:grid-cols-2">
-            <Cell k="Implementation" v={openControl.implementation} />
+            <Cell k="Intended implementation" v={openControl.implementation} />
             <Cell k="Evidence" v={openControl.evidence} />
-            {openControl.order !== null && <Cell k="Evaluated" v={`Position ${openControl.order} in the policy engine, on every tool call.`} />}
             {openControl.journal !== "—" && <Cell k="Journalled as" v={<Mono className="text-[11px]">{openControl.journal}</Mono>} />}
             <Cell k="Platform family" v={FAMILIES.find((f) => f.id === openControl.family)?.name ?? openControl.family} />
             <Cell k="Framework domains" v={GROUPINGS.map((g) => `${g.short}: ${g.domains.find((d) => d.id === g.of[openControl.id])?.name ?? "—"}`).join(" · ")} />
@@ -535,9 +543,9 @@ export function Guardrails() {
       {(!bare || noRecord) && <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
         <div className="flex items-center gap-2 border-b border-line px-4 py-3">
           <span className="text-[13px] font-semibold tracking-[-0.005em]">Latest control firings</span>
-          <span className="text-[11.5px] text-faint">{data || noRecord ? "from the run journals · click through to the run" : "reading the record…"}</span>
+          <span className="text-[11.5px] text-faint">{noRecord ? "not read" : data ? "from the run journals · click through to the run" : "reading the record…"}</span>
         </div>
-        {noRecord && <p className="px-4 py-3 text-[11.5px] text-faint">The latest firings are listed here, each with the control, the agent and a link to its run.</p>}
+        {noRecord && <p className="px-4 py-3 text-[11.5px] text-faint">Not read: firings are not reported in this release.</p>}
         {!noRecord && data?.recent.length === 0 && <p className="px-4 py-3 text-[11.5px] text-faint">No control has fired on this deployment yet.</p>}
         {(data?.recent ?? []).slice(0, 10).map((e, i) => (
           <a key={`${e.run}-${i}`} href={`/runs?id=${encodeURIComponent(e.run)}`} className="focusable flex items-baseline gap-3 border-b border-line px-4 py-2 last:border-0 hover:bg-raise/40">

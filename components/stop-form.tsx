@@ -4,8 +4,6 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Mono, Status, Tag } from "./ui";
 import { Field, Textarea } from "./forms";
-import { QuietNote } from "./overlays";
-import { QUIET } from "@/lib/quiet";
 import { api, errorText, type RunRow } from "@/lib/api/client";
 import { auditLine, fleet, FLEET_ACTIONS, getFleet, inFlight, setLockdown, type FleetAction, type FleetResult, type LockdownState, type PauseInfo } from "@/lib/api/l5";
 import type { Owner } from "@/lib/api/pending";
@@ -416,8 +414,7 @@ export function StopForm({
                       Read again
                     </Button>
                   </div>
-                  {heldError && QUIET && <QuietNote inline />}
-                  {heldError && !QUIET && (
+                  {heldError && (
                     <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">
                       Which agents are paused or draining could not be read: {heldError}. Confirming still sends the resume.
                     </p>
@@ -460,8 +457,7 @@ export function StopForm({
                     Read again
                   </Button>
                 </div>
-                {runsError && QUIET && <QuietNote inline />}
-                {runsError && !QUIET && (
+                {runsError && (
                   <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">
                     The runs in flight could not be read: {runsError}. Nothing is listed; the door still answers what it reached.
                   </p>
@@ -478,9 +474,7 @@ export function StopForm({
               </div>
               )}
 
-              {/* One calm line at most: a read above that already says so is not repeated. */}
-              {failure && QUIET && !((READS_RUNS.includes(scope) && runsError) || (scope === "resume" && heldError)) && <QuietNote inline />}
-              {failure && !QUIET && (
+              {failure && (
                 <p role="alert" className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[12px] leading-[1.5] text-err">
                   {refused[scope]}: {failure}
                 </p>

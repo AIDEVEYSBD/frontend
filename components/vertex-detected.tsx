@@ -1,10 +1,11 @@
 "use client";
+import { errorText } from "@/lib/api/client";
+import { Failure } from "./pending";
 
 import { useEffect, useMemo, useState } from "react";
 import { Button, Status, Tag } from "./ui";
 import { BrandMark } from "./brand";
 import { Text } from "./builder/controls";
-import { QUIET } from "@/lib/quiet";
 import type { VertexAnswer, VertexGroup } from "@/lib/service-answers";
 
 /**
@@ -19,29 +20,31 @@ import type { VertexAnswer, VertexGroup } from "@/lib/service-answers";
 
 let cached: VertexAnswer | null = null;
 
-export function useVertex(): { answer: VertexAnswer | null; busy: boolean; reload: () => void } {
+export function useVertex(): { answer: VertexAnswer | null; error: string; busy: boolean; reload: () => void } {
   const [answer, setAnswer] = useState<VertexAnswer | null>(cached);
+  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [tick, setTick] = useState(0);
   useEffect(() => {
     if (cached && tick === 0) return;
     let live = true;
     fetch(`/api/providers/vertex${tick ? "?fresh=1" : ""}`, { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: VertexAnswer | null) => {
+      .then(async (r) => {
+        const d = (await r.json().catch(() => null)) as VertexAnswer | null;
         if (!live) return;
-        if (d && Array.isArray(d.groups)) {
-          cached = d;
-          setAnswer(d);
-        }
+        // A refusal or a fault is shown with its status and address, never as a panel that is simply not there.
+        if (!r.ok || !d || !Array.isArray(d.groups)) throw new Error(errorText(d, r, "GET", "/api/providers/vertex"));
+        cached = d;
+        setAnswer(d);
+        setError("");
       })
-      .catch(() => {})
+      .catch((e) => live && setError((e as Error).message))
       .finally(() => live && setBusy(false));
     return () => {
       live = false;
     };
   }, [tick]);
-  return { answer, busy, reload: () => { setBusy(true); setTick((t) => t + 1); } };
+  return { answer, error, busy, reload: () => { setBusy(true); setTick((t) => t + 1); } };
 }
 
 const SOURCE: Record<string, string> = {
@@ -52,7 +55,7 @@ const SOURCE: Record<string, string> = {
 
 /** Drawn inside a panel that already has a card: its own panel on Configuration's Models tab. */
 export function VertexDetected() {
-  const { answer, busy, reload } = useVertex();
+  const { answer, error, busy, reload } = useVertex();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string>("");
 
@@ -64,9 +67,10 @@ export function VertexDetected() {
     return needle ? rows.filter((m) => m.id.toLowerCase().includes(needle) || m.label.toLowerCase().includes(needle)) : rows;
   }, [current, q]);
 
-  if (!answer) return null;
+  // Publishers that answered with an error: each is listed with its reason, never dropped from the count in silence.
+  const errored = (answer?.groups ?? []).filter((g) => g.error);
+  if (!answer) return error ? <div className="border-b border-line px-4 py-3 last:border-b-0"><Failure what="What Google Vertex AI offers could not be read" message={error} /></div> : null;
   if (!answer.connected) {
-    if (QUIET) return null;
     const refused = answer.groups.find((g) => g.error);
     const line = answer.source
       ? `This server has a Google identity${answer.account ? ` (${answer.account})` : ""}, but Vertex AI did not list any model to it${refused?.error ? `: ${refused.error}` : ""}.`
@@ -89,6 +93,11 @@ export function VertexDetected() {
           Check again
         </Button>
       </div>
+      {errored.map((g) => (
+        <p key={g.id} className="border-b border-line px-4 py-2 text-[11.5px] leading-[1.5] text-warn">
+          <span className="font-medium">{g.label}</span> did not list its models: {g.error}
+        </p>
+      ))}
       <dl className="grid grid-cols-1 gap-x-6 gap-y-1 border-b border-line px-4 py-2.5 text-[11.5px] sm:grid-cols-3">
         <Fact term="Project" value={answer.project} />
         <Fact term="Region" value={answer.region || "global"} />

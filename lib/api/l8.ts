@@ -1028,8 +1028,7 @@ async function call<T>(req: DoorRequest, parse: (v: unknown) => T, signal?: Abor
   }
   if (!res.ok) {
     const page = typeof json !== "object" || json === null;
-    let message = errorText(page ? (text.trimStart().startsWith("<") ? null : text) : json, res);
-    if (/answered (404|502|503)/.test(message) && !obj(json).error) message = `${message}: this door is served by the backend; this deployment may not have named it (BACKEND_ORIGIN)`;
+    const message = errorText(page ? (text.trimStart().startsWith("<") ? null : text) : json, res, req.method, req.path);
     throw new DoorError(message, res.status, obj(json));
   }
   return parse(json);
@@ -1156,9 +1155,11 @@ export async function getAgentDetail(agent: string): Promise<AgentLifecycleDetai
 export async function editableDocument(agent: string): Promise<EditableDocument> {
   const detail = await getAgentDetail(agent);
   const latest = detail.version;
+  // A draft is a latest save that is not what production runs (`deployed_version`), whatever `spec_version` says.
+  const draft = latest !== null && detail.deployed_version !== null && latest !== detail.deployed_version;
   if (latest !== null && detail.spec_version !== latest) {
     const doc = await getVersionDocument(agent, latest);
-    return { agent: detail, spec: doc.spec, version: latest, draft: !doc.current };
+    return { agent: detail, spec: doc.spec, version: latest, draft: draft || !doc.current };
   }
-  return { agent: detail, spec: detail.spec, version: latest, draft: false };
+  return { agent: detail, spec: detail.spec, version: latest, draft };
 }

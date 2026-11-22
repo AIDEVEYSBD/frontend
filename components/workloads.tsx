@@ -85,6 +85,7 @@ function WorkloadCard({ profile, reading }: { profile: WorkloadProfile; reading:
           <Column title="A person decides" items={decides} empty={gates.from === "door" ? "No gate is listed." : "Not named by the control plane."} />
           <Column title="What comes out" items={profile.produces} empty="Not described for this workload." />
         </div>
+        <p className="text-[10.5px] leading-[1.5] text-faint">As specified for the workload&rsquo;s own console, not what this deployment runs.</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line px-4 py-3">
@@ -119,8 +120,8 @@ function Index({ answer, reload }: { answer: Answer<WorkloadList> | null; reload
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7" data-hue="blue">
       <PageHeader title="Workloads">
-        The four security workloads this console controls. Each is a deployed agent that a person runs on what they hand over: the run stops at its gates for a person&rsquo;s answer and is held to the agent&rsquo;s limits, and
-        what it finds and the report it writes are read here.
+        The four security workloads this console is built for. Each card describes one workload&rsquo;s own console, a separate product: what a person hands over, where a person decides and what comes out, as specified,
+        not what this deployment runs. Whether this deployment offers each one is read from the platform and shown on its card.
       </PageHeader>
 
       {answer?.state === "error" && (
