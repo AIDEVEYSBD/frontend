@@ -93,6 +93,13 @@ export function UseCases({ workloads, calm }: { /** The workloads door's answer,
     reload();
   };
 
+  /* What the register's answer names as not built: the older platform names `enforcement` (nothing is held to a use case); the current one names `gates` and `autonomy` (a run is held to its use case's approval and data classes, not yet to these). */
+  const unbuiltList = notBuiltOf(answer?.state === "ok" ? answer.data : null);
+  const recordOnly = notBuilt(unbuiltList, "enforcement");
+  const unchecked = [
+    { field: "gates", words: "registered gates" },
+    { field: "autonomy", words: "the autonomy tier" },
+  ].filter((u) => notBuilt(unbuiltList, u.field));
   const noticeText: ReactNode = notice ? "door" in notice ? <NotConnectedNote door={notice.door} /> : notice.text : null;
   const waiting = rows.filter((u) => u.state === "awaiting_approval").length;
 
@@ -123,9 +130,14 @@ export function UseCases({ workloads, calm }: { /** The workloads door's answer,
       {answer?.state === "pending" && (calm ? <p className="text-[12px] text-faint">{WHAT}</p> : <NotConnected door={answer.door} compact>{WHAT}</NotConnected>)}
       {answer?.state === "error" &&
         <Failure what="The registered use cases could not be read" message={answer.message} />}
-      {connected && notBuilt(notBuiltOf(answer?.state === "ok" ? answer.data : null), "enforcement") && (
+      {connected && recordOnly && (
         <p className="text-[12px] leading-[1.55] text-dim" data-not-built="enforcement">
           A record only: holding runs to a registered use case (its data classes, autonomy level and gates) is not built, so nothing here is enforced on a run.
+        </p>
+      )}
+      {connected && !recordOnly && unchecked.length > 0 && (
+        <p className="text-[12px] leading-[1.55] text-dim" data-not-built={unchecked.map((u) => u.field).join(" ")}>
+          A run of a workload is refused until its use case is approved, and a dataset above the use case&rsquo;s highest data class is refused; {unchecked.map((u) => u.words).join(" and ")} {unchecked.length === 1 ? "is" : "are"} recorded, not yet checked against runs. A workload has at most one use case.
         </p>
       )}
       {connected && rows.length === 0 && <p className="text-[12px] text-faint">No use case is registered. Register one to record its owner, the data it handles, its autonomy level and the gates where a person decides.</p>}
@@ -249,8 +261,12 @@ export function UseCases({ workloads, calm }: { /** The workloads door's answer,
           onClose={() => !busy && setMoving(null)}
         >
           {moving.to === "approved"
-            ? "The approval is recorded with your name. The use case is a record of what was agreed: runs are not yet held to its owner, data classes, autonomy level or gates."
-            : "It moves from draft to awaiting approval, and a person with the approve permission decides. It stays as registered until then."}
+            ? recordOnly
+              ? "The approval is recorded with your name. The use case is a record of what was agreed: runs are not yet held to its owner, data classes, autonomy level or gates."
+              : "The approval is recorded with your name. Runs of its workload may then start, and a dataset above its highest data class is refused. Its gates and autonomy level are recorded, not yet checked against runs."
+            : recordOnly
+              ? "It moves from draft to awaiting approval, and a person with the approve permission decides. It stays as registered until then."
+              : "It moves from draft to awaiting approval, and a person with the approve permission decides. Until it is approved, a run of its workload is refused."}
         </Dialog>
       )}
     </Section>

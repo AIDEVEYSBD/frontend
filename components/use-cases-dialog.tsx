@@ -130,7 +130,7 @@ export function RegisterDialog({ workloads, onDone, onClose }: { workloads: { va
           <h3 id="af-use-case-title" className="text-[16px] font-semibold tracking-tight">
             Register a use case
           </h3>
-          <p className="text-[12.5px] leading-[1.5] text-dim">It is registered as a draft, then sent for approval. It is a record of what was agreed: runs are not yet held to it.</p>
+          <p className="text-[12.5px] leading-[1.5] text-dim">It is registered as a draft, then sent for approval; a run of its workload is refused until a second person approves it. A workload has at most one use case.</p>
         </div>
 
         <div className="flex min-h-0 grow flex-col gap-4 overflow-y-auto px-5 py-4">

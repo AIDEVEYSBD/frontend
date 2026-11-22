@@ -293,7 +293,8 @@ export function WorkloadAcceptance({ profile }: { profile: WorkloadProfile }) {
   const signoffs = record && Array.isArray(record.signoffs) ? record.signoffs : [];
   const met = criteria.filter((c) => c.met === true).length;
   const open = issues.filter((i) => i.state === "open");
-  const signed = signoffs.filter((s) => s.decision).length;
+  // A signature given on an earlier version of the record (`stale`) does not count.
+  const signed = signoffs.filter((s) => s.decision && !s.stale).length;
   const status = record ? acceptanceStatusMeta(record.status) : null;
 
   return (
@@ -380,14 +381,14 @@ export function WorkloadAcceptance({ profile }: { profile: WorkloadProfile }) {
                           {shortWhen(s.at)}
                         </span>
                       )}
-                      {s.decision === "accepted" ? <Status tone="ok">Accepted</Status> : s.decision === "rejected" ? <Status tone="err">Rejected</Status> : <Status tone="neutral">Not signed</Status>}
+                      {s.decision && s.stale ? <Status tone="warn">Signed an earlier version; does not count</Status> : s.decision === "accepted" ? <Status tone="ok">Accepted</Status> : s.decision === "rejected" ? <Status tone="err">Rejected</Status> : <Status tone="neutral">Not signed</Status>}
                     </li>
                   ))}
                 </ul>
               )}
             </Block>
           </div>
-          <Note>The criteria with their results, the eval run they came from and the Sign control are on the Acceptance page.</Note>
+          <Note>The criteria with their results and the runs they were measured on, the issues and the Sign control are on the Acceptance page.</Note>
         </>
       )}
     </Card>

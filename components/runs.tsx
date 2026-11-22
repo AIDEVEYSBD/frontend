@@ -27,7 +27,7 @@ import { ControlMark, ControlRef, KILL_CONTROL } from "./control-ref";
 import { callOfEntry, callOutcomes, callStateLabel, type CallOutcome } from "@/lib/tool-calls";
 import { RunBoard, ViewSwitch, useRunView, type BoardEdge } from "./run-board";
 import { api, errorText, subscribeRunEvents, type RunEnd, type Schemas } from "@/lib/api/client";
-import { artefactsZipUrl, gateFromSuspension, listGates, lockdownRefusalOf, lockdownRefusalText, operatorOf, type Gate } from "@/lib/api/l5";
+import { DoorError, artefactsZipUrl, gateFromSuspension, listGates, lockdownRefusalOf, lockdownRefusalText, operatorOf, type Gate } from "@/lib/api/l5";
 import { runSourceOf, type RunRowL6 } from "@/lib/api/l6";
 import { exitText, sandboxLine, sandboxOfEntry, sandboxRunOf, SANDBOX_TOOL } from "@/lib/sandbox";
 import { RunSourceTag } from "./run-source";
@@ -36,7 +36,9 @@ import { KillDialog } from "./kill-dialog";
 import { RunFlagsBanner, RunMarkers } from "./run-flags";
 import { pausedLine, retiredLine, runFlagsOf, type RunFlags } from "@/lib/lifecycle";
 import { retiredOf, type Retired } from "@/lib/api/l8";
-import { pausedRefusalOf } from "@/lib/api/l8b";
+import { deliverableFileUrl, downloadDeliverable, pausedRefusalOf } from "@/lib/api/l8b";
+import { fileRefusalText, sizeText } from "@/lib/deliverables";
+import { useDoorOff } from "@/lib/use-doors";
 import { wouldCallOf, wouldCallLine } from "@/lib/canary";
 import { KillAlreadyView, KillReceiptView, RunTreePanel } from "./run-tree";
 import { RateLimitNote, useRetryReady } from "./rate-limit";
@@ -120,22 +122,116 @@ function normalise(entries: Entry[]): Entry[] {
   });
 }
 
-function artifactsOf(entries: Entry[]): { name: string; kind: string; t: number }[] {
-  const out: { name: string; kind: string; t: number }[] = [];
+/**
+ * A file the run wrote. `document.write` answers `{written, where, deliverable, digest, bytes, format}`:
+ * the file is the deliverable that holds it, served by `GET /api/deliverables/{id}/file`. A file an
+ * entry names without a deliverable (an older run's output note) is listed by name, with no link.
+ */
+interface RunFile {
+  name: string;
+  kind: string;
+  t: number;
+  deliverable?: string;
+  digest?: string;
+  bytes?: number;
+}
+
+function artifactsOf(entries: Entry[]): RunFile[] {
+  const out: RunFile[] = [];
   for (const e of entries) {
-    const v = (e.data?.value ?? {}) as Record<string, unknown>;
+    const raw = e.data?.value;
+    const v = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+    const deliverable = e.kind === "tool.result" && typeof v.deliverable === "string" && v.deliverable ? v.deliverable : undefined;
+    // `where` names the file; a result that names its deliverable without `written`/`where` (the shape before them) names it as `file`.
     const where =
       (e.kind === "tool.result" && v.written === true && String(v.where ?? "")) ||
+      (deliverable && String(v.where ?? v.file ?? "")) ||
       (e.kind === "note" && String(e.data?.where ?? "")) ||
       "";
-    if (where) {
-      const name = where.split("/").pop() ?? where;
-      if (!out.some((a) => a.name === name)) {
-        out.push({ name, kind: name.split(".").pop() ?? "file", t: e.t });
-      }
-    }
+    if (!where) continue;
+    const name = where.split("/").pop() ?? where;
+    // One row per deliverable; a file without one is listed once by its name.
+    if (out.some((a) => (deliverable ? a.deliverable === deliverable : !a.deliverable && a.name === name))) continue;
+    out.push({
+      name,
+      kind: (typeof v.format === "string" && v.format) || name.split(".").pop() || "file",
+      t: e.t,
+      deliverable,
+      digest: typeof v.digest === "string" && v.digest ? v.digest : undefined,
+      bytes: typeof v.bytes === "number" && Number.isFinite(v.bytes) ? v.bytes : undefined,
+    });
   }
   return out;
+}
+
+/**
+ * Save a deliverable's file: fetched from its door, so a refusal (gone from
+ * disk, changed since it was written) is said in words instead of saved as
+ * the file. Returns the refusal's sentence, or "" when the file was saved.
+ */
+async function saveRunFile(f: RunFile): Promise<string> {
+  if (!f.deliverable) return "the journal names no deliverable for this file, so the platform serves no copy of it";
+  try {
+    const got = await downloadDeliverable(f.deliverable);
+    const url = URL.createObjectURL(got.blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = got.filename || f.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return "";
+  } catch (e) {
+    return e instanceof DoorError ? fileRefusalText(e) : (e as Error).message;
+  }
+}
+
+/** A run's file as a link to its deliverable's file; a click saves it and says a refusal in words. Without a deliverable, its name alone. */
+function RunFileLink({ f }: { f: RunFile }) {
+  const [refused, setRefused] = useState("");
+  const chip = "focusable flex items-center gap-1.5 rounded-md border border-line bg-surface px-2 py-1 text-[11.5px] text-fg";
+  if (!f.deliverable)
+    return (
+      <span className={`${chip} text-dim`} title="The journal names no deliverable for this file, so there is no copy to download.">
+        <Icon name="file" size={12} className="text-faint" />
+        {f.name}
+      </span>
+    );
+  return (
+    <span className="flex items-center gap-1.5">
+      <a
+        href={deliverableFileUrl(f.deliverable)}
+        download={f.name}
+        onClick={async (e) => {
+          e.preventDefault();
+          setRefused(await saveRunFile(f));
+        }}
+        className={`${chip} hover:border-line-strong`}
+      >
+        <Icon name={f.kind === "json" ? "json" : "file"} size={12} className="text-dim" />
+        {f.name}
+      </a>
+      {refused && <span className="text-[11px] text-err" role="alert">{refused}</span>}
+    </span>
+  );
+}
+
+/** Every file of the run as one zip (`GET /api/runs/{id}/artefacts.zip`), a plain link; "not built" while the platform lists the address as not built. */
+function DownloadAll({ runId, count, className = "" }: { runId: string; count: number; className?: string }) {
+  const { off, why } = useDoorOff("GET", "/api/runs/{id}/artefacts.zip");
+  const look = `focusable inline-flex h-7 shrink-0 items-center gap-1.5 rounded-sm border border-transparent bg-raise px-2.5 text-[12px] font-medium whitespace-nowrap text-fg ${className}`;
+  if (off)
+    return (
+      <span aria-disabled="true" title={why} className={`${look} cursor-not-allowed opacity-50`}>
+        Download all: not built
+      </span>
+    );
+  return (
+    <a href={artefactsZipUrl(runId)} download className={`${look} hover:brightness-[1.08] active:brightness-95`}>
+      Download all ({count}, .zip)
+    </a>
+  );
 }
 
 const clock = (ms: number) => {
@@ -1920,7 +2016,7 @@ function Theater({
   const modelCalls = entries.filter((e) => e.kind === "model.call").length;
   const denied = entries.filter((e) => e.kind === "denied" || e.kind === "contract.breach").length;
   const artifacts = useMemo(() => artifactsOf(entries), [entries]);
-  /** The run ledger names `runs[].artifacts` as not built: no step writes a file, so an empty panel says so instead of "0 produced". */
+  /** While the run ledger names `runs[].artifacts` as not built, an empty panel says "not built" instead of "0 produced". */
   const [rowsNotBuilt, setRowsNotBuilt] = useState<string[]>([]);
   useEffect(() => {
     let live = true;
@@ -2026,17 +2122,10 @@ function Theater({
             <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-line bg-raise/40 px-4 py-2.5">
               <span className="text-[11px] font-medium text-faint">Artifacts</span>
               {artifacts.map((a) => (
-                <a key={a.name} href={`/api/artifact?name=${encodeURIComponent(a.name)}`} download={a.name} className="focusable flex items-center gap-1.5 rounded-md border border-line bg-surface px-2 py-1 text-[11.5px] text-fg hover:border-line-strong">
-                  <Icon name={a.kind === "json" ? "json" : "file"} size={12} className="text-dim" />
-                  {a.name}
-                </a>
+                <RunFileLink key={a.deliverable ?? a.name} f={a} />
               ))}
               {artifacts.length === 0 && <span className="text-[11px] text-ghost">none written</span>}
-              {artifacts.length > 0 && runId && (
-                <a href={artefactsZipUrl(runId)} download className="focusable flex items-center gap-1.5 rounded-md border border-line bg-surface px-2 py-1 text-[11.5px] font-medium text-fg hover:border-line-strong">
-                  Download all (.zip)
-                </a>
-              )}
+              {artifacts.some((a) => a.deliverable) && runId && <DownloadAll runId={runId} count={artifacts.filter((a) => a.deliverable).length} />}
               <span className="grow" />
               {error && finalState === "failed" && <Status tone="err">{error.slice(0, 120)}</Status>}
               {finalState === "killed" && <span className="flex items-center gap-2"><Status tone="err">Killed by operator</Status><ControlRef control={KILL_CONTROL} /></span>}
@@ -2116,12 +2205,8 @@ function Theater({
           <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line bg-raise/60 px-4">
             <span className="truncate text-[12px] font-semibold">Artifacts</span>
             <div className="grow" />
-            {/* Every file the run wrote, as one archive: the backend's bundle door, a plain link the proxy forwards. */}
-            {artifacts.length > 0 && runId && (
-              <Button size="sm" variant="quiet" className="shrink-0" href={artefactsZipUrl(runId)}>
-                Download all ({artifacts.length})
-              </Button>
-            )}
+            {/* Every file the run wrote, as one archive: the platform's zip of the run's deliverables, a plain link the proxy forwards. */}
+            {artifacts.some((a) => a.deliverable) && runId && <DownloadAll runId={runId} count={artifacts.filter((a) => a.deliverable).length} />}
             {/* L8, second round: what the run wrote as deliverables, with their states, history and files. */}
             {runId && deliverablesWritten > 0 && (
               <Button size="sm" variant="quiet" className="shrink-0" href={`/deliverables?run=${encodeURIComponent(runId)}`}>
@@ -2156,7 +2241,7 @@ function Theater({
 
 
             {artifacts.map((a) => (
-              <ArtifactRow key={a.name} a={a} />
+              <ArtifactRow key={a.deliverable ?? a.name} a={a} />
             ))}
 
             {outputs
@@ -2282,19 +2367,20 @@ function TracePanel({ runId }: { runId: string }) {
 }
 
 /* ═══════════════════ Artifacts ═══════════════════
-   Text-shaped artifacts preview inline; download never navigates away from a
-   live stream. */
+   A run's files are its deliverables. Text-shaped ones preview inline, read
+   from the deliverable's file door; a refusal is shown as a refusal, never as
+   the file's contents. Download never navigates away from a live stream. */
 
 const PREVIEWABLE = new Set(["json", "md", "txt", "csv", "html"]);
 
-function ArtifactRow({ a }: { a: { name: string; kind: string; t: number } }) {
+function ArtifactRow({ a }: { a: RunFile }) {
   const [preview, setPreview] = useState<string | null>(null);
+  const [refused, setRefused] = useState("");
   const [open, setOpen] = useState(false);
-  const url = `/api/artifact?name=${encodeURIComponent(a.name)}`;
-  const canPreview = PREVIEWABLE.has(a.kind);
+  const canPreview = Boolean(a.deliverable) && PREVIEWABLE.has(a.kind);
 
   const toggle = async () => {
-    if (!canPreview) return;
+    if (!canPreview || !a.deliverable) return;
     if (open) {
       setOpen(false);
       return;
@@ -2302,14 +2388,23 @@ function ArtifactRow({ a }: { a: { name: string; kind: string; t: number } }) {
     setOpen(true);
     if (preview === null) {
       try {
-        const res = await fetch(url);
-        const text = await res.text();
-        setPreview(text.slice(0, 8000));
-      } catch {
-        setPreview("(could not read the file)");
+        const got = await downloadDeliverable(a.deliverable);
+        setPreview((await got.blob.text()).slice(0, 8000));
+        setRefused("");
+      } catch (e) {
+        setRefused(e instanceof DoorError ? fileRefusalText(e) : (e as Error).message);
       }
     }
   };
+  const facts = (
+    <span className="flex flex-wrap items-center gap-2">
+      <Tag>{a.kind}</Tag>
+      <Mono className="text-[10px] text-ghost">{clock(a.t)}</Mono>
+      {a.bytes !== undefined && <Mono className="text-[10px] text-ghost">{sizeText(a.bytes)}</Mono>}
+      {canPreview && <span className="text-[10px] text-faint">{open ? "hide preview" : "preview"}</span>}
+      {!a.deliverable && <span className="text-[10px] text-faint">no deliverable named: no copy to download</span>}
+    </span>
+  );
 
   return (
     <div className="overflow-hidden rounded-md border border-line bg-raise/60 transition-colors hover:border-line-strong">
@@ -2320,38 +2415,28 @@ function ArtifactRow({ a }: { a: { name: string; kind: string; t: number } }) {
         {canPreview ? (
           <button onClick={toggle} className="focusable flex min-w-0 grow cursor-pointer flex-col text-left">
             <span className="truncate text-[12px] font-medium text-fg">{a.name}</span>
-            <span className="flex items-center gap-2">
-              <Tag>{a.kind}</Tag>
-              <Mono className="text-[10px] text-ghost">{clock(a.t)}</Mono>
-              <span className="text-[10px] text-faint">{open ? "hide preview" : "preview"}</span>
-            </span>
+            {facts}
           </button>
         ) : (
           <span className="flex min-w-0 grow flex-col">
             <span className="truncate text-[12px] font-medium text-fg">{a.name}</span>
-            <span className="flex items-center gap-2">
-              <Tag>{a.kind}</Tag>
-              <Mono className="text-[10px] text-ghost">{clock(a.t)}</Mono>
-            </span>
+            {facts}
           </span>
         )}
-        <IconButton
-          size="sm"
-          label={`Download ${a.name}`}
-          className="shrink-0"
-          onClick={() => {
-            const link = document.createElement("a");
-            link.href = url;
-            link.download = a.name;
-            link.click();
-          }}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
-          </svg>
-        </IconButton>
+        {a.deliverable && (
+          <IconButton size="sm" label={`Download ${a.name}`} className="shrink-0" onClick={async () => setRefused(await saveRunFile(a))}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+            </svg>
+          </IconButton>
+        )}
       </div>
-      {open && (
+      {refused && (
+        <p className="border-t border-line px-3 py-2 text-[11px] leading-[1.5] text-err" role="alert">
+          {refused}
+        </p>
+      )}
+      {open && !refused && (
         <pre className="max-h-[220px] overflow-auto border-t border-line bg-sunken/30 p-2.5 font-mono text-[10px] leading-[1.6] whitespace-pre-wrap text-mist">
           {preview ?? "reading…"}
         </pre>

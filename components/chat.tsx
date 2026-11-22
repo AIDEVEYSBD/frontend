@@ -1,5 +1,6 @@
 "use client";
-import { Failure } from "./pending";
+import { Failure, NotConnected } from "./pending";
+import { notBuiltDoorOf } from "@/lib/api/client";
 
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -66,7 +67,14 @@ function ChatBody() {
         Two ways to talk to the platform: a chatbot from the applications register, and a request to a security workload in plain words. Each part below says whether this deployment offers it.
       </PageHeader>
 
-      {error && <Failure what="The applications register could not be read" message={error} />}
+      {/* The applications register is built in a later phase: its 501 reads as "not built", never as an empty register. */}
+      {error && notBuiltDoorOf(error) ? (
+        <NotConnected door={{ method: "GET", path: notBuiltDoorOf(error)?.path ?? "/api/applications" }} compact title="Chatbots: not built yet">
+          The chatbots registered as applications on this deployment, to talk to here under their registered prompt, model, screening and limits.
+        </NotConnected>
+      ) : error ? (
+        <Failure what="The applications register could not be read" message={error} />
+      ) : null}
 
       {apps === null && <p className="rounded-md border border-line bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-faint">Reading the applications register…</p>}
 

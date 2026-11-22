@@ -2,16 +2,19 @@
 
 import Link from "next/link";
 import { Tag } from "./ui";
+import { tierLabel } from "./use-cases-dialog";
+import { workloadHref } from "@/lib/workloads";
 import { NotConnected, NotBuiltValue, useDoor } from "./pending";
 import { notBuilt } from "@/lib/not-built";
-import type { RunAuthority } from "@/lib/api/pending";
+import type { RunAuthority, RunUseCase } from "@/lib/api/pending";
 
 /**
  * The authority a run was started under (door `runAuthority`,
  * `GET /api/runs/{id}/authority`): who started it and what they held at
- * that moment (`held`), the run it was started under when it was, its gates,
- * and, where the platform builds them, its tool grants, what was narrowed and
- * its data class ceiling. A field the answer names in `not_built` reads "not
+ * that moment (`held`), the run it was started under when it was, the
+ * approved use case it started under (or why it has none), its gates, and,
+ * where the platform builds them, its tool grants, what was narrowed and its
+ * data class ceiling. A field the answer names in `not_built` reads "not
  * built", never "none". Opened from the run's page and from a row of the run
  * tree.
  */
@@ -26,6 +29,43 @@ const TD = "px-2 py-1 align-top text-[11px]";
 
 /** The authority as the door answers it. Presentational. */
 const VIA: Record<string, string> = { iap: "signed in through Google Identity-Aware Proxy", key: "calling with an API key", issuer: "signing in with a workload token" };
+
+/** The use case a run started under: present, none (with the platform's reason), or not in the answer at all (an older platform). */
+function UseCaseRow({ a }: { a: RunAuthority }) {
+  const u: RunUseCase | null | undefined = a.use_case;
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <span className="text-[10.5px] font-semibold text-dim">Use case</span>
+      {u === undefined ? (
+        <span className="text-[11px] text-faint">Not in this answer: the platform does not say which use case the run started under.</span>
+      ) : u === null ? (
+        <span className="text-[11px] text-faint">None{a.use_case_note ? `: ${a.use_case_note}` : "; the answer gives no reason."}</span>
+      ) : (
+        <span className="flex flex-col gap-1 text-[11px] text-dim">
+          <span className="flex flex-wrap items-baseline gap-x-2">
+            <span className="font-medium text-fg">{u.name || u.id}</span>
+            <span className="font-mono text-[10.5px] text-faint">{u.id}</span>
+            {u.workload && (
+              <Link href={workloadHref(u.workload)} className="focusable rounded-sm font-mono text-[10.5px] text-dim hover:underline">
+                {u.workload}
+              </Link>
+            )}
+          </span>
+          <span className="flex flex-wrap items-center gap-1">
+            <span className="text-faint">Data classes</span>
+            {Array.isArray(u.data_classes) && u.data_classes.length ? u.data_classes.map((c) => <Tag key={c}>{c}</Tag>) : <span className="text-faint">none declared</span>}
+            <span className="ml-2 text-faint">Autonomy</span>
+            {u.autonomy ? <Tag>{tierLabel(u.autonomy)}</Tag> : <span className="text-faint">not set</span>}
+          </span>
+          <span className="text-faint" title={u.approved_by?.email}>
+            Approved{u.approved_by ? ` by ${u.approved_by.name || u.approved_by.email}` : ""}
+            {u.approved_at ? `, ${u.approved_at.replace("T", " ").slice(0, 16)}` : ""}
+          </span>
+        </span>
+      )}
+    </div>
+  );
+}
 
 export function RunAuthorityView({ a }: { a: RunAuthority }) {
   const grants = Array.isArray(a.grants) ? a.grants : [];
@@ -49,6 +89,8 @@ export function RunAuthorityView({ a }: { a: RunAuthority }) {
           </>
         )}
       </p>
+
+      <UseCaseRow a={a} />
 
       <div className="flex min-w-0 flex-col gap-1">
         <span className="text-[10.5px] font-semibold text-dim">What the starter held when it started</span>
@@ -145,7 +187,7 @@ export function RunAuthorityView({ a }: { a: RunAuthority }) {
             </span>
           ) : off("max_data_class") ? (
             <span className="text-[11px] text-faint">
-              <NotBuiltValue field="max_data_class" />: nothing sets a run&rsquo;s data class yet.
+              <NotBuiltValue field="max_data_class" />: this run has no data class of its own and no use case to take one from.
             </span>
           ) : (
             <span className="text-[11px] text-faint">None set.</span>

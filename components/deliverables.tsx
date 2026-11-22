@@ -13,6 +13,7 @@ import { DigestChip } from "./digest-chip";
 import { hueFor } from "@/lib/hue";
 import { soon } from "@/lib/soon";
 import { DoorError, type Gate } from "@/lib/api/l5";
+import { notBuiltDoorOf } from "@/lib/api/client";
 import { listAgents, type AgentSummary } from "@/lib/api/l2";
 import {
   DELIVERABLE_STATES,
@@ -325,6 +326,8 @@ function DeliverablesPage() {
   const [registersFailed, setRegistersFailed] = useState("");
   const listOff = Boolean(error);
   const registersOff = Boolean(registersFailed);
+  /** The platform answers 501 for the registers: the section reads "not built", not empty and not failed. */
+  const registersUnbuilt = Boolean(notBuiltDoorOf(registersFailed));
   const [agents, setAgents] = useState<AgentSummary[]>([]);
 
   const go = useCallback(
@@ -406,8 +409,9 @@ function DeliverablesPage() {
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7" data-hue="violet">
       <GroupHeader group="results" tab="deliverables">
-        The documents runs record, each with its state (draft, reviewed, published or withdrawn), its history and its file, and the registers a records backend wrote to. Runs on this deployment do not
-        record deliverables yet: no engine step writes one.
+        The documents runs write, each with its state (draft, reviewed, published or withdrawn), its history and its file, and the registers a records backend wrote to. A run writes a document through
+        the document.write tool, as a draft. Before a tool that acts outside the platform fires in that run, a report gate asks a person to review what it wrote: approving reviews it, refusing withdraws it,
+        and the tool then fires and publishes it.
       </GroupHeader>
       {error && (
         <Banner tone="err" title="Could not read the deliverables">
@@ -447,18 +451,18 @@ function DeliverablesPage() {
         </Section>
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
-        <Section title="Registers" meta={registers && !registersOff ? `${registers.count} on record` : undefined}>
+        <Section title="Registers" meta={registers && !registersOff ? `${registers.count} on record` : registersUnbuilt ? "not built" : undefined}>
           {registersOff ? <Failure what="The registers could not be read" message={registersFailed} /> : registers ? <RegistersView list={registers} selected={register} onSelect={(name) => go({ register: name })} /> : <p className="text-[12px] text-faint">Reading the registers…</p>}
         </Section>
         <Section title={register ? `Register ${register}` : "Register items"} meta={shownItems ? `${shownItems.count} · ${statesLine(shownItems.states)}` : undefined}>
-          {!register && <p className="text-[12px] text-faint">Pick a register to read its items and their states.</p>}
+          {!register && (registersUnbuilt ? <p className="text-[12px] text-faint">Not built: with no list of registers, there is no register to pick.</p> : <p className="text-[12px] text-faint">Pick a register to read its items and their states.</p>)}
           {register && (
             <span className="flex items-center gap-1">
               {stateButton("", "All", !itemState, () => setItemState(""))}
               {DELIVERABLE_STATES.map((s) => stateButton(s, deliverableStateMeta(s).label, itemState === s, () => setItemState(s)))}
             </span>
           )}
-          {itemsError && <span className="text-[11.5px] text-err">{itemsError}</span>}
+          {itemsError && <Failure inline what={`The items of ${register} could not be read`} message={itemsError} />}
           {shownItems && <RegisterItemsView items={shownItems} />}
         </Section>
       </div>

@@ -1226,6 +1226,7 @@ export function Control() {
                   <span className="grid size-6 shrink-0 place-items-center rounded-sm bg-raise text-dim">
                     <Icon name={name.endsWith(".json") ? "json" : "file"} size={12} />
                   </span>
+                  {/* The file itself is downloaded from its run's page, where each file links to its deliverable. */}
                   <button
                     type="button"
                     onClick={() => open({ kind: "run", id: r.id })}
@@ -1236,21 +1237,13 @@ export function Control() {
                       {r.system} · {ago(r.at)}
                     </span>
                   </button>
-                  <a
-                    href={`/api/artifact?name=${encodeURIComponent(name)}`}
-                    download={name}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label={`Download ${name}`}
-                    className="focusable inline-grid size-7 shrink-0 cursor-pointer place-items-center rounded-md border border-transparent bg-raise text-fg transition-[filter] duration-100 hover:brightness-[1.08] active:brightness-95"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
-                    </svg>
-                  </a>
                 </div>
               ))}
-            {off && <p className="px-3 py-4 text-[12px] text-faint">Documents land here the moment a run produces them.</p>}
+            {off && (
+              <p className="px-3 py-4 text-[12px] text-faint">
+                {estateAnswer?.state === "pending" ? "Not built: the files runs wrote are listed from the estate read, which the platform does not build yet." : "Not read: the estate could not be read."}
+              </p>
+            )}
             {data && !off && !data.runs.some((r) => r.artifactNames.length) && (
               <p className="px-3 py-4 text-[12px] text-faint">
                 Nothing written yet — documents land here the moment a run produces them.

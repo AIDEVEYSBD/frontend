@@ -8,11 +8,12 @@ import { Banner, Dialog, EmptyState } from "./overlays";
 import { GroupHeader } from "./page-tabs";
 import { Chips, FilterBar, SearchBox } from "./filters";
 import { DigestChip } from "./digest-chip";
-import { NotConnected, NotConnectedNote, useDoor } from "./pending";
+import { Failure, NotConnected, NotConnectedNote, useDoor } from "./pending";
 import { notBuilt, notBuiltOf } from "@/lib/not-built";
 import { DatasetUpload } from "./dataset-upload";
 import { DatasetDialog, DatasetStatus, Fact, KindMark, ModeTag, agoText, filesText, kindLabel, sizeText, whenFull } from "./dataset-parts";
 import { DATASET_KINDS, ask, type Dataset, type DatasetList, type Door } from "@/lib/api/pending";
+import { errorText } from "@/lib/api/client";
 
 /**
  * Datasets: what a security workload is run on.
@@ -22,9 +23,11 @@ import { DATASET_KINDS, ask, type Dataset, type DatasetList, type Door } from "@
  * when the run asks is live. The page lists the datasets this deployment
  * holds (door `datasets`), opens one with its digest and the runs that took
  * it (door `dataset`), uploads a new one (door `datasetCreate`) and removes
- * one (door `datasetDelete`). The doors are ahead of the backend
- * (lib/api/pending.ts): while nothing serves them the page says so and shows
- * its structure with no rows.
+ * one (door `datasetDelete`) and downloads its file
+ * (`GET /api/datasets/{id}/file`). A run reads a dataset through the
+ * platform's `dataset.read` tool, and each run that read it is listed under
+ * it (`used_by`). While the platform answers 501 for a door, the page says it
+ * is not built and shows its structure with no rows.
  */
 
 const MODES = ["offline", "live"] as const;
@@ -35,11 +38,45 @@ function matches(d: Dataset, term: string): boolean {
   return [d.name, d.id, d.owner?.name, d.owner?.team, d.connection, kindLabel(d.kind)].some((v) => (v ?? "").toLowerCase().includes(term));
 }
 
-/** How many runs took it: the count, "not built" while the platform names `used_by` as not built, or "not tracked" when the record does not say. */
+/** How many runs read it: the count ("none" for an empty list), "not built" while the platform names `used_by` as not built, or "not recorded" when the record does not say. */
 function runsText(d: Dataset, unbuilt = false): string {
-  // An empty list is not a measured zero: which runs used a dataset is not built yet, and none of them reads one.
-  if (d.used_by && d.used_by.length) return d.used_by.length.toLocaleString("en-GB");
-  return unbuilt ? "not built" : "not tracked";
+  if (unbuilt) return "not built";
+  if (!Array.isArray(d.used_by)) return "not recorded";
+  return d.used_by.length ? d.used_by.length.toLocaleString("en-GB") : "none";
+}
+
+/**
+ * Save a dataset's file (`GET /api/datasets/{id}/file`): fetched, so a refusal
+ * is said in the platform's words instead of saved as the file. Returns the
+ * refusal's sentence, or "" when the file was saved.
+ */
+async function downloadDataset(id: string, fallbackName: string): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(`/api/datasets/${encodeURIComponent(id)}/file`, { cache: "no-store", credentials: "include" });
+  } catch (e) {
+    return `the request did not reach the platform (${(e as Error).message})`;
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    let body: unknown = null;
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      body = null;
+    }
+    return errorText(body ?? (text.trimStart().startsWith("<") ? null : text), res, "GET", "/api/datasets/{id}/file");
+  }
+  const named = (res.headers.get("content-disposition") ?? "").match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i)?.[1] ?? "";
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = named ? decodeURIComponent(named) : fallbackName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return "";
 }
 
 function DatasetsPage() {
@@ -95,8 +132,8 @@ function DatasetsPage() {
           </span>
         }
       >
-        What a security workload is to be run on: a code snapshot, a firewall export, a telemetry extract or a document. Every dataset here is an uploaded file; runs on this deployment do not read
-        datasets yet, and which runs used one is not tracked yet.
+        What a security workload is to be run on: a code snapshot, a firewall export, a telemetry extract or a document. Every dataset here is an uploaded file. A run reads one through the dataset.read
+        tool, and each run that read it is listed under the dataset.
       </GroupHeader>
 
       {answer?.state === "error" && (
@@ -266,6 +303,8 @@ function DatasetDetail({ id, row, now, onClose, onRemoved }: { id: string; row: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [waits, setWaits] = useState<Door | null>(null);
+  const [fetching, setFetching] = useState(false);
+  const [refused, setRefused] = useState("");
 
   const d: Dataset | null = answer?.state === "ok" && answer.data && typeof answer.data.id === "string" ? answer.data : row;
   const used = d?.used_by;
@@ -297,8 +336,32 @@ function DatasetDetail({ id, row, now, onClose, onRemoved }: { id: string; row: 
           d ? (
             <>
               <span className="min-w-0 grow text-[11.5px] leading-[1.5] text-faint">
-                {waits ? <NotConnectedNote door={waits} /> : error ? <span className="text-err">{error}</span> : "Removing a dataset takes it out of the list of run inputs."}
+                {refused ? (
+                  <Failure inline what="The file was not downloaded" message={refused} />
+                ) : waits ? (
+                  <NotConnectedNote door={waits} />
+                ) : error ? (
+                  <span className="text-err">{error}</span>
+                ) : (
+                  "Removing a dataset takes it out of the list of run inputs."
+                )}
               </span>
+              {d.mode !== "live" && (
+                <Button
+                  size="sm"
+                  variant="solid"
+                  tone="neutral"
+                  permission="view"
+                  loading={fetching}
+                  onClick={async () => {
+                    setFetching(true);
+                    setRefused(await downloadDataset(id, d.name));
+                    setFetching(false);
+                  }}
+                >
+                  Download
+                </Button>
+              )}
               <Button size="sm" variant="solid" tone="err" permission="configure" onClick={() => setConfirming(true)}>
                 Remove
               </Button>
@@ -374,10 +437,10 @@ function DatasetDetail({ id, row, now, onClose, onRemoved }: { id: string; row: 
             <div className="flex flex-col">
               <div className="flex items-center gap-2 border-b border-line bg-raise/55 px-4 py-2">
                 <span className="text-[12px] font-semibold">Runs that used it</span>
-                <span className="tnum text-[11px] text-faint">{used && used.length ? used.length.toLocaleString("en-GB") : used ? "not tracked" : answer === null ? "reading…" : "unknown"}</span>
+                <span className="tnum text-[11px] text-faint">{used && used.length ? used.length.toLocaleString("en-GB") : used ? "none" : answer === null ? "reading…" : "unknown"}</span>
               </div>
               {used === undefined && answer !== null && <p className="px-4 py-3 text-[12px] text-faint">The record does not say which runs took this dataset.</p>}
-              {used && used.length === 0 && <p className="px-4 py-3 text-[12px] text-faint">Not tracked yet: runs on this deployment do not read datasets.</p>}
+              {used && used.length === 0 && <p className="px-4 py-3 text-[12px] text-faint">No run has read it yet.</p>}
               {used && used.length > 0 && (
                 <table className="w-full border-collapse text-[11.5px]">
                   <thead>
@@ -416,7 +479,7 @@ function DatasetDetail({ id, row, now, onClose, onRemoved }: { id: string; row: 
             {used === undefined ? (
               <span>The record does not say which runs used it.</span>
             ) : used.length === 0 ? (
-              <span>Not tracked: which runs used a dataset is not built, and runs on this deployment do not read datasets.</span>
+              <span>No run has read it.</span>
             ) : (
               <span className="flex flex-col gap-1">
                 <span>

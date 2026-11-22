@@ -241,21 +241,50 @@ function hashTarget(): { id: string; panel: string } | null {
 
 
 /**
- * Whether a source is offline or live, from its kind (7.4): a file or a
- * folder handed over is offline; a connection read when the run asks is
- * live. A kind this table does not know is read from what it configures
+ * The platform's own tools that reach outside an agent's reasoning, by the
+ * name the platform gives them: what each is, and its mode. They are told
+ * apart by tool name first, so the row reads right whatever kind the answer
+ * gives them.
+ */
+const PLATFORM_SOURCES: Record<string, { label: string; blurb: string; mode: SourceMode }> = {
+  "dataset.read": { label: "Dataset", blurb: "A file handed over: an uploaded dataset the run's input names", mode: "offline" },
+  "retrieval.search": { label: "Knowledge store", blurb: "The platform's own knowledge store: the documents admitted to it, searched when the run asks", mode: "platform" },
+  "web.fetch": { label: "Web fetch", blurb: "Pages read from the web when the run asks, from the hosts this deployment allows", mode: "live" },
+  "notify.send": { label: "Webhooks", blurb: "Messages sent when the run asks, to the hosts this deployment allows", mode: "live" },
+};
+
+/**
+ * Whether a source is offline, live or the platform's own store, from its
+ * tool when it is one of the platform's (above), else from its kind (7.4): a
+ * file or a folder handed over is offline; a connection read when the run
+ * asks is live (a tool on a tool server among them); the knowledge store is
+ * neither. A kind this table does not know is read from what it configures
  * (a path or a root against a URL or a DSN), and is not stated otherwise.
  */
-const OFFLINE_KINDS = new Set(["file", "folder", "documents", "images"]);
-const LIVE_KINDS = new Set(["vector", "tavily", "tool", "postgres", "rest", "sql", "db", "http", "git", "a2a", "slack", "smtp", "webhook", "events"]);
-function modeOf(s: { kind: string; settings: string[] }): "offline" | "live" | null {
-  if (OFFLINE_KINDS.has(s.kind)) return "offline";
-  if (LIVE_KINDS.has(s.kind)) return "live";
-  if (s.settings.some((k) => ["url", "dsn", "endpoint", "api_key"].includes(k))) return "live";
-  if (s.settings.some((k) => ["path", "root"].includes(k))) return "offline";
+type SourceMode = "offline" | "live" | "platform";
+const OFFLINE_KINDS = new Set(["file", "folder", "documents", "images", "dataset"]);
+const LIVE_KINDS = new Set(["vector", "tavily", "tool", "mcp", "tool_server", "postgres", "rest", "sql", "db", "http", "web", "git", "a2a", "slack", "smtp", "webhook", "events"]);
+const PLATFORM_KINDS = new Set(["knowledge"]);
+function modeOf(s: { kind?: string; tool?: string; server?: string; settings?: string[] }): SourceMode | null {
+  const builtin = s.tool ? PLATFORM_SOURCES[s.tool] : undefined;
+  if (builtin) return builtin.mode;
+  const kind = s.kind ?? "";
+  if (OFFLINE_KINDS.has(kind)) return "offline";
+  if (LIVE_KINDS.has(kind)) return "live";
+  if (PLATFORM_KINDS.has(kind)) return "platform";
+  // A tool on a tool server (a server no configured backend belongs to) is called when the run asks.
+  if (s.server && !CONNECTOR_DEFS.some((c) => c.server === s.server)) return "live";
+  const settings = Array.isArray(s.settings) ? s.settings : [];
+  if (settings.some((k) => ["url", "dsn", "endpoint", "api_key"].includes(k))) return "live";
+  if (settings.some((k) => ["path", "root"].includes(k))) return "offline";
   return null;
 }
-const MODE_MEANS = { offline: "A file or folder handed over: read from disk, not from a system.", live: "A connection read when the run asks." };
+const MODE_MEANS: Record<SourceMode, string> = {
+  offline: "A file or folder handed over: read from disk, not from a system.",
+  live: "A connection read when the run asks.",
+  platform: "The platform's own store: documents admitted to it, searched when the run asks.",
+};
+const MODE_LABEL: Record<SourceMode, string> = { offline: "Offline", live: "Live", platform: "Platform store" };
 
 const RISK_TONE: Record<string, "ok" | "warn" | "err" | "neutral"> = {
   read: "ok",
@@ -461,7 +490,7 @@ function ConfigurationTabs() {
   const usage = tools.some((t) => t.calls !== null);
   /** Whether the answer says if a call may be made again after its worker stopped: a column only when it does. */
   const repeatShown = tools.some((t) => t.repeatable !== null);
-  const used = sources.filter((s) => s.calls > 0).length;
+  const used = sources.filter((s) => typeof s.calls === "number" && s.calls > 0).length;
   /** The panels that read the page's record show its failure themselves; none is drawn in an empty form. */
   const quiet = false;
   /** The fields the platform names as not built on this read: an empty list among them reads "not built", never "none". */
@@ -503,29 +532,37 @@ function ConfigurationTabs() {
   /** Not known yet whether anything is behind the console: the panels wait a moment, out of sight, for the record. */
   const settling = bare === null && !waited;
 
-  /* The connections the saved workflows configure, as the record lists them:
-     a named instance of a backend on a tool binding, with the calls the run
-     journals hold for that tool. Nothing is added to this list. */
+  /* The connections the record lists: for each agent, each tool that reaches
+     outside its own reasoning (a dataset, a tool on a tool server, web fetch,
+     the knowledge store, a configured backend), with the calls the run
+     journals hold for that tool. Nothing is added to this list; a member the
+     answer leaves out is shown as not stated, never as a zero. */
   const rows = useMemo(
     () =>
-      sources.map((s) => {
+      sources.map((s, i) => {
         const def = CONNECTOR_DEFS.find((c) => c.server === s.server && c.kind === s.kind);
+        const builtin = s.tool ? PLATFORM_SOURCES[s.tool] : undefined;
+        const kind = s.kind ?? "";
+        const toolServer = !def && !builtin && s.server ? `a tool on the tool server ${s.server}` : "";
         return {
-          key: `${s.agent}:${s.server}:${s.slot}:${s.name}`,
-          name: s.name,
-          kindLabel: def?.label ?? s.kind,
-          what: def?.blurb ?? "",
-          wiring: `${s.server}.${s.slot} · ${s.kind}${s.usesVault ? " · vault credential" : ""}`,
+          key: `${s.agent}:${s.tool}:${s.server}:${s.slot}:${s.name}:${i}`,
+          name: s.name || s.tool || "unnamed",
+          // A platform tool's row is named by the answer ("Datasets handed over"); its blurb says what it is.
+          kindLabel: builtin ? "" : (def?.label ?? (kind || "kind not stated")),
+          what: builtin?.blurb ?? def?.blurb ?? toolServer,
+          // `builtin` is the platform's own server: the tool name already says where it lives.
+          wiring: [s.server === "builtin" ? "" : s.server && s.slot ? `${s.server}.${s.slot}` : s.server || "", kind, s.usesVault ? "vault credential" : ""].filter(Boolean).join(" · "),
           mode: modeOf(s),
-          tool: s.tool,
-          risk: s.risk,
-          heldBy: s.agentName,
-          agent: s.agent,
-          node: s.node,
-          calls: s.calls,
-          lastUsed: s.lastUsed,
-          taints: s.taints,
-          sink: s.sink,
+          tool: s.tool ?? "",
+          risk: s.risk ?? "",
+          heldBy: s.agentName || s.agent || "",
+          agent: s.agent ?? "",
+          node: s.node ?? "",
+          calls: typeof s.calls === "number" ? s.calls : null,
+          lastUsed: s.lastUsed ?? null,
+          // Whether it returns untrusted content or acts outside: null when the answer does not say.
+          taints: typeof s.taints === "boolean" ? s.taints : null,
+          sink: typeof s.sink === "boolean" ? s.sink : null,
         };
       }),
     [sources],
@@ -807,13 +844,13 @@ function ConfigurationTabs() {
                 data && notBuilt(unbuilt, "sources")
                   ? `Not built on this deployment · ${data.deployment.runs} runs on record.`
                   : data
-                  ? `${rows.length === 1 ? "1 connection" : `${rows.length} connections`} configured in the workflows saved on this deployment, ${used} called at least once · ${data.deployment.runs} runs on record.`
+                  ? `${rows.length === 1 ? "1 connection" : `${rows.length} connections`} named by the agents on this deployment, ${used} called at least once · ${data.deployment.runs} runs on record.`
                   : failed
                     ? "not read"
                     : "reading the workflows…"
               }
               howLabel="How to read this table"
-              how="A connection is a named instance of a backend on a tool: the agent holding it knows the verb, never the product. Mode says whether it is offline (a file or folder handed over) or live (read from a system when the run asks). Reaches says whether it returns untrusted content, acts outside the system, or both. Calls and last used are counted from the run journals; there is no health figure, because nothing measures one. Credentials are named in the vault and never held in the workflow."
+              how="A connection is a tool an agent holds that reaches outside its own reasoning: a dataset, a tool on a tool server, web fetch, the knowledge store, or a backend configured on a tool. Mode says whether it is offline (a file or folder handed over), live (read from a system when the run asks) or the platform's own knowledge store. Reaches says whether it returns untrusted content, acts outside the system, or both. Calls and last used are counted from the run journals; there is no health figure, because nothing measures one. Credentials are named in the vault and never held in the definition."
             >
               {data && rows.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2">
@@ -836,7 +873,7 @@ function ConfigurationTabs() {
                 <p className="px-4 py-6 text-[12px] leading-[1.55] text-dim">
                   {notBuilt(unbuilt, "sources")
                     ? "Not built: the platform names connected sources as not built, so this list is empty because nothing can fill it."
-                    : "No workflow on this deployment configures a connection yet. A connection appears here once a saved workflow names one."}
+                    : "No agent on this deployment holds a tool that reaches outside it. A connection appears here once an agent's definition names one: a dataset, a tool on a tool server, web fetch or the knowledge store."}
                 </p>
               )}
 
@@ -862,16 +899,16 @@ function ConfigurationTabs() {
                             <span className="flex min-w-0 flex-col">
                               <span className="flex flex-wrap items-baseline gap-2">
                                 <span className="font-mono text-[12px] font-medium text-fg">{r.name}</span>
-                                <span className="text-[11px] text-dim">{r.kindLabel}</span>
+                                {r.kindLabel && <span className="text-[11px] text-dim">{r.kindLabel}</span>}
                               </span>
                               {r.what && <span className="break-words text-[11px] text-faint">{r.what}</span>}
-                              <span className="mt-0.5 break-words font-mono text-[10.5px] leading-[1.5] text-ghost">{r.wiring}</span>
+                              {r.wiring && <span className="mt-0.5 break-words font-mono text-[10.5px] leading-[1.5] text-ghost">{r.wiring}</span>}
                             </span>
                           </td>
                           <td className="px-3 py-2.5 whitespace-nowrap">
                             {r.mode ? (
                               <span title={MODE_MEANS[r.mode]}>
-                                <Tag tone={r.mode === "live" ? "run" : "neutral"}>{r.mode === "live" ? "Live" : "Offline"}</Tag>
+                                <Tag tone={r.mode === "live" ? "run" : "neutral"}>{MODE_LABEL[r.mode]}</Tag>
                               </span>
                             ) : (
                               <span className="text-[11px] text-ghost" title="The kind of this source does not say whether it is a file handed over or a connection.">
@@ -881,8 +918,8 @@ function ConfigurationTabs() {
                           </td>
                           <td className="px-3 py-2.5 whitespace-nowrap">
                             <span className="flex flex-col gap-0.5">
-                              <span className="font-mono text-[11px] text-dim">{r.tool}</span>
-                              <Status tone={RISK_TONE[r.risk] ?? "neutral"}>{r.risk}</Status>
+                              <span className="font-mono text-[11px] text-dim">{r.tool || "tool not stated"}</span>
+                              {r.risk ? <Status tone={RISK_TONE[r.risk] ?? "neutral"}>{r.risk}</Status> : <span className="text-[10.5px] text-ghost">risk not stated</span>}
                             </span>
                           </td>
                           <td className="px-3 py-2.5 text-[11.5px]">
@@ -891,17 +928,18 @@ function ConfigurationTabs() {
                               <span className="font-mono text-[10px] text-ghost">{r.node ? `${r.agent} · ${r.node}` : r.agent}</span>
                             </span>
                           </td>
-                          <td className="tnum px-3 py-2.5 text-right font-mono text-[11.5px] text-dim">{r.calls.toLocaleString("en-GB")}</td>
-                          <td className="tnum px-3 py-2.5 whitespace-nowrap text-[11.5px] text-dim">{ago(r.lastUsed)}</td>
+                          <td className="tnum px-3 py-2.5 text-right font-mono text-[11.5px] text-dim">{r.calls === null ? <span className="text-ghost">unknown</span> : r.calls.toLocaleString("en-GB")}</td>
+                          <td className="tnum px-3 py-2.5 whitespace-nowrap text-[11.5px] text-dim">{r.calls === null && !r.lastUsed ? <span className="text-ghost">unknown</span> : ago(r.lastUsed)}</td>
                           <td className="px-3 py-2.5 whitespace-nowrap">
                             <span className="flex gap-1">
                               {r.taints && <Tag tone="warn">untrusted content</Tag>}
                               {r.sink && <Tag tone="err">acts outside</Tag>}
-                              {!r.taints && !r.sink && <span className="text-[11px] text-ghost">inside only</span>}
+                              {r.taints === false && r.sink === false && <span className="text-[11px] text-ghost">inside only</span>}
+                              {(r.taints === null || r.sink === null) && !r.taints && !r.sink && <span className="text-[11px] text-ghost">not stated</span>}
                             </span>
                           </td>
                           <td className="px-3 py-2.5 whitespace-nowrap">
-                            <Status tone={r.calls > 0 ? "ok" : "neutral"}>{r.calls > 0 ? "Called" : "Never called"}</Status>
+                            {r.calls === null ? <span className="text-[11px] text-ghost">unknown</span> : <Status tone={r.calls > 0 ? "ok" : "neutral"}>{r.calls > 0 ? "Called" : "Never called"}</Status>}
                           </td>
                         </tr>
                       ))}

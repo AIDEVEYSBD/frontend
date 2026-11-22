@@ -201,7 +201,7 @@ export function OutcomesView() {
           </span>
         }
       >
-        What each security workload reported over the window: its findings by severity and by status, and the runs that recorded them. A figure opens the findings it counts. Runs on this deployment do not record findings yet: no engine step writes one.
+        What each security workload reported over the window: its findings by severity and by status, and the runs that recorded them. A figure opens the findings it counts. A run records a finding through the finding.record tool. A workload's last run may be older than the window.
       </GroupHeader>
 
       <OutcomesBody win={win} />

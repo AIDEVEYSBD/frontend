@@ -57,7 +57,13 @@ export const DOORS = {
 
   /* ── acceptance ── */
   acceptance: { method: "GET", path: "/api/acceptance", purpose: "The acceptance record of each use case", rows: ["12.5"] },
+  acceptanceSet: { method: "PUT", path: "/api/acceptance/{use_case}", purpose: "Setting a use case's acceptance criteria and the person who signs each role", rows: ["12.5"] },
+  acceptanceResult: { method: "POST", path: "/api/acceptance/{use_case}/results", purpose: "Entering a criterion's measured result against a finished run", rows: ["12.5"] },
+  acceptanceIssue: { method: "POST", path: "/api/acceptance/{use_case}/issues", purpose: "Opening an issue on a use case's acceptance record", rows: ["12.5"] },
+  acceptanceIssueClose: { method: "POST", path: "/api/acceptance/{use_case}/issues/{id}/close", purpose: "Closing an issue on a use case's acceptance record", rows: ["12.5"] },
   acceptanceSign: { method: "POST", path: "/api/acceptance/{use_case}/sign", purpose: "Signing a use case's acceptance", rows: ["12.5"] },
+  /** The run list cut to one use case (`?use_case=<workload>`): the runs a result can be entered against. */
+  useCaseRuns: { method: "GET", path: "/api/runs", purpose: "The runs of one use case, for entering a measured result against one of them", rows: ["12.5"] },
 
   /* ── workloads ── */
   workloads: { method: "GET", path: "/api/workloads", purpose: "The approved workloads this deployment offers, with the inputs and gates each takes", rows: ["2.1", "W1", "W2", "W3", "W4"] },
@@ -106,7 +112,6 @@ export const DOORS = {
   evals: { method: "GET", path: "/api/evals", purpose: "The evaluations created on this deployment, with the history of their runs", rows: [] },
   evalsSave: { method: "POST", path: "/api/evals", purpose: "Saving a benchmark", rows: [] },
   observability: { method: "GET", path: "/api/observability", purpose: "A run's trace: how long each step took and what it cost; and the tools ranked across runs", rows: [] },
-  artifact: { method: "GET", path: "/api/artifact", purpose: "A file a run wrote", rows: [] },
   logs: { method: "GET", path: "/api/logs", purpose: "Every run's journal as one download", rows: [] },
   assistant: { method: "GET", path: "/api/assistant", purpose: "The console assistant", rows: [] },
   mcpServer: { method: "GET", path: "/api/mcp/server", purpose: "The platform's own MCP server: the tools it exposes to an MCP client", rows: [] },
@@ -162,8 +167,28 @@ export interface RunAuthority {
   narrowed: { tool: string; reason: string }[];
   max_data_class?: DataClass;
   gates: { name: string; approvers: string[] }[];
+  /**
+   * The approved use case the run started under, as copied onto the run when it started; null when there is
+   * none, and `use_case_note` then says why. Absent from an answer older than runs being bound to use cases.
+   */
+  use_case?: RunUseCase | null;
+  /** Why the run has no use case, when `use_case` is null: "this agent runs no registered workload". */
+  use_case_note?: string;
   /** Fields whose feature is not built: `grants`, `narrowed`, `gates[tool calls]`, `max_data_class`, `started_by.team`. */
   not_built?: string[];
+}
+
+/** The use case a run started under (`RunAuthority.use_case`). */
+export interface RunUseCase {
+  id: string;
+  name: string;
+  /** The workload it uses: the key the use case is known by on the results pages. */
+  workload: string;
+  data_classes: DataClass[];
+  /** An autonomy tier, `L0` to `L5`. */
+  autonomy: string;
+  approved_by: { email: string; name: string };
+  approved_at: string;
 }
 
 /** An API key a person answers for that is not revoked: holding them out does not stop it, because a key acts with its own authority. */
@@ -336,26 +361,111 @@ export interface FindingsSummary {
   }[];
 }
 
-/** GET /api/acceptance → { use_cases } */
+/** Which side of its threshold a result must fall: at or above it, or at or below it. */
+export type CriterionDirection = "at_least" | "at_most";
+
+/**
+ * GET /api/acceptance → { use_cases }. A record is keyed by the workload of a registered use case
+ * (`use_case`). `digest` is the record as it stands (criteria with their results, open issues,
+ * signers); a signature binds to the digest it signed, and one whose digest is no longer the
+ * record's is `stale` and does not count. Fields are absent rather than blank or zero.
+ */
 export interface Acceptance {
   use_case: Workload | string;
   agent: string;
   status: "not_started" | "in_test" | "accepted" | "accepted_with_issues" | "rejected";
-  criteria: { id: string; text: string; metric?: string; threshold?: number; result?: number; met?: boolean }[];
-  /** The eval run the results came from. */
+  digest: string;
+  /**
+   * `met` is worked out by the platform from the threshold and its direction; absent while there is no
+   * result or no threshold. `run`, `entered_by`, `measured_at` and `note` say who entered the result
+   * against which run; `eval_run` when an evaluation wrote it instead of a person.
+   */
+  criteria: {
+    id: string;
+    text: string;
+    metric?: string;
+    threshold?: number;
+    direction?: CriterionDirection;
+    result?: number;
+    met?: boolean;
+    run?: string;
+    entered_by?: { email: string; name: string };
+    measured_at?: string;
+    note?: string;
+    eval_run?: string;
+  }[];
+  issues: {
+    id: string;
+    text: string;
+    severity: Severity;
+    state: "open" | "closed";
+    opened_by?: { email: string; name: string };
+    opened_at: string;
+    closed_by?: { email: string; name: string };
+    closed_at?: string;
+    note?: string;
+  }[];
+  /** One per role: the person named to sign it, and their decision once given. */
+  signoffs: { role: string; person: { email: string; name?: string }; by?: string; at?: string; decision?: "accepted" | "rejected"; note?: string; stale?: boolean }[];
+  /** The eval run the results came from, when an evaluation wrote them. */
   eval_run?: string;
-  issues: { id: string; text: string; severity: Severity; state: "open" | "closed" }[];
-  signoffs: { role: string; by?: string; at?: string; decision?: "accepted" | "rejected"; note?: string }[];
 }
+export type AcceptanceCriterion = Acceptance["criteria"][number];
+export type AcceptanceIssue = Acceptance["issues"][number];
+export type AcceptanceSignoff = Acceptance["signoffs"][number];
 export interface AcceptanceList {
   use_cases: Acceptance[];
 }
 
-/** POST /api/acceptance/{use_case}/sign: the role signing (when the record names sign-off roles), the decision, a note. */
+/**
+ * PUT /api/acceptance/{use_case} (configure): opens the record of a registered use case, or replaces its
+ * criteria and signers. A criterion sent with the `id` it already has keeps its result; one sent without
+ * an id is new; one left out is removed with its result. `direction` is required when `threshold` is
+ * given. `person` is an email address; each role names one person.
+ */
+export interface AcceptanceSet {
+  criteria: { id?: string; text: string; metric?: string; threshold?: number; direction?: CriterionDirection }[];
+  signoffs: { role: string; person: string }[];
+}
+
+/** POST /api/acceptance/{use_case}/results (configure): a measured result, entered against a finished run of the use case. */
+export interface AcceptanceResultEntry {
+  criterion: string;
+  result: number;
+  run: string;
+  note?: string;
+}
+
+/** POST /api/acceptance/{use_case}/issues (configure). */
+export interface AcceptanceIssueOpen {
+  text: string;
+  severity: Severity;
+}
+
+/** POST /api/acceptance/{use_case}/issues/{id}/close (configure). */
+export interface AcceptanceIssueClose {
+  note?: string;
+}
+
+/** POST /api/acceptance/{use_case}/sign (approve): only the person a role names may sign it. A rejection carries a note. */
 export interface AcceptanceSign {
-  role?: string;
+  role: string;
   decision: "accepted" | "rejected";
   note: string;
+}
+
+/** GET /api/runs?use_case=<workload> → { runs }: the members of a run row the result picker shows. */
+export interface UseCaseRun {
+  id: string;
+  agent: string;
+  state: string;
+  at: string;
+  finished?: string | null;
+  /** The use case the run started under, when the row carries it. */
+  use_case?: string;
+}
+export interface UseCaseRunList {
+  runs: UseCaseRun[];
 }
 
 /** GET /api/workloads → { workloads } */
