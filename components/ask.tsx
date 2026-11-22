@@ -11,12 +11,14 @@ import { AssistantChart, ChartDrawing, parseChart } from "./assistant-charts";
  * Ask the corpus.
  *
  * Two ways in. Search runs the retrieval pipeline and shows the passages.
- * Answer runs the whole loop the answer route runs (retrieve, judge the
+ * Answer runs the whole loop the platform service runs (retrieve, judge the
  * evidence, rewrite and retry, answer from the passages, check the
  * grounding) and shows the answer with every claim cited to the passage it
  * came from, the attempts it took, and what the grounding check said about
  * each cited sentence. A citation is hoverable (the passage and its source)
- * and clickable (the document, opened at that passage).
+ * and clickable (the document, opened at that passage). When the service
+ * declines to answer (no chat model is offered, or the sources do not answer
+ * the question) it says why, and the passages it found are shown.
  *
  * The panel shows what was done and what came back. It says nothing about
  * what that guarantees.
@@ -38,7 +40,7 @@ export interface Hit {
   body: string;
 }
 
-interface Stages { stages: Record<string, number>; timings: Record<string, number>; rerankModel: string | null; rerankKind: string | null }
+interface Stages { stages: Record<string, number>; timings: Record<string, number>; rerankModel: string | null; /** Which ranking was used, in the service's words. */ ranking: string }
 
 export interface Citation {
   n: number;
@@ -62,13 +64,17 @@ export interface Answer {
   covered?: boolean;
   gap?: string;
   citations: Citation[];
-  grounding: { rounds: number; checked: number; supported: number; unsupported: number; verdicts: Verdict[] } | null;
+  grounding: { rounds: number; checked: number; supported: number; unsupported: number; /** Sentences that cite no passage, which the check cannot judge. */ uncited?: number; verdicts: Verdict[] } | null;
   attempts: Attempt[];
   verdict: string;
   models: { rerank: string | null; answer: string; judge: string };
   tokens: { in: number; out: number };
   ms: number;
   note?: string;
+  /** Which ranking the retrieval used, in the service's words. */
+  ranking?: string;
+  /** Why no answer was given, when none was: no_model, no_passages, not_covered or not_grounded. */
+  declined?: string;
 }
 
 const STAGE_LABEL: Record<string, string> = {
@@ -124,7 +130,7 @@ export function AskCorpus({
       if (d.error) setNotice(d.error, true);
       else {
         setHits(d.hits ?? []);
-        setStages({ stages: d.stages, timings: d.timings, rerankModel: d.rerankModel, rerankKind: d.rerankKind });
+        setStages({ stages: d.stages, timings: d.timings, rerankModel: d.rerankModel, ranking: d.ranking ?? "" });
         if (!(d.hits ?? []).length) setNotice(d.note ?? `Nothing in the "${namespace}" corpus answers that.`);
         onResult?.({ mode: "search", namespace, query: probe, stages: d.stages, hits: (d.hits ?? []).map((h: Hit) => h.source) });
       }
@@ -173,6 +179,8 @@ export function AskCorpus({
           else if (e.type === "done") {
             setAnswer(e as Answer);
             if (e.note) setNotice(e.note);
+            // No answer was given: the passages that were found are what there is to show.
+            if (!e.answer) setShowEvidence(true);
             onResult?.({
               mode: "answer",
               namespace,
@@ -202,9 +210,10 @@ export function AskCorpus({
       <div className="flex flex-col gap-1 border-b border-line px-4 py-3">
         <span className="text-[13px] font-semibold tracking-[-0.005em]">Ask the corpus what an agent would</span>
         <span className="max-w-[100ch] text-[11.5px] leading-[1.55] text-faint">
-          Search runs the retrieval stages and shows the passages: hybrid search over meaning and words, a cross-encoder rerank against the
-          question, and the guardrails in the query. Answer runs the whole loop: it judges the evidence, rewrites and retries the query when the
-          evidence is weak, answers from the passages only with every claim cited, then checks each cited sentence against the passage it cites.
+          Search runs the retrieval stages and shows the passages: hybrid search over meaning and words, a re-rank against the question by a
+          chat model when this deployment offers one, and the guardrails in the query. Answer runs the whole loop: it judges the evidence,
+          rewrites and retries the query when the evidence is weak, answers from the passages only with every claim cited, then checks each
+          cited sentence against the passage it cites. A question the sources do not answer is declined.
         </span>
       </div>
       <div className="flex flex-wrap items-center gap-2 px-4 py-3">
@@ -247,16 +256,24 @@ export function AskCorpus({
           ))}
           {answer && (
             <>
-              <span className="text-[10px] text-ghost">›</span>
-              <span className="inline-flex h-6 items-center rounded-sm border border-line px-2 text-[10.5px] text-dim">{STAGE_LABEL.answer}</span>
-              <span className="text-[10px] text-ghost">›</span>
-              <span className="inline-flex h-6 items-center rounded-sm border border-line px-2 text-[10.5px] text-dim">
-                {STAGE_LABEL.ground}
-                {answer.grounding && answer.grounding.rounds > 1 && <span className="ml-1 text-[9.5px] text-warn">× {answer.grounding.rounds}</span>}
-              </span>
+              {answer.models.answer && (
+                <>
+                  <span className="text-[10px] text-ghost">›</span>
+                  <span className="inline-flex h-6 items-center rounded-sm border border-line px-2 text-[10.5px] text-dim">{STAGE_LABEL.answer}</span>
+                </>
+              )}
+              {answer.grounding && (
+                <>
+                  <span className="text-[10px] text-ghost">›</span>
+                  <span className="inline-flex h-6 items-center rounded-sm border border-line px-2 text-[10.5px] text-dim">
+                    {STAGE_LABEL.ground}
+                    {answer.grounding.rounds > 1 && <span className="ml-1 text-[9.5px] text-warn">× {answer.grounding.rounds}</span>}
+                  </span>
+                </>
+              )}
               <span className="grow" />
               <span className="tnum text-[10px] text-ghost">
-                {(answer.ms / 1000).toFixed(1)} s · {answer.models.answer}
+                {(answer.ms / 1000).toFixed(1)} s{answer.models.answer ? ` · ${answer.models.answer}` : ""}
                 {answer.models.rerank ? ` · rerank ${answer.models.rerank.split("/").pop()}` : ""}
               </span>
             </>
@@ -300,10 +317,12 @@ export function AskCorpus({
                   grounding {answer.grounding.supported}/{answer.grounding.checked} cited sentences supported
                 </Status>
                 {answer.grounding.unsupported > 0 && <span>{answer.grounding.unsupported} not supported by the passage cited, marked in the text</span>}
+                {(answer.grounding.uncited ?? 0) > 0 && <span>{answer.grounding.uncited} sentence{answer.grounding.uncited === 1 ? "" : "s"} cite no passage and were not checked</span>}
               </span>
             )}
             <span>{answer.citations.filter((c) => c.used).length} of {answer.citations.length} passages cited</span>
             <span>judge {answer.models.judge}</span>
+            {answer.ranking && <span>ranked {answer.ranking}</span>}
             <span className="grow" />
             <button type="button" onClick={() => setShowEvidence((v) => !v)} className="focusable underline hover:text-fg">
               {showEvidence ? "Hide the passages" : "Show the passages"}
@@ -335,7 +354,7 @@ export function AskCorpus({
             { k: "Dense", v: stages.stages.dense, s: "by meaning" },
             { k: "Lexical", v: stages.stages.lexical, s: "by words" },
             { k: "Fused", v: stages.stages.fused, s: "reciprocal rank" },
-            { k: "Reranked", v: stages.stages.reranked, s: stages.rerankModel ? `${stages.rerankKind === "cross-encoder" ? "cross-encoder" : "model"} · ${stages.rerankModel.split("/").pop()}` : "unavailable" },
+            { k: "Reranked", v: stages.stages.reranked, s: stages.rerankModel ? `model · ${stages.rerankModel.split("/").pop()}` : "fused order stands" },
             { k: "Adjacent", v: stages.stages.adjacent, s: `${stages.timings.total_ms} ms in all` },
           ].map((x) => (
             <div key={x.k} className="flex flex-col bg-surface px-3 py-2">
@@ -346,6 +365,7 @@ export function AskCorpus({
           ))}
         </div>
       )}
+      {mode === "search" && stages?.ranking && <p className="border-t border-line px-4 py-2 text-[10.5px] leading-[1.5] text-faint">Ranked {stages.ranking}.</p>}
       {((mode === "search" ? hits ?? [] : showEvidence && answer ? answer.citations : []) as (Hit | Citation)[]).map((h, i) => {
         const c = h as Partial<Citation> & Partial<Hit> & { id: string; documentId: string; source: string; heading: string; url: string; body: string; relevance: number | null };
         return (
@@ -355,7 +375,7 @@ export function AskCorpus({
                 <span className="tnum shrink-0 rounded-sm bg-raise px-1.5 py-px font-mono text-[10.5px] text-fg">[{c.n}]</span>
               ) : null}
               {h.relevance !== null && h.relevance !== undefined && (
-                <span className={`tnum shrink-0 rounded-sm px-1.5 py-px font-mono text-[10.5px] ${h.relevance >= 0.35 ? "bg-ok/15 text-ok" : "bg-raise text-dim"}`} title="Cross-encoder relevance to the question">
+                <span className={`tnum shrink-0 rounded-sm px-1.5 py-px font-mono text-[10.5px] ${h.relevance >= 0.5 ? "bg-ok/15 text-ok" : "bg-raise text-dim"}`} title="Relevance to the question, as the re-ranking model scored it">
                   {h.relevance.toFixed(2)}
                 </span>
               )}

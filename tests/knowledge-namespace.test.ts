@@ -1,20 +1,16 @@
-import { readFileSync, readdirSync } from "node:fs";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_NAMESPACE, NAMESPACE_RE, parseNamespace } from "@/lib/knowledge";
 import { adjacentQuery, denseQuery, lexicalQuery, staleQuery } from "@/lib/server/knowledge-sql";
-import { FRONTEND } from "./routes";
 
 /**
  * Namespace isolation, proved without a database.
  *
- * Retrieval is where a leak would be silent, so the statements the search
- * route runs are built as pure functions and read here: every one carries
- * `namespace = $n` with the namespace in that parameter slot, and its joins
- * match on namespace too. The second half reads every knowledge route's
- * source and holds every statement passed to kq() to the word, so a query
- * added without the predicate fails here before it ships.
- * tests/knowledge-db.test.ts proves the same thing against a live index.
+ * Retrieval is where a leak would be silent, so the statements in
+ * lib/server/knowledge-sql.ts are built as pure functions and read here:
+ * every one carries `namespace = $n` with the namespace in that parameter
+ * slot, and its joins match on namespace too. The knowledge addresses
+ * themselves are answered by the platform service, which holds its own
+ * queries to the same rule (dev/smoke/knowledge.py there).
  */
 
 const NS = "engagement-7";
@@ -112,40 +108,4 @@ describe("the search statements", () => {
     expect(q.sql).toContain("x.fetched_at > d.fetched_at");
     placeholdersMatch(q.sql, q.params);
   });
-});
-
-describe("every knowledge route's statements", () => {
-  const dir = path.join(FRONTEND, "app", "api", "knowledge");
-  const files = (readdirSync(dir, { recursive: true }) as string[])
-    .filter((f) => path.basename(f) === "route.ts")
-    .map((f) => path.join("app", "api", "knowledge", f).split(path.sep).join("/"))
-    .sort();
-
-  it("finds the routes", () => {
-    expect(files).toEqual([
-      "app/api/knowledge/admit/route.ts",
-      "app/api/knowledge/answer/route.ts",
-      "app/api/knowledge/document/route.ts",
-      "app/api/knowledge/fetch/route.ts",
-      "app/api/knowledge/reembed/route.ts",
-      "app/api/knowledge/route.ts",
-      "app/api/knowledge/search/route.ts",
-      "app/api/knowledge/stale/route.ts",
-    ]);
-  });
-
-  // The search and staleness routes build their statements in
-  // lib/server/knowledge-sql.ts (held above); every other route writes its
-  // SQL inline, and each of those statements names the namespace column.
-  for (const file of files) {
-    it(`${file}: every statement passed to kq() names the namespace`, () => {
-      const text = readFileSync(path.join(FRONTEND, file), "utf-8");
-      const calls = [...text.matchAll(/\bkq(?:<[\s\S]*?>)?\(\s*(`[\s\S]*?`|"(?:[^"\\]|\\.)*")/g)];
-      const builders = (text.match(/\b(?:denseQuery|lexicalQuery|adjacentQuery|staleQuery)\(/g) ?? []).length;
-      expect(calls.length + builders, `${file} runs no SQL?`).toBeGreaterThan(0);
-      for (const [, sql] of calls) {
-        expect(sql, `${file}:\n${sql}`).toMatch(/\bnamespace\b/);
-      }
-    });
-  }
 });

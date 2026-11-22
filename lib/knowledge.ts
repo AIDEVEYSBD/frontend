@@ -2,11 +2,12 @@
  * The catalogue of public sources, and the vocabulary a source is described in.
  *
  * The catalogue is a fixed list of public standards, frameworks, regulation
- * and research that a deployment can add to a corpus. It is an offer, not a
- * register: a source is part of a deployment only once a person there has
- * added it (the `enabled` flag on its row, per namespace), and nothing of it
- * is retrievable until a person has also admitted a fetched copy. A
- * deployment starts with none added.
+ * and research that a deployment can add to a corpus. It is an offer kept in
+ * the console, not a register: the platform service holds no source until a
+ * person adds one (the Knowledge page sends the entry to the
+ * `knowledgeSourceAdd` door), fetches nothing until a person asks, and
+ * retrieves nothing until a person has admitted a fetched copy. A deployment
+ * starts with none added.
  *
  * Every entry carries its licence, because that governs what may be held:
  *
@@ -78,7 +79,7 @@ export const EXTERNAL: Source[] = [
 
   /* ── Cloud and platform baselines ── */
   { id: "csa-ccm", name: "CSA Cloud Controls Matrix v4", publisher: "Cloud Security Alliance", family: "cloud", licence: "open", use: "Cloud control objectives and shared responsibility", url: "https://cloudsecurityalliance.org/research/cloud-controls-matrix", cadence: "Periodic" },
-  { id: "mcsb", name: "Microsoft Cloud Security Benchmark", publisher: "Microsoft", family: "cloud", licence: "open", use: "Azure control baselines mapped to CIS and NIST", url: "https://learn.microsoft.com/en-us/security/benchmark/azure/overview", cadence: "Continuous" },
+  { id: "mcsb", name: "Microsoft Cloud Security Benchmark", publisher: "Microsoft", family: "cloud", licence: "open", use: "Control baselines for Microsoft's cloud, mapped to CIS and NIST", url: "https://learn.microsoft.com/en-us/security/benchmark/azure/overview", cadence: "Continuous" },
   { id: "aws-war", name: "AWS Well-Architected, Security Pillar", publisher: "Amazon Web Services", family: "cloud", licence: "open", use: "Design principles and questions for AWS estates", url: "https://docs.aws.amazon.com/wellarchitected/latest/security-pillar/welcome.html https://docs.aws.amazon.com/wellarchitected/latest/security-pillar/security.html", cadence: "Continuous" },
   { id: "gcp-foundations", name: "Google Cloud security foundations", publisher: "Google Cloud", family: "cloud", licence: "open", use: "Landing-zone and control guidance for GCP", url: "https://cloud.google.com/architecture/security-foundations", cadence: "Continuous" },
 
@@ -119,18 +120,23 @@ export const SOURCE_BY_ID = new Map(SOURCES.map((s) => [s.id, s]));
 export interface SourceAddBody {
   namespace: string;
   name: string;
-  /** Where it is fetched from. */
+  /** Where it is fetched from: https addresses, space separated. */
   url: string;
   publisher: string;
   licence: Licence;
   data_class: DataClass;
+  /** Sent with a catalogue entry, so it keeps its id, its family, what it is used for and how often it is fetched again. */
+  id?: string;
+  family?: string;
+  use_for?: string;
+  cadence?: string;
 }
 
 /** What `PATCH /api/knowledge/sources/{id}` (door `knowledgeSourceClass`) is sent. */
 export interface SourceClassBody {
   namespace: string;
   data_class: DataClass;
-  /** Who may retrieve from it: group or role names, as the identity provider names them. Empty means nobody is named. */
+  /** Names a caller must hold one of to retrieve from it. Empty means no named restriction: the data class alone decides. */
   entitled: string[];
 }
 

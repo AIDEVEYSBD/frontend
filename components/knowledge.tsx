@@ -26,6 +26,7 @@ import {
   NAMESPACE_RE,
   NAMESPACE_RULE,
   NAMESPACE_SLOT,
+  SOURCES,
   UPLOAD_FIELDS,
   type Licence,
   type SourceAddBody,
@@ -50,10 +51,12 @@ import {
  * Everything on the page is one namespace's: the corpus picked in the header
  * (remembered per browser) is sent on every call the page makes.
  *
- * Three things here are ahead of their door (lib/api/pending.ts): adding a
- * source of the deployment's own, uploading a document, and setting a
- * source's data class and who is entitled to it. Their forms are built and
- * say they are not connected until something serves the door.
+ * Everything is read from and written to the platform service. The public
+ * catalogue alone is the console's (lib/knowledge.ts): the service holds no
+ * source until a person adds one, so an entry of the catalogue is sent to it
+ * only when a person adds that entry here. Adding a source, uploading a
+ * document and setting a source's class go through doors declared in
+ * lib/api/pending.ts; their forms say so if a deployment does not serve them.
  */
 
 interface Source extends SourceClassFields {
@@ -66,11 +69,28 @@ interface Source extends SourceClassFields {
   url: string;
   cadence: string;
   enabled: boolean;
-  documents: string;
-  staged: string;
-  chunks: string;
+  documents: number;
+  staged: number;
+  chunks: number;
   last_admitted: string | null;
+  /** How its fetches stand, in the service's word: current, changed, overdue, never fetched and so on. */
+  health?: string;
+  last_fetch_at?: string | null;
+  /** What the last fetch came to: staged, unchanged, refused or failed. */
+  last_fetch_result?: string;
+  last_fetch_detail?: string;
+  /** How often the service fetches it again, in days; null when only a person does. */
+  refresh_days?: number | null;
+  next_refresh_at?: string | null;
+  /** An entry of the public catalogue the service does not hold: adding it sends the entry. */
+  suggested?: boolean;
 }
+
+/** The public catalogue as rows the page can list beside what the service holds. */
+const SUGGESTED: Source[] = SOURCES.map((s) => ({
+  id: s.id, name: s.name, publisher: s.publisher, family: s.family, licence: s.licence, use_for: s.use, url: s.url, cadence: s.cadence,
+  enabled: false, documents: 0, staged: 0, chunks: 0, last_admitted: null, suggested: true,
+}));
 
 interface Staged {
   id: string;
@@ -91,7 +111,7 @@ interface Data {
   namespaces?: string[];
   /** The register: sources a person added to this corpus. */
   sources?: Source[];
-  /** Offered and not added: the public catalogue, and anything removed from the register. */
+  /** Sources a person took out of the register: held by the service, left out of retrieval. */
   catalogue?: Source[];
   staged?: Staged[];
   admissions?: { document_id: string; source_id: string; admitted: boolean; by_whom: string; note: string; chunks: number; at: string; title: string }[];
@@ -101,8 +121,8 @@ interface Data {
     model: string;
     dimensions: number;
     embeddingReady: boolean;
-    /** The provider as configured: host, sources, and the dimension it has answered with in this process. */
-    embedding?: { ready: boolean; model: string; host: string; endpointSource: string; keySource: string; dimension: number | null; columnDimensions: number };
+    /** The embedding endpoint as configured: its host, the width its model answers with (null until the first call), and how many admitted chunks are on another model or width. */
+    embedding?: { ready: boolean; model: string; host: string; dimension: number | null; behind: number };
     /** Recomputed on every read against what the latest admission recorded. */
     integrity?: {
       ok: boolean | null;
@@ -112,16 +132,6 @@ interface Data {
       note: string;
     } | null;
   };
-}
-
-/** What the re-embed door answers when the provider's width differs from the column's. */
-interface ReembedRefusal {
-  error: string;
-  dimension?: number;
-  columnDimensions?: number;
-  model?: string;
-  mustChange?: string[];
-  hint?: string;
 }
 
 const LICENCES: Licence[] = ["open", "registration", "licensed"];
@@ -176,9 +186,8 @@ export function Knowledge() {
   const [uploading, setUploading] = useState(false);
   /** The source being added to or removed from the register. */
   const [busyId, setBusyId] = useState<string | null>(null);
-  /** The re-embed: confirming, running, or refused with what must change. */
-  const [reembed, setReembed] = useState<null | { stage: "confirm" | "busy"; force: boolean } | { stage: "refused"; refusal: ReembedRefusal }>(null);
-  const { session } = useSession();
+  /** The re-embed: confirming or running. */
+  const [reembed, setReembed] = useState<null | "confirm" | "busy">(null);
   const [folded, setFolded] = useState<Set<string>>(new Set());
   const toggleFold = (p: string) =>
     setFolded((f) => {
@@ -238,42 +247,42 @@ export function Knowledge() {
     setNamespace(next);
   };
 
-  /* Re-embed the namespace with the current provider. A width that differs
-     from the column's is refused by the door with what must change; the
-     dialog shows that and offers force, which alters the column. */
-  const runReembed = async (force: boolean) => {
+  /* Re-embed the namespace with the embedding model configured now. Each
+     chunk records the model and width of its vector, so a change of either
+     needs no change to the store: only this. */
+  const runReembed = async () => {
     if (!namespace) return;
-    setReembed({ stage: "busy", force });
+    setReembed("busy");
     try {
-      const r = await fetch("/api/knowledge/reembed", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ namespace, force, by: signerName(session, CURRENT_USER.name) }),
-      });
-      const j = (await r.json().catch(() => ({}))) as ReembedRefusal & { note?: string; chunks?: number; model?: string; dimension?: number; needsReembed?: string[] };
-      if (r.status === 409 && j.mustChange) {
-        setReembed({ stage: "refused", refusal: j });
-        return;
-      }
-      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
-      setNotice({ ok: true, text: `${j.note ?? "Re-embedded."}${j.needsReembed?.length ? ` Next: ${j.needsReembed.join(", ")}.` : ""}` });
-      setReembed(null);
+      const r = await fetch("/api/knowledge/reembed", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ namespace }) });
+      const j = (await r.json().catch(() => ({}))) as { error?: string; note?: string; needsReembed?: string[] };
+      if (!r.ok) throw new Error(j.error ?? `the server answered ${r.status}`);
+      setNotice({ ok: true, text: `${j.note ?? "Re-embedded."}${j.needsReembed?.length ? ` Still on another model: ${j.needsReembed.join(", ")}.` : ""}` });
       load();
     } catch (e) {
       setNotice({ ok: false, text: (e as Error).message });
+    } finally {
       setReembed(null);
     }
   };
 
-  /* Add a source to this corpus's register, or take it out. The row stays in
-     the store either way; the register is the rows a person switched on. */
+  /* Add a source to this corpus's register, or take it out. A source the
+     service already holds is switched; an entry of the public catalogue it
+     does not hold is sent to it whole, classed public, which is what a
+     published standard is. */
   const setEnabled = async (s: Source, enabled: boolean): Promise<boolean> => {
     if (!namespace) return false;
     setBusyId(s.id);
     try {
-      const r = await fetch("/api/knowledge", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: s.id, namespace, enabled }) });
-      const j = (await r.json().catch(() => ({}))) as { error?: string };
-      if (!r.ok) throw new Error(j.error ?? `the server answered ${r.status}`);
+      if (s.suggested) {
+        const body: SourceAddBody = { namespace, id: s.id, name: s.name, url: s.url, publisher: s.publisher, licence: s.licence, data_class: "public", family: s.family, use_for: s.use_for, cadence: s.cadence };
+        const a = await ask<unknown>("knowledgeSourceAdd", { body });
+        if (a.state !== "ok") throw new Error(a.state === "error" ? a.message : "this deployment does not serve the door that adds a source");
+      } else {
+        const r = await fetch("/api/knowledge", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: s.id, namespace, enabled }) });
+        const j = (await r.json().catch(() => ({}))) as { error?: string };
+        if (!r.ok) throw new Error(j.error ?? `the server answered ${r.status}`);
+      }
       setNotice({
         ok: true,
         text: enabled
@@ -291,7 +300,12 @@ export function Knowledge() {
   };
 
   const sources = useMemo(() => data?.sources ?? [], [data]);
-  const offered = useMemo(() => data?.catalogue ?? [], [data]);
+  /** What can be added: sources taken out of this corpus, then the public catalogue's entries the service does not hold here. */
+  const offered = useMemo(() => {
+    const removed = data?.catalogue ?? [];
+    const held = new Set([...sources, ...removed].map((s) => s.id));
+    return [...removed, ...SUGGESTED.filter((s) => !held.has(s.id))];
+  }, [data, sources]);
   const staged = data?.staged ?? [];
   const totals = data?.totals;
   /** The store answered: figures are measured. Otherwise they are unknown, not zero. */
@@ -448,7 +462,7 @@ export function Knowledge() {
                 k="Dimensions"
                 v={
                   data?.index && !(off && !data.index.dimensions)
-                    ? `${data.index.dimensions} column${data.index.embedding?.dimension && data.index.embedding.dimension !== data.index.dimensions ? ` · provider answers ${data.index.embedding.dimension}` : ""}`
+                    ? `${data.index.dimensions ? `${data.index.dimensions} held` : "none held"}${data.index.embedding?.behind ? ` · ${count(data.index.embedding.behind)} chunks on another model` : ""}`
                     : orOff(null)
                 }
                 faint={off && !data?.index?.dimensions}
@@ -472,10 +486,10 @@ export function Knowledge() {
                 </span>
               )}
               <span className="flex flex-wrap items-center gap-2">
-                <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={!data?.ready || !totals?.admitted || reembed?.stage === "busy"} loading={reembed?.stage === "busy"} onClick={() => setReembed({ stage: "confirm", force: false })}>
+                <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={!data?.ready || !totals?.admitted || reembed === "busy"} loading={reembed === "busy"} onClick={() => setReembed("confirm")}>
                   Re-embed namespace
                 </Button>
-                <span className="text-[10.5px] text-ghost">{off ? "every admitted chunk, with the current provider" : !ready ? "needs the store" : totals?.admitted ? "every admitted chunk, with the current provider" : "nothing is admitted, so there is nothing to embed"}</span>
+                <span className="text-[10.5px] text-ghost">{off ? "every admitted chunk, with the configured model" : !ready ? "needs the store" : totals?.admitted ? "every admitted chunk, with the configured model" : "nothing is admitted, so there is nothing to embed"}</span>
               </span>
             </div>
           </section>
@@ -801,40 +815,18 @@ export function Knowledge() {
         )}
       </div>
 
-      {reembed && reembed.stage !== "refused" && (
+      {reembed && (
         <Dialog
           modal
-          title={reembed.force ? `Widen the column and re-embed "${namespace}"?` : `Re-embed "${namespace}"?`}
-          confirm={reembed.force ? "Alter the column and re-embed" : "Re-embed"}
+          title={`Re-embed "${namespace}"?`}
+          confirm="Re-embed"
           cancel="Cancel"
-          tone={reembed.force ? "err" : "ink"}
-          loading={reembed.stage === "busy"}
-          onConfirm={() => runReembed(reembed.force)}
+          tone="ink"
+          loading={reembed === "busy"}
+          onConfirm={runReembed}
           onClose={() => setReembed(null)}
         >
-          {reembed.force
-            ? "The vector column is shared by every namespace. Changing its width empties every namespace's vectors; this one is re-embedded now and the others must be re-embedded before their searches answer again. The act is recorded as an admission."
-            : `Every admitted chunk in this namespace is embedded again with ${data?.index?.model ?? "the current model"} on ${data?.index?.embedding?.host || "the configured provider"}. Searches keep answering from the old vectors until each chunk is rewritten. The act is recorded as an admission with the model and dimension.`}
-        </Dialog>
-      )}
-      {reembed && reembed.stage === "refused" && (
-        <Dialog
-          modal
-          title="The provider's width differs from the column's"
-          confirm="Force: alter the column and re-embed"
-          cancel="Cancel"
-          tone="err"
-          onConfirm={() => runReembed(true)}
-          onClose={() => setReembed(null)}
-        >
-          <span className="flex flex-col gap-2">
-            <span>{reembed.refusal.error}</span>
-            <span className="text-[11.5px] font-medium text-fg">What must change:</span>
-            <span className="flex flex-col gap-0.5 text-[11.5px] leading-[1.55]">
-              {(reembed.refusal.mustChange ?? []).map((m) => <span key={m}>· {m}</span>)}
-            </span>
-            {reembed.refusal.hint && <span className="text-[11px] text-faint">{reembed.refusal.hint}</span>}
-          </span>
+          {`Every admitted chunk in this namespace is embedded again with ${data?.index?.model || "the configured model"}${data?.index?.embedding?.host ? ` on ${data.index.embedding.host}` : ""}. A chunk whose vector was made by another model or width is found by wording only until it has been rewritten. The act is recorded in the admission record with the model and width.`}
         </Dialog>
       )}
 
@@ -1436,7 +1428,7 @@ function SourceDialog({
     setSaving(false);
     if (a.state === "pending") setWaits(a.door);
     else if (a.state === "error") setError(a.message);
-    else onSaved(`${s.name}: data class set to ${cls}${names.length ? `, entitled: ${names.join(", ")}` : ", nobody named as entitled"}.`);
+    else onSaved(`${s.name}: data class set to ${cls}${names.length ? `, entitled: ${names.join(", ")}` : ", with no named restriction"}.`);
   };
 
   return (
@@ -1476,7 +1468,7 @@ function SourceDialog({
               { k: "In this corpus", v: <Status tone={s.enabled ? "ok" : "neutral"}>{s.enabled ? "in the register" : "not added"}</Status> },
               { k: "Licence", v: <Status tone={LICENCE_TONE[s.licence] ?? "neutral"}>{s.licence}</Status> },
               { k: "Indexed", v: chunks > 0 ? <span className="tnum">{count(chunks)} chunks</span> : <span className="font-normal text-ghost">not indexed</span> },
-              { k: "Waiting for a person", v: <span className="tnum">{s.staged ?? "0"}</span> },
+              { k: "Waiting for a person", v: <span className="tnum">{s.staged ?? 0}</span> },
             ].map((x) => (
               <div key={x.k} className="flex min-w-0 flex-col gap-1 bg-surface px-3 py-2.5">
                 <span className="text-[10.5px] text-faint">{x.k}</span>
@@ -1493,6 +1485,19 @@ function SourceDialog({
             <dd className="text-dim">{s.cadence || <span className="text-ghost">not said</span>}</dd>
             <dt className="text-faint">Last admitted</dt>
             <dd className="text-dim">{s.last_admitted ? ago(s.last_admitted) : <span className="text-ghost">{chunks > 0 ? "not recorded" : "never"}</span>}</dd>
+            {s.health && (
+              <>
+                <dt className="text-faint">Last fetched</dt>
+                <dd className="leading-[1.5] text-dim">
+                  {s.last_fetch_at ? `${ago(s.last_fetch_at)} · ${s.last_fetch_result}${s.last_fetch_detail ? ` · ${s.last_fetch_detail}` : ""}` : <span className="text-ghost">never</span>}
+                </dd>
+                <dt className="text-faint">Fetched again</dt>
+                <dd className="text-dim">
+                  {s.refresh_days ? `every ${s.refresh_days} day${s.refresh_days === 1 ? "" : "s"}${s.next_refresh_at ? `, next on ${s.next_refresh_at.slice(0, 10)}` : ", once a person has fetched it"}` : "only when a person asks"}
+                  {` · ${s.health}`}
+                </dd>
+              </>
+            )}
             <dt className="text-faint">Fetched from</dt>
             <dd className="flex min-w-0 flex-col gap-0.5">
               {urls.length === 0 && <span className="text-ghost">no address</span>}
@@ -1509,7 +1514,7 @@ function SourceDialog({
           <div className="flex items-center gap-2 border-b border-line bg-raise/55 px-4 py-2">
             <span className="text-[12px] font-semibold">Data class and entitlement</span>
             <span className="text-[11px] text-faint">
-              {s.data_class ? `${s.data_class}${s.entitled && s.entitled.length ? ` · ${s.entitled.join(", ")}` : " · nobody named as entitled"}` : "not set on this source"}
+              {s.data_class ? `${s.data_class}${s.entitled && s.entitled.length ? ` · ${s.entitled.join(", ")}` : " · no named restriction"}` : "not set on this source"}
             </span>
           </div>
           <div className="flex flex-col gap-3 px-4 py-3">
@@ -1518,7 +1523,7 @@ function SourceDialog({
               <span id="source-class-label" className="text-[12.5px] font-medium text-mist">Data class</span>
               <ClassChips value={cls} onChange={setCls} disabled={pending || saving} labelledBy="source-class-label" />
             </div>
-            <Field label="Entitled" hint="Group or role names, as your identity provider names them, separated by commas. Leave it empty to name nobody.">
+            <Field label="Entitled" hint="Names a caller must hold one of, separated by commas: an agent's id is one. Leave it empty for no named restriction, and the data class alone decides.">
               <Input value={entitled} onChange={setEntitled} disabled={pending || saving} autoComplete="off" />
             </Field>
             {error && (QUIET ? <p><QuietNote inline /></p> : <p role="alert" className="text-[11.5px] leading-[1.5] text-err">{error}</p>)}
@@ -1573,7 +1578,7 @@ function AddSourceDialog({ namespace, namespaces, onClose, onDone }: { namespace
   const pending = there === "pending" || waits !== null;
   const off = pending || busy;
   const address = url.trim().split(/\s+/).filter(Boolean);
-  const badAddress = address.length > 0 && !address.every((u) => /^https?:\/\/\S+$/i.test(u));
+  const badAddress = address.length > 0 && !address.every((u) => /^https:\/\/\S+$/i.test(u));
   const missing = [!name.trim() && "a name", address.length === 0 && "an address", !publisher.trim() && "a publisher", !licence && "a licence", !cls && "a data class"].filter(Boolean) as string[];
   const corpora = namespaces.includes(namespace) ? namespaces : [namespace, ...namespaces];
 
@@ -1611,7 +1616,7 @@ function AddSourceDialog({ namespace, namespaces, onClose, onDone }: { namespace
         <Field label="Name">
           <Input value={name} onChange={setName} disabled={off} autoComplete="off" />
         </Field>
-        <Field label="Address" hint="Where it is fetched from. Several addresses separated by spaces are fetched as one document." error={badAddress ? "Each address starts with http:// or https://" : undefined}>
+        <Field label="Address" hint="Where it is fetched from. Several addresses separated by spaces are fetched as one document." error={badAddress ? "Each address starts with https://: sources are fetched over https only" : undefined}>
           <Input value={url} onChange={setUrl} disabled={off} type="url" mono autoComplete="off" />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
