@@ -247,7 +247,7 @@ export function Pick<T extends string>({
                 minWidth: box.width,
                 maxHeight: 280,
               }}
-              className={`z-[60] overflow-y-auto rounded-md border border-line bg-surface p-1 elev-3 ${
+              className={`z-[90] overflow-y-auto rounded-md border border-line bg-surface p-1 elev-3 ${
                 box.up ? "af-pop-up" : "af-pop"
               }`}
             >
@@ -434,7 +434,7 @@ export function PickMany<T extends string>({
               tabIndex={-1}
               onKeyDown={onKey}
               style={{ position: "fixed", left: box.left, top: box.top, minWidth: box.width, maxHeight: 320 }}
-              className={`z-[60] flex flex-col overflow-hidden rounded-md border border-line bg-surface elev-3 ${box.up ? "af-pop-up" : "af-pop"}`}
+              className={`z-[90] flex flex-col overflow-hidden rounded-md border border-line bg-surface elev-3 ${box.up ? "af-pop-up" : "af-pop"}`}
             >
               <div className="overflow-y-auto p-1">
                 {options.map((o, i) => {

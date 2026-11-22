@@ -17,7 +17,8 @@ import { FetchModal } from "./fetch-modal";
 import { Dialog, EmptyState } from "./overlays";
 import { NotConnectedNote, Failure } from "./pending";
 import { usePageFacts } from "./assistant";
-import { DATA_CLASSES, DOORS, ask, doorUrl, type DataClass, type Door, type DoorId } from "@/lib/api/pending";
+import { DATA_CLASSES, DOORS, ask, type DataClass, type Door, type DoorId } from "@/lib/api/pending";
+import { useDoorBuilt } from "@/lib/use-doors";
 import {
   DEFAULT_NAMESPACE,
   FAMILIES,
@@ -1289,32 +1290,15 @@ function FamilyChips({ rows, value, onChange, bare = false }: { rows: Source[]; 
 }
 
 /**
- * Whether anything serves a door, asked without sending the door's own
- * request: OPTIONS on its address. The doors here are writes, so there is no
- * read to try first, and a form should say it is not connected before a
- * person fills it in, not after. A route that exists answers with the
- * methods it allows; one that does not answers 404.
+ * Whether the platform serves a door, from its own list of built addresses
+ * (`GET /api/doors`, lib/use-doors.ts). The doors here are writes, so a form
+ * says it is not connected before a person fills it in, not after. Only an
+ * address the platform lists as not built reads as pending; while the list is
+ * unknown the form stays usable and a press learns the truth from the answer.
  */
-function useDoorThere(id: DoorId, params: Record<string, string> = {}): "asking" | "there" | "pending" {
-  const [state, setState] = useState<"asking" | "there" | "pending">("asking");
-  const key = JSON.stringify(params);
-  useEffect(() => {
-    let live = true;
-    const door: Door = DOORS[id];
-    fetch(doorUrl(door, JSON.parse(key) as Record<string, string>), { method: "OPTIONS", cache: "no-store" })
-      .then((r) => {
-        if (!live) return;
-        const allow = r.headers.get("allow");
-        const missing = r.status === 404 || r.status === 501 || (allow !== null && !allow.toUpperCase().split(/\s*,\s*/).includes(door.method));
-        setState(missing ? "pending" : "there");
-      })
-      // Unreachable is not the same as absent: let the request itself say what is wrong.
-      .catch(() => live && setState("there"));
-    return () => {
-      live = false;
-    };
-  }, [id, key]);
-  return state;
+function useDoorThere(id: DoorId): "there" | "pending" {
+  const door: Door = DOORS[id];
+  return useDoorBuilt(door.method, door.path) === false ? "pending" : "there";
 }
 
 /** The frame of a dialog on this page: a scrim, a titled panel, a body that scrolls, a footer for the actions. */
@@ -1405,7 +1389,7 @@ function SourceDialog({
   onEnable: (enabled: boolean) => void;
   onSaved: (text: string) => void;
 }) {
-  const there = useDoorThere("knowledgeSourceClass", { id: s.id });
+  const there = useDoorThere("knowledgeSourceClass");
   const [cls, setCls] = useState<DataClass | null>(s.data_class ?? null);
   const [entitled, setEntitled] = useState((s.entitled ?? []).join(", "));
   const [saving, setSaving] = useState(false);
@@ -1528,7 +1512,7 @@ function SourceDialog({
             </Field>
             {error && (<p role="alert" className="text-[11.5px] leading-[1.5] text-err">{error}</p>)}
             <span className="flex flex-wrap items-center gap-2">
-              <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={pending || !cls || !changed || there === "asking"} loading={saving} onClick={save}>
+              <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={pending || !cls || !changed} loading={saving} onClick={save}>
                 Save class and entitlement
               </Button>
               {!pending && !cls && <span className="text-[11.5px] text-faint">Choose a data class to save.</span>}
@@ -1605,7 +1589,7 @@ function AddSourceDialog({ namespace, namespaces, onClose, onDone }: { namespace
           <span className="min-w-0 grow text-[11.5px] leading-[1.5] text-faint">
             {pending ? "" : missing.length ? `Still needed: ${missing.join(", ")}.` : "Adding a source fetches nothing. It can be fetched from the register once it is there."}
           </span>
-          <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={pending || there === "asking" || missing.length > 0 || badAddress} loading={busy} onClick={add}>
+          <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={pending || missing.length > 0 || badAddress} loading={busy} onClick={add}>
             Add source
           </Button>
         </>
@@ -1702,7 +1686,7 @@ function UploadDocumentDialog({ namespace, namespaces, onClose, onDone }: { name
       footer={
         <>
           <span className="min-w-0 grow text-[11.5px] leading-[1.5] text-faint">{pending ? "" : missing.length ? `Still needed: ${missing.join(", ")}.` : `Goes into the "${into}" corpus.`}</span>
-          <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={pending || there === "asking" || missing.length > 0} loading={busy} onClick={upload}>
+          <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={pending || missing.length > 0} loading={busy} onClick={upload}>
             Upload
           </Button>
         </>
