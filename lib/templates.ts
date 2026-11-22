@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from "./permissions";
 import { samePerson, type Access } from "./mcp-registry";
 import { shortDigest, whenText, type Reviewer } from "./lifecycle";
 import type { CutRequest, Lineage, TemplateView } from "./api/l8b";
@@ -101,7 +102,7 @@ export function certifyAccess(who: Reviewer | null, authors: readonly string[], 
   if (!who) return { ok: false, reason: "who you are is not known yet" };
   const mine = authors.find((a) => samePerson(a, who));
   if (mine) return { ok: false, reason: `you are an author of this template (${mine}): its author may not certify it; another certifier signs` };
-  if (who.appRoles?.includes("administrator")) return { ok: true, reason: "" };
+  if (isPlatformAdmin(who.appRoles)) return { ok: true, reason: "" };
   const held = new Set([...(who.roles ?? []), ...(who.appRoles ?? []), ...(who.groups ?? [])]);
   if (held.has(role)) return { ok: true, reason: "" };
   return { ok: false, reason: `certifying a template needs the "${role}" role (or an administrator); yours: ${[...held].join(", ") || "none"}` };

@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from "./permissions";
 import { samePerson, type Access, type Me } from "./mcp-registry";
 import { taintOf, type Taint } from "./queue";
 import {
@@ -310,7 +311,7 @@ export function overrideOutcome(f: OverrideForm, r: Pick<GateRefusal, "unmet">):
 
 /** Who may override: an administrator only (the backend answers 403 `control: override` to anyone else). */
 export function canOverride(who: { appRoles?: readonly string[] } | null): boolean {
-  return Boolean(who?.appRoles?.includes("administrator"));
+  return isPlatformAdmin(who?.appRoles);
 }
 
 /** An override as the record keeps it, in a line. */
@@ -355,7 +356,7 @@ export function reviewAccess(who: Reviewer | null, authors: readonly string[], r
   if (!who) return { ok: false, reason: "who you are is not known yet" };
   const mine = authors.find((a) => samePerson(a, who));
   if (mine) return { ok: false, reason: `you saved this version (${mine}): its author may not review it; another policy reviewer signs` };
-  if (who.appRoles?.includes("administrator")) return { ok: true, reason: "" };
+  if (isPlatformAdmin(who.appRoles)) return { ok: true, reason: "" };
   const held = new Set([...(who.roles ?? []), ...(who.appRoles ?? []), ...(who.groups ?? [])]);
   if (held.has(role)) return { ok: true, reason: "" };
   return { ok: false, reason: `a policy review needs the "${role}" role (or an administrator); yours: ${[...held].join(", ") || "none"}` };

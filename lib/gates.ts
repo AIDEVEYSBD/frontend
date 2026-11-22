@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from "./permissions";
 import type { AttentionItem, EscalationStep, FormAnswer, Gate, GateField, VerdictItem, VerdictsAnswer } from "./api/l5";
 
 /**
@@ -253,7 +254,7 @@ export function stepLine(step: EscalationStep): string {
 export interface Who {
   /** `autox:roles` from the token. */
   roles: readonly string[];
-  /** `autox:app_roles`; "administrator" passes every gate. */
+  /** The roles the person holds here; a platform admin passes every gate that is not their own. */
   appRoles: readonly string[];
   /** The identity provider's group claims, kept on the session (lib/sso-groups.ts); a gate may name a group as its approver role. */
   groups?: readonly string[];
@@ -276,11 +277,11 @@ export interface Access {
 export function gateAccess(who: Who | null, approvers: readonly string[]): Access {
   if (!approvers.length) return { ok: true, reason: "" };
   if (!who) return { ok: false, reason: `Only ${approvers.join(", ")} may answer this gate; your roles are not known yet.` };
-  if (who.appRoles.includes("administrator")) return { ok: true, reason: "" };
+  if (isPlatformAdmin(who.appRoles)) return { ok: true, reason: "" };
   const mine = new Set([...who.roles, ...who.appRoles, ...(who.groups ?? [])]);
   if (approvers.some((r) => mine.has(r))) return { ok: true, reason: "" };
   const have = [...mine];
-  return { ok: false, reason: `Only ${approvers.join(", ")} may answer this gate (or an administrator). Your roles: ${have.length ? have.join(", ") : "none"}.` };
+  return { ok: false, reason: `Only ${approvers.join(", ")} may answer this gate (or a platform admin). Your roles: ${have.length ? have.join(", ") : "none"}.` };
 }
 
 /** Several gates answered together must be one agent's, of one shape, and each must be this person's to answer. */

@@ -52,6 +52,15 @@ export const ROLE_PERMISSIONS: Record<string, readonly Permission[]> = {
   af_viewer: ["view"],
 };
 
+/**
+ * Whether a person holds the role that may do everything: answer any gate
+ * that is not their own, review, override. One place, so a check elsewhere
+ * never names a role itself.
+ */
+export function isPlatformAdmin(appRoles: readonly string[] | undefined | null): boolean {
+  return Boolean(appRoles?.some((r) => r === "platform_admin" || r === "administrator"));
+}
+
 /** A role as a person reads it. */
 export const ROLE_LABEL: Record<string, string> = {
   platform_admin: "Platform admin",
