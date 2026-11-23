@@ -23,8 +23,8 @@ import { listAgents, listKeys, mintKey, readUsers, revokeKey, type KeyList, type
  * A key expires. It is minted for the number of days asked, or, with none
  * asked, for the deployment's longest lifetime (API_KEY_MAX_LIFETIME_DAYS);
  * the platform refuses a number above that with the range it allows. The
- * service does not publish that longest lifetime, so the form names no
- * figure for it. Each key shows when it stops working, as the list answers
+ * list answers that longest lifetime (`max_lifetime_days`), and the form
+ * names it. Each key shows when it stops working, as the list answers
  * it: its own expiry, or its minting plus the longest lifetime allowed now,
  * whichever is first. An expired key is refused from that moment.
  */
@@ -73,6 +73,8 @@ export function ApiKeys() {
       .catch((e) => setPermissionsError((e as Error).message));
   }, [load]);
 
+  /** The longest lifetime this deployment allows now, as the key list answers it; unknown until the list is read. */
+  const maxDays = (list as { max_lifetime_days?: unknown } | null)?.max_lifetime_days;
   const lifetime = days.trim() ? Number(days.trim()) : undefined;
   const lifetimeProblem = lifetime === undefined ? "" : !Number.isInteger(lifetime) || lifetime < 1 ? "A lifetime is a whole number of days, 1 or more; leave it blank for the longest this deployment allows." : "";
 
@@ -144,7 +146,15 @@ export function ApiKeys() {
               options={[{ value: "", label: "Any agent its permissions allow" }, ...(agents ?? []).map((a) => ({ value: a.id, label: a.name === a.id ? a.id : `${a.name} (${a.id})` }))]}
             />
           </Field>
-          <Field label="Lifetime in days (optional)" hint={lifetimeProblem || "Blank mints it for the longest this deployment allows (its API_KEY_MAX_LIFETIME_DAYS setting). A number above that is refused with the range allowed."}>
+          <Field
+            label="Lifetime in days (optional)"
+            hint={
+              lifetimeProblem ||
+              (typeof maxDays === "number"
+                ? `Blank mints it for the longest this deployment allows: ${maxDays} day${maxDays === 1 ? "" : "s"} (API_KEY_MAX_LIFETIME_DAYS). A number above that is refused.`
+                : "Blank mints it for the longest this deployment allows (its API_KEY_MAX_LIFETIME_DAYS setting). A number above that is refused with the range allowed.")
+            }
+          >
             <Input value={days} onChange={setDays} type="number" invalid={Boolean(lifetimeProblem)} aria-label="Lifetime in days" autoComplete="off" />
           </Field>
         </div>
