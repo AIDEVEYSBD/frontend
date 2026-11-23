@@ -69,7 +69,7 @@ interface Spend {
 interface BudgetState { budget_usd: number; period: Period; since: string; spent: number; unpriced: number; remaining: number; exceeded: boolean; used: number }
 interface BudgetRow { scope: "deployment" | "use_case"; key: string; amount_usd: number; period: Period; spent_usd: number; remaining_usd: number; since: string; unpriced_calls: number; set_by: { name?: string; email?: string; sub?: string } | null; set_at: string }
 interface Data { now: string; config: Config; agents: AgentSpec[]; agentsBasis: string; runs: Run[]; calls: Call[]; budgetState: BudgetState | null; budgets: BudgetRow[]; spend: Spend; costBasis: string; not_built: string[]; not_included: NotIncluded[] }
-interface PlanStep extends Figures { agent: string; node: string; models: string[]; elsewhere: { model: string; label: string; cost_usd: number; difference_usd: number | null }[] }
+interface PlanStep extends Figures { agent: string; node: string; models: string[]; elsewhere: { model: string; label: string; cost_usd: number; difference_usd: number | null; cleared?: boolean | null; why?: string }[] }
 interface Planning { steps: PlanStep[]; unpriced_models: string[]; could_take_it: { built: boolean; why: string }; basis: string }
 interface UseCase { name: string; workload: string }
 
@@ -579,9 +579,14 @@ function PlanningView({ plan, error, name }: { plan: Planning | null; error: str
                   {p.elsewhere.length ? (
                     <span className="flex flex-wrap gap-x-4 gap-y-1">
                       {p.elsewhere.map((e) => (
-                        <span key={e.model} className="tnum whitespace-nowrap">
+                        <span key={e.model} className="tnum whitespace-nowrap" title={e.why}>
                           <Mono className="text-[10.5px]">{e.model}</Mono> {fmtUsd(e.cost_usd)}
-                          {e.difference_usd !== null && <span className={e.difference_usd < 0 ? "text-ok" : "text-faint"}> ({e.difference_usd < 0 ? "−" : "+"}{fmtUsd(Math.abs(e.difference_usd))})</span>}
+                          {e.cleared === false ? (
+                            <span className="text-err"> (not cleared for this step&rsquo;s data)</span>
+                          ) : (
+                            e.difference_usd !== null && <span className={e.difference_usd < 0 ? "text-ok" : "text-faint"}> ({e.difference_usd < 0 ? "−" : "+"}{fmtUsd(Math.abs(e.difference_usd))})</span>
+                          )}
+                          {e.cleared === null && <span className="text-faint"> · clearance unknown</span>}
                         </span>
                       ))}
                     </span>
