@@ -88,6 +88,16 @@ function outcomeOf(d: SignedDecision): { tone: "ok" | "err" | "warn"; label: str
 
 type View = "all" | "mine" | "overdue";
 
+/** The second-person rule, as the platform keeps it: the run's starter and the author of the version it uses never answer its gate. */
+function secondPerson(g: Gate, s: { sub: string; email: string } | null): { ok: boolean; reason: string } | null {
+  if (!s) return null;
+  const same = (p: { sub: string; email: string } | null) =>
+    Boolean(p && ((p.sub && p.sub === s.sub) || (p.email && s.email && p.email.toLowerCase() === s.email.toLowerCase())));
+  if (same(g.started_by)) return { ok: false, reason: "You started this run, so a second person answers its gate." };
+  if (same(g.author)) return { ok: false, reason: "You wrote the version of the agent this run uses, so a second person answers its gate." };
+  return null;
+}
+
 export function ApprovalsView() {
   const [gates, setGates] = useState<Gate[] | null>(null);
   const [error, setError] = useState("");
@@ -142,7 +152,7 @@ export function ApprovalsView() {
 
   /* ── the queue under its filters ── */
   const all = useMemo(() => [...(gates ?? [])].sort(byUrgency(now)), [gates, now]);
-  const mayAnswer = useCallback((g: Gate) => gateAccess(who, g.approvers), [who]);
+  const mayAnswer = useCallback((g: Gate) => secondPerson(g, loaded ? session : null) ?? gateAccess(who, g.approvers), [who, loaded, session]);
   const overdue = (g: Gate) => countdown(g.deadline, now).overdue;
   const term = q.trim().toLowerCase();
   const shown = all.filter((g) => {
@@ -295,7 +305,7 @@ export function ApprovalsView() {
                         <span className="flex flex-col gap-1">
                           <span className="flex flex-wrap gap-1">{g.approvers.length ? g.approvers.map((r) => <Tag key={r}>{r}</Tag>) : <span className="text-dim">Anyone with the approve permission</span>}</span>
                           <span className="text-[10.5px] leading-[1.4] text-faint">Never the person who started the run, nor the author of its version.</span>
-                          {who && !access.ok && <span className="text-[11px] leading-[1.4] text-warn">Not yours to answer: it needs {g.approvers.join(" or ")}.</span>}
+                          {who && !access.ok && <span className="text-[11px] leading-[1.4] text-warn">{access.reason.startsWith("You ") ? access.reason : `Not yours to answer: it needs ${g.approvers.join(" or ")}.`}</span>}
                         </span>
                       </td>
                       <td className="tnum px-3 py-2.5 whitespace-nowrap text-dim" title={g.waiting_since ? new Date(g.waiting_since).toLocaleString() : undefined}>

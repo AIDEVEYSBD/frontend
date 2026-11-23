@@ -364,7 +364,7 @@ export function RunTreePanel({ runId, live }: { runId?: string; live: boolean })
       {killAsk && tree && (
         <KillDialog
           title={tree.asked === tree.root ? "Kill what is still running in this tree?" : "Kill this run and what it set off?"}
-          what={`${moving.length} node${moving.length === 1 ? " is" : "s are"} still in flight under ${tree.asked}. The kill reaches every descendant where it runs: sub-runs on the run's cancel, child runs here, on their worker or through their SDK, queued children are dead-lettered, and tasks handed to peers are cancelled over A2A, signed. A run waiting at a gate is not killed.`}
+          what={`${moving.length} node${moving.length === 1 ? " is" : "s are"} still in flight under ${tree.asked}. The kill reaches every run below it in the tree, running, waiting for a sub-run, waiting at a gate or still queued: each is stopped before its next model or tool call. Tasks handed to peers are not reached (peer tasks are not built).`}
           confirm="Kill the tree"
           onClose={() => setKillAsk(false)}
           onConfirm={(reason) => {

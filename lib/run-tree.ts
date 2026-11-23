@@ -205,9 +205,9 @@ export function byAgentRows(tree: Pick<RunTree, "rollup">): AgentRollupRow[] {
     .sort((a, b) => b.cost - a.cost || b.refusals - a.refusals || a.key.localeCompare(b.key));
 }
 
-const LIVE = new Set(["running", "starting"]);
+const LIVE = new Set(["running", "starting", "suspended", "queued"]);
 
-/** Nodes still in flight (running, or a sub-run starting): what a kill would reach. A run waiting at a gate is not killed by the tree's kill. */
+/** Nodes still in flight (running, waiting for a sub-run or at a gate, or queued): what a kill would reach; the platform stops each. */
 export function inFlightNodes(tree: Pick<RunTree, "nodes">): TreeNode[] {
   return tree.nodes.filter((n) => n.kind !== "peer" && LIVE.has(n.state));
 }

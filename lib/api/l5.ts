@@ -135,6 +135,9 @@ export interface Gate {
   control: string;
   /** L8 (second round): the deliverables the report gate names, so a reviewer sees what they approve; approving reviews them, refusing withdraws them. Empty for any other gate. */
   deliverables: GateDeliverable[];
+  /** Who started the run, and who wrote the version it uses: neither may answer its gate (the second-person rule). Null when the platform did not say. */
+  started_by: { sub: string; email: string; name: string } | null;
+  author: { sub: string; email: string } | null;
 }
 
 /**
@@ -620,6 +623,8 @@ export function gateOf(v: unknown): Gate {
     warning: str(g.warning),
     control: str(g.control),
     deliverables: (Array.isArray(g.deliverables) ? g.deliverables : []).map(gateDeliverableOf).filter((d) => d.id),
+    started_by: g.started_by ? { sub: str(obj(g.started_by).sub), email: str(obj(g.started_by).email), name: str(obj(g.started_by).name) } : null,
+    author: g.author ? { sub: str(obj(g.author).sub), email: str(obj(g.author).email) } : null,
   };
 }
 
