@@ -24,7 +24,9 @@ Files:
 | `NEXT_PUBLIC_ORIGIN` | build | The address people open the console at, in full, no trailing slash. Compiled into the pages (links, approval links, exported records). Required: the build stops without it. |
 | `BACKEND_ORIGIN` | run | The service's address as the console's server reaches it: scheme, host and port. Required: without it every request is answered 503. |
 
-The image sets `PORT=8080` (Cloud Run sets its own) and `HOSTNAME=0.0.0.0`.
+The image sets `PORT=8080` (Cloud Run sets its own) and `HOSTNAME=0.0.0.0`. Next.js caches the images it optimises in `/app/.next/cache`. On a read-only root file system, mount a writable folder there (an `emptyDir` on GKE): without one the pages still load, and the log shows "Failed to write image to cache" for every image it optimises.
+
+`NEXT_PUBLIC_ORIGIN` is the address exactly as people type it, scheme and port included. To try both images on one machine before Google Cloud, the service's `README.md` ("A local trial") runs them behind its IAP stand-in, which is for that trial only.
 
 These are the service's settings, not the console's. Set them on the service:
 
@@ -115,7 +117,7 @@ Anyone else IAP lets through holds no role and no permission; there is no defaul
 
 ## GKE
 
-`deploy/console/console.yaml` runs the console as a Deployment behind an Ingress, with IAP on the console's backend service (a BackendConfig with `iap.enabled: true`, which uses a Google-managed OAuth client). Replace every value in capitals; `BACKEND_ORIGIN` is the service's address inside the cluster. The service's `IAP_AUDIENCE` is then the console's backend-service audience, `/projects/PROJECT_NUMBER/global/backendServices/BACKEND_SERVICE_ID`, which the IAP page of the Cloud console shows as the Signed Header JWT Audience once the Ingress exists.
+`deploy/console/console.yaml` runs the console as a Deployment behind an Ingress, with IAP on the console's backend service (a BackendConfig with `iap.enabled: true`, which uses a Google-managed OAuth client). Replace every value in capitals; `BACKEND_ORIGIN` is the service's address inside the cluster: with the service's own manifests (its `deploy/k8s/backend.yaml`) that is `http://agentfactory.agentfactory.svc.cluster.local`, its Service listening on port 80, not the container's 8080. The service's `IAP_AUDIENCE` is then the console's backend-service audience, `/projects/PROJECT_NUMBER/global/backendServices/BACKEND_SERVICE_ID`, which the IAP page of the Cloud console shows as the Signed Header JWT Audience once the Ingress exists.
 
 ## Check it
 

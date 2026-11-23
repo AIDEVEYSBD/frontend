@@ -519,7 +519,7 @@ function AgentsPage() {
         {agents?.length === 0 && !error && (
           <div className="flex flex-col items-start gap-2 rounded-lg border border-dashed border-line-strong bg-surface px-6 py-10">
             <p className="text-[14px] font-medium text-fg">No agent is on this deployment yet.</p>
-            <p className="max-w-[60ch] text-[12.5px] leading-relaxed text-faint">An agent is not designed in this console: it arrives as a definition document from its author. Add one with the button above; once it is saved it is listed here, ready to configure, run and deploy.</p>
+            <p className="max-w-[60ch] text-[12.5px] leading-relaxed text-faint">Adding agents is not part of this build: this deployment manages and controls the use cases it was delivered with. Their agents are listed here once they are on the deployment, ready to configure, run and deploy.</p>
           </div>
         )}
 

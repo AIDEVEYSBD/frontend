@@ -26,8 +26,10 @@ spec:
           ports:
             - {name: http, containerPort: 8080}
           env:
-            # The platform's service as this pod reaches it, for example its Service in the cluster.
-            - {name: BACKEND_ORIGIN, value: "http://SERVICE_NAME.SERVICE_NAMESPACE.svc.cluster.local:8080"}
+            # The platform's service as this pod reaches it. With the service's own manifests (its deploy/k8s/backend.yaml:
+            # Service "agentfactory" in namespace "agentfactory", port 80) that is the address below; the container port
+            # 8080 is not the Service's port.
+            - {name: BACKEND_ORIGIN, value: "http://agentfactory.agentfactory.svc.cluster.local"}
           # /login is served by the console itself and always answers 200 once BACKEND_ORIGIN is set; without it, 503.
           startupProbe:
             httpGet: {path: /login, port: http}
