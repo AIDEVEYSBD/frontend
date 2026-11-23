@@ -2,7 +2,7 @@
 
 import { SEVERITIES, type Answer, type FindingsSummary } from "@/lib/api/pending";
 import { agentHref } from "@/lib/agent-link";
-import { CONTROLS } from "@/lib/guardrails";
+import { CONTROLS, controlLabel, explainControl } from "@/lib/guardrails";
 import type { EstateFigures, RankRow } from "./overview-data";
 
 /**
@@ -26,16 +26,24 @@ export function rankRefusals(f: EstateFigures, names: Record<string, string>): R
 
 /** The catalogue's controls a firing's key names: its catalogue id, or the name the policy engine journals (which several controls can share). */
 function controlsNamed(key: string) {
-  return CONTROLS.filter((c) => c.id === key || c.journal === key);
+  const direct = CONTROLS.filter((c) => c.id === key || c.journal === key);
+  if (direct.length) return { named: direct, direct: true };
+  // A key that names its control another way (the report gate journals `report` for the authorisation gate).
+  const id = explainControl(key).id;
+  return { named: id ? CONTROLS.filter((c) => c.id === id) : [], direct: false };
 }
 
 /** The controls by how often they fired in the window, each named from the catalogue where it is in it. */
 export function rankControls(f: EstateFigures): RankRow[] {
   return f.firings.by_control.map(({ control: key, count: value }): RankRow => {
-    const named = controlsNamed(key);
-    if (!named.length) return { key, label: key, value, href: `/explore?control=${encodeURIComponent(key)}&window=${f.window}`, code: true };
+    const { named, direct } = controlsNamed(key);
+    if (!named.length) {
+      const label = controlLabel(key);
+      return { key, label, value, href: `/explore?control=${encodeURIComponent(key)}&window=${f.window}`, code: label === key };
+    }
     const others = named.length - 1;
-    return { key, label: others ? `${named[0].title} and ${others} other${others === 1 ? "" : "s"}` : named[0].title, value, href: `/guardrails?control=${encodeURIComponent(named[0].id)}` };
+    const label = !direct ? controlLabel(key) : others ? `${named[0].title} and ${others} other${others === 1 ? "" : "s"}` : named[0].title;
+    return { key, label, value, href: `/guardrails?control=${encodeURIComponent(named[0].id)}` };
   });
 }
 
