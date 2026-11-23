@@ -1733,6 +1733,7 @@ function FinOpsPanel({
             <Button
               size="sm"
               variant="quiet"
+              permission="configure"
               onClick={() => {
                 setValue(finops?.budget != null ? String(finops.budget) : "");
                 setPeriod(finops?.period ?? "month");
