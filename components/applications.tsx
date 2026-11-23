@@ -17,6 +17,7 @@ import {
   readRegister,
   type Activity,
   type Application,
+  type AnswerMode,
   type ApplicationClass,
   type Autonomy,
   type BudgetPeriod,
@@ -72,6 +73,14 @@ export function costLine(cost: number | null, unpriced: number): string {
   if (cost === null) return unpriced ? "no price set" : "unknown";
   return unpriced ? `${money(cost)} + ${unpriced} unpriced` : money(cost);
 }
+
+/** How a chatbot may answer a person in the console's chat (the policy's `answers`); the choices and what they mean. */
+export const ANSWER_OPTIONS: { value: AnswerMode; label: string }[] = [
+  { value: "text", label: "Text" },
+  { value: "blocks", label: "Text and blocks" },
+];
+export const ANSWERS_HINT =
+  "Text and blocks: the model is asked for an answer of text plus tiles, a table, bars, a chart, steps, links or choices, as structured output through the same gateway path, and the service checks it before it is shown. The blocks are the chatbot's own words. The gateway's OpenAI-compatible addresses answer as they always do.";
 
 /** A policy in one line: data class, models, rate, budget. */
 export function policyLine(p: Policy): string {
@@ -281,6 +290,7 @@ export function Applications() {
                               {a.policy.models.join(", ")}
                               {a.policy.knowledge_stores.length ? ` · stores ${a.policy.knowledge_stores.join(", ")}` : ""}
                               {a.class === "chatbot" ? (a.policy.system_prompt ? " · registered prompt" : " · no registered prompt") : ""}
+                              {a.class === "chatbot" && a.policy.answers === "blocks" ? " · answers in blocks" : ""}
                             </span>
                           </span>
                         ) : (
@@ -417,6 +427,7 @@ function ConnectDialog({ notBuilt, onClose, onMinted }: { notBuilt: Record<strin
   const [amount, setAmount] = useState("");
   const [period, setPeriod] = useState<BudgetPeriod>("month");
   const [prompt, setPrompt] = useState("");
+  const [answers, setAnswers] = useState<AnswerMode>("text");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -435,8 +446,10 @@ function ConnectDialog({ notBuilt, onClose, onMinted }: { notBuilt: Record<strin
       rate_per_minute: typed(rate),
       budget: amount.trim() === "" ? null : { amount_usd: typed(amount), period },
     };
-    if (cls === "chatbot") policy.system_prompt = prompt.trim();
-    else policy.knowledge_stores = picked;
+    if (cls === "chatbot") {
+      policy.system_prompt = prompt.trim();
+      policy.answers = answers;
+    } else policy.knowledge_stores = picked;
     try {
       onMinted(await createApplication({ name: name.trim(), class: cls, owner: ownerValue.trim(), autonomy: autonomy || null, policy: policy as PolicyWire }));
     } catch (e) {
@@ -550,11 +563,16 @@ function ConnectDialog({ notBuilt, onClose, onMinted }: { notBuilt: Record<strin
             </div>
           </div>
         ) : (
-          <div className="md:col-span-2">
-            <Field label="System prompt (optional)" htmlFor="app-prompt" hint="Registered here and put first on every call by the gateway; the chatbot then sends no system message of its own. A reply that repeats it is withheld.">
-              <Textarea id="app-prompt" value={prompt} onChange={setPrompt} rows={4} />
+          <>
+            <div className="md:col-span-2">
+              <Field label="System prompt (optional)" htmlFor="app-prompt" hint="Registered here and put first on every call by the gateway; the chatbot then sends no system message of its own. A reply that repeats it is withheld.">
+                <Textarea id="app-prompt" value={prompt} onChange={setPrompt} rows={4} />
+              </Field>
+            </div>
+            <Field label="Answers in the console's chat" hint={ANSWERS_HINT}>
+              <Pick value={answers} onChange={setAnswers} options={ANSWER_OPTIONS} size="md" aria-label="Answers in the console's chat" />
             </Field>
-          </div>
+          </>
         )}
         {choicesError && <p className="text-[11.5px] text-err md:col-span-2" role="alert">{choicesError}</p>}
         {error && (

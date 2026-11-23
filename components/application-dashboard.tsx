@@ -13,6 +13,7 @@ import {
   listConversations,
   outcomeWords,
   patchApplication,
+  type AnswerMode,
   type Application,
   type ApplicationMetrics,
   type Conversation,
@@ -29,7 +30,8 @@ import { ControlRef, resolveControl } from "./control-ref";
 import { Skeleton } from "./loaders";
 import { usePageFacts } from "./assistant";
 import { SystemPromptPanel } from "./system-prompts";
-import { costLine, money, policyLine } from "./applications";
+import { ANSWERS_HINT, ANSWER_OPTIONS, costLine, money, policyLine } from "./applications";
+import { Pick } from "./select";
 
 /**
  * One registered application's dashboard.
@@ -275,6 +277,7 @@ export function ApplicationDashboard({ id }: { id: string }) {
                 Knowledge stores {app.policy.knowledge_stores.join(", ")}: recorded, and {RETRIEVAL_NOT_BUILT}. The application calls the gateway with its own instructions.
               </p>
             )}
+            {app.class === "chatbot" && !removed && <AnswerSetting app={app} onChanged={setApp} />}
             {removed && (
               <p className="text-[12px] leading-[1.55] text-faint">
                 Removed {when(app.removed_at ?? "")}
@@ -515,6 +518,48 @@ function ConversationTable({ rows, loaded, opening, onOpen }: { rows: Conversati
         onRow={(c) => onOpen(c.id)}
         empty={loaded ? "No conversation was active in this window." : "Reading…"}
       />
+    </div>
+  );
+}
+
+/**
+ * How a chatbot answers a person in the console's chat (its policy's
+ * `answers`), changed by a person with `configure`: `PATCH /api/applications`
+ * with that one policy field. Anyone else sees it and cannot change it; the
+ * service refuses them all the same.
+ */
+function AnswerSetting({ app, onChanged }: { app: Application; onChanged: (a: Application) => void }) {
+  const [want, setWant] = useState<AnswerMode>(app.policy.answers);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const save = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      onChanged(await patchApplication(app.id, { policy: { answers: want } }));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="flex max-w-[86ch] flex-col gap-1.5" data-setting="answers">
+      <span className="flex flex-wrap items-center gap-2">
+        <span className="text-[12px] font-medium text-fg">Answers in the console&rsquo;s chat</span>
+        <span className="w-44">
+          <Pick value={want} onChange={setWant} options={ANSWER_OPTIONS} aria-label="Answers in the console's chat" />
+        </span>
+        <Button size="sm" variant="solid" tone="ink" permission="configure" loading={saving} disabled={want === app.policy.answers} onClick={save}>
+          Save
+        </Button>
+      </span>
+      <span className="text-[11.5px] leading-[1.5] text-faint">{ANSWERS_HINT}</span>
+      {error && (
+        <span role="alert" className="text-[11.5px] leading-[1.5] text-err">
+          Not changed: {error}
+        </span>
+      )}
     </div>
   );
 }

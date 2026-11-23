@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Mono, Spinner, Status, Tag } from "./ui";
 import { Markdown } from "./markdown";
+import { AnswerBlocks } from "./answer-blocks";
 import { ControlRef, resolveControl } from "./control-ref";
 import { api, errorText, type Schemas } from "@/lib/api/client";
 import { getConversation, listConversations, outcomeWords, type Application, type Conversation, type ConversationRow } from "@/lib/api/l4";
+import { answerOf, type Answer } from "@/lib/answer-blocks";
 import { controlLabel } from "@/lib/guardrails";
 
 /**
@@ -26,6 +28,14 @@ import { controlLabel } from "@/lib/guardrails";
  * and `.../{cid}`), masked as journalled. One held by someone else, and one
  * the application named itself through the gateway, are shown and not
  * continued.
+ *
+ * A chatbot whose policy answers in blocks replies with `answer` beside its
+ * text: blocks the model wrote as structured output and the service
+ * validated. They are drawn by components/answer-blocks.tsx and marked as the
+ * chatbot's own words, not figures from the platform's records. A choice or a
+ * follow-up question in them is sent as the next message. An answer whose
+ * blocks did not validate is refused (answer_invalid) and asked for once more;
+ * the replay shows both.
  */
 
 type ChatReply = Schemas["ChatReply"];
@@ -76,6 +86,8 @@ interface Exchange {
   refusal: { title: string; message: string; control: string } | null;
   /** Read from the record, masked; not typed in this window. */
   recorded: boolean;
+  /** The answer in blocks, for a chatbot that answers in blocks; null for a text reply. */
+  answer: Answer | null;
 }
 
 /** What a refusal is, in a few words: by its code, else by its status. */
@@ -112,6 +124,7 @@ function exchangesOf(c: Conversation): Exchange[] {
       flags: !answer.refused && answer.screened ? [answer.screened.control] : [],
       refusal: answer.refused ? { title: refusalTitle({ status: 0, code: answer.outcome }), message: answer.reason, control: answer.screened?.control ?? "" } : null,
       recorded: true,
+      answer: answer.answer,
     });
   }
   return out;
@@ -148,7 +161,7 @@ function Control({ control }: { control: string }) {
 
 /* ═══════════════════ one exchange ═══════════════════ */
 
-function ExchangeView({ x, name, asker }: { x: Exchange; name: string; /** Who asked: "You", or whoever the record names. */ asker: string }) {
+function ExchangeView({ x, name, asker, onSend, busy, last }: { x: Exchange; name: string; /** Who asked: "You", or whoever the record names. */ asker: string; /** Sends a choice or a follow-up as the next message; null when this conversation is not continued here. */ onSend: ((text: string) => void) | null; busy: boolean; last: boolean }) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex max-w-[86%] flex-col gap-1 self-end">
@@ -170,6 +183,9 @@ function ExchangeView({ x, name, asker }: { x: Exchange; name: string; /** Who a
           <div className="min-w-0 rounded-md border border-line bg-surface px-3 py-2 text-[13px] leading-[1.6] break-words text-fg">
             {x.reply.trim() ? <Markdown text={x.reply} /> : <span className="text-ghost">The reply was empty.</span>}
           </div>
+        )}
+        {x.state === "answered" && x.answer && (
+          <AnswerBlocks answer={x.answer} origin={{ kind: "chatbot", name }} onSend={(t) => onSend?.(t)} busy={busy || !onSend} followups={last && Boolean(onSend)} />
         )}
         {x.state === "refused" && x.refusal && (
           <div className="relative flex flex-col items-start gap-1.5 overflow-hidden rounded-md border border-err-line bg-surface py-2 pr-3 pl-4">
@@ -278,14 +294,14 @@ export function ChatPane({ app, me }: { app: Application; /** The person signed 
         ? `This conversation is held by ${held.holder || "a person the record does not name"}. It is shown as recorded and is not continued by anyone else.`
         : "";
 
-  const send = async () => {
-    const message = draft.trim();
-    if (!message || sending || tooLong || cannot) return;
+  const send = async (typed?: string) => {
+    const message = (typed ?? draft).trim();
+    if (!message || sending || message.length > MESSAGE_CAP || cannot) return;
     const key = `live-${++seq.current}`;
-    setDraft("");
+    if (typed === undefined) setDraft("");
     setOpenError("");
     setSending(true);
-    setExchanges((xs) => [...xs, { key, question: message, at: new Date().toISOString(), state: "waiting", reply: "", model: "", tokens: null, cost: null, latency_ms: null, completion: "", flags: [], refusal: null, recorded: false }]);
+    setExchanges((xs) => [...xs, { key, question: message, at: new Date().toISOString(), state: "waiting", reply: "", model: "", tokens: null, cost: null, latency_ms: null, completion: "", flags: [], refusal: null, recorded: false, answer: null }]);
     const answer = await sendChat(app.id, message, cid);
     const patch = (p: Partial<Exchange>) => setExchanges((xs) => xs.map((x) => (x.key === key ? { ...x, ...p } : x)));
     if (answer.ok) {
@@ -302,6 +318,8 @@ export function ChatPane({ app, me }: { app: Application; /** The person signed 
         latency_ms: typeof usage.latency_ms === "number" ? usage.latency_ms : null,
         completion: usage.completion ?? "",
         flags: [...new Set((r.screened ?? []).map((v) => str(v.control)).filter(Boolean))],
+        // `answer` is beside the reply only for a chatbot that answers in blocks; the generated schema predates it.
+        answer: answerOf((r as unknown as Record<string, unknown>).answer),
       });
     } else {
       const r = answer.refusal;
@@ -325,7 +343,7 @@ export function ChatPane({ app, me }: { app: Application; /** The person signed 
         <Mono className="text-[10.5px] text-faint">{app.id}</Mono>
         {app.blocked ? <Status tone="err">blocked</Status> : <Status tone="ok">admitted</Status>}
         <span className="text-[11px] leading-[1.55] text-faint">
-          model {model} · {app.policy.data_class} data · {app.policy.system_prompt ? "registered system prompt" : "no registered system prompt"} · screening refuses a block and records a flag
+          model {model} · {app.policy.data_class} data · {app.policy.system_prompt ? "registered system prompt" : "no registered system prompt"} · answers in {app.policy.answers === "blocks" ? "text and blocks" : "text"} · screening refuses a block and records a flag
         </span>
         <span className="grow" />
         <Button size="sm" variant="solid" tone="neutral" href={`/applications/${encodeURIComponent(app.id)}`}>
@@ -393,8 +411,16 @@ export function ChatPane({ app, me }: { app: Application; /** The person signed 
                 Conversation <span className="font-mono">{cid}</span>, as recorded: secrets and personal data are masked.
               </span>
             )}
-            {exchanges.map((x) => (
-              <ExchangeView key={x.key} x={x} name={app.name} asker={x.recorded && (named || foreign) ? (named ? "the application" : held.holder || "a person the record does not name") : "You"} />
+            {exchanges.map((x, i) => (
+              <ExchangeView
+                key={x.key}
+                x={x}
+                name={app.name}
+                asker={x.recorded && (named || foreign) ? (named ? "the application" : held.holder || "a person the record does not name") : "You"}
+                onSend={cannot ? null : (t) => void send(t)}
+                busy={sending}
+                last={i === exchanges.length - 1}
+              />
             ))}
           </div>
 

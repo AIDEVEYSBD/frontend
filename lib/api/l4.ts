@@ -1,4 +1,5 @@
 import { PUBLIC_ORIGIN } from "@/lib/site";
+import { answerOf, type Answer } from "@/lib/answer-blocks";
 import type { DataClass } from "./pending";
 import { api, errorText, type Schemas } from "./client";
 
@@ -25,6 +26,8 @@ const num = (v: unknown): number => numOrNull(v) ?? 0;
 export type ApplicationClass = "chatbot" | "rag" | "agent" | "multi_agent";
 export type Autonomy = "L0" | "L1" | "L2" | "L3" | "L4" | "L5";
 export type BudgetPeriod = "day" | "week" | "month";
+/** How a chatbot answers a person in the console's chat: in text, or in text and blocks (agentfactory/answers in the backend). */
+export type AnswerMode = "text" | "blocks";
 /** The windows the metrics address cuts. */
 export type MetricsWindow = "24h" | "7d" | "30d" | "90d" | "all";
 
@@ -61,6 +64,9 @@ export interface AppBudget {
  * yet); `data_class` is the most sensitive class it handles, and every model
  * call is resolved with it; `rate_per_minute` and `budget` are null for no
  * limit. `system_prompt` is a chatbot's prompt in force ("" for none).
+ * `answers` is how a chatbot answers in the console's chat: text, or text and
+ * blocks asked of the model as structured output and validated by the
+ * service. It does not touch the gateway's OpenAI-compatible addresses.
  */
 export interface Policy {
   models: string[];
@@ -69,6 +75,7 @@ export interface Policy {
   rate_per_minute: number | null;
   budget: AppBudget | null;
   system_prompt: string;
+  answers: AnswerMode;
 }
 
 /** The fields a registration or a change sends, under the service's own names only. */
@@ -186,6 +193,8 @@ export interface Turn {
   reason: string;
   /** The completion the turn is recorded as. */
   completion: string;
+  /** A chatbot's answer in blocks, as journalled (masked); null for a text reply and for every turn but the answer. */
+  answer: Answer | null;
 }
 
 export interface Conversation {
@@ -265,6 +274,8 @@ const OUTCOME_WORDS: Record<string, string> = {
   system_prompt_leaked: "the reply repeated the registered system prompt",
   upstream_unavailable: "the model could not be called",
   upstream_error: "the model did not answer",
+  answer_invalid: "the answer's blocks did not validate",
+  answer_cut: "the answer was cut off",
 };
 export const outcomeWords = (outcome: string): string => OUTCOME_WORDS[outcome] ?? outcome.replace(/_/g, " ");
 
@@ -288,6 +299,7 @@ export function policyOf(v: unknown): Policy {
     rate_per_minute: numOrNull(p.rate_per_minute),
     budget: budgetOf(p.budget),
     system_prompt: str(p.system_prompt),
+    answers: p.answers === "blocks" ? "blocks" : "text",
   };
 }
 
@@ -377,7 +389,7 @@ export function turnsOf(v: unknown): Turn[] {
     const c = rec(raw);
     const verdict = (Array.isArray(c.verdicts) ? c.verdicts : []).map(rec).find((x) => x.action === "block" || x.action === "flag");
     const outcome = str(c.outcome);
-    const blank = { model: "", tokens: null, cost: null, unpriced: false, latency_ms: null, screened: null, refused: false, outcome: "", reason: "", completion: str(c.id) };
+    const blank = { model: "", tokens: null, cost: null, unpriced: false, latency_ms: null, screened: null, refused: false, outcome: "", reason: "", completion: str(c.id), answer: null };
     for (const t of Array.isArray(c.turns) ? c.turns : []) {
       const turn = rec(t);
       const role = turn.role === "assistant" ? "assistant" : turn.role === "system" || turn.role === "developer" ? "system" : "user";
@@ -398,6 +410,7 @@ export function turnsOf(v: unknown): Turn[] {
       outcome,
       reason: str(c.reason),
       completion: str(c.id),
+      answer: answerOf(c.answer),
     });
   }
   return out;
