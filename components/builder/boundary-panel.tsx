@@ -10,6 +10,8 @@ import {
   type Trigger,
 } from "@/lib/spec";
 import { dataClassChoices } from "@/lib/bom";
+import { machineAddress, machineLine } from "@/lib/site";
+import { useMachineOrigin } from "@/lib/use-session";
 import type { Action } from "@/lib/builder-store";
 import { Cross, Mini, Plus, Row, Section, Text } from "./controls";
 
@@ -32,6 +34,10 @@ export function BoundaryPanel({
   const trigger: Trigger = system.trigger ?? { kind: "api" };
   const outputs = system.outputs ?? [];
 
+  // An outside system posts to the platform's own address (the session's machineOrigin), never the console's: the console's sign-in stands in front of that.
+  const machine = useMachineOrigin();
+  const door = trigger.kind === "webhook" ? `/api/webhooks/${system.id}` : `/api/trigger/${system.id}`;
+  const endpoint = machineAddress(machine, door);
   const setTrigger = (t: Trigger) => dispatch({ type: "set-trigger", trigger: t });
   const setOutputs = (o: OutputDecl[]) => dispatch({ type: "set-outputs", outputs: o });
 
@@ -88,11 +94,19 @@ export function BoundaryPanel({
           <Row
             label="Endpoint"
             tight
-            hint={'Standing intake once the agent is saved. The body is {"input": {...}} matching the entry node\'s inputs; GET describes them. Each call runs the whole graph and returns the result.'}
+            hint={
+              trigger.kind === "webhook"
+                ? "Open once the agent is deployed. The posted JSON body is the run's input, marked untrusted. The delivery is signed (Standard Webhooks) with the secret the trigger's config names (secret: ${secret:<name>}), or carries an API key bound to the agent. The answer is 202 with the job and its status_url."
+                : 'Open once the agent is deployed. Send an API key bound to the agent and {"input": {...}} matching the entry node\'s inputs; GET describes them. The answer is 202 with the job and its status_url; a worker then carries out the run.'
+            }
           >
-            <code className="block truncate rounded-md border border-line bg-canvas px-2.5 py-1.5 font-mono text-[11px] text-fg">
-              POST /api/trigger/{system.id}
-            </code>
+            {endpoint ? (
+              <code className="block truncate rounded-md border border-line bg-canvas px-2.5 py-1.5 font-mono text-[11px] text-fg">POST {endpoint}</code>
+            ) : (
+              <p className={`text-[11px] leading-[1.5] ${machine === undefined ? "text-faint" : "text-warn"}`}>
+                {machineLine(machine, door, trigger.kind === "webhook" ? "a sender cannot reach this agent's webhook" : "an outside system cannot reach this agent's trigger")}
+              </p>
+            )}
           </Row>
         )}
       </Section>

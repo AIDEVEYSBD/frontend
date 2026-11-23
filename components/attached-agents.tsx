@@ -3,7 +3,8 @@ import { useDoorOff } from "@/lib/use-doors";
 import { Failure } from "./pending";
 
 import { useEffect, useMemo, useState } from "react";
-import { useSession } from "@/lib/use-session";
+import { useMachineOrigin, useSession } from "@/lib/use-session";
+import { machineAddress, machineLine } from "@/lib/site";
 import Link from "next/link";
 import { Button, Mono, Status, Tag } from "./ui";
 import { Pick } from "./select";
@@ -11,7 +12,8 @@ import { Code, CopyButton } from "./code";
 import { OpenChanges, ProposalNote } from "./policy";
 import {
   A2A_STEPS,
-  ENDPOINTS,
+  PATHS,
+  readA2AOrigin,
   FRAMEWORKS,
   FRAMEWORK_BY_ID,
   LANGUAGES,
@@ -183,6 +185,44 @@ function Seg<T extends string>({ value, onChange, options }: { value: T; onChang
 
 const control = "focusable h-8 rounded-md border border-line-strong bg-field px-2.5 text-[13px] text-fg placeholder:text-ghost";
 
+/** In place of a snippet that names a door, where the deployment names no machine origin (or the session is still read). */
+function NoMachineCode({ machine, consequence, className = "" }: { machine: string | null | undefined; consequence: string; className?: string }) {
+  return (
+    <p className={`px-4 py-3 text-[11.5px] leading-[1.55] ${machine === undefined ? "text-faint" : "text-warn"} ${className}`}>
+      {machineLine(machine, "", consequence)}
+      {machine === null && " The code is shown once the deployment names that address."}
+    </p>
+  );
+}
+
+type A2AOrigin = { origin: string | null; problem: string } | { failed: string } | null;
+
+/**
+ * The factory's own A2A card, and which setting its address comes from: A2A_PUBLIC_URL, the address peers reach this
+ * platform at and sign their requests for, when the backend names it; else the machine origin, said as such.
+ */
+function CardLine({ a2a, machine }: { a2a: A2AOrigin; machine: string | null | undefined }) {
+  const mono = "text-[10.5px]";
+  if (!a2a || machine === undefined) return <>Reading where peers reach the factory&rsquo;s card&hellip;</>;
+  if ("origin" in a2a && a2a.origin) {
+    return (
+      <>
+        The factory&rsquo;s own card is at <Mono className={mono}>{a2a.origin + PATHS.card}</Mono> (A2A_PUBLIC_URL, the address peers reach this platform at).
+      </>
+    );
+  }
+  // The platform's own reason when A2A_PUBLIC_URL is not set: the card is not served until it is.
+  const why = "failed" in a2a ? `whether A2A_PUBLIC_URL is set could not be read: ${a2a.failed}` : a2a.problem || "A2A_PUBLIC_URL is not set, and the platform serves no card until it is";
+  if (machine) {
+    return (
+      <>
+        Shown at the machine address (PUBLIC_API_URL), the factory&rsquo;s own card is <Mono className={mono}>{machine + PATHS.card}</Mono>; {why}.
+      </>
+    );
+  }
+  return <>No address peers reach this platform at is set on this deployment (A2A_PUBLIC_URL or PUBLIC_API_URL): peers cannot read the factory&rsquo;s card through the console&rsquo;s sign-in.</>;
+}
+
 /* ═══════════════════ the panel body ═══════════════════ */
 
 export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: AttachedAgent[], store: string) => void; /** Told, once the register has answered or not, whether a quiet console has no register to show (see Providers). */ onQuiet?: (quiet: boolean) => void }) {
@@ -197,6 +237,11 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
   const { session } = useSession();
   /** The install line, the snippets and the setup steps are folded away until asked for. */
   const [code, setCode] = useState(false);
+  /** The origin the agent calls the platform at (the session's machineOrigin), never the console's own. */
+  const machine = useMachineOrigin();
+  const unreachable = "an attached agent cannot reach the platform";
+  /** Where peers reach this platform over A2A (A2A_PUBLIC_URL), as `GET /api/a2a` answers it; read when the code is first shown. */
+  const [a2a, setA2a] = useState<A2AOrigin>(null);
 
   const [name, setName] = useState("");
   const [framework, setFramework] = useState("langgraph");
@@ -241,6 +286,12 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
   useEffect(() => {
     if (settled) onQuiet?.(false);
   }, [settled, onQuiet]);
+  useEffect(() => {
+    if (!code || a2a) return;
+    readA2AOrigin()
+      .then(setA2a)
+      .catch((e) => setA2a({ failed: (e as Error).message }));
+  }, [code, a2a]);
   useEffect(() => {
     load();
     attachableTools()
@@ -371,8 +422,9 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
     () => ({
       agent: minted?.agent.id ?? (name.trim() ? slugOf(name) || "my-agent" : "my-agent"),
       key: minted?.key ?? "",
+      origin: machine ?? "",
     }),
-    [minted, name],
+    [minted, name, machine],
   );
 
   const attach = async () => {
@@ -429,11 +481,17 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
               <Seg value={language} onChange={setLanguage} options={LANGUAGES.map((l) => ({ id: l.id, label: l.label }))} />
               <Mono className="min-w-0 truncate text-[10.5px] text-faint">{LANGUAGES.find((l) => l.id === language)?.install}</Mono>
               <span className="grow" />
-              <CopyButton text={SNIPPETS[language](ctx)} />
+              {machine && <CopyButton text={SNIPPETS[language](ctx)} />}
             </div>
-            <Code text={SNIPPETS[language](ctx)} lang={language} />
+            {machine ? <Code text={SNIPPETS[language](ctx)} lang={language} /> : <NoMachineCode machine={machine} consequence={unreachable} />}
             <span className="border-t border-line px-4 py-2.5 text-[11px] leading-[1.55] text-faint">
-              The SDK carries no policy of its own. Every tool call goes through the broker and is decided here before it is made, every gate waits here and is answered on the Approvals page, and the run&rsquo;s record lands in the same store as the factory&rsquo;s own. Runs open at <Mono className="text-[10.5px]">{ENDPOINTS.ingest}</Mono>. Go, Java and C# have a reference of the wire format (sdk/WIRE.md), not a tested SDK.
+              The SDK carries no policy of its own. Every tool call goes through the broker and is decided here before it is made, every gate waits here and is answered on the Approvals page, and the run&rsquo;s record lands in the same store as the factory&rsquo;s own.
+              {machine && (
+                <>
+                  {" "}Runs open at <Mono className="text-[10.5px]">{machineAddress(machine, PATHS.ingest)}</Mono>, the platform&rsquo;s own address, outside the console&rsquo;s sign-in.
+                </>
+              )}{" "}
+              Go, Java and C# have a reference of the wire format (sdk/WIRE.md), not a tested SDK.
             </span>
           </div>
           <div className="flex min-w-0 flex-col bg-surface">
@@ -465,9 +523,10 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
                     <span className="max-w-[78ch] text-[11px] leading-[1.55] text-faint">{s.body}</span>
                   </span>
                   <span className="grow" />
-                  {s.snippet && <CopyButton text={s.snippet(ctx)} />}
+                  {s.snippet && (machine || !s.machine) && <CopyButton text={s.snippet(ctx)} />}
                 </div>
-                {s.snippet && <Code text={s.snippet(ctx)} lang={s.lang ?? "http"} className="border-t border-line bg-raise/40" />}
+                {s.snippet && (machine || !s.machine) && <Code text={s.snippet(ctx)} lang={s.lang ?? "http"} className="border-t border-line bg-raise/40" />}
+                {s.snippet && s.machine && !machine && <NoMachineCode machine={machine} consequence={unreachable} className="border-t border-line" />}
               </div>
             ))}
           </div>
@@ -488,7 +547,7 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
               </span>
             ))}
             <span className="px-4 py-2.5 text-[11px] leading-[1.55] text-faint">
-              An agent that lets you set an OpenAI-compatible base URL, an MCP server and the headers sent to each can attach this way; none of the products in the framework list has been tried against this platform. Handing this platform tasks over A2A is a separate door: register the agent under Peers. The factory&rsquo;s own card is at <Mono className="text-[10.5px]">{ENDPOINTS.card}</Mono>.
+              An agent that lets you set an OpenAI-compatible base URL, an MCP server and the headers sent to each can attach this way; none of the products in the framework list has been tried against this platform. Handing this platform tasks over A2A is a separate door: register the agent under Peers. <CardLine a2a={a2a} machine={machine} />
             </span>
           </div>
         </div>

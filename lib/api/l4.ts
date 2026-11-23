@@ -1,4 +1,3 @@
-import { PUBLIC_ORIGIN } from "@/lib/site";
 import { answerOf, type Answer } from "@/lib/answer-blocks";
 import type { DataClass } from "./pending";
 import { api, errorText, type Schemas } from "./client";
@@ -575,11 +574,14 @@ export async function activityOf(id: string): Promise<Activity> {
 
 /* ═══════════════════ the gateway, for an application's own code ═══════════════════ */
 
-export const GATEWAY_URL = `${PUBLIC_ORIGIN}/api/gateway/v1`;
+/** The gateway's path. An application calls it beneath the machine origin (lib/site.ts), never the console's. */
+export const GATEWAY_PATH = "/api/gateway/v1";
 
 export interface SnippetContext {
   key: string;
   model: string;
+  /** The gateway's full address: the machine origin and GATEWAY_PATH. */
+  base: string;
 }
 
 const KEY = (c: SnippetContext) => c.key || "<application key>";
@@ -592,7 +594,7 @@ const KEY = (c: SnippetContext) => c.key || "<application key>";
 export const SNIPPETS = {
   python: (c: SnippetContext) => `from openai import OpenAI
 
-client = OpenAI(base_url="${GATEWAY_URL}", api_key="${KEY(c)}")
+client = OpenAI(base_url="${c.base}", api_key="${KEY(c)}")
 
 reply = client.chat.completions.create(
     model="${c.model}",
@@ -606,7 +608,7 @@ print(reply.choices[0].message.content)
 
   typescript: (c: SnippetContext) => `import OpenAI from "openai";
 
-const client = new OpenAI({ baseURL: "${GATEWAY_URL}", apiKey: "${KEY(c)}" });
+const client = new OpenAI({ baseURL: "${c.base}", apiKey: "${KEY(c)}" });
 
 const reply = await client.chat.completions.create(
   {

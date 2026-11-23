@@ -8,7 +8,7 @@ import {
   AUTONOMIES,
   AUTONOMY_LABEL,
   CLASS_LABEL,
-  GATEWAY_URL,
+  GATEWAY_PATH,
   SNIPPETS,
   activityOf,
   autonomyLabel,
@@ -28,7 +28,8 @@ import {
 import { DATA_CLASSES, type DataClass } from "@/lib/api/pending";
 import { errorText } from "@/lib/api/client";
 import { agentHref } from "@/lib/agent-link";
-import { useSession } from "@/lib/use-session";
+import { useMachineOrigin, useSession } from "@/lib/use-session";
+import { machineAddress, machineLine } from "@/lib/site";
 import { GroupHeader } from "./page-tabs";
 import { Button, Mono, Status, Tag } from "./ui";
 import { Pick } from "./select";
@@ -113,6 +114,8 @@ export function Applications() {
   const connectDoor = useDoorOff("POST", "/api/applications");
   const [minted, setMinted] = useState<Minted | null>(null);
   const [busy, setBusy] = useState("");
+  const machine = useMachineOrigin();
+  const gateway = machineAddress(machine, GATEWAY_PATH);
 
   const load = useCallback(() => {
     readRegister()
@@ -343,7 +346,10 @@ export function Applications() {
           </section>
         )}
 
-        <p className="pb-2 text-[10.5px] text-ghost">The gateway is {GATEWAY_URL}. An application&rsquo;s key is shown once, when it is registered.</p>
+        <p className="pb-2 text-[10.5px] text-ghost">
+          {gateway ? `Applications call the gateway at ${gateway}, outside the console’s sign-in.` : machineLine(machine, GATEWAY_PATH, "applications cannot reach the gateway")} An application&rsquo;s key is
+          shown once, when it is registered.
+        </p>
       </div>
 
       {connecting && (
@@ -594,7 +600,9 @@ function ConnectDialog({ notBuilt, onClose, onMinted }: { notBuilt: Record<strin
 function MintedDialog({ minted, onClose }: { minted: Minted; onClose: () => void }) {
   const a = minted.application;
   const [lang, setLang] = useState<"python" | "typescript">("python");
-  const ctx = { key: minted.key, model: a.policy.models[0] ?? "" };
+  const machine = useMachineOrigin();
+  const gateway = machineAddress(machine, GATEWAY_PATH);
+  const ctx = { key: minted.key, model: a.policy.models[0] ?? "", base: gateway ?? "" };
   return (
     <DrillModal
       title={`${a.name} registered`}
@@ -620,23 +628,36 @@ function MintedDialog({ minted, onClose }: { minted: Minted; onClose: () => void
         <section className="flex flex-col overflow-hidden rounded-md border border-line">
           <div className="flex items-center gap-2 border-b border-line bg-raise/55 px-3 py-2">
             <span className="text-[12px] font-semibold">OpenAI SDK, pointed at the gateway</span>
-            <Mono className="text-[10.5px] text-faint">{GATEWAY_URL}</Mono>
+            {gateway && <Mono className="text-[10.5px] text-faint">{gateway}</Mono>}
             <span className="grow" />
-            <span className="flex items-center rounded-md border border-line bg-canvas p-0.5">
-              {(["python", "typescript"] as const).map((l) => (
-                <button key={l} type="button" onClick={() => setLang(l)} className={`focusable rounded-[5px] px-2.5 py-1 text-[11.5px] font-medium transition-colors ${lang === l ? "bg-surface text-fg elev-1" : "text-faint hover:text-fg"}`}>
-                  {l === "python" ? "Python" : "TypeScript"}
-                </button>
-              ))}
-            </span>
-            <CopyButton text={SNIPPETS[lang](ctx)} />
+            {gateway && (
+              <>
+                <span className="flex items-center rounded-md border border-line bg-canvas p-0.5">
+                  {(["python", "typescript"] as const).map((l) => (
+                    <button key={l} type="button" onClick={() => setLang(l)} className={`focusable rounded-[5px] px-2.5 py-1 text-[11.5px] font-medium transition-colors ${lang === l ? "bg-surface text-fg elev-1" : "text-faint hover:text-fg"}`}>
+                      {l === "python" ? "Python" : "TypeScript"}
+                    </button>
+                  ))}
+                </span>
+                <CopyButton text={SNIPPETS[lang](ctx)} />
+              </>
+            )}
           </div>
-          <Code text={SNIPPETS[lang](ctx)} lang={lang} className="bg-raise/40" />
+          {gateway ? (
+            <Code text={SNIPPETS[lang](ctx)} lang={lang} className="bg-raise/40" />
+          ) : (
+            <p className={`px-3 py-3 text-[11.5px] leading-[1.55] ${machine === undefined ? "text-faint" : "text-warn"}`}>
+              {machineLine(machine, GATEWAY_PATH, "applications cannot reach the gateway")}
+              {machine === null && " The code to paste is shown once the deployment names that address."}
+            </p>
+          )}
         </section>
 
-        <p className="text-[11px] leading-[1.55] text-warn">
-          The gateway refuses a call that carries a console sign-in, so {GATEWAY_URL} answers an application only where the console&rsquo;s sign-in is not in front of it; elsewhere the application calls the service&rsquo;s own address with the same path.
-        </p>
+        {gateway && (
+          <p className="text-[11px] leading-[1.55] text-faint">
+            Applications call the gateway at {gateway}, the service&rsquo;s own address, outside the console&rsquo;s sign-in: the gateway refuses a call that carries a console sign-in.
+          </p>
+        )}
         <p className="text-[11px] leading-[1.55] text-faint">
           The gateway takes this key and nothing else. It holds every call to the policy ({policyLine(a.policy)}; models {a.policy.models.join(", ")}), screens the prompt and the reply (a block is
           refused naming the control, a flag is recorded and let through), and journals the call with its tokens, its cost (none when its model has no price set), its latency and its model.

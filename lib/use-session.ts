@@ -36,6 +36,8 @@ export interface SessionInfo {
   accessExpiresAt: string | null;
   expiresAt: string | null;
   reauth?: boolean;
+  /** The origin machines reach the service at, outside the console's sign-in (the backend's PUBLIC_API_URL); null when the deployment names none. Absent from an older backend's answer, which is read as none. */
+  machineOrigin?: string | null;
 }
 
 /**
@@ -124,6 +126,20 @@ export function useSession(): { session: SessionInfo | null; loaded: boolean; fa
       window.location.href = j.redirect || "/";
     },
   };
+}
+
+/**
+ * The origin machines reach the service at, as the session answers it (lib/site.ts says why it is not the console's):
+ * `undefined` until the session is read, null when the deployment names none.
+ *
+ * Also `undefined` on a component's first render, as on the server: a part of a page that hydrates after the session
+ * was read elsewhere must first render what the server rendered, or React discards the server's HTML.
+ */
+export function useMachineOrigin(): string | null | undefined {
+  const { session } = useSession();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  return mounted && session ? (session.machineOrigin ?? null) : undefined;
 }
 
 /** The name a client-side action should sign with. Falls back to the local operator's name until the session loads. */

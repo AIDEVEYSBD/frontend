@@ -10,7 +10,7 @@ import { useSearchParams } from "next/navigation";
 import { Button, Mono, Status, Tag } from "./ui";
 import { usePageFacts } from "./assistant";
 import { GroupHeader } from "./page-tabs";
-import { MCP_ENDPOINT } from "@/lib/site";
+import { MCP_PATH, machineAddress, machineLine } from "@/lib/site";
 import { hueFor } from "@/lib/hue";
 import { CONNECTOR_DEFS } from "@/lib/connections";
 import { AttachedAgents } from "./attached-agents";
@@ -28,7 +28,7 @@ import { ApiKeys } from "./api-keys";
 import { IngressActivity } from "./ingress-activity";
 import { VendorConnectors } from "./vendor-connectors";
 import { PeerList, meOf, usePeers } from "./peers";
-import { useSession } from "@/lib/use-session";
+import { useMachineOrigin, useSession } from "@/lib/use-session";
 import { Appearance } from "./appearance";
 import { peerCounts } from "@/lib/peers";
 
@@ -343,6 +343,10 @@ function ConfigurationTabs() {
   // The peer registry (phase L7): read here so the panel's heading and the page facts carry its counts.
   const peers = usePeers();
   const { session } = useSession();
+  // The address MCP clients connect to: beneath the machine origin the session answers, never the console's own.
+  const machine = useMachineOrigin();
+  const mcpEndpoint = machineAddress(machine, MCP_PATH);
+  const mcpUnreachable = "MCP clients cannot reach the platform's MCP server";
   // What the deployment's own Google identity can see on Vertex AI: its panel is drawn only when there is something to show.
   const vertex = useVertex();
 
@@ -587,7 +591,7 @@ function ConfigurationTabs() {
           gates: data.gates,
           models: data.models.map((m) => m.id),
           defaultModel: data.defaultModel,
-          agentFactoryMcp: { endpoint: MCP_ENDPOINT, tools: mcp ? mcp.tools.map((t) => t.name) : "described at the endpoint" },
+          agentFactoryMcp: { endpoint: machineLine(machine, MCP_PATH, mcpUnreachable), tools: mcp ? mcp.tools.map((t) => t.name) : mcpEndpoint ? "described at the endpoint" : "not listed: the server answers no description while no machine address is set" },
           toolServers: registry.servers
             ? {
                 twoPersonApproval: registry.twoPerson,
@@ -808,12 +812,21 @@ function ConfigurationTabs() {
               caption={mcp ? "Other agents and tools can read this deployment over the Model Context Protocol, as the server describes itself below." : "The platform's own MCP server, as it describes itself."}
               meta={mcp ? <Tag tone="neutral">MCP</Tag> : undefined}
             >
-              {!mcp && (mcpAnswer && mcpAnswer.state !== "ok" ? <AnswerFailure className="p-4" answer={mcpAnswer} what="The MCP server description could not be read" /> : <span className="block px-4 py-3 text-[11.5px] text-faint">Reading the server description…</span>)}
+              {!mcp &&
+                (machine === null ? (
+                  <p className="px-4 py-3 text-[11.5px] leading-[1.55] text-warn">
+                    {machineLine(machine, MCP_PATH, mcpUnreachable)} The server&rsquo;s description names that address, so the platform gives no description (it answers 503) until the deployment sets one.
+                  </p>
+                ) : mcpAnswer && mcpAnswer.state !== "ok" ? (
+                  <AnswerFailure className="p-4" answer={mcpAnswer} what="The MCP server description could not be read" />
+                ) : (
+                  <span className="block px-4 py-3 text-[11.5px] text-faint">Reading the server description…</span>
+                ))}
               {mcp && <div className="grid gap-px bg-line lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
                 <div className="flex flex-col bg-surface">
                   <div className="grid gap-px border-b border-line bg-line sm:grid-cols-3">
                     {[
-                      { k: "Endpoint", v: mcp.endpoint || MCP_ENDPOINT, mono: true },
+                      { k: "Endpoint", v: machineLine(machine, MCP_PATH, mcpUnreachable), mono: Boolean(mcpEndpoint) },
                       { k: "Transport", v: mcp.transport || "—", faint: !mcp.transport },
                       { k: "Authentication", v: mcp.auth || "—" },
                     ].map((f) => (

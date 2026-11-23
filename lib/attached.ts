@@ -27,6 +27,7 @@
  */
 
 import { PUBLIC_ORIGIN } from "./site";
+import { errorText } from "./api/client";
 
 export type AttachMode = "sdk" | "a2a";
 export type Language = "python" | "typescript" | "java" | "csharp" | "go";
@@ -108,21 +109,37 @@ export const SHOWN_ON: { page: string; what: string }[] = [
 
 /* ═══════════════════ Endpoints an attached agent talks to ═══════════════════ */
 
-export const ENDPOINTS = {
-  origin: PUBLIC_ORIGIN,
-  sdk: `${PUBLIC_ORIGIN}/api/sdk`,
-  ingest: `${PUBLIC_ORIGIN}/api/sdk/runs`,
-  gateway: `${PUBLIC_ORIGIN}/api/a2a/gateway/v1`,
-  broker: (agent: string) => `${PUBLIC_ORIGIN}/api/a2a/mcp/${agent || "<agent>"}`,
-  tasks: `${PUBLIC_ORIGIN}/api/a2a`,
-  card: `${PUBLIC_ORIGIN}/.well-known/agent.json`,
+/**
+ * The doors an attached agent calls, as paths. A machine calls them beneath the machine origin the session answers
+ * (lib/site.ts), never beneath the console's own: the console's sign-in stands in front of that, and the doors refuse it.
+ */
+export const PATHS = {
+  ingest: "/api/sdk/runs",
+  gateway: "/api/a2a/gateway/v1",
+  broker: (agent: string) => `/api/a2a/mcp/${agent || "<agent>"}`,
+  /** This platform's own A2A agent card (A2A 1.0's well-known path). */
+  card: "/.well-known/agent-card.json",
 };
+
+/**
+ * Where peers reach this platform over A2A, as `GET /api/a2a` answers it: the origin of the tasks door the backend
+ * names under A2A_PUBLIC_URL, or null with the platform's reason when that setting is not set. A refusal is thrown.
+ */
+export async function readA2AOrigin(): Promise<{ origin: string | null; problem: string }> {
+  const r = await fetch("/api/a2a", { cache: "no-store" });
+  const j = (await r.json().catch(() => null)) as { endpoint?: unknown; endpoint_problem?: unknown } | null;
+  if (!r.ok || !j) throw new Error(errorText(j, r, "GET", "/api/a2a"));
+  const endpoint = typeof j.endpoint === "string" ? j.endpoint : "";
+  return { origin: endpoint ? new URL(endpoint).origin : null, problem: typeof j.endpoint_problem === "string" ? j.endpoint_problem : "" };
+}
 
 /* ═══════════════════ SDK snippets ═══════════════════ */
 
 export interface SnippetContext {
   agent: string;
   key: string;
+  /** The machine origin the agent calls; a snippet that names a door is shown only when there is one. */
+  origin: string;
 }
 
 const KEY = (c: SnippetContext) => c.key || "<agent key>";
@@ -136,7 +153,7 @@ export const SNIPPETS: Record<SnippetLanguage, (c: SnippetContext) => string> = 
   python: (c) => `from agentfactory_sdk import AgentFactory, Killed, Refused
 
 af = AgentFactory(
-    endpoint="${PUBLIC_ORIGIN}",
+    endpoint="${c.origin}",
     api_key="${KEY(c)}",                     # this agent's key; it works once a second person approves
     agent="${c.agent}",
 )
@@ -152,7 +169,7 @@ with af.run(input={"<input-field>": "<value>"}) as run:                       # 
   typescript: (c) => `import { AgentFactory } from "@agentfactory/sdk";
 
 const af = new AgentFactory({
-  endpoint: "${PUBLIC_ORIGIN}",
+  endpoint: "${c.origin}",
   apiKey: "${KEY(c)}",                       // this agent's key; it works once a second person approves
   agent: "${c.agent}",
 });
@@ -175,33 +192,38 @@ export interface A2AStep {
   body: string;
   snippet?: (c: SnippetContext) => string;
   lang?: "env" | "json" | "http";
+  /** The snippet names a door the agent calls, beneath the machine origin: without one it is not shown. */
+  machine?: boolean;
 }
 
 export const A2A_STEPS: A2AStep[] = [
   {
     title: "Attach the agent, and have it approved",
     body: "Name it, say who owns it, and attach it. Before a second person approves, set its policy here (the tools it is granted, its gate, its model routing and limits): an agent starts with nothing granted. The key is shown once; every door refuses it until the attachment is approved.",
-    snippet: (c) => `POST ${ENDPOINTS.origin}/api/attached                      { "name": "…", "mode": "a2a", "grants": ["<tool>"], "gate_at": "write" }
+    // People attach and approve, through the console and its sign-in: these are the console's addresses.
+    snippet: (c) => `POST ${PUBLIC_ORIGIN}/api/attached                      { "name": "…", "mode": "a2a", "grants": ["<tool>"], "gate_at": "write" }
 →    { "agent": { "id": "${c.agent}", "policy_digest": "sha256:…" }, "key": "${KEY(c)}" }
-POST ${ENDPOINTS.origin}/api/attached/${c.agent}/approve   { "digest": "sha256:…" }      (someone else)`,
+POST ${PUBLIC_ORIGIN}/api/attached/${c.agent}/approve   { "digest": "sha256:…" }      (someone else)`,
     lang: "http",
   },
   {
     title: "Open a run for the work",
     body: "Each piece of work is a run of the agent, opened with its key and finished when the work ends. Its model and tool calls name it, so their cost and their decisions are the run's. A run whose agent sends nothing for the platform's lease is closed as abandoned.",
-    snippet: (c) => `POST ${ENDPOINTS.ingest}                  Authorization: Bearer ${KEY(c)}
+    snippet: (c) => `POST ${c.origin}${PATHS.ingest}                  Authorization: Bearer ${KEY(c)}
 { "run": { "input": { "…": "…" } } }       →  { "run_id": "<run id>" }
-POST ${ENDPOINTS.ingest}/<run id>/finish   { "state": "done", "result": { … } }`,
+POST ${c.origin}${PATHS.ingest}/<run id>/finish   { "state": "done", "result": { … } }`,
     lang: "http",
+    machine: true,
   },
   {
     title: "Route its model calls through the gateway",
     body: "Point the agent's OpenAI-compatible base URL at the gateway and give it the key. Every completion is screened, priced at the configured price and recorded; send X-Agentfactory-Run to record it in the run. The model may be auto, a tier or a model its policy lets it name. Streaming and tool calling through the gateway are not built.",
     snippet: (c) => `# OpenAI SDKs and anything that honours these
-OPENAI_BASE_URL=${ENDPOINTS.gateway}
+OPENAI_BASE_URL=${c.origin}${PATHS.gateway}
 OPENAI_API_KEY=${KEY(c)}
 # and, on each request: X-Agentfactory-Run: <run id>`,
     lang: "env",
+    machine: true,
   },
   {
     title: "Route its tools through the broker",
@@ -209,12 +231,13 @@ OPENAI_API_KEY=${KEY(c)}
     snippet: (c) => `{
   "mcpServers": {
     "agent-factory": {
-      "url": "${ENDPOINTS.broker(c.agent)}",
+      "url": "${c.origin}${PATHS.broker(c.agent)}",
       "headers": { "Authorization": "Bearer ${KEY(c)}", "X-Agentfactory-Run": "<run id>" }
     }
   }
 }`,
     lang: "json",
+    machine: true,
   },
 ];
 

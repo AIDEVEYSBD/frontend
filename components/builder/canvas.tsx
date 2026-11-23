@@ -806,7 +806,7 @@ export function Canvas({
               prompt: "User prompt",
               api: `External API · POST /api/trigger/${system.id}`,
               cron: String(system.trigger.config?.cron || "Schedule"),
-              webhook: `Webhook · POST /api/trigger/${system.id}`,
+              webhook: `Webhook · POST /api/webhooks/${system.id}`,
             }[system.trigger.kind]}
             selected={selected === "sys:trigger"}
             onSelect={() => onSelect("sys:trigger")}

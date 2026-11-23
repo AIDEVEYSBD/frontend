@@ -6,6 +6,8 @@ import { Button, Mono, Status, Tag, type Tone } from "./ui";
 import { Failure } from "./pending";
 import { ago } from "./identity-shared";
 import { errorText } from "@/lib/api/client";
+import { machineLine } from "@/lib/site";
+import { useMachineOrigin } from "@/lib/use-session";
 
 /**
  * What has arrived from outside, and the schedules (`GET /api/ingress`).
@@ -16,6 +18,10 @@ import { errorText } from "@/lib/api/client";
  * Schedules: every deployed agent with a cron trigger, its next due time and
  * its last fires, a refused fire with the platform's reason. A schedule
  * fires only while a worker process runs; the answer says when none does.
+ *
+ * Above them, where outside systems post: the trigger and webhook doors
+ * beneath the platform's own address (the session's machineOrigin), never
+ * the console's, whose sign-in they cannot pass.
  */
 
 type Arrival = {
@@ -59,6 +65,7 @@ export function IngressActivity() {
   const [failed, setFailed] = useState("");
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const machine = useMachineOrigin();
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -91,6 +98,23 @@ export function IngressActivity() {
           Read again
         </Button>
       </span>
+      <div className="flex flex-col gap-1 border-b border-line px-4 py-2.5 text-[11.5px] leading-[1.55]">
+        {machine ? (
+          <>
+            <span className="text-faint">Outside systems post to the platform&rsquo;s own address, outside the console&rsquo;s sign-in:</span>
+            <span className="flex flex-wrap items-baseline gap-x-3">
+              <Mono className="text-[11px] text-fg">POST {machine}/api/trigger/&lt;agent&gt;</Mono>
+              <span className="text-faint">an agent started by an API call, with an API key bound to it</span>
+            </span>
+            <span className="flex flex-wrap items-baseline gap-x-3">
+              <Mono className="text-[11px] text-fg">POST {machine}/api/webhooks/&lt;agent&gt;</Mono>
+              <span className="text-faint">an agent started by a webhook, signed with the secret its trigger names, or with an API key</span>
+            </span>
+          </>
+        ) : (
+          <span className={machine === undefined ? "text-faint" : "text-warn"}>{machineLine(machine, "", "outside systems cannot reach the trigger and webhook doors")}</span>
+        )}
+      </div>
       {failed && (
         <div className="px-4 py-3">
           <Failure what="What has arrived could not be read" message={failed} />

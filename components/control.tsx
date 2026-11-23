@@ -18,6 +18,8 @@ import { explainControl } from "@/lib/guardrails";
 import { ControlRef, KILL_CONTROL } from "./control-ref";
 import { hueFor } from "@/lib/hue";
 import { usePageFacts } from "./assistant";
+import { machineLine } from "@/lib/site";
+import { useMachineOrigin } from "@/lib/use-session";
 import { ApproveDialog, useGates, type Gate } from "./approve";
 import { soon } from "@/lib/soon";
 import { WindowPick, nextWin, winMs, type Win } from "./window-pick";
@@ -2769,6 +2771,8 @@ type QueueData = QueueSummary;
  * the oldest queued age says how far behind the estate is right now.
  */
 function QueuePanel({ queue, error, now }: { queue: QueueData | null; error: string; now: number }) {
+  // Where outside systems post: the platform's own address (the session's machineOrigin), never the console's.
+  const machine = useMachineOrigin();
   if (!queue) return <p className="px-3 py-4 text-[12px] text-faint">{error ? `The trigger queue could not be read: ${error}` : "Reading the trigger queue…"}</p>;
   const rows = Object.entries(queue.agents);
   const age = (iso: string | null | undefined) => {
@@ -2791,7 +2795,10 @@ function QueuePanel({ queue, error, now }: { queue: QueueData | null; error: str
         ))}
       </div>
       {rows.length === 0 ? (
-        <p className="px-3 py-3 text-[11.5px] text-faint">Nothing posted in the last hour. External systems post to /api/trigger/&lt;agent&gt;.</p>
+        <p className="px-3 py-3 text-[11.5px] text-faint">
+          Nothing posted in the last hour.{" "}
+          {machine ? `External systems post to ${machine}/api/trigger/<agent>.` : machineLine(machine, "", "external systems cannot reach the trigger door")}
+        </p>
       ) : (
         <div className="flex flex-col">
           <div className="grid grid-cols-[minmax(0,1fr)_repeat(5,52px)] items-center gap-1 border-b border-line px-3 py-1.5 text-[10px] text-faint">
