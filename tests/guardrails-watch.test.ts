@@ -12,10 +12,8 @@ import { MASK, redactText, redactValue } from "@/lib/redact";
  * gateway wrote for a chatbot (a screened prompt, blocked; a screened
  * response, flagged) and one the runtime wrote for an agent (a taint mark,
  * a taint-to-sink refusal, an egress refusal, and a capability refusal that
- * is not the watch's business). The route (app/api/guardrails/route.ts)
- * runs this same function over every record it holds, with the live
- * secrets of the process; here the live set is the one value the fixture
- * carries that no shape would catch.
+ * is not the watch's business). Here the live set is the one value the
+ * fixture carries that no shape would catch.
  */
 
 const FIXTURE = JSON.parse(readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "watch-journal.json"), "utf-8")) as {
@@ -82,7 +80,7 @@ describe("the runtime record", () => {
       ["taint_sink", "taint", "mail.send"],
       ["egress", "egress", "http.post"],
     ]);
-    for (const e of events) expect(e.subject).toEqual({ kind: "agent", id: "aegis" });
+    for (const e of events) expect(e.subject).toEqual({ kind: "agent", id: "harbor" });
     expect(events[0].entry).toBe("d1");
     expect(events[0].because).toEqual(["c2"]);
     expect(events[1].excerpt).toBe("host evil.example is not in the allowlist");

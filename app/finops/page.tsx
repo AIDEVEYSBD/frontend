@@ -2,7 +2,7 @@ import { FinOps } from "@/components/finops";
 
 export const metadata = {
   title: "Costs — Agent Factory",
-  description: "Model spend by provider, workflow and step, with routing, hand-off candidates and a cost calculator.",
+  description: "Model spend by model, person, agent, application and step, with budgets, routing and cost planning.",
 };
 
 export default function FinOpsPage() {

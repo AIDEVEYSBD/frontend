@@ -2,7 +2,7 @@ import { Guardian } from "@/components/guardian";
 
 export const metadata = {
   title: "Guardian — Agent Factory",
-  description: "The supervisory model's limits, set by a person, and every verdict it acted on or raised for one.",
+  description: "The guardian's per-run limits, set by a person through a reviewed policy change, and every hold, stop or raise it made.",
 };
 
 export default function GuardianPage() {

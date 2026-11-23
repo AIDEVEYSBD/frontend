@@ -16,7 +16,7 @@
  * PUBLIC_ORIGIN: where the deployment names no machine origin, none is printed
  * and the page says so (`noMachineOrigin`).
  */
-export const PUBLIC_ORIGIN = (process.env.NEXT_PUBLIC_ORIGIN ?? process.env.PUBLIC_ORIGIN ?? "https://agent-factory.example.com").replace(/\/+$/, "");
+export const PUBLIC_ORIGIN = (process.env.NEXT_PUBLIC_ORIGIN ?? "https://agent-factory.example.com").replace(/\/+$/, "");
 
 /** The platform's own MCP server, beneath the machine origin. */
 export const MCP_PATH = "/api/mcp/server";

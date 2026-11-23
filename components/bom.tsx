@@ -250,7 +250,7 @@ function BomPage() {
   const params = useSearchParams();
   const router = useRouter();
   const [agents, setAgents] = useState<AgentSummary[] | null>(null);
-  /** The registry did not answer: a quiet console says it is not connected, never that no agent is saved. */
+  /** The registry did not answer: the failure is said, never that no agent is saved. */
   const [agentsDown, setAgentsDown] = useState("");
   const [versions, setVersions] = useState<VersionView[]>([]);
   const [bom, setBom] = useState<{ bom: AiBom; extra: BomExtra } | null>(null);

@@ -16,9 +16,9 @@ import type { RunRowL5 } from "./l5";
  * hits and the refused server on a 422, the control on a 403 or a 503, the
  * field on a 400), and every answer is read defensively, so a renamed or
  * re-nested field fails the contract test instead of leaving a panel blank.
- * Every call is same-origin: proxy.ts forwards `/api/mcp` and all beneath
- * it to the backend, less the platform's own MCP server at
- * `/api/mcp/server`, which stays on the console (lib/route-policy.ts).
+ * Every call is same-origin: proxy.ts forwards every /api request to the
+ * service at BACKEND_ORIGIN, the platform's own MCP server at
+ * `/api/mcp/server` among them.
  *
  * Registering is admission, not trust: a server is asked for its tool list
  * once, every tool is screened, the list is pinned by digest, and nothing

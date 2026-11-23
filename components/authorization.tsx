@@ -2,7 +2,7 @@
 
 import { IapAccess } from "./iap-access";
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Button, Mono, Status, Tag, type Tone } from "./ui";
 import { Dialog } from "./overlays";
 import { PageHeader } from "./section";
@@ -12,8 +12,7 @@ import { whenFull } from "./dataset-parts";
 import { until } from "./sessions-parts";
 import { ServerState, UPSTREAM_NOT_BUILT, subjectKind } from "./authorization-parts";
 import { AddAuthServerDialog } from "./authorization-add";
-import { useSession, type SessionInfo } from "@/lib/use-session";
-import { readUsers } from "@/lib/api/l2";
+import { useSession } from "@/lib/use-session";
 import { ask, type Answer, type AuthServer, type AuthServerList, type Door } from "@/lib/api/pending";
 
 /**
@@ -43,49 +42,16 @@ const none = (text = "none") => <span className="text-faint">{text}</span>;
 
 /* ═══════════════════ console sign-in ═══════════════════ */
 
-/** How people come in on this deployment, from what the session door says about the session it holds. */
-function methodOf(me: SessionInfo): { name: string; tone: Tone; how: string } {
-  if (me.mode === "local")
-    return {
-      name: "Sign-in is off",
-      tone: "warn",
-      how: "Nobody signs in on this deployment. Every request is taken as the console's own operator, so one person cannot be told from another.",
-    };
-  if (me.via === "iap")
-    return {
-      name: "Google Identity-Aware Proxy",
-      tone: "ok",
-      how: "Google's proxy stands in front of the console and signs each person in with their Google account. Every request carries the proxy's signed statement of who the person is; the console checks it against Google's published keys and gives the person the roles this deployment maps them to.",
-    };
-  if (me.via === "oidc")
-    return {
-      name: "An OpenID Connect provider",
-      tone: "ok",
-      how: "The console sends each person to the identity provider to sign in, checks the tokens it issues, and reads the person's roles from them.",
-    };
-  if (me.mode === "internal") return { name: "The console's own service identity", tone: "neutral", how: "This request was made by the console itself, not by a person." };
-  return { name: "An identity provider", tone: "ok", how: "People sign in through an identity provider before they reach this console." };
-}
+/** How people come in: Google Identity-Aware Proxy is the only way, and the session door says so on every answer (`via: "iap"`). */
+const IAP_METHOD: { name: string; tone: Tone; how: string } = {
+  name: "Google Identity-Aware Proxy",
+  tone: "ok",
+  how: "Google's proxy stands in front of the console and signs each person in with their Google account. Every request carries the proxy's signed statement of who the person is; the platform's service checks it against Google's published keys on every request and gives the person the roles this deployment maps them to.",
+};
 
 function ConsoleSignIn({ now }: { now: number }) {
   const { session: me, loaded } = useSession();
-  /* The issuer of an OpenID Connect sign-in, as the identity door names it; left out when that door does not answer. */
-  const [issuer, setIssuer] = useState("");
-  const oidc = me?.via === "oidc";
-  useEffect(() => {
-    if (!oidc) return;
-    let live = true;
-    readUsers()
-      .then((u) => {
-        if (live && u.sso?.configured && u.sso.issuer) setIssuer(u.sso.issuer);
-      })
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [oidc]);
-
-  const method = me ? methodOf(me) : null;
+  const method = me ? IAP_METHOD : null;
 
   return (
     <Card title="Console sign-in" meta={method ? <Status tone={method.tone}>{method.name}</Status> : undefined}>
@@ -101,24 +67,11 @@ function ConsoleSignIn({ now }: { now: number }) {
                 <span className="font-medium">{method.name}</span>
                 <span className="text-[11.5px] leading-[1.55] text-dim">{method.how}</span>
               </Fact>
-              {oidc && issuer && (
-                <Fact k="Issuer address">
-                  <Mono className="text-[11px] break-all text-fg">{issuer}</Mono>
-                </Fact>
-              )}
               <Fact k="Roles come from">
-                <span className="text-dim">
-                  {me.mode === "local"
-                    ? "Nothing assigns them: the operator holds every permission."
-                    : me.via === "iap"
-                      ? "This deployment's own map from a person's email to a role."
-                      : "The identity provider, in the token it issues; this console maps each role to what it may do here."}
-                </span>
-                {me.mode !== "local" && (
-                  <Link href="/iam" className="focusable w-fit rounded-sm text-[11.5px] text-fg underline decoration-line-strong underline-offset-2 hover:decoration-fg">
-                    Open people and agents
-                  </Link>
-                )}
+                <span className="text-dim">This deployment&rsquo;s own map from a person&rsquo;s email to a role, set on the platform&rsquo;s service.</span>
+                <Link href="/iam" className="focusable w-fit rounded-sm text-[11.5px] text-fg underline decoration-line-strong underline-offset-2 hover:decoration-fg">
+                  Open people and agents
+                </Link>
               </Fact>
             </dl>
           </div>
@@ -134,7 +87,6 @@ function ConsoleSignIn({ now }: { now: number }) {
               </Fact>
               <Fact k="Roles in this app">
                 <span className="flex flex-wrap gap-1">{me.appRoles.length ? me.appRoles.map((r) => <Tag key={r}>{r}</Tag>) : <Tag tone="warn">none</Tag>}</span>
-                {me.demoDefaultApplied && <span className="text-[11px] text-faint">The token carried no role, so the deployment&rsquo;s default role was applied.</span>}
               </Fact>
               {me.roles.length > 0 && <Fact k="Directory roles">{me.roles.join(", ")}</Fact>}
               {me.groups && me.groups.length > 0 && <Fact k="Groups">{me.groups.join(", ")}</Fact>}

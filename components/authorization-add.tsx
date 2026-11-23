@@ -32,9 +32,7 @@ import {
  * tokens a workload exchanges for a short session (with the subjects
  * admitted).
  *
- * What is sent is `AuthServerAdd` to door `authServerAdd`. Both doors are
- * ahead of the backend (lib/api/pending.ts): while nothing serves them the
- * dialog says so and adds nothing.
+ * What is sent is `AuthServerAdd` to door `authServerAdd` (lib/api/pending.ts).
  */
 
 /** A vault name as a reference reads it (`${secret:[A-Za-z0-9_-]+}`). */

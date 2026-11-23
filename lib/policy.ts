@@ -73,7 +73,7 @@ export function diffCells(d: DiffChange): { from: string; to: string } {
   return { from: gone.length ? `removes ${gone.join(", ")}` : "", to: [added.length ? `adds ${added.join(", ")}` : "", moved.length ? `changes ${moved.join(", ")}` : ""].filter(Boolean).join("; ") };
 }
 
-/** A person's name as the backend signs them: `Ada <ada@ey.com>`, or the name alone. */
+/** A person's name as the backend signs them: `Ada <ada@example.com>`, or the name alone. */
 export interface Who {
   name: string;
   email: string;

@@ -189,6 +189,8 @@ function MakeTemplateForm({ agents, onMade }: { agents: AgentSummary[]; onMade: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [tried, setTried] = useState(false);
+  /** Why the agent's versions were not read: said, never taken as "no saved version". */
+  const [versionsError, setVersionsError] = useState("");
   useEffect(() => {
     if (!agent) return;
     let stop = false;
@@ -197,8 +199,14 @@ function MakeTemplateForm({ agents, onMade }: { agents: AgentSummary[]; onMade: 
         if (stop) return;
         setVersions(l.versions);
         setVersion(l.versions.length ? Math.max(...l.versions.map((v) => v.version)) : null);
+        setVersionsError("");
       })
-      .catch(() => !stop && setVersions([]));
+      .catch((e) => {
+        if (stop) return;
+        setVersions([]);
+        setVersion(null);
+        setVersionsError((e as Error).message);
+      });
     return () => {
       stop = true;
     };
@@ -218,13 +226,14 @@ function MakeTemplateForm({ agents, onMade }: { agents: AgentSummary[]; onMade: 
           <Pick
             value={version === null ? "" : String(version)}
             onChange={(v) => setVersion(v ? Number(v) : null)}
-            options={versions.length ? [...versions].sort((a, b) => b.version - a.version).map((v) => ({ value: String(v.version), label: `version ${v.version} · ${shortDigest(v.digest)}` })) : [{ value: "", label: agent ? "No saved version" : "Pick an agent first" }]}
+            options={versions.length ? [...versions].sort((a, b) => b.version - a.version).map((v) => ({ value: String(v.version), label: `version ${v.version} · ${shortDigest(v.digest)}` })) : [{ value: "", label: !agent ? "Pick an agent first" : versionsError ? "The versions could not be read" : "No saved version" }]}
           />
         </Field>
         <Field label="Name" error={tried && !name.trim() ? "Name the template." : undefined}>
           <Input value={name} onChange={setName} placeholder="Triage, certified" />
         </Field>
       </div>
+      {versionsError && <span className="text-[11.5px] text-err">The versions of {agent} could not be read, so none can be picked: {versionsError}</span>}
       {tried && problem && <span className="text-[11px] text-err">{problem}</span>}
       {error && (<span className="text-[11.5px] text-err">{error}</span>)}
       <span className="flex items-center gap-2">
@@ -267,7 +276,7 @@ function CertifyForm({ template, role, who, onDone }: { template: TemplateView; 
     <div className="flex flex-col gap-2.5 rounded-md border border-line bg-canvas/60 p-3">
       <span className="text-[12.5px] font-semibold text-fg">Certify</span>
       <span className="text-[11.5px] leading-[1.5] text-dim">
-        A certifier holds the &ldquo;{role}&rdquo; role (or administers) and is not an author of the template. Once certified, agents may be cut from it.
+        {role ? <>A certifier holds one of these roles: {role} (or administers), and is not an author of the template.</> : <>The platform did not name the roles that may certify: it decides when you certify. A certifier is never an author of the template.</>} Once certified, agents may be cut from it.
       </span>
       <Field label="Note" hint="Recorded with the certification.">
         <Textarea rows={2} value={note} onChange={setNote} disabled={busy} />
@@ -431,9 +440,9 @@ function TemplatesPage() {
           {error}
         </Banner>
       )}
-      {/* A quiet console (lib/quiet.ts): the note above is said once and the layout is drawn empty; an unread list is not shown as "0 on record". */}
+      {/* With the list unread, the failure above is said once and the layout is drawn empty; an unread list is not shown as "0 on record". */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-        <Section title="Templates" meta={error ? "not read" : list ? `${list.count} on record · a certifier holds the "${list.role}" role` : undefined}>
+        <Section title="Templates" meta={error ? "not read" : list ? `${list.count} on record${list.role ? ` · a certifier holds one of: ${list.role}` : ""}` : undefined}>
           <div className="flex items-center gap-1">
             {STATE_FILTERS.map((f) => (
               <button
@@ -474,7 +483,7 @@ function TemplatesPage() {
               {shown.state !== "certified" ? (
                 <CertifyForm
                   template={shown}
-                  role={list?.role ?? "template-certifier"}
+                  role={list?.role ?? ""}
                   who={who}
                   onDone={() => {
                     void load();

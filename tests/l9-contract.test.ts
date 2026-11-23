@@ -34,9 +34,7 @@ import { frameworkLine, isUnmapped, unmappedLine, viewCounts } from "@/lib/frame
 import { EMPTY_PACK_FORM, decisionLine, noFiringLine, packLine, packProblem, packQuery, stampLine } from "@/lib/evidence";
 import { classLines, chosenLine, impactLine, modelLine } from "@/lib/bom";
 import { conditionLabel, itemLine, overrideChoices } from "@/lib/lifecycle";
-import { patchOf as guardianPatchOf, formOf as guardianFormOf } from "@/lib/guardian";
 import { fromDocument, toDocument, validate } from "@/lib/spec";
-import { reduce } from "@/lib/builder-store";
 import type { LineageEntry } from "@/lib/lineage";
 import { ChangeDetail, ChangesListView, SimulationView, TargetRules } from "@/components/policy";
 import { LedgerBreaks, LedgerWalk, RetentionPanel, RunChainView } from "@/components/chain";
@@ -48,7 +46,6 @@ import { FrameworkViewPanel } from "@/components/frameworks";
 import { ProvenanceChain } from "@/components/provenance";
 import { LifecycleIndexView } from "@/components/lifecycle";
 import { PeerRow } from "@/components/peers";
-import { BoundaryPanel } from "@/components/builder/boundary-panel";
 import { peerRegistryOf } from "@/lib/api/l7b";
 import { peerClassLine } from "@/lib/peers";
 import { explainControl } from "@/lib/guardrails";
@@ -112,10 +109,10 @@ async function refused(p: Promise<unknown>): Promise<l5.DoorError> {
 }
 
 const html = (el: ReactElement) => renderToStaticMarkup(el);
-const ADA = { name: "Ada", email: "ada@ey.com" };
-const BEN = { name: "Ben", email: "ben@ey.com" };
-const admin = { name: "Ben", email: "ben@ey.com", sub: "autox|ben@ey.com", sso: true, roles: [], groups: [], appRoles: ["administrator"], permissions: ["view", "run", "approve", "deploy", "configure", "iam"] };
-const viewer = { ...admin, name: "Owen", email: "owen@ey.com", sub: "autox|owen@ey.com", appRoles: ["viewer"], permissions: ["view"] };
+const ADA = { name: "Ada", email: "ada@example.com" };
+const BEN = { name: "Ben", email: "ben@example.com" };
+const admin = { name: "Ben", email: "ben@example.com", sub: "iap|ben@example.com", sso: true, roles: [], groups: [], appRoles: ["administrator"], permissions: ["view", "run", "approve", "deploy", "configure", "iam"] };
+const viewer = { ...admin, name: "Owen", email: "owen@example.com", sub: "iap|owen@example.com", appRoles: ["viewer"], permissions: ["view"] };
 
 beforeEach(() => {
   sent = [];
@@ -234,7 +231,7 @@ describe("the changes", () => {
     expect(c.before).toBeNull();
     expect(c.audit_id).toEqual(expect.any(Number));
     expect(diffCells(c.diff.changes[0])).toEqual({ from: "10", to: "15" });
-    expect(changeLine(c)).toBe("Waiting for someone other than Ada <ada@ey.com> to review it; applied at once on approval.");
+    expect(changeLine(c)).toBe("Waiting for someone other than Ada <ada@example.com> to review it; applied at once on approval.");
     expect(proposedLine(c)).toContain("Someone other than you reviews it");
     expect(targetLine(c.target)).toBe("Guardian");
     expect(targetQuery(c.target)).toBe("guardian");
@@ -310,7 +307,7 @@ describe("the changes", () => {
     const c = await l9.approvePolicyChange("pc-1", "agreed");
     expect(sent[0]).toMatchObject({ method: "POST", url: "/api/policy/changes/pc-1/approve", body: { note: "agreed" } });
     expect(c.state).toBe("applied");
-    expect(c.applied_by).toBe("Ben <ben@ey.com>");
+    expect(c.applied_by).toBe("Ben <ben@example.com>");
     expect(c.note).toBe("agreed");
     expect(c.before?.max_actions_per_hour).toBe(10);
     expect(c.after?.max_actions_per_hour).toBe(15);
@@ -323,7 +320,7 @@ describe("the changes", () => {
     expect(changeLine(held)).toContain("the scheduler applies it at");
     const applied = l9.policyChangeOf(body("change.applied_by_scheduler"));
     expect(applied.applied_by).toBe("scheduler");
-    expect(applied.approved_by).toBe("Ben <ben@ey.com>");
+    expect(applied.approved_by).toBe("Ben <ben@example.com>");
     expect(l9.policyChangeOf(body("approve.applied.attached")).after?.gate_at).toBe("write");
     expect(l9.policyChangeOf(body("approve.applied.redaction")).state).toBe("applied");
   });
@@ -333,7 +330,7 @@ describe("the changes", () => {
     const own = await refused(l9.approvePolicyChange("pc-1"));
     expect(own.status).toBe(403);
     expect(own.control).toBe("separation_of_duties");
-    expect(own.body.proposed_by).toBe("Ada <ada@ey.com>");
+    expect(own.body.proposed_by).toBe("Ada <ada@example.com>");
     expect((await refused(l9.approvePolicyChange("pc-1"))).message).toContain("your roles: viewer");
     const twice = await refused(l9.approvePolicyChange("pc-1"));
     expect(twice.status).toBe(409);
@@ -354,7 +351,7 @@ describe("the changes", () => {
     expect(c.state).toBe("rejected");
     expect(changeSummary(c)).toBe("breaker calls threshold: 200 → 7");
     expect(c.reject_reason).toBe("too tight for the batch window");
-    expect(changeLine(c)).toBe("Rejected by Ben <ben@ey.com>: too tight for the batch window");
+    expect(changeLine(c)).toBe("Rejected by Ben <ben@example.com>: too tight for the batch window");
   });
 
   it("rolls back as a recorded emergency, and links the two changes", async () => {
@@ -363,7 +360,7 @@ describe("the changes", () => {
     expect(back.emergency).toBe(true);
     expect(back.state).toBe("applied");
     expect(back.rollback_of).toBeTruthy();
-    expect(changeLine(back)).toContain("Emergency rollback by Ada <ada@ey.com>");
+    expect(changeLine(back)).toContain("Emergency rollback by Ada <ada@example.com>");
     const undone = l9.policyChangeOf(body("change.rolled_back"));
     expect(undone.state).toBe("rolled_back");
     expect(undone.rolled_back_by).toBe(back.id);
@@ -404,7 +401,7 @@ describe("the changes", () => {
     const button = (out: string, name: string) => new RegExp(`<button[^>]*>${name}`).exec(out)?.[0] ?? "";
     const off = 'disabled=""';
     me.session = viewer;
-    const asViewer = html(createElement(ChangeDetail, { change: pending, who: { name: "Owen", email: "owen@ey.com" } }));
+    const asViewer = html(createElement(ChangeDetail, { change: pending, who: { name: "Owen", email: "owen@example.com" } }));
     expect(button(asViewer, "Approve")).toContain(off);
     expect(button(asViewer, "Approve")).toContain('Needs the &quot;configure&quot; permission');
     expect(button(asViewer, "Reject")).toContain(off);
@@ -431,11 +428,10 @@ describe("the changes", () => {
 
 describe("the direct writes the door replaced", () => {
   it("shows the 409 and carries the door and the proposal", async () => {
-    serve("direct.guardian", "direct.attached.grants", "direct.attached.gate", "direct.attached.both");
-    const g = await refused(l7.setGuardian({ enabled: true, max_actions_per_hour: 9 }));
-    expect(g.status).toBe(409);
-    expect(g.message).toBe("guardian is a policy target: it changes only through a reviewed policy change (POST /api/policy/changes), approved by someone other than its proposer");
-    const read = l9.directWriteRefusalOf(g.status, g.body);
+    serve("direct.attached.grants", "direct.attached.gate", "direct.attached.both");
+    const g = body<{ error: string }>("direct.guardian");
+    expect(g.error).toBe("guardian is a policy target: it changes only through a reviewed policy change (POST /api/policy/changes), approved by someone other than its proposer");
+    const read = l9.directWriteRefusalOf(409, g);
     expect(read?.door).toBe("POST /api/policy/changes");
     expect(read?.proposal.proposed).toEqual({ enabled: true, max_actions_per_hour: 9 });
     expect(read?.target).toEqual({ kind: "guardian", id: "estate" });
@@ -465,15 +461,6 @@ describe("the direct writes the door replaced", () => {
     expect(after.gate_at).toBe("write");
   });
 
-  it("proposes the guardian's limits in the target's own field names", async () => {
-    serve("targets.viewer");
-    const g = (await l9.listPolicyTargets()).targets.find((x) => x.kind === "guardian") as l9.TargetKind;
-    const view = l7.guardianOf({ ...(g.current as object), stats: {}, actions_last_hour: 0, set_by: "", set_at: "", audit_id: null });
-    const form = { ...guardianFormOf(view), max_actions_per_hour: "15", enabled: true, allAgents: true, hold: true, rubric: "No sends" };
-    const patch = guardianPatchOf(view, form);
-    expect(Object.keys(patch).sort()).toEqual(["agents", "enabled", "max_actions_per_hour", "may", "rubric"]);
-    for (const k of Object.keys(patch)) expect(g.fields, k).toContain(k);
-  });
 
   it("calls neither door from a page: the guardian proposes, and the attached editor sends only its own fields", () => {
     const src = (f: string) => readFileSync(path.join(__dirname, "..", f), "utf-8");
@@ -781,18 +768,6 @@ describe("rules held per id", () => {
   });
 });
 
-describe("the Builder's webhook limit", () => {
-  it("round-trips, and is left out when it says nothing", () => {
-    const s = fromDocument(body<{ spec: unknown }>("agent.version_spec").spec);
-    const limited = reduce(s, { type: "set-outputs", outputs: [{ kind: "webhook", config: { url: "https://hooks.example/x" }, max_data_class: "internal" }] });
-    const outputs = (x: typeof s) => (toDocument(x) as unknown as { spec: { outputs: unknown[] } }).spec.outputs;
-    expect(outputs(limited)).toEqual([{ kind: "webhook", config: { url: "https://hooks.example/x" }, max_data_class: "internal" }]);
-    const plain = reduce(s, { type: "set-outputs", outputs: [{ kind: "webhook", config: { url: "https://hooks.example/x" } }] });
-    expect(outputs(plain)).toEqual([{ kind: "webhook", config: { url: "https://hooks.example/x" } }]);
-    const out = html(createElement(BoundaryPanel, { system: limited, dispatch: () => {} }));
-    expect(out).toContain("Highest data class it takes");
-  });
-});
 
 /* ═══════════════════ the catalogue and evidence ═══════════════════ */
 
@@ -851,7 +826,7 @@ describe("evidence packs", () => {
     expect(p.runs[0]).toMatchObject({ chain: "ok", anchored: true, valid: true });
     expect(p.counts).toMatchObject({ firings: 1, decisions: 1, runs: 1, by_key: { gate: 1 } });
     expect(packLine(p)).toBe("1 firing · 1 signed decision · 1 run · 1 policy version · 0 policy changes · 1 identity");
-    expect(decisionLine(p.decisions[0])).toContain("Approved by Chandresh Singh");
+    expect(decisionLine(p.decisions[0])).toContain("Approved by Asha Rao");
   });
 
   it("reads a framework's pack", () => {
@@ -883,15 +858,15 @@ describe("evidence packs", () => {
     expect(p.chain.status).toBe("broken");
     expect(p.chain.broken[0].reason).toContain("decisions[0].by");
     const d = p.decisions[0];
-    expect(d.by).toBe("Chandresh Singh");
-    expect(d.disagrees).toEqual([{ field: "by", record: "Mallory <mallory@evil.example>", chain: "Chandresh Singh" }]);
+    expect(d.by).toBe("Asha Rao");
+    expect(d.disagrees).toEqual([{ field: "by", record: "Mallory <mallory@evil.example>", chain: "Asha Rao" }]);
     expect(stampLine(d)).toBe("The record's copy disagrees with the chain on by: this is the chain's");
     expect(p.identities.map((i) => i.identity)).not.toContain("Mallory <mallory@evil.example>");
     serve("run_verify.disputed");
     const v = await l9.verifyRun("x");
     expect(v.chain).toBe("broken");
     expect(verifyLine(v)).toContain("disagrees with what the chain says");
-    expect(l9.decisionsOf(body("run_doc.disputed"))[0]).toMatchObject({ by: "Chandresh Singh", chained: true });
+    expect(l9.decisionsOf(body("run_doc.disputed"))[0]).toMatchObject({ by: "Asha Rao", chained: true });
   });
 
   it("carries a report gate's approval in the authorisation gate's pack, read from the chain", () => {
@@ -912,7 +887,7 @@ describe("evidence packs", () => {
     expect(p.policy.changes.map((c) => c.emergency)).toEqual([false, true]);
     expect(p.policy.changes[1].rollback_of).toBe(p.policy.changes[0].id);
     expect(p.policy.changes[0].summary).toEqual(["guardian's hourly cap: 10 → 7"]);
-    expect(p.identities.find((i) => i.identity === "Ben <ben@ey.com>")?.acted_as).toEqual(["approved a policy change"]);
+    expect(p.identities.find((i) => i.identity === "Ben <ben@example.com>")?.acted_as).toEqual(["approved a policy change"]);
   });
 
   it("refuses by name", async () => {
@@ -953,7 +928,7 @@ describe("attestations", () => {
     expect(html(createElement(StandingsTable, { rows: [] }))).toContain("No agent is deployed");
     const s = await l9.listStandings();
     expect(s.agents[0]).toMatchObject({ agent: "triage", last: null, overdue: false, period_days: 90 });
-    expect(s.agents[0].owner).toEqual({ owner: "owen@ey.com", owner_sub: "", source: "spec" });
+    expect(s.agents[0].owner).toEqual({ owner: "owen@example.com", owner_sub: "", source: "spec" });
     expect(standingState(s.agents[0])).toEqual({ label: "Never attested", tone: "warn" });
   });
 
@@ -974,7 +949,7 @@ describe("attestations", () => {
     const none = await l9.listAttestations("triage");
     expect(none).toMatchObject({ count: 0, last_at: null, overdue: false, period_days: 90 });
     expect(dueLine(none)).toContain("Next due");
-    expect(ownerLine(none.owner)).toBe("owen@ey.com (the spec)");
+    expect(ownerLine(none.owner)).toBe("owen@example.com (the spec)");
     const two = await l9.listAttestations("triage");
     expect(two.attestations.map((a) => a.as_role)).toEqual(["administrator", "owner"]);
     expect((await refused(l9.listAttestations("ghost"))).status).toBe(404);
@@ -987,13 +962,13 @@ describe("attestations", () => {
     expect(first).toMatchObject({ as_role: "owner", previous: null, diff: null, matches_deployed: true });
     expect(diffLine(first)).toBe("The first attestation: nothing to compare.");
     expect(deployedNote(first)).toBeNull();
-    expect(attestationLine(first)).toContain("Owen <owen@ey.com> as owner");
+    expect(attestationLine(first)).toContain("Owen <owen@example.com> as owner");
     const next = await l9.attestAgent("triage", { statement: "reviewed the prompt change", digest: "d2" });
     expect(next.diff?.same).toBe(false);
     expect(next.diff?.summary).toEqual(["node decide changed: steps"]);
-    expect(next.previous?.by).toBe("Owen <owen@ey.com>");
+    expect(next.previous?.by).toBe("Owen <owen@example.com>");
     expect(deployedNote(next)?.tone).toBe("warn");
-    expect(diffLine(next)).toContain("Changed since Owen <owen@ey.com> attested version 1");
+    expect(diffLine(next)).toContain("Changed since Owen <owen@example.com> attested version 1");
     const out = html(createElement(AttestationRow, { a: next }));
     expect(out).toContain("Version 1");
     expect(out).toContain("Version 2");
@@ -1006,20 +981,20 @@ describe("attestations", () => {
     const go = () => refused(l9.attestAgent("triage", { statement: "yes", digest: "d" }));
     const other = await go();
     expect(other.control).toBe("attestation_owner");
-    expect(other.message).toBe("only triage's owner (owen@ey.com) or an administrator attests it");
+    expect(other.message).toBe("only triage's owner (owen@example.com) or an administrator attests it");
     expect((await go()).field).toBe("digest");
     expect((await go()).field).toBe("statement");
     expect((await go()).message).toContain("an API key cannot give it");
   });
 
   it("says who may attest before the door is asked", () => {
-    const owner = { owner: "owen@ey.com", owner_sub: "", source: "spec" };
+    const owner = { owner: "owen@example.com", owner_sub: "", source: "spec" };
     const s = (x: object) => ({ ...viewer, ...x }) as never;
     expect(mayAttest(s({}), owner).may).toBe(true); // Owen, the owner.
-    expect(mayAttest(s({ email: "oli@ey.com", name: "Oli" }), owner)).toEqual({ may: false, why: "only the owner, owen@ey.com, or an administrator attests this agent" });
-    expect(mayAttest(s({ email: "oli@ey.com", appRoles: ["administrator"] }), owner).may).toBe(true);
+    expect(mayAttest(s({ email: "oli@example.com", name: "Oli" }), owner)).toEqual({ may: false, why: "only the owner, owen@example.com, or an administrator attests this agent" });
+    expect(mayAttest(s({ email: "oli@example.com", appRoles: ["administrator"] }), owner).may).toBe(true);
     expect(mayAttest(null, owner).may).toBe(false);
-    expect(mayAttest(s({ email: "oli@ey.com", sso: false }), owner).may).toBe(true); // Local mode: the console's operator.
+    expect(mayAttest(s({ email: "oli@example.com", sso: false }), owner).may).toBe(true); // Local mode: the console's operator.
     expect(ownerLine({ owner: "", owner_sub: "", source: "none" })).toContain("no owner on record");
   });
 });
@@ -1101,7 +1076,7 @@ describe("a spec's L9 fields", () => {
     doc.spec.policy = { ...doc.spec.policy, budget: { tool_calls: 5 }, limits: [{ tool: "store.put", arg: "key", max: 10 }], mass_action: { max: 3 }, redaction: { all: ["email"] } };
     const back = toDocument(fromDocument(doc)) as typeof doc;
     expect(back.metadata.autonomy).toBe("L1");
-    expect(back.metadata.owner).toBe("owen@ey.com");
+    expect(back.metadata.owner).toBe("owen@example.com");
     expect(back.spec.policy.budget).toEqual({ tool_calls: 5 });
     expect(back.spec.policy.limits).toEqual([{ tool: "store.put", arg: "key", max: 10 }]);
     expect(back.spec.policy.mass_action).toEqual({ max: 3 });
@@ -1113,18 +1088,6 @@ describe("a spec's L9 fields", () => {
     expect((tools["peer.send"].config as { peers: { max_data_class: string }[] }).peers[0].max_data_class).toBe("public");
   });
 
-  it("sets a tier and a tool's classes in the Builder, and clears them without leaving a key", () => {
-    const s = fromDocument(body<{ spec: unknown }>("agent.version_spec").spec);
-    const tiered = reduce(s, { type: "meta", patch: { autonomy: "L3" } });
-    expect((toDocument(tiered) as { metadata: { autonomy: string } }).metadata.autonomy).toBe("L3");
-    const none = reduce(tiered, { type: "meta", patch: { autonomy: undefined } });
-    expect((toDocument(none) as { metadata: object }).metadata).not.toHaveProperty("autonomy");
-    const set = reduce(s, { type: "patch-tool", name: "store.put", patch: { data_class: "internal", max_data_class: "restricted" } });
-    expect(set.tools.find((t) => t.name === "store.put")).toMatchObject({ data_class: "internal", max_data_class: "restricted" });
-    const cleared = reduce(set, { type: "patch-tool", name: "store.put", patch: { data_class: undefined, max_data_class: undefined } });
-    expect(cleared.tools.find((t) => t.name === "store.put")).not.toHaveProperty("max_data_class");
-    expect(cleared.tools.find((t) => t.name === "store.put")).not.toHaveProperty("data_class");
-  });
 
   it("refuses the OT boundary in the Builder as the parser refuses it", async () => {
     serve("spec.refused.ot_write", "spec.refused.sis", "spec.refused.tier");
@@ -1312,7 +1275,7 @@ describe("the AI-BOM", () => {
     serve("bom");
     const b = await l9.getBom("boxed", 1);
     expect(sent[0].url).toBe("/api/agents/boxed/bom?version=1");
-    expect(b).toMatchObject({ agent: "boxed", autonomy: "L1", owner: "owen@ey.com", deployed: false, production: null, count: { models: 1, tools: 4, servers: 4, peers: 1 } });
+    expect(b).toMatchObject({ agent: "boxed", autonomy: "L1", owner: "owen@example.com", deployed: false, production: null, count: { models: 1, tools: 4, servers: 4, peers: 1 } });
     expect(b.models[0]).toMatchObject({ model: "gpt-4o", nodes: ["act"], chosen_by: ["node"] });
     expect(b.models[0].route).toMatchObject({ provider: "vertex-1", kind: "vertex", served_as: "gemini-x", local: false });
     expect(modelLine(b.models[0])).toContain("served as gemini-x");

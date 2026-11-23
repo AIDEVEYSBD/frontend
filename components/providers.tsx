@@ -3,10 +3,9 @@ import { Failure } from "./pending";
 import { errorText, notBuiltDoorOf } from "@/lib/api/client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Pick } from "./select";
 import { Status } from "./ui";
 import { kindOf, type Provider } from "@/lib/providers";
-import { DATA_CLASSES, type DataClass } from "@/lib/api/pending";
+import type { DataClass } from "@/lib/api/pending";
 
 /**
  * The endpoints this deployment can send a model call to.
@@ -20,39 +19,6 @@ import { DATA_CLASSES, type DataClass } from "@/lib/api/pending";
 
 interface Offered { id: string; label: string; class?: "small" | "medium" | "large"; provider?: string; max_data_class?: DataClass }
 interface Config { models: Offered[]; providers: Provider[] }
-
-/* ═══════════════════ permitted data class (5.3) ═══════════════════
-   The highest class of data a model may be sent. The screen is ahead of the
-   platform: `POST /api/config` keeps a `max_data_class` on an offered model,
-   but nothing reads it when a call is made. Until something does, the control
-   is shown disabled with whatever value the service answers, and never
-   writes. The day it is enforced, DATA_CLASS_ENFORCED turns true and the
-   control saves through the same write as every other field of a model. */
-export const DATA_CLASS_ENFORCED = false;
-
-export function PermittedClass({ value, onChange, label }: { value?: string; onChange?: (v: DataClass | "") => void; label: string }) {
-  const options = [{ value: "", label: "not set" }, ...DATA_CLASSES.map((c) => ({ value: c as string, label: c }))];
-  if (value && !options.some((o) => o.value === value)) options.push({ value, label: value });
-  return (
-    <span className="flex items-center gap-1.5 text-[10.5px] text-faint">
-      permitted data class
-      <span className="block w-[132px]">
-        <Pick value={value ?? ""} onChange={(v) => onChange?.(v as DataClass | "")} options={options} disabled={!DATA_CLASS_ENFORCED || !onChange} aria-label={label} />
-      </span>
-    </span>
-  );
-}
-
-/** One line under the rows that show the field: what it is, and that nothing enforces it yet. */
-export function PermittedClassNote() {
-  if (DATA_CLASS_ENFORCED) return <span className="text-[11.5px] leading-[1.5] text-faint">Permitted data class is the highest class of data a model may be sent.</span>;
-  return (
-    <span className="text-[11.5px] leading-[1.5] text-faint" data-pending="/api/config">
-      Permitted data class is the highest class of data a model may be sent. Nothing enforces it on this deployment yet, so it cannot be set here.
-    </span>
-  );
-}
-
 
 /** A read or a write that failed inside a Configuration panel: its plain reason with the status and the address, or the not-built note for a 501. */
 export function PanelFailure({ title, children }: { title: string; children: ReactNode }) {
@@ -83,15 +49,8 @@ export function useConfigChanges(refresh: () => void) {
 
 /**
  * The body of Configuration's Providers panel (components/configuration.tsx).
- *
- * `bare` is what the page knows about the console itself: true when it has
- * nothing behind it, null while that is still being read. A quiet console
- * with nothing behind it shows the one calm line, never "no endpoint is
- * connected" read from nowhere. `onQuiet` tells the page, once the read has
- * settled, whether that line is all the panel shows, so a tab of such panels
- * can say it once.
  */
-export function Providers({ bare = false, onQuiet }: { bare?: boolean | null; onQuiet?: (quiet: boolean) => void }) {
+export function Providers() {
   const [config, setConfig] = useState<Config | null>(null);
   const [error, setError] = useState("");
 
@@ -114,13 +73,8 @@ export function Providers({ bare = false, onQuiet }: { bare?: boolean | null; on
   useConfigChanges(refresh);
 
   const none = (config?.providers ?? []).length === 0;
-  const settled = config !== null || Boolean(error);
-  useEffect(() => {
-    if (settled) onQuiet?.(false);
-  }, [settled, onQuiet]);
 
-  // Not known yet whether anything is behind the console: no "none connected" in the meantime.
-  if (!config || (none && bare === null)) {
+  if (!config) {
     return error && config === null ? <PanelFailure title="The providers could not be read">{error}</PanelFailure> : <p className="px-4 py-3 text-[11.5px] text-faint">Reading the configuration&hellip;</p>;
   }
 

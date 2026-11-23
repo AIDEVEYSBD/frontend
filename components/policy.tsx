@@ -298,20 +298,27 @@ export function ChangesListView({ list, selected, onSelect, filtered = false }: 
  */
 export function OpenChanges({ target, tick = 0 }: { target: PolicyTarget; tick?: number }) {
   const [open, setOpen] = useState<PolicyChange[]>([]);
+  /** Why the changes waiting on review were not read: said, never taken as "none waiting". */
+  const [failed, setFailed] = useState("");
   const query = targetQuery(target);
   useEffect(() => {
     let stop = false;
     listPolicyChanges({ target: query })
       .then((l) => {
-        if (!stop) setOpen(l.changes.filter((c) => c.state === "pending" || c.state === "approved"));
+        if (stop) return;
+        setOpen(l.changes.filter((c) => c.state === "pending" || c.state === "approved"));
+        setFailed("");
       })
-      .catch(() => {
-        if (!stop) setOpen([]);
+      .catch((e) => {
+        if (stop) return;
+        setOpen([]);
+        setFailed((e as Error).message);
       });
     return () => {
       stop = true;
     };
   }, [query, tick]);
+  if (failed) return <Failure inline message={`Whether a change to this is waiting on review could not be read: ${failed}`} />;
   if (!open.length) return null;
   return (
     <div className="flex flex-col gap-1 rounded-md border border-line bg-raise/30 px-3 py-2">
@@ -468,7 +475,7 @@ function ProposalFields({ target, id, current, inherits, onProposed }: { target:
   );
 }
 
-function ProposeForm({ targets, agents, kind, onKind, onProposed }: { targets: TargetKind[]; agents: AgentSummary[]; kind: string; onKind: (k: string) => void; onProposed: (c: PolicyChange) => void }) {
+function ProposeForm({ targets, agents, agentsError = "", kind, onKind, onProposed }: { targets: TargetKind[]; agents: AgentSummary[]; agentsError?: string; kind: string; onKind: (k: string) => void; onProposed: (c: PolicyChange) => void }) {
   const target = targets.find((t) => t.kind === kind) ?? targets[0];
   const [id, setId] = useState("estate");
   const [current, setCurrent] = useState<{ key: string; rules: Record<string, unknown> | null; inherits: Record<string, unknown> | null } | null>(null);
@@ -509,7 +516,7 @@ function ProposeForm({ targets, agents, kind, onKind, onProposed }: { targets: T
           <Pick value={kind} onChange={onKind} options={targets.map((t) => ({ value: t.kind, label: targetLabel(t.kind) }))} />
         </Field>
         {needs !== "estate" && (
-          <Field label={needs === "estate_or_agent" ? "The estate, or one agent" : "Agent"} hint={options.length ? undefined : "none on record"}>
+          <Field label={needs === "estate_or_agent" ? "The estate, or one agent" : "Agent"} hint={options.length ? undefined : agentsError ? `the agents could not be read: ${agentsError}` : "none on record"}>
             <Pick value={picked} onChange={setId} options={options} disabled={!options.length} />
           </Field>
         )}
@@ -598,7 +605,7 @@ export function SimulationView({ result }: { result: SimulationResult }) {
 }
 
 /** Rule the recorded calls again under a proposal. It writes nothing, so a viewer may run it. */
-function SimulatePanel({ agents, preset, quiet = false }: { agents: AgentSummary[] | null; preset: string | null; quiet?: boolean }) {
+function SimulatePanel({ agents, agentsError = "", preset, quiet = false }: { agents: AgentSummary[] | null; agentsError?: string; preset: string | null; quiet?: boolean }) {
   const simDoor = useDoorOff("POST", "/api/policy/simulate");
   const subject = "agent" as const;
   const [id, setId] = useState(preset ?? "");
@@ -656,7 +663,7 @@ function SimulatePanel({ agents, preset, quiet = false }: { agents: AgentSummary
         <Field label="What is proposed for" hint="simulating an attached agent's proposed policy is not built">
           <Pick value={subject} onChange={() => undefined} options={[{ value: "agent", label: "A saved agent's policy" }]} />
         </Field>
-        <Field label="Agent" hint={options.length || quiet || agents === null ? undefined : "none on record"}>
+        <Field label="Agent" hint={options.length || quiet || agents === null ? undefined : agentsError ? `the agents could not be read: ${agentsError}` : "none on record"}>
           <Pick value={picked} onChange={setId} options={options} disabled={!options.length} loading={agents === null} />
         </Field>
         <Field label="Over" hint="runs that started in it">
@@ -739,6 +746,9 @@ function PolicyPage() {
   const selected = params.get("change");
   const preset = params.get("simulate");
   const [targets, setTargets] = useState<TargetKinds | null>(null);
+  const [targetsError, setTargetsError] = useState("");
+  /** Why the agents were not read: the pickers say so instead of "none on record". */
+  const [agentsError, setAgentsError] = useState("");
   /** Targets later phases own, as the targets door names them (the typed read leaves them out). */
   const [notBuilt, setNotBuilt] = useState<{ kind: string; what: string; why: string }[]>([]);
   const [list, setList] = useState<PolicyChangeList | null>(null);
@@ -760,8 +770,14 @@ function PolicyPage() {
       })
       .catch((e) => setError((e as Error).message));
     listPolicyTargets()
-      .then(setTargets)
-      .catch((e) => setError((e as Error).message));
+      .then((t) => {
+        setTargets(t);
+        setTargetsError("");
+      })
+      .catch((e) => {
+        setError((e as Error).message);
+        setTargetsError((e as Error).message);
+      });
     fetch("/api/policy/targets", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setNotBuilt(Array.isArray(d?.not_built) ? d.not_built : []))
@@ -777,8 +793,14 @@ function PolicyPage() {
   }, [load]);
   useEffect(() => {
     listAgents()
-      .then(setAgents)
-      .catch(() => setAgents([]));
+      .then((a) => {
+        setAgents(a);
+        setAgentsError("");
+      })
+      .catch((e) => {
+        setAgents([]);
+        setAgentsError((e as Error).message);
+      });
   }, []);
   useEffect(() => {
     if (!selected) return;
@@ -819,7 +841,7 @@ function PolicyPage() {
       )}
 
       {/* The catalogue a deployment starts with: shown whether or not the policy door answers, and said to be a catalogue while it does not. */}
-      <PolicyBaseline />
+      <PolicyBaseline rules={targets ? targets.targets.map((t) => ({ kind: t.kind, current: t.current })) : null} rulesError={targetsError} />
       {notice && (
         <Banner tone="ok" title="Proposed">
           {notice}
@@ -867,6 +889,7 @@ function PolicyPage() {
             <ProposeForm
               targets={targets.targets}
               agents={agents ?? []}
+              agentsError={agentsError}
               kind={kind || targets.targets[0]?.kind || ""}
               onKind={setKind}
               onProposed={(c) => {
@@ -884,7 +907,7 @@ function PolicyPage() {
       </div>
 
       <Section id="simulate" title="Simulate" hue="run" meta="rule what already happened under what is proposed">
-        <SimulatePanel key={preset ?? ""} agents={agents} preset={preset} quiet={quietDown} />
+        <SimulatePanel key={preset ?? ""} agents={agents} agentsError={agentsError} preset={preset} quiet={quietDown} />
       </Section>
 
       <Section title="The rules now" hue="guardrail" meta={targets ? `every change goes through ${targets.door}` : undefined}>

@@ -36,7 +36,15 @@ export interface BaselinePolicy {
   changes: "policy change" | "agent version" | "deployment setting" | "cannot be changed";
   /** Catalogue controls that carry it. */
   controls: string[];
+  /**
+   * A policy-change target whose rules now the platform answers (`GET /api/policy/targets`): the row then shows those
+   * values, and `settings` stand only for the platform's defaults while that answer is not read.
+   */
+  live?: LiveTarget;
 }
+
+/** The targets whose values the baseline reads from the platform rather than writing them down. */
+export type LiveTarget = "rate_limits" | "breakers" | "guardian";
 
 export const BASELINE_AREAS: { area: BaselineArea; purpose: string }[] = [
   { area: "Access", purpose: "What an agent may reach, and on whose authority." },
@@ -172,11 +180,11 @@ export const BASELINE: BaselinePolicy[] = [
     id: "BP-09",
     area: "Human oversight",
     name: "Approval gates never pass by themselves",
-    requires: "Where an agent declares a gate, the action waits for a named person. A gate nobody answers is escalated; it is never taken as approval.",
+    requires: "Where an agent declares a gate, the action waits for a person: never the one who started the run or wrote the version. A gate nobody answers is escalated; it is never taken as approval.",
     kind: "fixed",
     settings: [
       { name: "Unanswered gate", value: "escalates after 24 hours, unless the gate sets another period" },
-      { name: "Gate with no named approver", value: "the agent's owner" },
+      { name: "Gate with no named approver", value: "anyone holding the approve permission who neither started the run nor wrote the version" },
       { name: "A gate set to proceed on timeout", value: "refused when the agent is saved" },
     ],
     changes: "agent version",
@@ -196,12 +204,11 @@ export const BASELINE: BaselinePolicy[] = [
     id: "BP-11",
     area: "Human oversight",
     name: "Two people to change a policy",
-    requires: "A policy change is proposed by one person and approved by another. An emergency rollback by one administrator is allowed, recorded as such and raised for review.",
+    requires: "A policy change is proposed by one person and approved by another. An emergency rollback by one person is allowed, recorded as such and raised for review.",
     kind: "fixed",
     settings: [
       { name: "Approving your own proposal", value: "refused" },
-      { name: "With sign-in switched off", value: "there is one operator and no second person, so the check does not apply" },
-      { name: "Emergency rollback", value: "one administrator, raised for 7 days" },
+      { name: "Emergency rollback", value: "one person holding the configure permission; applied at once and raised in the attention queue for 24 hours" },
       { name: "Record of every change", value: "kept in the audit trail" },
     ],
     changes: "cannot be changed",
@@ -228,16 +235,19 @@ export const BASELINE: BaselinePolicy[] = [
   {
     id: "BP-13",
     area: "Human oversight",
-    name: "Supervisory model (guardian)",
-    requires: "A second model may watch runs and hold, block or redirect them. It acts only above a confidence threshold and only a limited number of times an hour.",
+    name: "Guardian limits on runs in flight",
+    requires: "The guardian holds runs in flight to three limits per run: tool calls, cost and refused calls. Past one, it holds the run's next call at or above write for a person, stops the run, or raises it for a person. It is a rule check, not a model.",
     kind: "off",
     settings: [
-      { name: "Guardian", value: "off until enabled" },
-      { name: "Confidence needed to act", value: "0.8" },
-      { name: "Actions per hour", value: "10 at most" },
+      { name: "Tool calls one run may make", value: "not set" },
+      { name: "What one run may cost", value: "not set" },
+      { name: "Refused calls one run may have", value: "not set" },
+      { name: "Past a limit", value: "raise it for a person" },
+      { name: "With no limit set", value: "the guardian does nothing" },
     ],
     changes: "policy change",
     controls: ["AF-RS-03"],
+    live: "guardian",
   },
 
   /* ── Resilience ── */
@@ -245,7 +255,7 @@ export const BASELINE: BaselinePolicy[] = [
     id: "BP-14",
     area: "Resilience",
     name: "Execution budget and bounds",
-    requires: "Every run has a ceiling on what it may consume, counted across its sub-runs, and every loop has a bound. A run that reaches one stops.",
+    requires: "Every run has a ceiling on what it may consume, counted across its sub-runs, and every loop has a bound. A run that reaches its cost budget pauses for a person to decide; one that reaches another bound stops.",
     kind: "default",
     settings: [
       { name: "Tool calls per run", value: "200" },
@@ -262,32 +272,32 @@ export const BASELINE: BaselinePolicy[] = [
     id: "BP-15",
     area: "Resilience",
     name: "Circuit breakers",
-    requires: "A tool that acts outside the platform, or a peer agent, that is called too often or fails too often is cut off for a cooling period, for one agent and across the whole estate.",
+    requires: "A tool that acts outside the platform that fails too often, or is called too often across the estate, is cut off for a cooling period. Breakers count across the whole estate; there is no breaker for one agent.",
     kind: "default",
     settings: [
-      { name: "One agent: calls to one outside-acting tool or peer", value: "20 in 60 seconds" },
-      { name: "One agent: failures", value: "5" },
-      { name: "Whole estate: calls to one outside-acting tool or peer", value: "200 in 60 seconds" },
-      { name: "Whole estate: failures", value: "10" },
+      { name: "Failures in a row that open a breaker", value: "5" },
+      { name: "Calls across the estate that open a breaker", value: "off (0)" },
+      { name: "Window the calls rule counts over", value: "60 seconds" },
       { name: "Cooling period", value: "5 minutes" },
     ],
     changes: "policy change",
     controls: ["AF-RS-01"],
+    live: "breakers",
   },
   {
     id: "BP-16",
     area: "Resilience",
     name: "Rate limits",
-    requires: "Each agent is limited in how many runs it may start and queue each minute, and a whole tree of runs has a limit of its own.",
+    requires: "Each agent is limited in how many runs and sub-runs it may start each minute, and a whole tree of runs has a limit of its own. A refused start answers 429.",
     kind: "default",
     settings: [
-      { name: "Run starts per agent", value: "120 a minute" },
-      { name: "Sub-runs per agent", value: "300 a minute" },
-      { name: "Queued requests per agent", value: "3,000 a minute" },
-      { name: "Starts within one tree of runs", value: "200 a minute" },
+      { name: "Run starts per agent", value: "30 a minute" },
+      { name: "Sub-runs per agent", value: "60 a minute" },
+      { name: "Starts within one tree of runs", value: "120 a minute" },
     ],
     changes: "policy change",
     controls: ["AF-RS-01"],
+    live: "rate_limits",
   },
   {
     id: "BP-17",
@@ -382,6 +392,46 @@ export const BASELINE: BaselinePolicy[] = [
 ];
 
 const CONTROL_BY_ID = new Map(CONTROLS.map((c) => [c.id, c]));
+
+const n = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+const ACT_WORDS: Record<string, string> = { hold: "hold its next call at or above write for a person", stop: "stop the run", raise: "raise it for a person" };
+const perMinute = (v: unknown) => (n(v) === null ? "not answered" : n(v) === 0 ? "off (0)" : `${n(v)!.toLocaleString("en-GB")} a minute`);
+const seconds = (v: unknown) => (n(v) === null ? "not answered" : n(v)! % 60 === 0 && n(v)! >= 120 ? `${n(v)! / 60} minutes` : `${n(v)} seconds`);
+
+/**
+ * A live row's values from the platform's rules now for its target (`current` in `GET /api/policy/targets`), in the
+ * same words as the catalogue's; null when the answer holds no rules for it.
+ */
+export function liveSettings(target: LiveTarget, current: Record<string, unknown> | null | undefined): { name: string; value: string }[] | null {
+  if (!current) return null;
+  if (target === "rate_limits") {
+    return [
+      { name: "Run starts per agent", value: perMinute(current.run_starts_per_minute) },
+      { name: "Sub-runs per agent", value: perMinute(current.sub_runs_per_minute) },
+      { name: "Starts within one tree of runs", value: perMinute(current.tree_per_minute) },
+    ];
+  }
+  if (target === "breakers") {
+    const cooldown = n(current.cooldown_s);
+    return [
+      { name: "Failures in a row that open a breaker", value: n(current.failures) === null ? "not answered" : n(current.failures) === 0 ? "off (0)" : String(n(current.failures)) },
+      { name: "Calls across the estate that open a breaker", value: n(current.calls) === null ? "not answered" : n(current.calls) === 0 ? "off (0)" : String(n(current.calls)) },
+      { name: "Window the calls rule counts over", value: seconds(current.window_s) },
+      { name: "Cooling period", value: cooldown === 0 ? "0: breakers are off" : seconds(current.cooldown_s) },
+    ];
+  }
+  const limit = (v: unknown, unit: (x: number) => string) => (n(v) === null ? "not set" : unit(n(v)!));
+  const act = (v: unknown) => ACT_WORDS[String(v)] ?? (v ? String(v) : "not answered");
+  const agents = current.agents === "*" ? "every agent" : Array.isArray(current.agents) ? current.agents.join(", ") : "not answered";
+  const anySet = [current.tool_calls_per_run, current.cost_per_run_usd, current.refusals_per_run].some((v) => n(v) !== null);
+  return [
+    { name: "Tool calls one run may make", value: `${limit(current.tool_calls_per_run, String)}${n(current.tool_calls_per_run) !== null ? `; past it, ${act(current.on_tool_calls)}` : ""}` },
+    { name: "What one run may cost", value: `${limit(current.cost_per_run_usd, (x) => `$${x}`)}${n(current.cost_per_run_usd) !== null ? `; past it, ${act(current.on_cost)}` : ""}` },
+    { name: "Refused calls one run may have", value: `${limit(current.refusals_per_run, String)}${n(current.refusals_per_run) !== null ? `; past it, ${act(current.on_refusals)}` : ""}` },
+    { name: "Agents it watches", value: agents },
+    ...(anySet ? [] : [{ name: "With no limit set", value: "the guardian does nothing" }]),
+  ];
+}
 
 /** The standards a policy answers to: the references of the controls that carry it, each once. */
 export function referencesOf(p: BaselinePolicy): Reference[] {

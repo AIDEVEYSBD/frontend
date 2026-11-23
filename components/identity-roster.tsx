@@ -116,7 +116,7 @@ export function IdentityRoster({
   onAssignOwner: (key: string) => void;
   /** The register's own table (owners) cannot be written on this deployment. */
   ownerStoreDown: boolean;
-  /** A quiet console (lib/quiet.ts) with neither door read: the roster is drawn empty, with no counts. */
+  /** Neither door read: the roster is drawn empty, with no counts. */
   unread?: boolean;
   /** The kinds the register names in `not_built`: their chip says "not built", never a zero. */
   notBuiltKinds?: string[];
@@ -271,7 +271,6 @@ export function IdentityRoster({
                           </Link>
                           {mine.length > 0 && <span className={`size-1.5 shrink-0 rounded-[2px] ${mine.some((f) => f.severity === "err") ? "bg-err" : "bg-warn"}`} title={`${mine.length} finding${mine.length === 1 ? "" : "s"}`} />}
                           {e.type === "person" && e.person.sub === meSub && <Tag>you</Tag>}
-                          {e.type === "identity" && Boolean(e.identity.facts.demo) && <Tag>sample</Tag>}
                         </span>
                         <span className="truncate font-mono text-[10.5px] text-faint" title={e.type === "identity" ? (e.identity.description ?? undefined) : undefined}>
                           {second}

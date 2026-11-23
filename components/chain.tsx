@@ -259,6 +259,8 @@ const iso = (local: string): string | undefined => (local && !Number.isNaN(Date.
 function LedgerPage() {
   const params = useSearchParams();
   const [agents, setAgents] = useState<AgentSummary[]>([]);
+  /** Why the agents were not read: the agent picker says so, never offering an empty list as the estate's. */
+  const [agentsError, setAgentsError] = useState("");
   const [agent, setAgent] = useState(params.get("agent") ?? "");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -281,8 +283,14 @@ function LedgerPage() {
   useEffect(() => soon(walk), [walk]);
   useEffect(() => {
     listAgents()
-      .then(setAgents)
-      .catch(() => setAgents([]));
+      .then((a) => {
+        setAgents(a);
+        setAgentsError("");
+      })
+      .catch((e) => {
+        setAgents([]);
+        setAgentsError((e as Error).message);
+      });
     getRetention()
       .then(setRetention)
       .catch((e) => {
@@ -312,7 +320,7 @@ function LedgerPage() {
       )}
       <Section title="Runs" action={<Button size="sm" variant="solid" tone="neutral" loading={busy} onClick={walk}>Check again</Button>}>
         <div className="grid gap-3 md:grid-cols-3">
-          <Field label="Agent">
+          <Field label="Agent" error={agentsError ? `the agents could not be read, so none can be picked: ${agentsError}` : undefined}>
             <Pick value={agent} onChange={setAgent} options={[{ value: "", label: "The whole estate" }, ...agents.map((a) => ({ value: a.id, label: a.name }))]} />
           </Field>
           <Field label="From" hint="runs created at or after it">

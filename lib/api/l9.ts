@@ -20,8 +20,8 @@ import { DoorError, type AttentionItem } from "./l5";
  * (`separation_of_duties`, `policy_change`, `attestation_owner`), the `field`
  * (`proposed.calls`, `target.id`, `effective_at`, `window`), a change's
  * `state`, and on a 409 of a direct write, `door` and the `proposal` to send
- * there. Same-origin: proxy.ts forwards these paths to the backend
- * (lib/route-policy.ts BACKEND_PREFIXES), behind the cookie.
+ * there. Same-origin: proxy.ts forwards every /api request to the service
+ * at BACKEND_ORIGIN.
  */
 
 /* ═══════════════════ reading ═══════════════════ */

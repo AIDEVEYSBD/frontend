@@ -4,13 +4,14 @@ import type { components, paths } from "./backend";
 /**
  * The backend, from the console.
  *
- * `lib/api/backend.d.ts` is generated from backend/openapi.json (`npm run
- * gen:api`) and committed, so a checkout without the backend still
- * typechecks. Every call here is same-origin: proxy.ts forwards the
- * backend-owned prefixes (lib/route-policy.ts BACKEND_PREFIXES) to
- * BACKEND_ORIGIN with the runtime key attached and the session cookie
- * forwarded, so the browser never learns where the backend lives and the
- * cookie never leaves this origin.
+ * `lib/api/backend.d.ts` types the typed client below. It was generated
+ * from an earlier version of the service's OpenAPI and is kept by hand:
+ * the service's /openapi.json lists its paths but not its answer shapes,
+ * so regenerating from it would drop every type the screens name. Every
+ * answer is also read defensively by the mapping functions in lib/api/*.
+ * Every call here is same-origin: proxy.ts forwards every /api request to
+ * BACKEND_ORIGIN with its headers unchanged, IAP's signed assertion among
+ * them, so the browser never learns where the service lives.
  */
 
 export type Schemas = components["schemas"];

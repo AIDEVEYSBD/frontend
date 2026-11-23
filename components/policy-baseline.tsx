@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Tag } from "./ui";
 import { Section } from "./section";
-import { BASELINE, BASELINE_AREAS, CHANGES_LABEL, KIND_LABEL, KIND_MEANS, controlsOf, referencesOf, type BaselineKind, type BaselinePolicy } from "@/lib/baseline-policies";
+import { BASELINE, BASELINE_AREAS, CHANGES_LABEL, KIND_LABEL, KIND_MEANS, controlsOf, liveSettings, referencesOf, type BaselineKind, type BaselinePolicy } from "@/lib/baseline-policies";
 import { enforcementOf, useControls, type ControlsRead } from "@/lib/controls-status";
 import { AnswerFailure } from "./pending";
 
@@ -14,18 +14,21 @@ import { AnswerFailure } from "./pending";
  * protects. A row opens to the values it ships with, how they change, the
  * catalogue controls that carry it and the standards those controls cite.
  *
- * It is the catalogue's own defaults, the same with or without a control
- * plane connected. What it says about this deployment comes from one answer,
- * `GET /api/controls`: whether each carrying control is enforced now. Until
- * that address answers, the section says enforcement is not connected and
- * states nothing either way; what a deployment has changed is the Changes
- * list's to show.
+ * It is the catalogue's own words for the platform's defaults. Two answers
+ * say what holds on this deployment: `GET /api/controls`, whether each
+ * carrying control is enforced now, and `GET /api/policy/targets`, the rules
+ * now of the rows marked `live` (rate limits, breakers, the guardian), whose
+ * values are then the platform's and never the catalogue's. Until an answer
+ * comes, the section says what it could not read.
  */
 
 const KIND_TONE: Record<BaselineKind, "ok" | "neutral" | "warn"> = { fixed: "ok", default: "neutral", off: "warn" };
 const KINDS: BaselineKind[] = ["fixed", "default", "off"];
 
-export function PolicyBaseline() {
+/** The policy page's read of `GET /api/policy/targets`: each target's rules now; null while it is not read, with the reason when it failed. */
+export type RulesNow = { kind: string; current: Record<string, unknown> | null }[] | null;
+
+export function PolicyBaseline({ rules = null, rulesError = "" }: { rules?: RulesNow; rulesError?: string }) {
   /** Whether this deployment enforces each carrying control now: the platform's answer, or nothing. */
   const status = useControls();
   const [open, setOpen] = useState<string | null>(null);
@@ -57,8 +60,15 @@ export function PolicyBaseline() {
           <AnswerFailure answer={status} what="Whether each control is enforced could not be read" />
         </div>
       )}
+      {rulesError && !rules && (
+        <p className="max-w-[96ch] rounded-md border border-warn-line bg-warn-bg px-3 py-2 text-[12px] leading-[1.55] text-warn">
+          The rules now could not be read (GET /api/policy/targets: {rulesError}). The rate limits, breakers and guardian rows show the platform&rsquo;s defaults, which this deployment&rsquo;s settings or an applied change may have moved.
+        </p>
+      )}
       <p className="max-w-[96ch] text-[12.5px] leading-[1.6] text-dim">
-        The policy set a deployment starts with, as the catalogue writes it. A default changes only the way its row says, and each row names the{" "}
+        The policy set a deployment starts with, as the catalogue writes it.{" "}
+        {rules ? "The rate limits, breakers and guardian rows show the platform’s rules now, as it answers them. " : rulesError ? "" : "The rate limits, breakers and guardian rows show the platform’s rules now once they are read. "}
+        A default changes only the way its row says, and each row names the{" "}
         <Link href="/guardrails" className="focusable font-medium text-fg underline underline-offset-2">
           catalogue controls
         </Link>{" "}
@@ -99,7 +109,7 @@ export function PolicyBaseline() {
                 <span className="text-[11.5px] text-faint">{purpose}</span>
               </div>
               {rows.map((p) => (
-                <Row key={p.id} p={p} status={status} open={open === p.id} onToggle={() => setOpen(open === p.id ? null : p.id)} />
+                <Row key={p.id} p={p} status={status} rules={rules} open={open === p.id} onToggle={() => setOpen(open === p.id ? null : p.id)} />
               ))}
             </div>
           );
@@ -110,8 +120,11 @@ export function PolicyBaseline() {
   );
 }
 
-function Row({ p, status, open, onToggle }: { p: BaselinePolicy; status: ControlsRead | null; open: boolean; onToggle: () => void }) {
+function Row({ p, status, rules, open, onToggle }: { p: BaselinePolicy; status: ControlsRead | null; rules: RulesNow; open: boolean; onToggle: () => void }) {
   const refs = referencesOf(p);
+  // A live row's values are the platform's rules now; the catalogue's stand for its defaults only while that answer is not read.
+  const live = p.live && rules ? liveSettings(p.live, rules.find((t) => t.kind === p.live)?.current) : null;
+  const settings = live ?? p.settings;
   const stds = [...new Set(refs.map((r) => r.std))];
   const carriers = controlsOf(p);
   const enforced = status?.state === "ok" ? carriers.filter((c) => status.byId.get(c.id)?.state === "enforced").length : null;
@@ -145,9 +158,11 @@ function Row({ p, status, open, onToggle }: { p: BaselinePolicy; status: Control
       {open && (
         <div className="grid gap-x-8 gap-y-4 border-t border-line bg-raise/25 px-4 py-3.5 pl-[84px] xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
           <div className="flex flex-col gap-2">
-            <span className="text-[11px] font-semibold text-dim">What it ships with</span>
+            <span className="text-[11px] font-semibold text-dim">
+              {live ? "The rules now, as the platform answers them" : p.live ? "The platform's defaults (the rules now were not read)" : "What it ships with"}
+            </span>
             <dl className="flex flex-col">
-              {p.settings.map((s) => (
+              {settings.map((s) => (
                 <div key={s.name} className="grid grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-x-4 border-b border-line py-1.5 last:border-b-0">
                   <dt className="text-[12px] leading-[1.5] text-dim">{s.name}</dt>
                   <dd className="text-[12px] leading-[1.5] font-medium text-fg">{s.value}</dd>

@@ -225,7 +225,7 @@ export function MapView({ map, picked, lit, onPick, quiet = false }: { map: DepM
     return ids;
   }, [map, picked]);
 
-  // Quiet (lib/quiet.ts): the map's card is drawn with the line saying what it holds.
+  // The map unread (its failure is shown above): the map's card is drawn with the line saying what it holds.
   if (!map && quiet) {
     return (
       <div className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">

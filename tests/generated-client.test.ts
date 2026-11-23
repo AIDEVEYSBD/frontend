@@ -1,8 +1,4 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isBackendPath } from "@/lib/route-policy";
-import { FRONTEND } from "./routes";
 
 // The generated client as the browser has it, but on an absolute origin: Node
 // cannot build a Request for a bare path, and the page's own origin is what
@@ -21,79 +17,10 @@ import { consolePath } from "@/lib/api/client";
  * Plan L2: "the OpenAPI document generates the client they use", for the
  * runs, queue, approvals, agents, keys, attached agents, IAM and vault pages.
  *
- * The first half reads the source of the pages that used to call the
- * backend by hand (the Agents list, IAM, the attached agents panel, the
- * vault on Settings and in the providers' key picker, the queue and deploy
- * on Control) and fails if any of them calls `fetch` on a path the backend
- * owns. The second half calls each door those pages now use (lib/api/l2.ts)
- * with fetch stubbed, and holds it to the request the hand-typed fetch made:
- * the same method, path, query and body, and a refusal that carries the
- * backend's message.
+ * Each door those pages use (lib/api/l2.ts) is called with fetch stubbed and
+ * held to the request the hand-typed fetch made: the same method, path,
+ * query and body, and a refusal that carries the backend's message.
  */
-
-const PAGES = [
-  // The Agents list: what the Workflows page and the roster were, as one page.
-  "components/agents-list.tsx",
-  "components/iam.tsx",
-  "components/attached-agents.tsx",
-  "components/settings.tsx",
-  "components/providers.tsx",
-  "components/control.tsx",
-  // The Runs page: its runs doors were on the generated client already; its agent reads are now too.
-  "components/runs.tsx",
-];
-
-/** A fetch whose target is not a literal, by file, with what it reads: each a console route, named here so a new one is looked at. */
-const NOT_A_LITERAL: Record<string, string[]> = {
-  // An artefact's preview: `/api/artifact?run=…&path=…`, the console's own route.
-  "components/runs.tsx": ["url"],
-};
-
-/** Every `fetch(` in a source text, with the literal it was given (string or template), or null and the expression when the target is not a literal. */
-function fetchCalls(text: string): { at: number; target: string | null; expr: string }[] {
-  const out: { at: number; target: string | null; expr: string }[] = [];
-  const re = /\bfetch\(\s*/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text))) {
-    const rest = text.slice(m.index + m[0].length);
-    const lit = rest.match(/^(["'`])((?:\\.|(?!\1)[^\\])*)\1/);
-    out.push({ at: text.slice(0, m.index).split("\n").length, target: lit ? lit[2] : null, expr: lit ? "" : (rest.match(/^[\w.]+/)?.[0] ?? rest.slice(0, 20)) });
-  }
-  return out;
-}
-
-/** The path a literal names: template holes as a segment, the query dropped. */
-const pathOf = (target: string) => target.replace(/\$\{[^}]*\}/g, "x").split("?")[0];
-
-describe("the registry pages call the backend through the generated client", () => {
-  for (const file of PAGES) {
-    it(`${file} calls no backend door with a hand-typed fetch`, () => {
-      const text = readFileSync(path.join(FRONTEND, file), "utf-8");
-      for (const call of fetchCalls(text)) {
-        if (call.target === null) {
-          expect(NOT_A_LITERAL[file] ?? [], `${file}:${call.at} fetches ${call.expr}, not a literal; the test cannot tell whether it is the backend's`).toContain(call.expr);
-          continue;
-        }
-        const p = pathOf(call.target);
-        expect(isBackendPath(p), `${file}:${call.at} calls ${call.target} with fetch; ${p} is the backend's, so it goes through lib/api/l2.ts (the generated client)`).toBe(false);
-      }
-    });
-  }
-
-  it("still reads the console's own routes with fetch where it did (the scan is not vacuous)", () => {
-    const control = fetchCalls(readFileSync(path.join(FRONTEND, "components/control.tsx"), "utf-8"));
-    expect(control.map((c) => c.target)).toEqual(expect.arrayContaining(["/api/control", "/api/guardrails"]));
-    // ...and would catch a backend door: the scan's own reading of a line that used to be there.
-    expect(fetchCalls('const q = await (await fetch("/api/queue")).json();').map((c) => isBackendPath(pathOf(c.target!)))).toEqual([true]);
-    expect(fetchCalls("await fetch(`/api/agents/${encodeURIComponent(id)}/deploy`, { method: \"POST\" });").map((c) => isBackendPath(pathOf(c.target!)))).toEqual([true]);
-  });
-
-  it("each page imports its doors from lib/api/l2.ts", () => {
-    for (const file of PAGES) {
-      expect(readFileSync(path.join(FRONTEND, file), "utf-8"), file).toMatch(/from "@\/lib\/api\/l2"/);
-    }
-  });
-});
 
 /* ═══════════════════ the doors, against a stubbed fetch ═══════════════════ */
 
@@ -188,17 +115,17 @@ describe("lib/api/l2.ts sends what the pages used to send", () => {
     await l2.readUsers();
     expect(sent[0]).toMatchObject({ method: "GET", url: "/api/iam/users" });
     sent = answer(200, { owner: { owner: "Risk", purpose: "", updated_at: "", updated_by: "" } });
-    await l2.setIdentityOwner({ kind: "api_key", id: "k1", owner: "Risk", purpose: "intake", review_due_at: null, by: "Chandresh Singh" });
-    expect(sent[0]).toEqual({ method: "PATCH", url: "/api/iam/identities", body: { kind: "api_key", id: "k1", owner: "Risk", purpose: "intake", review_due_at: null, by: "Chandresh Singh" } });
+    await l2.setIdentityOwner({ kind: "api_key", id: "k1", owner: "Risk", purpose: "intake", review_due_at: null, by: "Asha Rao" });
+    expect(sent[0]).toEqual({ method: "PATCH", url: "/api/iam/identities", body: { kind: "api_key", id: "k1", owner: "Risk", purpose: "intake", review_due_at: null, by: "Asha Rao" } });
     sent = answer(200, { disconnected: "crm" });
     await l2.disconnectIdentity("mcp_server", "crm");
     expect(sent[0]).toMatchObject({ method: "DELETE", url: "/api/iam/identities?kind=mcp_server&id=crm" });
     sent = answer(200, { signedOut: 2 });
-    await l2.signOutUser("autox|alice");
-    expect(sent[0]).toMatchObject({ method: "DELETE", url: `/api/iam/users?sub=${encodeURIComponent("autox|alice")}` });
-    sent = answer(200, { user: { sub: "autox|alice", disabled_at: "2026-10-21T08:00:00Z" } });
-    await l2.setUserAccess("autox|alice", true, "Chandresh Singh");
-    expect(sent[0]).toEqual({ method: "PATCH", url: "/api/iam/users", body: { sub: "autox|alice", disabled: true, by: "Chandresh Singh" } });
+    await l2.signOutUser("iap|alice");
+    expect(sent[0]).toMatchObject({ method: "DELETE", url: `/api/iam/users?sub=${encodeURIComponent("iap|alice")}` });
+    sent = answer(200, { user: { sub: "iap|alice", disabled_at: "2026-10-21T08:00:00Z" } });
+    await l2.setUserAccess("iap|alice", true, "Asha Rao");
+    expect(sent[0]).toEqual({ method: "PATCH", url: "/api/iam/users", body: { sub: "iap|alice", disabled: true, by: "Asha Rao" } });
   });
 
   it("the vault: list, set (masked back) and remove", async () => {
@@ -239,7 +166,7 @@ describe("the console's fetch guard reads a generated client's request", () => {
 });
 
 describe("lib/api/l4.ts: the system prompt doors", () => {
-  const version = (n: number, current: boolean) => ({ id: `sp-${n}`, version: n, prompt: `prompt ${n}`, digest: `sha256:${String(n).repeat(64)}`, chars: 8, set_by: "Chandresh Singh", set_at: `2026-10-21T08:0${n}:00Z`, retired_at: current ? null : "2026-10-21T08:02:00Z", current, guarded: true, adopted: false });
+  const version = (n: number, current: boolean) => ({ id: `sp-${n}`, version: n, prompt: `prompt ${n}`, digest: `sha256:${String(n).repeat(64)}`, chars: 8, set_by: "Asha Rao", set_at: `2026-10-21T08:0${n}:00Z`, retired_at: current ? null : "2026-10-21T08:02:00Z", current, guarded: true, adopted: false });
 
   it("reads the history newest first, and a row with none (a workflow) as none", async () => {
     let sent = answer(200, { application: "versioned", current: "sp-2", versions: [version(1, false), version(2, true)], count: 2, leak_check: { window_days: 30, max_versions: 20, says: "…" } });

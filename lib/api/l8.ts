@@ -22,8 +22,7 @@ import { unsupportedOf, type UnsupportedPart } from "../unsupported";
  * carries more than the generated ErrorBody types (the unmet conditions on a
  * gate's 409, the control on a 403 or a retired 409, the field on a 400 or a
  * 404), and every answer is read defensively. Same-origin: proxy.ts forwards
- * `/api/agents` and `/api/evals/runs` to the backend (lib/route-policy.ts
- * BACKEND_PREFIXES), behind the cookie.
+ * every /api request to the service at BACKEND_ORIGIN.
  *
  * The eval runner moved here from the console: `POST
  * /api/agents/{id}/evals/run` answers 202 at once and the run is followed by
@@ -101,7 +100,8 @@ export type EvalCaseResult = {
   /** A labeled set's ground truth and the label the run's result reduced to; null when the set is not labeled (or, for `predicted`, the result named no label). */
   expected: string | null;
   predicted: string | null;
-  duration_ms: number;
+  /** How long the case's run took; null when it was not measured (a start that was refused never ran). */
+  duration_ms: number | null;
   /** The case's run on the backend; "" when its start was refused (a rate limit past its retries, a lockdown that landed mid-eval). */
   run_file: string;
   /** What drift compares: the spec's `evals.compare` field, else `state:<final>`. */
@@ -139,7 +139,7 @@ export interface EvalProgress {
   rate_limited: EvalRateLimited | null;
 }
 
-/** One candidate of a comparison, as the console's own runner summarised it. */
+/** One candidate of a comparison, as the backend's runner summarised it. */
 export type ModelSummary = {
   model: string;
   forced: boolean;
@@ -151,13 +151,20 @@ export type ModelSummary = {
   pass_rate: number;
   headline_f1: number | null;
   macro_f1: number | null;
-  invalid: number;
-  avg_ms: number;
+  /** Outputs with no label; null when the platform does not count them (labels are not built). */
+  invalid: number | null;
+  /** Mean time per case that ran; null when no case ran, so nothing was measured. */
+  avg_ms: number | null;
   tokens: { in: number; out: number };
   model_calls: number;
   /** null when a model's price is unknown: an unknown price makes the total unknown, never zero. */
   cost_total: number | null;
   cost_per_case: number | null;
+  /** `done`, or the candidate's state when it did not finish: the backend leaves such a candidate out of its recommendation. */
+  state: string;
+  /** Cases whose start was refused, and cases that ran but could not be graded; null when the answer carries no count. */
+  refused: number | null;
+  not_graded: number | null;
 };
 
 /** A comparison's recommendation, on every candidate's row once all are done. */
@@ -165,7 +172,7 @@ export type EvalComparison = {
   batch_id: string;
   incumbent: string;
   models: ModelSummary[];
-  /** The cheapest candidate that clears the incumbent's quality within 0.02 with no invalid outputs; null to keep the incumbent. */
+  /** The backend's choice: the cheapest finished candidate that met the release threshold and has a price set; null when none did. */
   recommended: string | null;
   rationale: string;
   /** Every candidate's eval run, the incumbent's first. */
@@ -253,7 +260,7 @@ export function caseResultOf(v: unknown): EvalCaseResult {
     checks: (Array.isArray(o.checks) ? o.checks : []).map(checkOf),
     expected: typeof o.expected === "string" ? o.expected : null,
     predicted: typeof o.predicted === "string" ? o.predicted : null,
-    duration_ms: num(o.duration_ms),
+    duration_ms: numOrNull(o.duration_ms),
     run_file: str(o.run_file),
     outcome: str(o.outcome),
   };
@@ -300,12 +307,15 @@ export function modelSummaryOf(v: unknown): ModelSummary {
     pass_rate: num(o.pass_rate),
     headline_f1: numOrNull(o.headline_f1),
     macro_f1: numOrNull(o.macro_f1),
-    invalid: num(o.invalid),
-    avg_ms: num(o.avg_ms),
+    invalid: numOrNull(o.invalid),
+    avg_ms: numOrNull(o.avg_ms),
     tokens: { in: num(t.in), out: num(t.out) },
     model_calls: num(o.model_calls),
     cost_total: numOrNull(o.cost_total),
     cost_per_case: numOrNull(o.cost_per_case),
+    state: str(o.state) || "done",
+    refused: numOrNull(o.refused),
+    not_graded: numOrNull(o.not_graded),
   };
 }
 

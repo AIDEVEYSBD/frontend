@@ -26,9 +26,8 @@ import { ask, type Compliance, type ComplianceSave, type ControlCustom, type Doo
  * a control plane. The ABB ICL, its mapping and what this deployment changed
  * about a control come from the `compliance` door; the list is loaded through
  * `iclLoad` and the mapping and changes are saved together through
- * `complianceSave`. The doors are ahead of the backend (lib/api/pending.ts):
- * until they answer, the ICL column is empty and says so, and nothing can be
- * written. Firings are read from the record the Catalogue tab reads.
+ * `complianceSave` (lib/api/pending.ts). Firings are read from the record
+ * the Catalogue tab reads.
  */
 
 const BAR = CAT[1];
@@ -171,8 +170,15 @@ export function ComplianceView() {
 
   /* ── why nothing can be written, when it cannot ── */
   const denied = loaded && session !== null && !can("configure");
+  // Why nothing can be written, from what the address answered: not built only when the platform says so (501), else the refusal or failure in its words.
   const whyNot = !connected
-    ? "Not built yet: the platform does not answer this address"
+    ? answer === null
+      ? "Reading the compliance register…"
+      : answer.state === "pending"
+        ? "Not built yet: the platform does not answer this address"
+        : answer.state === "error"
+          ? `The compliance register could not be read: ${answer.message}`
+          : ""
     : denied
       ? `Needs the "configure" permission. Your roles: ${session?.appRoles.join(", ") || "none"}.`
       : "";

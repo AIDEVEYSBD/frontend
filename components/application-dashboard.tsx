@@ -74,6 +74,8 @@ export function ApplicationDashboard({ id }: { id: string }) {
   // Loaded figures carry the window they were cut over, so a change of window reads as "loading" without a reset inside the effect.
   const [metricsFor, setMetricsFor] = useState<{ win: Win; metrics: ApplicationMetrics } | null>(null);
   const [allConvs, setAllConvs] = useState<ConversationRow[] | null>(null);
+  /** Why the conversations were not read: the table says so, never "no conversation was active". */
+  const [convError, setConvError] = useState("");
   const metrics = metricsFor?.win === win ? metricsFor.metrics : null;
   const [drill, setDrill] = useState<Drill | null>(null);
   const [open, setOpen] = useState<Conversation | null>(null);
@@ -110,10 +112,15 @@ export function ApplicationDashboard({ id }: { id: string }) {
     if (!registered) return;
     let stop = false;
     listConversations(id)
-      .then((c) => !stop && setAllConvs(c))
+      .then((c) => {
+        if (stop) return;
+        setAllConvs(c);
+        setConvError("");
+      })
       .catch((e: Error) => {
         if (stop) return;
-        setAllConvs([]);
+        setAllConvs(null);
+        setConvError(e.message);
         setError(e.message);
       });
     return () => {
@@ -412,7 +419,7 @@ export function ApplicationDashboard({ id }: { id: string }) {
               {convs ? `${convs.length} last active within ${win} · a person's chat from the console, or a conversation the application named (X-Conversation-Id) · open one to replay it, masked` : "reading…"}
             </span>
           </div>
-          <ConversationTable rows={convs ?? []} loaded={Boolean(convs)} opening={opening} onOpen={openConversation} />
+          <ConversationTable rows={convs ?? []} loaded={Boolean(convs)} failed={convError} opening={opening} onOpen={openConversation} />
         </section>
 
         <p className="pb-2 text-[10.5px] text-ghost">{metrics?.basis || "figures are counted from the completions the gateway journalled"}</p>
@@ -498,7 +505,7 @@ export function ApplicationDashboard({ id }: { id: string }) {
   );
 }
 
-function ConversationTable({ rows, loaded, opening, onOpen }: { rows: ConversationRow[]; loaded: boolean; opening: string; onOpen: (id: string) => void }) {
+function ConversationTable({ rows, loaded, failed = "", opening, onOpen }: { rows: ConversationRow[]; loaded: boolean; failed?: string; opening: string; onOpen: (id: string) => void }) {
   return (
     <div className="overflow-x-auto">
       <DrillTable
@@ -516,7 +523,7 @@ function ConversationTable({ rows, loaded, opening, onOpen }: { rows: Conversati
         rows={rows}
         keyOf={(c) => c.id}
         onRow={(c) => onOpen(c.id)}
-        empty={loaded ? "No conversation was active in this window." : "Reading…"}
+        empty={failed ? `The conversations could not be read: ${failed}` : loaded ? "No conversation was active in this window." : "Reading…"}
       />
     </div>
   );

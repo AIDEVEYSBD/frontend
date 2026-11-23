@@ -1,25 +1,16 @@
 /**
- * Doors the console is built for and the backend does not have yet.
+ * Doors the screens read through `ask`, each named once with its method,
+ * its path and the shape the screen expects.
  *
- * Some screens here are ahead of the door they read. Each of them asks
- * through this module, which names the door, its method and the shape it
- * expects: this file is the contract the backend builds to. Until a door
- * answers, `ask` says so (`state: "pending"`) and the screen tells the person
- * it is not connected on this deployment. No screen invents a record.
+ * Every door listed here is served by the service. `ask` reads the service's
+ * own 501 (a part it names as not built) as `state: "pending"`, which the
+ * screen says plainly; any other refusal or fault, a 404 or 405 among them,
+ * is shown as the failure it is, with its status and reason. No screen
+ * invents a record.
  *
- * When a door arrives:
- *   1. its path prefix joins BACKEND_PREFIXES in lib/route-policy.ts (unless
- *      it already sits under one), so proxy.ts forwards it;
- *   2. nothing else changes: the screen already reads the shape below.
- *
- * How "not there yet" is told from "not found": a path nobody serves is
- * answered 404 or 405 with no `error` field (the console's own 404 page, or
- * the backend's `{"detail": "Not Found"}`); the backend's own refusals always
- * carry `{error}`. 501 is also read as "not yet".
- *
- * Fields that existing doors will gain are optional members of the types
- * below (`owner` on a run row, `agents` on a run row, `provider` on a model
- * call, `max_data_class` on a provider). The screen shows them when present.
+ * Fields a door may leave out are optional members of the types below
+ * (`owner` on a run row, `agents` on a run row, `provider` on a model call,
+ * `max_data_class` on a provider). The screen shows them when present.
  */
 
 export type DoorId = keyof typeof DOORS;
@@ -858,6 +849,10 @@ export interface CloudFindingList {
   /** When the security centre was last read. */
   read_at?: string;
   findings: CloudFinding[];
+  /** How many findings match in all, as the security centre counts them; null when it does not say. */
+  total?: number | null;
+  /** The security centre holds more than this page of findings. */
+  truncated?: boolean;
 }
 
 /* ═══════════════════ asking ═══════════════════ */

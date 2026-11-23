@@ -7,31 +7,28 @@ import type { Permission } from "@/lib/permissions";
  * The signed-in person, on the client.
  *
  * One fetch, shared by every component that asks, so the header chip, the
- * approval dialog and the knowledge admissions agree on who is here. In
- * local mode (no identity provider configured) the answer is the console's
- * operator with every permission, which is what the platform did before.
+ * approval dialog and the knowledge admissions agree on who is here. The
+ * service answers it (GET /api/auth/session) from the assertion Google
+ * Identity-Aware Proxy signed; there is no other way in and no local mode.
  */
 
 export interface SessionInfo {
   signedIn: boolean;
   sso: boolean;
-  mode: "sso" | "local" | "internal";
-  /** Which way a signed-in person came in. */
-  via?: "oidc" | "iap" | null;
+  mode: "sso";
+  /** Which way a signed-in person came in: always Identity-Aware Proxy. */
+  via: "iap";
   /** Whether a sign-out button means anything (behind IAP it needs IAP's own sign-out address). */
   canSignOut?: boolean;
   sub: string;
   name: string;
   email: string;
   initials: string;
-  orgType: string;
-  isEy: boolean;
   roles: string[];
   appRoles: string[];
   /** The identity provider's group claims (absent from an older console's answer): roles for a gate's approvers, as the backend reads them. */
   groups?: string[];
   permissions: Permission[];
-  demoDefaultApplied: boolean;
   disabled: boolean;
   accessExpiresAt: string | null;
   expiresAt: string | null;
@@ -142,7 +139,7 @@ export function useMachineOrigin(): string | null | undefined {
   return mounted && session ? (session.machineOrigin ?? null) : undefined;
 }
 
-/** The name a client-side action should sign with. Falls back to the local operator's name until the session loads. */
+/** The name a client-side action should sign with. `fallback` until the session loads. */
 export function signerName(s: SessionInfo | null, fallback: string): string {
   return s ? s.name || s.email || fallback : fallback;
 }

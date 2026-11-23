@@ -3,13 +3,12 @@
 #   gcloud builds submit . --config deploy/console/cloudbuild.yaml \
 #     --substitutions _IMAGE=REGION-docker.pkg.dev/PROJECT_ID/REPOSITORY/agentfactory-console:TAG,_ORIGIN=https://HOST
 #
-# Run it from the repository root.
+# Run it from the repository root. _ORIGIN is the address people will open
+# the console at; it is compiled into the pages.
 steps:
   - name: gcr.io/cloud-builders/docker
-    args: ["build", "-t", "${_IMAGE}", "--build-arg", "NEXT_PUBLIC_ORIGIN=${_ORIGIN}", "--build-arg", "NEXT_PUBLIC_CONSOLE_QUIET=${_QUIET}", "."]
+    args: ["build", "-t", "${_IMAGE}", "--build-arg", "NEXT_PUBLIC_ORIGIN=${_ORIGIN}", "."]
 images: ["${_IMAGE}"]
-substitutions:
-  _QUIET: "0"
 options:
   machineType: E2_HIGHCPU_8
 timeout: 1800s

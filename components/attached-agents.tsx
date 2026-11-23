@@ -1,5 +1,6 @@
 "use client";
 import { useDoorOff } from "@/lib/use-doors";
+import { errorText } from "@/lib/api/client";
 import { Failure } from "./pending";
 
 import { useEffect, useMemo, useState } from "react";
@@ -66,11 +67,13 @@ interface PolicyDraft {
 const names = (text: string) => text.split(",").map((n) => n.trim()).filter(Boolean);
 
 /** The agent asks for `auto` or a tier and the factory picks: here is who decides what that means for this agent. */
-function ModelRouting({ draft, onChange, catalogue, control }: {
+function ModelRouting({ draft, onChange, catalogue, control, catalogueError = "" }: {
   draft: PolicyDraft;
   onChange: (update: (d: PolicyDraft) => PolicyDraft) => void;
   catalogue: { models: string[]; tiers: Record<string, string> };
   control: string;
+  /** Why the deployment's models were not read: the picker then offers only the default and the agent's own choice, and says so. */
+  catalogueError?: string;
 }) {
   const tiers = Object.entries(catalogue.tiers).filter(([, model]) => model);
   const options = [
@@ -101,6 +104,7 @@ function ModelRouting({ draft, onChange, catalogue, control }: {
       <span className="text-[10.5px] leading-[1.5] text-faint">
         The agent asks for <Mono className="text-[10px]">auto</Mono> or a tier, and the factory picks the model. Point its base URL at the gateway and it needs no model names or provider keys of its own.
       </span>
+      {catalogueError && <Failure inline message={`The deployment's models and tiers could not be read (GET /api/config: ${catalogueError}), so the picker offers only the deployment's default and this agent's own choice.`} />}
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1">
           <span className="text-[10.5px] text-ghost">Default model</span>
@@ -149,7 +153,7 @@ function ago(iso: string | null): string {
 }
 
 function money(n: number | null, runs: number): string {
-  if (n === null) return "unpriced";
+  if (n === null) return "no price set";
   if (!runs) return "—";
   return n < 0.01 ? "<$0.01" : `$${n.toFixed(2)}`;
 }
@@ -225,10 +229,9 @@ function CardLine({ a2a, machine }: { a2a: A2AOrigin; machine: string | null | u
 
 /* ═══════════════════ the panel body ═══════════════════ */
 
-export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: AttachedAgent[], store: string) => void; /** Told, once the register has answered or not, whether a quiet console has no register to show (see Providers). */ onQuiet?: (quiet: boolean) => void }) {
+export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent[], store: string) => void }) {
   const [agents, setAgents] = useState<AttachedAgent[] | null>(null);
   const [store, setStore] = useState("");
-  /** The register's read was refused or did not answer. A quiet console (lib/quiet.ts) says so instead of showing an empty register. */
   /** Why the register's read failed, when it did: shown in place of the register and its counts. */
   const [unread, setUnread] = useState("");
   const [mode, setMode] = useState<AttachMode>("sdk");
@@ -251,11 +254,17 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
   const [error, setError] = useState("");
   const [minted, setMinted] = useState<{ agent: AttachedAgent; key: string } | null>(null);
   const [confirming, setConfirming] = useState("");
+  /** A detach the platform refused or failed: the key is not revoked, and the row says why. */
+  const [detachError, setDetachError] = useState<{ id: string; message: string } | null>(null);
+  const [detaching, setDetaching] = useState("");
   const [registry, setRegistry] = useState<{ name: string; server: string; label: string; tool: string; description: string; risk: string }[]>([]);
+  /** Why the tools on offer were not read; the grant list says so instead of "none on offer". */
+  const [registryError, setRegistryError] = useState("");
   const [editing, setEditing] = useState("");
   const [draft, setDraft] = useState<PolicyDraft>({ grants: [], gate_at: "", injection: "block", secret_name: "", model: "", models: [], fallbacks: [], limits: {} });
   /** The deployment's offered models and tiers, for the routing picker. */
   const [catalogue, setCatalogue] = useState<{ models: string[]; tiers: Record<string, string> }>({ models: [], tiers: {} });
+  const [catalogueError, setCatalogueError] = useState("");
   const [saving, setSaving] = useState(false);
   const [policyError, setPolicyError] = useState("");
   /** Why grants or the gate should change, and when: a policy change carries both. */
@@ -282,10 +291,6 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
         setUnread((e as Error).message);
         shown({ agents: [], store: "" });
       });
-  const settled = agents !== null;
-  useEffect(() => {
-    if (settled) onQuiet?.(false);
-  }, [settled, onQuiet]);
   useEffect(() => {
     if (!code || a2a) return;
     readA2AOrigin()
@@ -295,8 +300,11 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
   useEffect(() => {
     load();
     attachableTools()
-      .then(setRegistry)
-      .catch(() => {});
+      .then((t) => {
+        setRegistry(t);
+        setRegistryError("");
+      })
+      .catch((e) => setRegistryError((e as Error).message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -319,11 +327,17 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
   useEffect(() => {
     let live = true;
     fetch("/api/config")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((c: { models?: { id: string }[]; class_defaults?: Record<string, string> } | null) => {
-        if (live && c) setCatalogue({ models: (c.models ?? []).map((m) => m.id), tiers: c.class_defaults ?? {} });
+      .then(async (r) => {
+        const c = await r.json().catch(() => null);
+        if (!r.ok || !c) throw new Error(r.ok ? "the answer could not be read" : errorText(c, r, "GET", "/api/config"));
+        return c as { models?: { id: string }[]; class_defaults?: Record<string, string> };
       })
-      .catch(() => undefined);
+      .then((c) => {
+        if (!live) return;
+        setCatalogue({ models: (c.models ?? []).map((m) => m.id), tiers: c.class_defaults ?? {} });
+        setCatalogueError("");
+      })
+      .catch((e) => live && setCatalogueError((e as Error).message));
     return () => {
       live = false;
     };
@@ -447,8 +461,18 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
   };
 
   const detach = async (id: string) => {
+    setDetaching(id);
+    setDetachError(null);
+    try {
+      await detachAgent(id);
+    } catch (e) {
+      // The key is not revoked: the confirm and the minted key's banner stay, with the platform's reason.
+      setDetachError({ id, message: (e as Error).message });
+      setDetaching("");
+      return;
+    }
+    setDetaching("");
     setConfirming("");
-    await detachAgent(id).catch(() => {});
     if (minted?.agent.id === id) setMinted(null);
     await load();
   };
@@ -673,8 +697,19 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
                   <td className="py-2.5 pr-4 pl-2 text-right align-top">
                     {confirming === a.id ? (
                       <span className="ml-auto flex w-max flex-col items-stretch gap-1.5">
-                        <Button size="sm" variant="solid" tone="err" permission="configure" onClick={() => detach(a.id)}>Detach and revoke key</Button>
-                        <Button size="sm" variant="solid" tone="neutral" onClick={() => setConfirming("")}>Keep</Button>
+                        <Button size="sm" variant="solid" tone="err" permission="configure" onClick={() => detach(a.id)} loading={detaching === a.id}>Detach and revoke key</Button>
+                        <Button
+                          size="sm"
+                          variant="solid"
+                          tone="neutral"
+                          onClick={() => {
+                            setConfirming("");
+                            setDetachError(null);
+                          }}
+                        >
+                          Keep
+                        </Button>
+                        {detachError?.id === a.id && <span className="max-w-[240px] text-left text-[10.5px] leading-[1.45] whitespace-normal text-err">Not detached, and the key is not revoked: {detachError.message}</span>}
                       </span>
                     ) : (
                       <span className="ml-auto grid w-max grid-cols-2 gap-1.5 [&>*]:justify-center">
@@ -764,7 +799,7 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
                         </Button>
                         <Button size="sm" variant="solid" tone="err" onClick={() => setEditing("")}>Cancel</Button>
                       </div>
-                      <ModelRouting draft={draft} onChange={setDraft} catalogue={catalogue} control={control} />
+                      <ModelRouting draft={draft} onChange={setDraft} catalogue={catalogue} control={control} catalogueError={catalogueError} />
                       <span className="text-[10.5px] leading-[1.5] text-faint">
                         {awaiting(a)
                           ? "The attachment waits for a second person's approval: every field saves here at once, and whoever saves it cannot approve it. The approval covers the policy exactly as it stands then."
@@ -799,7 +834,11 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
                             ))}
                           </div>
                         ))}
-                        {registry.length === 0 && <span className="bg-surface px-3 py-2 text-[11px] text-faint">No tool server&rsquo;s tools are on offer yet; register one under Tool servers on this page, and its tools appear here once its pin is approved.</span>}
+                        {registryError ? (
+                          <span className="bg-surface px-3 py-2"><Failure inline message={`The tools on offer could not be read, so none can be granted here until they are: ${registryError}`} /></span>
+                        ) : (
+                          registry.length === 0 && <span className="bg-surface px-3 py-2 text-[11px] text-faint">No tool server&rsquo;s tools are on offer yet; register one under Tool servers on this page, and its tools appear here once its pin is approved.</span>
+                        )}
                       </div>
                     </div>
                   </td>

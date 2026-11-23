@@ -19,9 +19,12 @@ import { SESSION_KINDS, SESSION_STATES, ask, refusalField, type Door, type LiveK
  * Sessions: every connection to this deployment, and who is behind it
  * (`GET /api/sessions`).
  *
- * A person coming in through Google's proxy, and an agent calling with an API
- * key or a workload token. Connections held open to tool servers are a third
- * kind the platform names in `not_built`; their tab says so. A row opens the
+ * A person coming in through Google's proxy, an agent calling with an API key
+ * or a workload token, and a run's use of a tool server (the record the tool
+ * host writes after each call: the platform holds nothing open to a server,
+ * so such a session cannot be ended; removing the server from the registry
+ * stops its calls). The fields the platform names in `not_built` (a session's
+ * address and its activity) are said to be not built. A row opens the
  * session at the side; a session, or a selection of them, can be ended by
  * someone who administers access, after a question that says what ending
  * does: a person is held out until an administrator lets them back, a key is
@@ -326,9 +329,9 @@ function SessionsPage() {
         {pending && (
           <div className="p-4">
             <NotConnected door={answer.door}>
-              Every live connection, each tied to who is behind it: people signed in to the console, agents holding a key or a workload sign-in, and the connections held open to tool servers on
-              their behalf. Each will be a row here, with what it connected with, what it is connected to, when it started, when it was last active and when it must be renewed. Ending a session
-              waits for the same door.
+              Every live connection, each tied to who is behind it: people signed in to the console, agents holding a key or a workload sign-in, and each run&rsquo;s record of its calls to a tool
+              server (nothing is held open to a tool server, so that row cannot be ended). Each will be a row here, with what it connected with, what it is connected to, when it started, when it was
+              last active and when it must be renewed. Ending a session waits for the same door.
             </NotConnected>
           </div>
         )}

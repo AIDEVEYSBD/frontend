@@ -5,7 +5,6 @@ import { useState } from "react";
 import { Button, Mono, Status, Tag } from "./ui";
 import { Field, Input } from "./forms";
 import { Figures } from "./section";
-import { useSession } from "@/lib/use-session";
 import {
   Card,
   EventLine,
@@ -156,19 +155,16 @@ export function IdentityPage({
   /** Open the owner form at once (the roster's and a finding's "Assign owner"). */
   editOwner: boolean;
   actions: IamActions;
-  /** A quiet console (lib/quiet.ts) with a door unread: "nothing needs attention" is not known, so the card is left out. */
+  /** A door unread: "nothing needs attention" is not known, so the card is left out. */
   unread?: boolean;
   /** For a person: the unrevoked API keys the register says answer to them; null when the register was not read. */
   keysOfPerson?: Identity[] | null;
 }) {
   const [confirming, setConfirming] = useState("");
-  /** Behind Google IAP a person's roles come from this deployment's role map, never from the sign-in. */
-  const iap = useSession().session?.via === "iap";
   const st = statusOf(entry);
   const mine = events ? eventsFor(entry, events) : [];
   const i = entry.type === "identity" ? entry.identity : null;
   const p = entry.type === "person" ? entry.person : null;
-  const local = Boolean(p && p.sub.startsWith("local:"));
   const self = Boolean(p && p.sub === meSub);
   const who = p ? p.name || p.email || p.sub : "";
   const theirKeys = keysOfPerson ?? [];
@@ -187,11 +183,8 @@ export function IdentityPage({
     personIssues.push({
       tone: "warn",
       title: "No role in this app",
-      detail: people?.sso.demo_default_role
-        ? `No role this app recognises maps to them; this deployment treats them as ${people.sso.demo_default_role}.`
-        : iap
-          ? "This deployment's role map names no role for them, so no permission maps to them. A role is given in the role map, by address or by domain."
-          : "Their latest token carried no role this app recognises, so no permission maps to them. Roles are assigned in the identity provider.",
+      // Behind Google IAP a person's roles come from this deployment's role map, never from the sign-in.
+      detail: "This deployment's role map names no role for them, so no permission maps to them. A role is given in the role map, by address or by domain.",
     });
   const unowned = Boolean(i && !i.owner && i.status !== "revoked");
   const attention = findings.length + personIssues.length + (unowned ? 1 : 0);
@@ -219,7 +212,6 @@ export function IdentityPage({
             <Tag>{kindLabel(entry)}</Tag>
             <Status tone={st.tone}>{st.label}</Status>
             {self && <Tag>you</Tag>}
-            {i && Boolean(i.facts.demo) && <Tag>sample</Tag>}
           </span>
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-dim">
             {p ? (
@@ -243,9 +235,7 @@ export function IdentityPage({
         </div>
         <span className="flex flex-wrap items-center gap-1.5">
           {p &&
-            (local ? (
-              <span className="text-[11.5px] text-faint">The console&rsquo;s own operator; sign-in is off on this deployment.</span>
-            ) : self ? (
+            (self ? (
               <span className="text-[11.5px] text-faint">Nobody changes their own access; another administrator does it.</span>
             ) : p.disabled_at ? (
               <Button size="sm" variant="solid" tone="ok" permission="iam" loading={busy === `user:${p.sub}`} onClick={() => actions.setAccess(p, false)}>
@@ -369,7 +359,7 @@ export function IdentityPage({
 
       {/* ── access ── */}
       {p && (
-        <Card id="access" title="Access" meta={iap ? "roles from this deployment's role map, and the permissions they map to here" : "roles from the identity provider, and the permissions they map to here"}>
+        <Card id="access" title="Access" meta="roles from this deployment's role map, and the permissions they map to here">
           <div className="grid gap-px bg-line lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
             <div className="flex flex-col bg-surface px-4 py-1.5">
               <Fact k="Roles in this app">

@@ -145,8 +145,8 @@ interface FiringRecord {
 /**
  * The record the Catalogue tab reads, by the same call and the same rules
  * (components/guardrails.tsx): an answer that is not the record is a failed
- * read; a quiet console with no run and no deployed workflow has no record to
- * count from, so nothing is drawn as zero.
+ * read; with no run and no deployed workflow there is no record to count
+ * from, so nothing is drawn as zero.
  */
 export function useFirings(): { record: FiringRecord | null; failed: boolean; noRecord: boolean; answer: Answer<unknown> | null; fired: (c: Control) => number | null } {
   const [record, setRecord] = useState<FiringRecord | null>(null);

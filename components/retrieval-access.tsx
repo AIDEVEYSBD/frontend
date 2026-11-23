@@ -27,8 +27,7 @@ import { RETRIEVAL_RIGHTS, ask, type Door, type RetrievalAccess, type RetrievalG
  * `retrieverEnable`) goes through a dialog that says what stops and takes a
  * reason, and the page reads the door again afterwards.
  *
- * The screen is ahead of its doors (lib/api/pending.ts): until the control
- * plane serves them it says so and shows its three parts with no rows.
+ * The doors are named in lib/api/pending.ts.
  */
 
 type Notice = { tone: "ok" | "err"; text: string } | { door: Door };
@@ -132,8 +131,8 @@ function RetrievalAccessPage() {
           </Button>
         }
       >
-        Switch retrieval from a knowledge store off, which refuses every search and answer from it on the Knowledge page at once, or record that an agent may no longer read, write or delete in a store. Agents do not
-        retrieve on this deployment yet, so a revocation is recorded and changes no run today.
+        Switch retrieval from a knowledge store off, which refuses every search and answer from it on the Knowledge page at once, or take from an agent its right to read, write or delete in a store. Agents with a read grant retrieve through their retrieval.search tool, which checks
+        the grant at every search: a revocation refuses the agent&rsquo;s next retrieval, including in a run already under way.
       </GroupHeader>
 
       {notice && (
@@ -246,7 +245,7 @@ function RetrievalAccessPage() {
         </div>
 
         {!connected && <p className="text-[12px] text-faint">Each agent is listed here with the stores it holds: what its definition grants it there (read, write, delete) and what of that is revoked now.</p>}
-        {connected && data.grants.length === 0 && <p className="text-[12px] text-faint">No agent holds access to a store. Agents do not retrieve on this deployment yet.</p>}
+        {connected && data.grants.length === 0 && <p className="text-[12px] text-faint">No agent holds access to a store, so no agent can retrieve from one; deploying an agent that is granted a retrieval tool gives it read access to the stores that tool names.</p>}
         {connected && data.grants.length > 0 && groups.length === 0 && <p className="text-[12px] text-faint">{revokedOnly && !agentF && !storeF ? "Nothing is revoked at the moment." : "No agent and store match these filters."}</p>}
 
         {groups.length > 0 && (

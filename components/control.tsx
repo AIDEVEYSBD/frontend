@@ -298,6 +298,14 @@ const fmtMs = (ms: number | null) =>
 const fmtCost = (c: number | null) =>
   c === null ? "—" : c === 0 ? "$0.00" : c < 0.005 ? "<$0.01" : `$${c.toFixed(2)}`;
 
+/**
+ * A sum the platform priced, with what it leaves out. The platform's sum covers the priced calls only, so calls on a
+ * model with no price set are named beside it and a partial sum never reads as the whole; null with calls left out is
+ * "no price set", null with none is nothing to price.
+ */
+const partialCost = (c: number | null, unpriced: number) =>
+  c === null ? (unpriced ? "no price set" : "—") : unpriced ? `${fmtCost(c)} + ${unpriced} unpriced` : fmtCost(c);
+
 const fmtTokens = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n));
 
 const ago = (iso: string | null) => {
@@ -385,9 +393,18 @@ export function Control() {
   const [answering, setAnswering] = useState<Gate[] | null>(null);
   /** Third-party agents: on the estate with the factory's own, though no workflow row holds them. */
   const [attached, setAttached] = useState<AttachedAgent[]>([]);
+  /** Why the attached agents were not read; "" while they answer. The list keeps what last answered, and says so. */
+  const [attachedError, setAttachedError] = useState("");
   useEffect(() => {
     let live = true;
-    const read = () => listAttached().then((l) => { if (live) setAttached((l.agents as AttachedAgent[]).filter((a) => !a.demo)); }).catch(() => undefined);
+    const read = () =>
+      listAttached()
+        .then((l) => {
+          if (!live) return;
+          setAttached(l.agents as AttachedAgent[]);
+          setAttachedError("");
+        })
+        .catch((e) => live && setAttachedError((e as Error).message));
     void read();
     const t = setInterval(read, 15_000);
     return () => {
@@ -410,6 +427,8 @@ export function Control() {
   const [deployAsk, setDeployAsk] = useState<string | null>(null);
   /* Each agent's spine, read from the backend once per agent list (and after a deploy), not on the page's 4-second tick. */
   const [spines, setSpines] = useState<Record<string, Lifecycle>>({});
+  /** Each agent whose spine read failed, with the reason: its row says so instead of "reading the spine…". */
+  const [spineErrors, setSpineErrors] = useState<Record<string, string>>({});
   const [spineTick, setSpineTick] = useState(0);
   /* Hover readouts — what a tooltip would have hidden, kept on the page. */
   const [stageHint, setStageHint] = useState<string | null>(null);
@@ -432,6 +451,8 @@ export function Control() {
   const estateNotBuilt = useRef(false);
   // What is in flight, from the backend's run ledger; null until it answers.
   const [liveRows, setLiveRows] = useState<LedgerRow[] | null>(null);
+  /** Why the run ledger was not read; "" while it answers. Meanwhile what is in flight is the estate read's own list. */
+  const [liveError, setLiveError] = useState("");
   // The clock the windows are cut against: stamped when the data arrives, so a
   // render is a pure function of what was loaded and when.
   const [now, setNow] = useState(0);
@@ -467,8 +488,10 @@ export function Control() {
       const { data } = await api.GET("/api/runs");
       // Production's runs in flight: a canary's shadow runs are listed on the Runs page, never counted here (lib/production.ts).
       setLiveRows(data ? inFlight(productionRuns(data.runs)) : null);
-    } catch {
+      setLiveError(data ? "" : "the run ledger answered with no list");
+    } catch (e) {
       setLiveRows(null);
+      setLiveError((e as Error).message || "the run ledger did not answer");
     }
   }, []);
 
@@ -519,10 +542,13 @@ export function Control() {
     Promise.allSettled(ids.map((id) => getLifecycle(id))).then((rs) => {
       if (stop) return;
       const out: Record<string, Lifecycle> = {};
+      const failed: Record<string, string> = {};
       rs.forEach((r, i) => {
         if (r.status === "fulfilled") out[ids[i]] = r.value;
+        else failed[ids[i]] = (r.reason as Error)?.message || "the lifecycle read failed";
       });
       setSpines(out);
+      setSpineErrors(failed);
     });
     return () => {
       stop = true;
@@ -666,6 +692,8 @@ export function Control() {
 
       {lockdownError && <Failure className="mt-4" what={lockdown ? "The lockdown stopped answering; the switch shows it as it last answered" : "The lockdown could not be read; the switch cannot be used until it is"} message={lockdownError} />}
       {data && fleetError && <Failure className="mt-4" what={fleetState ? "Which agents are held stopped answering; the marks below are as it last answered" : "Which agents are paused or draining could not be read; no mark is shown"} message={fleetError} />}
+      {data && liveError && <Failure className="mt-4" what="The run ledger (GET /api/runs) could not be read; the runs in flight below are the estate read's own list" message={liveError} />}
+      {attachedError && <Failure className="mt-4" what={attached.length ? "The attached agents stopped answering; the Estate lists them as they last answered" : "The attached agents could not be read; the Estate does not list them"} message={attachedError} />}
 
       {/* ── Lockdown: the banner stays while it is on ── */}
       {locked && (
@@ -746,6 +774,7 @@ export function Control() {
             </div>
             {(data?.agents ?? []).map((a) => {
               const spine = spines[a.id];
+              const spineError = spineErrors[a.id] ?? "";
               const stages = spine ? spineOf(spine) : [];
               const retired = Boolean(spine?.retired);
               return (
@@ -762,13 +791,15 @@ export function Control() {
                     const on = Boolean(st?.lit);
                     const prev = i === 0 || Boolean(stages.find((x) => x.stage === STAGE_NAMES[i - 1])?.lit);
                     const hint = !spine
-                      ? `${STAGE_LABEL[name]}: reading the spine…`
+                      ? spineError
+                        ? `${STAGE_LABEL[name]}: the lifecycle could not be read (${spineError})`
+                        : `${STAGE_LABEL[name]}: reading the spine…`
                       : on
                         ? `${STAGE_LABEL[name]}: ${[st?.who, st?.note].filter(Boolean).join(" — ")} — click to open`
                         : name === "deployed" && !retired
                           ? `${STAGE_LABEL[name]}: not deployed — click to deploy through the promotion gate`
                           : `${STAGE_LABEL[name]}: waiting on ${st?.needs ?? "its record"} — click to open its lifecycle`;
-                    const dot = !spine ? "border-line bg-raise" : on ? (st?.tone === "warn" ? "border-warn bg-warn" : st?.tone === "err" ? "border-err bg-err" : "border-ok bg-ok") : "border-line-strong bg-surface";
+                    const dot = !spine ? (spineError ? "border-err bg-surface" : "border-line bg-raise") : on ? (st?.tone === "warn" ? "border-warn bg-warn" : st?.tone === "err" ? "border-err bg-err" : "border-ok bg-ok") : "border-line-strong bg-surface";
                     return (
                       <button
                         key={name}
@@ -793,6 +824,14 @@ export function Control() {
             })}
             {!data && !regOff && <p className="px-4 py-4 text-[12px] text-faint">Reading the registry…</p>}
             {regOff && <p className="px-4 py-4 text-[12px] text-faint">Each agent is a row here, its stages lit by their own records.</p>}
+            {Object.keys(spineErrors).length > 0 && (
+              <div className="px-4 py-2">
+                <Failure
+                  what={`The lifecycle of ${Object.keys(spineErrors).join(", ")} could not be read; ${Object.keys(spineErrors).length === 1 ? "its stages are" : "their stages are"} not shown`}
+                  message={[...new Set(Object.values(spineErrors))].join("; ")}
+                />
+              </div>
+            )}
           </div>
         </div>
         {!regOff && (
@@ -961,7 +1000,7 @@ export function Control() {
                   </span>
 
                   <span className="tnum text-right text-[12.5px] text-mist">{fmtMs(a.avgMs7d)}</span>
-                  <span className="tnum text-right text-[12.5px] text-mist">{fmtCost(a.cost7d)}</span>
+                  <span className={`tnum text-right text-[12.5px] ${a.unpriced7d ? "text-warn" : "text-mist"}`} title={a.unpriced7d ? unpricedLine(a.unpriced7d) + ", not in the sum" : undefined}>{partialCost(a.cost7d, a.unpriced7d)}</span>
 
                   <span className="flex justify-end" onClick={(e) => e.stopPropagation()}>
                     <Button size="sm" variant="outline" href={`/runs?agent=${encodeURIComponent(a.id)}`}>
@@ -979,7 +1018,8 @@ export function Control() {
                   </span>
                   {a.blocked ? <Status tone="err">Blocked</Status> : <Status tone="ok">Attached</Status>}
                   <span className="tnum text-[11.5px] text-faint">{a.runs30d} runs</span>
-                  <span className="tnum text-[11.5px] text-faint">${(a.cost30d ?? 0).toFixed(2)}</span>
+                  {/* A cost that leaves out a call with no price set is null from the platform: it reads "no price set", never $0.00. */}
+                  <span className={`tnum text-[11.5px] ${a.cost30d === null ? "text-warn" : "text-faint"}`}>{a.cost30d === null ? "no price set" : `$${a.cost30d.toFixed(2)}`}</span>
                 </div>
               ))}
 
@@ -1210,7 +1250,7 @@ export function Control() {
         <section className="mb-4 flex break-inside-avoid flex-col overflow-hidden rounded-md border border-line bg-surface">
           <PanelHead title="Activity" meta={`${cut("activity")?.days.length ?? 14} days — click a day`} right={
             <span className="flex items-center gap-2">
-              <Mono className="text-[10px] text-ghost">{off ? "" : cut("activity")?.totals ? `${fmtCost(cut("activity")!.totals.cost7d)} · ${wf("activity")}` : ""}</Mono>
+              <Mono className="text-[10px] text-ghost">{off ? "" : cut("activity")?.totals ? `${partialCost(cut("activity")!.totals.cost7d, cut("activity")!.totals.unpriced7d)} · ${wf("activity")}` : ""}</Mono>
               <WindowPick value={wf("activity")} onChange={(w) => tile("activity", w)} inherited={!cardWin.activity} />
             </span>
           } />
@@ -1516,7 +1556,7 @@ function FinOpsPanel({
   onSaved: () => void;
   /** Why no billed figure is shown: the platform's `not_built.billing`. */
   billingNote: string;
-  /** A quiet console with nothing on record: no figure is shown for a spend that was not read. */
+  /** The estate was not read: no figure is shown for a spend that was not read. */
   off?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
@@ -1738,7 +1778,7 @@ function Kpi({
   onWin,
   off = false,
 }: {
-  /** A quiet console whose figure was not read: the tile says so, shows no figure and opens nothing. */
+  /** The figure was not read: the tile says so, shows no figure and opens nothing. */
   off?: boolean;
   label: string;
   value: string;
@@ -1822,7 +1862,7 @@ function ActivityChart({
   const [hover, setHover] = useState<string | null>(null);
   const shown = days.find((d) => d.day === (hover ?? selected)) ?? null;
   const readout = (d: DayRow) =>
-    `${d.day} · ${d.runs} run${d.runs === 1 ? "" : "s"}${d.cost !== null ? ` · ${fmtCost(d.cost)}` : ""}${d.kills ? ` · ${d.kills} killed` : ""}`;
+    `${d.day} · ${d.runs} run${d.runs === 1 ? "" : "s"}${d.cost !== null || d.unpricedCalls ? ` · ${partialCost(d.cost, d.unpricedCalls)}` : ""}${d.kills ? ` · ${d.kills} killed` : ""}`;
   return (
     <div className="flex flex-col">
       <div className="relative px-3 pt-4">
@@ -1883,7 +1923,7 @@ function ModelMix({
   onPick,
   off = false,
 }: {
-  /** A quiet console with nothing on record: the panel says what it will hold. */
+  /** The estate was not read: the panel says what it holds, and shows no figure. */
   off?: boolean;
   models: ModelRow[];
   selected: string | null;
@@ -1906,7 +1946,7 @@ function ModelMix({
         ))}
       </div>
       <p className="text-[10.5px] text-faint">
-        Tokens and recorded spend per model{unpriced ? `; ${unpricedLine(unpriced)}, shown as no cost rather than $0` : ""}.
+        Tokens and recorded spend per model{unpriced ? `; ${unpricedLine(unpriced)}, counted apart beside each sum rather than as $0` : ""}.
       </p>
       <div className="flex flex-col">
         {models.map((m) => (
@@ -1922,7 +1962,7 @@ function ModelMix({
             <span className="size-1.5 shrink-0 rounded-[2px] bg-run" />
             <span className="min-w-0 grow truncate font-mono text-[11px] text-fg">{m.model}</span>
             <span className="tnum shrink-0 text-[10.5px] text-dim">{fmtTokens(m.tokens)}</span>
-            <span className="tnum w-14 shrink-0 text-right text-[10.5px] text-mist">{fmtCost(m.cost)}</span>
+            <span className={`tnum min-w-14 shrink-0 text-right text-[10.5px] ${m.unpricedCalls ? "text-warn" : "text-mist"}`}>{partialCost(m.cost, m.unpricedCalls)}</span>
           </button>
         ))}
       </div>
@@ -1956,9 +1996,11 @@ function Drawer({
   // The trace loads beside the drill rather than inside it: renderDrill is a
   // pure function of what is already known, and a waterfall needs a fetch.
   const runInView = drill.kind === "run" ? drill.id : drill.kind === "span" ? drill.run : null;
-  const { trace, state: traceState } = useTrace(runInView);
+  const { trace, state: traceState, failure: traceAnswer } = useTrace(runInView);
+  // Why the trace was not read, in the platform's words: a failed read is never "no journal".
+  const traceFailure = !traceAnswer ? "" : traceAnswer.state === "pending" ? `not built: ${traceAnswer.door.method} ${traceAnswer.door.path}` : traceAnswer.state === "error" ? traceAnswer.message : "";
   const refusals = useRefusals(drill.kind === "kpi" && drill.which === "denials", data.window);
-  const { title, body } = renderDrill(drill, data, onOpen, onKill, killing, trace, traceState, refusals, onAnswer);
+  const { title, body } = renderDrill(drill, data, onOpen, onKill, killing, trace, traceState, refusals, onAnswer, traceFailure);
   return (
     // A modal over the room: the backdrop is a click target — empty space
     // closes the drill-down, Esc steps back one level.
@@ -2061,6 +2103,7 @@ function renderDrill(
   traceState: "idle" | "loading" | "failed",
   refusals: { rows: Refusal[]; total: number; error: string } | null,
   onAnswer: (runId: string) => void,
+  traceFailure = "",
 ): { title: string; body: React.ReactNode } {
   const runs = data.runs;
 
@@ -2146,7 +2189,7 @@ function renderDrill(
                   <span className="size-1.5 shrink-0 rounded-[2px] bg-run" />
                   <span className="min-w-0 grow truncate font-mono text-[10.5px] text-mist">{b.model}</span>
                   <span className="tnum text-[10.5px] text-dim">{fmtTokens(b.in + b.out)}</span>
-                  <span className="tnum w-14 text-right text-[10.5px] text-mist">{fmtCost(b.cost)}</span>
+                  <span className={`tnum min-w-14 text-right text-[10.5px] ${b.unpricedCalls ? "text-warn" : "text-mist"}`}>{partialCost(b.cost, b.unpricedCalls)}</span>
                 </div>
               ))}
             </div>
@@ -2159,7 +2202,7 @@ function renderDrill(
                 {traceState === "loading"
                   ? "reading the journal…"
                   : traceState === "failed"
-                    ? "no journal for this run"
+                    ? `the trace could not be read${traceFailure ? `: ${traceFailure}` : ""}`
                     : "click a span"}
               </span>
             </div>
@@ -2192,12 +2235,13 @@ function renderDrill(
     const a = data.agents.find((x) => x.id === drill.id);
     if (!a) return { title: "Agent", body: null };
     const mine = runs.filter((r) => r.system === a.id);
-    const costByModel = new Map<string, { tokens: number; cost: number | null }>();
+    const costByModel = new Map<string, { tokens: number; cost: number | null; unpriced: number }>();
     for (const r of mine) {
       for (const b of r.byModel) {
-        const agg = costByModel.get(b.model) ?? { tokens: 0, cost: 0 };
+        const agg = costByModel.get(b.model) ?? { tokens: 0, cost: 0, unpriced: 0 };
         agg.tokens += b.in + b.out;
         agg.cost = agg.cost === null || b.cost === null ? null : agg.cost + b.cost;
+        agg.unpriced += b.unpricedCalls;
         costByModel.set(b.model, agg);
       }
     }
@@ -2225,7 +2269,7 @@ function renderDrill(
           <Fact k="Runs" v={`${a.runs7d} in ${data.window} · ${a.runsTotal} total`} />
           {a.unpriced7d > 0 && <Fact k={`Calls with no price · ${data.window}`} v={String(a.unpriced7d)} tone="text-warn" />}
           <Fact k={`Avg time · ${data.window}`} v={fmtMs(a.avgMs7d)} />
-          <Fact k={`Spend · ${data.window}`} v={fmtCost(a.cost7d)} />
+          <Fact k={`Spend · ${data.window}`} v={partialCost(a.cost7d, a.unpriced7d)} tone={a.unpriced7d ? "text-warn" : undefined} />
           {a.pending > 0 && <Fact k="Awaiting approval" v={String(a.pending)} tone="text-warn" />}
 
           {a.evals === null && <Fact k="Benchmark" v="Not built" />}
@@ -2253,7 +2297,7 @@ function renderDrill(
                   <span className="size-1.5 shrink-0 rounded-[2px] bg-run" />
                   <span className="min-w-0 grow truncate font-mono text-[10.5px] text-mist">{m}</span>
                   <span className="tnum text-[10.5px] text-dim">{fmtTokens(agg.tokens)}</span>
-                  <span className="tnum w-14 text-right text-[10.5px] text-mist">{fmtCost(agg.cost)}</span>
+                  <span className={`tnum min-w-14 text-right text-[10.5px] ${agg.unpriced ? "text-warn" : "text-mist"}`}>{partialCost(agg.cost, agg.unpriced)}</span>
                 </div>
               ))}
             </div>
@@ -2294,7 +2338,7 @@ function renderDrill(
       body: (
         <div className="flex flex-col">
           <Fact k="Runs" v={String(d?.runs ?? 0)} />
-          <Fact k="Cost" v={fmtCost(d?.cost ?? null)} />
+          <Fact k="Cost" v={d ? partialCost(d.cost, d.unpricedCalls) : "—"} tone={d?.unpricedCalls ? "text-warn" : undefined} />
           {(d?.denials ?? 0) > 0 && <Fact k="Denials" v={String(d!.denials)} tone="text-warn" />}
           {(d?.kills ?? 0) > 0 && <Fact k="Kills" v={String(d!.kills)} tone="text-err" />}
           <Fact k="Avg time" v={fmtMs(d?.avgMs ?? null)} />
@@ -2311,9 +2355,8 @@ function renderDrill(
       title: drill.id,
       body: (
         <div className="flex flex-col">
-          <Fact k="Where it runs" v="the deployment's model endpoint" />
           <Fact k={`Tokens · ${data.window}`} v={m ? `${fmtTokens(m.in)} in · ${fmtTokens(m.out)} out` : "—"} />
-          <Fact k={`Cost · ${data.window}`} v={fmtCost(m?.cost ?? null)} />
+          <Fact k={`Cost · ${data.window}`} v={m ? partialCost(m.cost, m.unpricedCalls) : "—"} tone={m?.unpricedCalls ? "text-warn" : undefined} />
           {(m?.unpricedCalls ?? 0) > 0 && <Fact k="Calls with no price" v={String(m!.unpricedCalls)} tone="text-warn" />}
           <Fact k="Runs that used it" v={String(m?.runs ?? modelRuns.length)} />
           <p className="px-4 pt-3 pb-1 text-[11px] font-semibold text-dim">Runs</p>
@@ -2402,8 +2445,8 @@ function renderDrill(
                 <div key={m.model} className="mt-1.5 flex items-center gap-2">
                   <span className="size-1.5 shrink-0 rounded-[2px] bg-run" />
                   <span className="min-w-0 grow truncate font-mono text-[10.5px] text-mist">{m.model}</span>
-                  {m.unpricedCalls > 0 && <span className="text-[10px] text-warn">{unpricedLine(m.unpricedCalls)}</span>}
-                  <span className="tnum w-14 text-right text-[10.5px] text-mist">{fmtCost(m.cost)}</span>
+                  {m.unpricedCalls > 0 && <span className="text-[10px] text-warn">{unpricedLine(m.unpricedCalls)}, not in the sum</span>}
+                  <span className="tnum w-14 text-right text-[10.5px] text-mist">{m.cost === null && m.unpricedCalls ? "no price set" : fmtCost(m.cost)}</span>
                 </div>
               ))}
             </div>
@@ -2523,7 +2566,10 @@ function renderDrill(
 
 interface Corner {
   model: string;
+  /** null when no call was priced, or when any was not: a sum that leaves calls out is no cost per run, and never "cheapest". */
   costPerRun: number | null;
+  /** Calls on this model with no price set in the window. */
+  unpricedCalls: number;
   avgMs: number | null;
   passRate: number | null;
   evalCases: number;
@@ -2555,7 +2601,8 @@ function cornersOf(models: ModelRow[], runs: RunRow[], agents: AgentRow[]): Corn
     return {
       model: m.model,
       runs: m.runs,
-      costPerRun: m.cost === null ? null : m.cost / Math.max(1, m.runs),
+      costPerRun: m.cost === null || m.unpricedCalls > 0 ? null : m.cost / Math.max(1, m.runs),
+      unpricedCalls: m.unpricedCalls,
       avgMs: used.length ? used.reduce((s, r) => s + r.ms, 0) / used.length : null,
       passRate: total ? evals.reduce((s, e) => s + e.passed, 0) / total : null,
       evalCases: total,
@@ -2591,7 +2638,7 @@ function TradeoffTriangle({
   onPick,
   off = false,
 }: {
-  /** A quiet console with nothing on record: the key stays, and nothing is said about model calls that were not read. */
+  /** The estate was not read: the key stays, and nothing is said about model calls that were not read. */
   off?: boolean;
   models: ModelRow[];
   runs: RunRow[];
@@ -2652,7 +2699,7 @@ function TradeoffTriangle({
               {ranked.map((c) => (
                 <tr key={c.model} className="border-t border-line text-dim">
                   <td className="px-3 py-1.5 font-mono text-[10.5px] text-fg">{c.model}</td>
-                  <td className="px-2 py-1.5 text-right">{fmtCost(c.costPerRun)}</td>
+                  <td className={`px-2 py-1.5 text-right ${c.unpricedCalls ? "text-warn" : ""}`}>{c.unpricedCalls ? `not known: ${c.unpricedCalls} unpriced` : fmtCost(c.costPerRun)}</td>
                   <td className="px-2 py-1.5 text-right">
                     {c.passRate === null ? noEvals : `${Math.round(c.passRate * 100)}% · ${c.evalCases}`}
                   </td>
@@ -2700,7 +2747,7 @@ function TradeoffTriangle({
               const isSel = selected === c.model;
               const rows = [
                 { k: "Accuracy", v: c.passRate === null ? noEvals : `${Math.round(c.passRate * 100)}%`, s: c.score.accuracy, sub: c.passRate === null ? "" : `${c.evalCases} cases` },
-                { k: "Cost", v: fmtCost(c.costPerRun), s: c.score.cost, sub: "per run" },
+                { k: "Cost", v: c.unpricedCalls ? "not known" : fmtCost(c.costPerRun), s: c.score.cost, sub: c.unpricedCalls ? `${c.unpricedCalls} calls with no price` : "per run" },
                 { k: "Time", v: fmtMs(c.avgMs), s: c.score.time, sub: c.avgMs === null ? "" : "avg run" },
               ];
               return (

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { Button, Mono, Tag } from "./ui";
+import { BlockBoundary } from "./block-boundary";
 import { readWords, type Answer, type BarsBlock, type Block, type BlockFormat, type BlockSource, type ChartBlock, type Origin, type StepsBlock, type TableBlock, type TilesBlock, type Value } from "@/lib/answer-blocks";
 
 /**
@@ -377,7 +378,9 @@ export function AnswerBlocks({ answer, origin, onSend, onNavigate, busy = false,
         </p>
       )}
       {answer.blocks.map((b, i) => (
-        <BlockView key={i} b={b} origin={origin} onSend={onSend} onNavigate={onNavigate} busy={busy} />
+        <BlockBoundary key={i} what={`The ${b.type} block`}>
+          <BlockView b={b} origin={origin} onSend={onSend} onNavigate={onNavigate} busy={busy} />
+        </BlockBoundary>
       ))}
       {answer.refused.map((r, i) => (
         <div key={`refused-${i}`} role="alert" data-refused={r.block} className="relative overflow-hidden rounded-md border border-err-line bg-surface py-1.5 pr-3 pl-4 text-[11.5px] leading-[1.5]">

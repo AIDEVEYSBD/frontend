@@ -249,6 +249,8 @@ function EvidencePage() {
   const [catalogue, setCatalogue] = useState<ControlsCatalogue | null>(null);
   const [frameworkList, setFrameworkList] = useState<FrameworkInfo[] | null>(null);
   const [agents, setAgents] = useState<AgentSummary[]>([]);
+  /** Why the agents were not read: the agent picker says so, never offering an empty list as the estate's. */
+  const [agentsError, setAgentsError] = useState("");
   const [form, setForm] = useState<PackForm>(() => ({ ...EMPTY_PACK_FORM, control: params.get("control") ?? "", framework: params.get("framework") ?? "", agent: params.get("agent") ?? "" }));
   const [pack, setPack] = useState<EvidencePack | null>(null);
   const [busy, setBusy] = useState(false);
@@ -280,8 +282,14 @@ function EvidencePage() {
       .then(setFrameworkList)
       .catch((e) => setLoadError((e as Error).message));
     listAgents()
-      .then(setAgents)
-      .catch(() => setAgents([]));
+      .then((a) => {
+        setAgents(a);
+        setAgentsError("");
+      })
+      .catch((e) => {
+        setAgents([]);
+        setAgentsError((e as Error).message);
+      });
   }, []);
   // A link names what it wants: read it once.
   useEffect(() => {
@@ -334,7 +342,7 @@ function EvidencePage() {
           <Field label="To" hint="the default is now">
             <Input type="datetime-local" value={form.to} onChange={(v) => edit({ to: v })} />
           </Field>
-          <Field label="Agent">
+          <Field label="Agent" error={agentsError ? `the agents could not be read, so none can be picked: ${agentsError}` : undefined}>
             <Pick value={form.agent} onChange={(v) => edit({ agent: v })} options={[{ value: "", label: "The whole estate" }, ...agents.map((a) => ({ value: a.id, label: a.name }))]} />
           </Field>
         </div>

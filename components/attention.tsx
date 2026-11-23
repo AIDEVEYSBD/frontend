@@ -180,6 +180,8 @@ export function useAttention(active = true, everyMs = 5000) {
   const [notBuilt, setNotBuilt] = useState<string[]>([]);
   const [truncated, setTruncated] = useState(false);
   const [error, setError] = useState("");
+  /** When the queue last answered: once reads fail, the list shown is as it answered then, and says so. */
+  const [readAt, setReadAt] = useState(0);
   const load = useCallback(() => {
     readAttention()
       .then((list) => {
@@ -187,6 +189,7 @@ export function useAttention(active = true, everyMs = 5000) {
         setNotBuilt(list.not_built);
         setTruncated(list.truncated);
         setError("");
+        setReadAt(Date.now());
       })
       .catch((e) => {
         setItems((cur) => cur ?? []);
@@ -202,7 +205,7 @@ export function useAttention(active = true, everyMs = 5000) {
       clearInterval(id);
     };
   }, [active, everyMs, load]);
-  return { items, notBuilt, truncated, error, reload: load };
+  return { items, notBuilt, truncated, error, readAt, reload: load };
 }
 
 export function AttentionPanel({
@@ -219,7 +222,7 @@ export function AttentionPanel({
   onLockdown?: () => void;
 }) {
   const router = useRouter();
-  const { items, notBuilt, truncated, error, reload } = useAttention();
+  const { items, notBuilt, truncated, error, readAt, reload } = useAttention();
   const now = useNow();
   const [busy, setBusy] = useState<string | null>(null);
   /* What a re-read port answered, by row: kept under the row until the row clears. */
@@ -466,12 +469,19 @@ export function AttentionPanel({
           </span>
         )}
         <span className="truncate text-[11px] text-faint">
-          {off ? "" : items === null ? "reading the queue…" : items.length ? `${items.length} thing${items.length === 1 ? "" : "s"} need a person · ranked by severity, then age` : "nothing it raises needs a person"}
+          {off ? "" : items === null ? "reading the queue…" : error ? `as it last answered · ${items.length} thing${items.length === 1 ? "" : "s"}` : items.length ? `${items.length} thing${items.length === 1 ? "" : "s"} need a person · ranked by severity, then age` : "nothing it raises needs a person"}
         </span>
         <span className="grow" />
         <Mono className="text-[10px] text-ghost">{error ? "" : "every 5 s"}</Mono>
       </div>
       {off && <Failure className="m-3" what="The attention queue could not be read" message={error} />}
+      {error && !off && (
+        <Failure
+          className="m-3"
+          what={`The attention queue stopped answering; the list below is as it last answered${readAt ? `, at ${new Date(readAt).toLocaleTimeString("en-GB")}` : ""}, and a new gate or hold does not appear until it answers again`}
+          message={error}
+        />
+      )}
       <div className="max-h-[320px] overflow-y-auto">
         {(items ?? []).map((it, i) => {
           const dl = countdown(it.deadline, now);

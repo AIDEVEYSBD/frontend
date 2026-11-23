@@ -103,9 +103,12 @@ export function certifyAccess(who: Reviewer | null, authors: readonly string[], 
   const mine = authors.find((a) => samePerson(a, who));
   if (mine) return { ok: false, reason: `you are an author of this template (${mine}): its author may not certify it; another certifier signs` };
   if (isPlatformAdmin(who.appRoles)) return { ok: true, reason: "" };
+  // The platform names the roles that may certify as one comma-separated line; with none named, the platform decides on the press.
+  const roles = role.split(",").map((r) => r.trim()).filter(Boolean);
+  if (!roles.length) return { ok: true, reason: "" };
   const held = new Set([...(who.roles ?? []), ...(who.appRoles ?? []), ...(who.groups ?? [])]);
-  if (held.has(role)) return { ok: true, reason: "" };
-  return { ok: false, reason: `certifying a template needs the "${role}" role (or an administrator); yours: ${[...held].join(", ") || "none"}` };
+  if (roles.some((r) => held.has(r))) return { ok: true, reason: "" };
+  return { ok: false, reason: `certifying a template needs one of these roles: ${roles.join(", ")} (or an administrator); yours: ${[...held].join(", ") || "none"}` };
 }
 
 /** A refusal of the templates door or of a cut, in a person's words. */

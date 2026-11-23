@@ -155,7 +155,7 @@ describe("who may answer", () => {
   });
 
   it("a batch must be one agent, one shape, and every gate the person's to answer", () => {
-    const base = gateOf({ run: "r-1", agent: "aegis", node: "gate", shape: "decision", approvers: ["tprm-lead"] });
+    const base = gateOf({ run: "r-1", agent: "harbor", node: "gate", shape: "decision", approvers: ["tprm-lead"] });
     const two = gateOf({ ...base, run: "r-2" });
     const who = { roles: ["tprm-lead"], appRoles: ["operator"] };
     expect(batchable([base], who).ok).toBe(false);
@@ -168,7 +168,7 @@ describe("who may answer", () => {
 
 describe("the gate row, normalised", () => {
   it("defaults every field a form could trip on, and reads the shape from the interface's answer block too", () => {
-    const g: Gate = gateOf({ run: "r-1", agent: "aegis", node: "n", answer: { shape: "verdicts", verdicts: ["a", "b"], register: "gaps" }, items: [{ id: "x", severity: "high", verdict: "a" }, "bare"] });
+    const g: Gate = gateOf({ run: "r-1", agent: "harbor", node: "n", answer: { shape: "verdicts", verdicts: ["a", "b"], register: "gaps" }, items: [{ id: "x", severity: "high", verdict: "a" }, "bare"] });
     expect(g.shape).toBe("verdicts");
     expect(g.verdicts).toEqual(["a", "b"]);
     expect(g.register).toBe("gaps");
@@ -203,9 +203,9 @@ describe("the gate row, normalised", () => {
   });
 
   it("a live run's suspension makes a gate the theater can answer", () => {
-    const g = gateFromSuspension("run-9", "aegis", { node: "approve", approvers: ["tprm-lead"], prompt: "Escalate?", deadline: "2026-10-21T12:00:00Z", shape: "decision" });
+    const g = gateFromSuspension("run-9", "harbor", { node: "approve", approvers: ["tprm-lead"], prompt: "Escalate?", deadline: "2026-10-21T12:00:00Z", shape: "decision" });
     expect(g.run).toBe("run-9");
-    expect(g.agent).toBe("aegis");
+    expect(g.agent).toBe("harbor");
     expect(g.asks).toBe("Escalate?");
     expect(g.approvers).toEqual(["tprm-lead"]);
     expect(g.deadline).toBe("2026-10-21T12:00:00Z");

@@ -1,24 +1,12 @@
-# The console on its own, on GKE, behind Google IAP.
+# The console on GKE, behind Google IAP, in front of the platform's service.
 # Replace every value in CAPITALS. deploy/console/README.md explains each.
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: agentfactory-console
-  namespace: NAMESPACE
-  annotations:
-    # Workload Identity: the Google service account the console acts as when it lists Vertex AI's models.
-    iam.gke.io/gcp-service-account: CONSOLE_GSA@PROJECT_ID.iam.gserviceaccount.com
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: agentfactory-console
-  namespace: NAMESPACE
-type: Opaque
-stringData:
-  # Signs the console's session cookie. Any long random value: openssl rand -hex 32
-  AUTH_SECRET: REPLACE_WITH_RANDOM
----
+#
+# The console keeps no secret and calls no Google API: it serves the pages and
+# forwards every /api request to BACKEND_ORIGIN. IAP is on this console's
+# backend service (BackendConfig below), and the platform's service verifies
+# IAP's assertion on every request against its own IAP_AUDIENCE, which is
+# this backend service's audience:
+#   /projects/PROJECT_NUMBER/global/backendServices/BACKEND_SERVICE_ID
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -32,24 +20,15 @@ spec:
     metadata:
       labels: {app: agentfactory-console}
     spec:
-      serviceAccountName: agentfactory-console
       containers:
         - name: console
           image: IMAGE
           ports:
             - {name: http, containerPort: 8080}
           env:
-            - name: AUTH_SECRET
-              valueFrom: {secretKeyRef: {name: agentfactory-console, key: AUTH_SECRET}}
-            # Switches IAP sign-in on. Filled in after the first deploy (README, step 4):
-            # /projects/PROJECT_NUMBER/global/backendServices/BACKEND_SERVICE_ID
-            - {name: IAP_AUDIENCE, value: "IAP_AUDIENCE"}
-            # Who holds which role (platform_admin or auditor). A key is an address or "@domain"; anyone not named has no access.
-            - name: IAP_ROLE_MAP
-              value: '{"ADMIN@EXAMPLE.COM": "platform_admin", "AUDITOR@EXAMPLE.COM": "auditor"}'
-            # Only when the pod cannot work them out itself (it asks the metadata server first).
-            # - {name: GCP_PROJECT, value: PROJECT_ID}
-            # - {name: REGION, value: europe-west4}
+            # The platform's service as this pod reaches it, for example its Service in the cluster.
+            - {name: BACKEND_ORIGIN, value: "http://SERVICE_NAME.SERVICE_NAMESPACE.svc.cluster.local:8080"}
+          # /login is served by the console itself and always answers 200 once BACKEND_ORIGIN is set; without it, 503.
           startupProbe:
             httpGet: {path: /login, port: http}
             periodSeconds: 5

@@ -19,8 +19,9 @@ import { looksLikeRecordId } from "./api/l5";
 
 /* ═══════════════════ figures ═══════════════════ */
 
-/** Dollars, to the precision a run's cost needs: two significant figures under a cent, cents above; `$0` for nothing. */
-export function fmtUsd(n: number): string {
+/** Dollars, to the precision a run's cost needs: two significant figures under a cent, cents above; `$0` for nothing; "no price set" for a cost the backend could not price (null). */
+export function fmtUsd(n: number | null): string {
+  if (n === null) return "no price set";
   if (!Number.isFinite(n) || n === 0) return "$0";
   const a = Math.abs(n);
   if (a < 0.0001) return "<$0.0001";
@@ -35,9 +36,10 @@ export function fmtCount(n: number): string {
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-/** A node's figures in one line: cost, tokens, tool calls, refusals (the last only when there are any). */
-export function figuresLine(f: Figures): string {
-  const parts = [fmtUsd(f.cost), `${fmtCount(f.tokens)} tokens`, plural(f.tool_calls, "tool call")];
+/** A node's figures in one line: cost ("no price set", naming the models, when a call had none), tokens, tool calls, refusals (the last only when there are any). */
+export function figuresLine(f: Figures & { unpriced?: string[] }): string {
+  const cost = f.cost === null && f.unpriced?.length ? `no price set for ${f.unpriced.join(", ")}` : fmtUsd(f.cost);
+  const parts = [cost, `${fmtCount(f.tokens)} tokens`, plural(f.tool_calls, "tool call")];
   if (f.refusals) parts.push(plural(f.refusals, "refusal"));
   return parts.join(" · ");
 }
@@ -52,7 +54,8 @@ export function figuresLine(f: Figures): string {
 export function listedDiffers(n: Pick<TreeNode, "listed" | "cost" | "tokens" | "tool_calls" | "refusals">): boolean {
   const l = n.listed;
   if (!l) return false;
-  return Math.abs(l.cost - n.cost) > 1e-12 || l.tokens !== n.tokens || l.tool_calls !== n.tool_calls || l.refusals !== n.refusals;
+  const costDiffers = l.cost === null || n.cost === null ? l.cost !== n.cost : Math.abs(l.cost - n.cost) > 1e-12;
+  return costDiffers || l.tokens !== n.tokens || l.tool_calls !== n.tool_calls || l.refusals !== n.refusals;
 }
 
 /* ═══════════════════ the outline ═══════════════════ */
@@ -198,11 +201,11 @@ export interface AgentRollupRow extends Figures {
   nodes: number;
 }
 
-/** The rollup by agent, the costliest first (then the most refused, then by name). */
+/** The rollup by agent, the costliest first (a cost with no price set after the priced ones, as its size is not known; then the most refused, then by name). */
 export function byAgentRows(tree: Pick<RunTree, "rollup">): AgentRollupRow[] {
   return Object.entries(tree.rollup.by_agent)
     .map(([key, f]) => ({ key, label: key.startsWith("peer:") ? key.slice(5) : key, peer: key.startsWith("peer:"), ...f }))
-    .sort((a, b) => b.cost - a.cost || b.refusals - a.refusals || a.key.localeCompare(b.key));
+    .sort((a, b) => (b.cost ?? -1) - (a.cost ?? -1) || b.refusals - a.refusals || a.key.localeCompare(b.key));
 }
 
 const LIVE = new Set(["running", "starting", "suspended", "queued"]);

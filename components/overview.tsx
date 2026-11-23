@@ -16,6 +16,7 @@ import {
   fmtMs,
   leaders,
   needsOf,
+  NotIncludedNote,
   plural,
   rankAgents,
   rankPeople,
@@ -154,6 +155,7 @@ function Overview() {
           {gatesError}. The gates below are as it last answered.
         </Banner>
       )}
+      {f && <NotIncludedNote list={f.not_included} />}
       {f && !latest && (
         <p className="rounded-md border border-line bg-surface px-3 py-2 text-[12px] leading-[1.5] text-dim">No agent has run on this deployment yet. The figures and lists below fill in from the first run.</p>
       )}
@@ -246,7 +248,12 @@ function Overview() {
             action={<MeasureSwitch label="Rank people by" value={peopleMeasure} onChange={setPeopleMeasure} options={RUN_MEASURES} />}
             footer={
               <>
-                <FootNote>{people.top.length ? `${people.top.length} of ${plural(people.of, "person", "people")}, keys and services included` : "Who started the runs and made the calls"}</FootNote>
+                <FootNote>
+                  {people.top.length ? `${people.top.length} of ${plural(people.of, "person", "people")}, keys and services included` : "Who started the runs and made the calls"}
+                  {peopleMeasure === "spend" && f && unpricedIn(f.rank.people)
+                    ? ` · ${plural(unpricedIn(f.rank.people), "call")} with no price not counted${f.rank.people.some((p) => p.cost_usd === null) ? `; ${plural(f.rank.people.filter((p) => p.cost_usd === null).length, "person", "people")} with no priced call left out` : ""}`
+                    : ""}
+                </FootNote>
                 <Button size="sm" href="/iam">
                   View all
                 </Button>
@@ -367,7 +374,7 @@ function Overview() {
                         {n.title}
                         {n.agent && <span className="text-faint"> · {n.agent}</span>}
                       </span>
-                      <span className="tnum text-right font-mono text-[11px] text-dim">{fmtAge(n.age)}</span>
+                      <span className="tnum text-right font-mono text-[11px] text-dim">{n.age === null ? "age unknown" : fmtAge(n.age)}</span>
                     </Link>
                   </li>
                 ))}

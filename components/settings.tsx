@@ -26,9 +26,6 @@ import { useDoorOff } from "@/lib/use-doors";
  * Keys: named credentials, referenced from specs as ${secret:name}. Values
  * arrive here and leave masked — the only consumer of a live key is the
  * runtime, at the moment a tool is called.
- *
- * Both take `bare` from the page: true when the console has nothing behind
- * it, null while that is still being read (see Providers).
  */
 
 interface CatalogueModel {
@@ -63,7 +60,7 @@ interface Config {
   }[];
   default_model: string;
   class_defaults?: Partial<Record<ModelClass, string>>;
-  providers?: { id: string; label: string; local?: boolean }[];
+  providers?: { id: string; label: string }[];
 }
 
 /** One credential as the vault lists it: names, labels and dates. Its value is never read here, masked or not. */
@@ -96,8 +93,8 @@ function vaultKeyOf(v: unknown): VaultKey | null {
 
 /* ═══════════════════ Models ═══════════════════ */
 
-/** `onChanged` tells the page a write went through, so its own figures (the facts) are read again. `onQuiet`: see Providers. */
-export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boolean | null; onChanged?: () => void; onQuiet?: (quiet: boolean) => void }) {
+/** `onChanged` tells the page a write went through, so its own figures (the facts) are read again. */
+export function OfferedModels({ onChanged }: { onChanged?: () => void }) {
   const [catalogue, setCatalogue] = useState<CatalogueModel[] | null>(null);
   const [catalogueError, setCatalogueError] = useState("");
   /** Whether the deployment has any model endpoint to list (`connected` in `GET /api/models`). Without one there is nothing to browse, which is not a failed read. */
@@ -107,7 +104,7 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
   /** Per endpoint, why its model list could not be read (`errors` in `GET /api/models`). */
   const [listErrors, setListErrors] = useState<Record<string, string>>({});
   const [config, setConfig] = useState<Config | null>(null);
-  /** The configuration's read failed and an empty one stands in for it. A quiet console (lib/quiet.ts) says not connected instead of "none offered". */
+  /** Why the configuration's read failed, when it did: nothing is counted and nothing is said to be offered or not. */
   const [unread, setUnread] = useState("");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("Name");
@@ -155,10 +152,6 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
 
   const chosen = useMemo(() => new Set((config?.models ?? []).map((m) => m.id)), [config]);
   const none = (config?.models.length ?? 0) === 0;
-  const settled = config !== null || Boolean(unread);
-  useEffect(() => {
-    if (settled) onQuiet?.(false);
-  }, [settled, onQuiet]);
   // A deployment with no endpoint to list is not a fault: the service says none is connected, and the panel says there is nothing to browse.
   const noCatalogue = !connected;
   const providerLabel = useCallback((id?: string) => (config?.providers ?? []).find((p) => p.id === id), [config]);
@@ -260,8 +253,7 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
   };
 
   if (!config && unread) return <PanelFailure title="The offered models could not be read">{unread}</PanelFailure>;
-  // Not known yet whether anything is behind the console: no "none offered" in the meantime.
-  if (catalogue === null || !config || (none && bare === null)) return <p className="px-4 py-3 text-[11.5px] text-faint">Reading the offered models&hellip;</p>;
+  if (catalogue === null || !config) return <p className="px-4 py-3 text-[11.5px] text-faint">Reading the offered models&hellip;</p>;
 
   const chip = "shrink-0 rounded-[3px] border border-line-strong px-1 py-px font-mono text-[9px] font-semibold text-dim uppercase";
 
@@ -319,7 +311,6 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
           const isDefault = config.default_model === m.id;
           // Every tier this model is the router's pick for: its own, and any other tier that names it.
           const defaultFor = MODEL_CLASSES.filter((c) => config.class_defaults?.[c] === m.id);
-          const local = providerLabel(offered?.provider)?.local;
           return (
             <div
               key={m.id}
@@ -336,7 +327,7 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
                     <span className="min-w-0 truncate">{m.label}</span>
                     {m.provider && (
                       <span
-                        className={`shrink-0 rounded-[3px] border px-1 py-px font-mono text-[9px] font-semibold ${providerLabel(m.provider)?.local ? "border-ok/40 text-ok" : "border-line-strong text-dim"}`}
+                        className={`shrink-0 rounded-[3px] border px-1 py-px font-mono text-[9px] font-semibold border-line-strong text-dim`}
                         title={providerLabel(m.provider) ? "The endpoint this model is served by" : "The endpoint this model names is not connected to this deployment"}
                       >
                         {providerLabel(m.provider)?.label ?? m.provider}
@@ -377,7 +368,7 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
                       not listed by its endpoint
                     </span>
                   )}
-                  {on && offered && !local && (offered.price_in == null || offered.price_out == null) && (
+                  {on && offered && (offered.price_in == null || offered.price_out == null) && (
                     <span className="text-[10px] font-medium text-warn" title="With no price set, a run that calls this model shows its cost as not priced, and a cost budget cannot be kept.">
                       not priced
                     </span>
@@ -398,8 +389,7 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
                   </div>
                   {/* Cost per million tokens, recorded by the operator: no endpoint
                       publishes a sheet the console reads. The service keeps no price (null) until one is entered. */}
-                  {local && <span className="text-[10px] text-ok">$0 per token · priced by the hour</span>}
-                  {!local && (["price_in", "price_out"] as const).map((k) => (
+                  {(["price_in", "price_out"] as const).map((k) => (
                     <label key={k} className="flex items-center gap-1 text-[10px] text-faint">
                       <span>{k === "price_in" ? "$/M in" : "$/M out"}</span>
                       <input
@@ -460,7 +450,7 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
 
 /* ═══════════════════ Keys ═══════════════════ */
 
-export function Keys({ bare = false, onChanged, onQuiet }: { bare?: boolean | null; onChanged?: () => void; onQuiet?: (quiet: boolean) => void }) {
+export function Keys({ onChanged }: { onChanged?: () => void }) {
   const [keys, setKeys] = useState<VaultKey[] | null>(null);
   /** The vault did not answer the read: the platform's own reason, a 503 naming the setting it lacks included. */
   const [unread, setUnread] = useState("");
@@ -511,13 +501,8 @@ export function Keys({ bare = false, onChanged, onQuiet }: { bare?: boolean | nu
   };
 
   const none = (keys?.length ?? 0) === 0;
-  const settled = keys !== null || Boolean(unread);
-  useEffect(() => {
-    if (settled) onQuiet?.(false);
-  }, [settled, onQuiet]);
   if (keys === null && unread) return <PanelFailure title="The vault could not be read">{unread}</PanelFailure>;
-  // Not known yet whether anything is behind the console: no "the vault is empty" in the meantime.
-  if (keys === null || (none && bare === null && !adding)) return <p className="px-4 py-3 text-[11.5px] text-faint">Reading the vault&hellip;</p>;
+  if (keys === null) return <p className="px-4 py-3 text-[11.5px] text-faint">Reading the vault&hellip;</p>;
 
   return (
     <>

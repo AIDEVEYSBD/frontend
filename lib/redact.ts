@@ -21,7 +21,7 @@ export const MASK = "••••redacted••••";
 
 /** Shapes a secret takes in text. Each replaces only the secret, keeping the label that names it. */
 const SHAPES: { rx: RegExp; sub: string }[] = [
-  // Factory keys, as lib/server/keys.ts mints them.
+  // Factory keys, as the service mints them (af_ and hex).
   { rx: /\baf_[a-f0-9]{24,}\b/g, sub: MASK },
   // OpenAI-style keys.
   { rx: /\bsk-[A-Za-z0-9_-]{16,}\b/g, sub: MASK },
@@ -38,8 +38,8 @@ function escapeRx(s: string): string {
 }
 
 /**
- * Mask secrets in a string. `live` is the values this process holds
- * (lib/server/redact.ts gathers them); anything shorter than 8 characters
+ * Mask secrets in a string. `live` is the secret values the caller holds,
+ * if any; anything shorter than 8 characters
  * is ignored, as the runtime ignores it, because masking "abc" would eat
  * the text.
  */

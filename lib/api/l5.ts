@@ -7,8 +7,8 @@ import { PUBLIC_ORIGIN } from "../site";
  *
  * The doors are in backend/openapi.json and, since `npm run gen:api` was
  * run for L6, in lib/api/backend.d.ts too; every call here is still a plain
- * fetch against the same origin (proxy.ts forwards the prefixes in
- * lib/route-policy.ts BACKEND_PREFIXES to the backend) and every answer is
+ * fetch against the same origin (proxy.ts forwards every /api request to
+ * the service at BACKEND_ORIGIN) and every answer is
  * read by a mapping function below. Each mapping reads the backend's own models
  * (backend/app/approvals.py PendingGate, links.py, attention.py, fleet.py,
  * schemas.py RunSteered and RunRow); tests/l5-contract.test.ts feeds them

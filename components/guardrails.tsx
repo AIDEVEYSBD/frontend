@@ -6,7 +6,6 @@ import { useEffect, useMemo, useState } from "react";
 import { soon } from "@/lib/soon";
 import { Mono, Status, Tag } from "./ui";
 import { DrillModal } from "./drill";
-import { Donut } from "./charts";
 import { usePageFacts } from "./assistant";
 import { CORE_PRINCIPLE, DOMAINS, EXECUTIVE_TAKEAWAY, GUARDRAILS, SCOPE } from "@/lib/data-guardrails";
 import { CLIENT_RESPONSIBILITIES, CONTROLS, FAMILIES, RESIDUAL_RISK, STANDARDS, type Control } from "@/lib/guardrails";
@@ -149,6 +148,9 @@ export function Guardrails() {
   };
   /** A control's count for a sum: the platform's own figure once GET /api/controls answers (an unknown one adds nothing), else the firing record's. */
   const firedFor = (c: Control): number => (status?.state === "ok" ? (status.byId.get(c.id)?.fired ?? 0) : (fired(c) ?? 0));
+  /** Whether the platform does not know a control's count (`fired: null`, or the control is not in its answer): a sum over it is partial and says so. */
+  const firedUnknown = (c: Control): boolean => status?.state === "ok" && (status.byId.get(c.id)?.fired ?? null) === null;
+  const partial = (n: number, unknown: number) => `${n}${unknown ? ` + ${unknown} not counted` : ""}`;
   const familyTotal = CONTROLS.reduce((a, c) => a + firedFor(c), 0);
   const enforcedCount = status?.state === "ok" ? [...status.byId.values()].filter((x) => x.state === "enforced" && CONTROLS.some((c) => c.id === x.id)).length : 0;
   const totalFired = data ? Object.values(data.counts).reduce((a, b) => a + b, 0) : 0;
@@ -255,11 +257,12 @@ export function Guardrails() {
               <span className="text-[11px] font-medium tracking-[0.06em] text-faint uppercase">Firings by family</span>
               {FAMILIES.map((f) => {
                 const n = CONTROLS.filter((c) => c.family === f.id).reduce((s, c) => s + firedFor(c), 0);
+                const unknown = CONTROLS.filter((c) => c.family === f.id && firedUnknown(c)).length;
                 return (
                   <div key={f.id} className="flex flex-col gap-1">
                     <span className="flex items-baseline justify-between text-[11px]">
                       <span className="flex items-center gap-1.5 text-fg"><span className="size-1.5 rounded-[2px]" style={{ background: FAMILY_COLOR[f.id] }} />{f.name}</span>
-                      <span className="tnum text-faint">{n}</span>
+                      <span className="tnum text-faint" title={unknown ? `${unknown} control${unknown === 1 ? "" : "s"} in this family with a count the platform does not know: the figure is partial` : undefined}>{partial(n, unknown)}</span>
                     </span>
                     <span className="block h-1 w-full overflow-hidden rounded-[2px] bg-sunken">
                       <span className="block h-full rounded-[2px]" style={{ width: `${familyTotal ? (n / familyTotal) * 100 : 0}%`, background: FAMILY_COLOR[f.id] }} />
@@ -318,6 +321,7 @@ export function Guardrails() {
             if (!rows.length) return null;
             const isFolded = folded.has(f.id);
             const firedHere = rows.reduce((a, c) => a + firedFor(c), 0);
+            const unknownHere = rows.filter(firedUnknown).length;
             return (
               <section key={f.id} className="flex flex-col gap-3">
                 <button type="button" onClick={() => toggleFold(f.id)} aria-expanded={!isFolded} className="focusable flex w-full items-baseline gap-3 rounded-md px-1 py-1 text-left hover:bg-raise/40">
@@ -328,7 +332,7 @@ export function Guardrails() {
                   <span className="text-[14px] font-semibold tracking-[-0.005em]">{f.name}</span>
                   <span className="text-[11.5px] text-faint">{f.purpose}</span>
                   <span className="tnum ml-auto shrink-0 text-[11px] text-faint">
-                    {rows.length} control{rows.length === 1 ? "" : "s"}{firedHere ? ` · ${firedHere} fired` : ""}{isFolded ? " · show" : ""}
+                    {rows.length} control{rows.length === 1 ? "" : "s"}{firedHere || unknownHere ? ` · ${partial(firedHere, unknownHere)} fired` : ""}{isFolded ? " · show" : ""}
                   </span>
                 </button>
                 {!isFolded && (
@@ -400,7 +404,9 @@ export function Guardrails() {
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
             <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4 elev-1">
               <span className="text-[11px] font-medium tracking-[0.06em] text-faint uppercase">Who implements what</span>
-              <Donut data={resp} size={110} />
+              <span className="text-[12px] leading-[1.55] text-dim">
+                Only the guardrails the platform carries, in full or in part, are listed here: {resp[0].value} given to the platform and {resp[1].value} shared. The framework&rsquo;s guardrails the platform has no control for (encryption at rest, retention, incident response and the like) are left out of this list and held by the deploying organisation, so nothing below is a measure of coverage.
+              </span>
               <span className="text-[11px] leading-[1.5] text-faint">
                 Each guardrail names the catalogue controls meant to carry it. Platform means the catalogue gives it to the platform in full; shared means the platform does its part and the deployment completes it.{" "}
                 {fromControls ? "Whether each of those controls is enforced on this deployment now is on the control's card in the catalogue." : "Whether this deployment enforces those controls is not reported (GET /api/controls)."}
@@ -450,12 +456,8 @@ export function Guardrails() {
                   <span className="text-[13px] font-semibold tracking-[-0.005em]">{d}</span>
                   <span className="text-[11.5px] text-faint">{rows.length} guardrails</span>
                   <span className="grow" />
-                  <span className="flex w-44 items-center gap-2">
-                    <span className="flex h-1.5 grow overflow-hidden rounded-full bg-sunken">
-                      <span className="h-full" style={{ width: `${(p / rows.length) * 100}%`, background: RESP_COLOR.platform }} />
-                      <span className="h-full" style={{ width: `${(sh / rows.length) * 100}%`, background: RESP_COLOR.shared }} />
-                    </span>
-                    <span className="tnum shrink-0 text-[10px] text-faint">{p + sh}/{rows.length}</span>
+                  <span className="tnum shrink-0 text-[10.5px] text-faint">
+                    {p} platform · {sh} shared
                   </span>
                   {isFolded && <span className="text-[10.5px] text-ghost">show</span>}
                 </button>

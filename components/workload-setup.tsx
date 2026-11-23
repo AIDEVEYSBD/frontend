@@ -278,8 +278,8 @@ export function WorkloadSetup({
         {step === "limits" && (
           <Card title="Limits" hue="budget" meta={reading.agent ? "the agent's own" : undefined}>
             <p className="max-w-[86ch] text-[12.5px] leading-[1.6] text-dim">
-              A run of this workload is held to the budget and the bounds of the agent that runs it. They are set on the agent, not here, and they apply to every run it makes. A run that reaches one stops, and its journal
-              names which.
+              A run of this workload is held to the budget and the bounds of the agent that runs it. They are set on the agent, not here, and they apply to every run it makes. A run that reaches its cost budget pauses for a
+              person to decide; a run that reaches another bound stops. Its journal names which.
             </p>
             {reading.agent ? (
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-line bg-canvas px-3 py-2.5">

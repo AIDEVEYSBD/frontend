@@ -1,12 +1,8 @@
 /**
- * Roles are names the SSO issues; permissions are what this platform lets a
- * role do. The mapping lives here and nowhere else, so a role renamed in the
- * identity provider is a one-line change, and so the IAM page can show the
- * mapping as the single source of what a role means on this deployment.
- *
- * The SSO guide's rule that shapes this file: read `autox:app_roles` from the
- * JWT access token for every request, map through this table, and never keep
- * the verdict longer than that token lives.
+ * The permissions the platform's service grants, by name, with what each
+ * lets a person do. The service decides who holds which (its role map, read
+ * on every request) and answers each person's permissions on the session;
+ * the console only names them and greys out what a person may not do.
  */
 
 export const PERMISSIONS = ["view", "identity", "run", "approve", "deploy", "configure", "iam"] as const;
@@ -23,36 +19,6 @@ export const PERMISSION_META: Record<Permission, string> = {
 };
 
 /**
- * The roles of this console, as the GUI access matrix names them.
- *
- *   platform_admin     every screen, and every action the matrix gives the
- *                      role: write, execute and second-person approval
- *   auditor            reads every screen, the identity register and the
- *                      audit trail included, and changes nothing
- *   use_case_reviewer  no access to this console; they work in the
- *   analyst            workloads' own consoles
- *
- * The matrix gives one admin role different letters per screen (R, W, E, H).
- * Those say which actions a screen has, not different admins: every action
- * here already asks for the permission it needs, so an auditor sees each one
- * disabled with the reason. `administrator` is the same role under the name
- * it had before the matrix; `operator` and `viewer` are not in the matrix and
- * are kept only so a deployment that already names them keeps working.
- */
-export const ROLE_PERMISSIONS: Record<string, readonly Permission[]> = {
-  platform_admin: ["view", "identity", "run", "approve", "deploy", "configure", "iam"],
-  administrator: ["view", "identity", "run", "approve", "deploy", "configure", "iam"],
-  auditor: ["view", "identity"],
-  use_case_reviewer: [],
-  analyst: [],
-  operator: ["view", "run", "approve"],
-  viewer: ["view"],
-  // Read-only roles under the names the identity administrator gave them for this client.
-  npr_viewer: ["view"],
-  af_viewer: ["view"],
-};
-
-/**
  * Whether a person holds the role that may do everything: answer any gate
  * that is not their own, review, override. One place, so a check elsewhere
  * never names a role itself.
@@ -60,6 +26,19 @@ export const ROLE_PERMISSIONS: Record<string, readonly Permission[]> = {
 export function isPlatformAdmin(appRoles: readonly string[] | undefined | null): boolean {
   return Boolean(appRoles?.some((r) => r === "platform_admin" || r === "administrator"));
 }
+
+/**
+ * The roles of this console, as the GUI access matrix names them. Which
+ * permissions each carries is the service's (identity/roles.py), answered on
+ * the session and on the IAM page; the console holds no copy.
+ *
+ *   platform_admin     every screen, and every action the matrix gives the
+ *                      role: write, execute and second-person approval
+ *   auditor            reads every screen, the identity register and the
+ *                      audit trail included, and changes nothing
+ *   use_case_reviewer  no access to this console; they work in the
+ *   analyst            workloads' own consoles
+ */
 
 /** A role as a person reads it. */
 export const ROLE_LABEL: Record<string, string> = {
@@ -72,20 +51,3 @@ export const ROLE_LABEL: Record<string, string> = {
   viewer: "Viewer",
 };
 export const roleLabel = (role: string): string => ROLE_LABEL[role] ?? role;
-
-/**
- * The permissions a set of app roles grants. `defaultRole` is the role applied
- * when a signed-in user carries no app roles at all. This console names none
- * (lib/server/auth.ts defaultRole), so a person nobody has given a role holds
- * no permission and cannot open it.
- */
-export function permissionsFor(appRoles: readonly string[], defaultRole = ""): Permission[] {
-  const roles = appRoles.length ? appRoles : defaultRole ? [defaultRole] : [];
-  const out = new Set<Permission>();
-  for (const r of roles) for (const p of ROLE_PERMISSIONS[r] ?? []) out.add(p);
-  return PERMISSIONS.filter((p) => out.has(p));
-}
-
-export function can(permissions: readonly Permission[], needed: Permission): boolean {
-  return permissions.includes(needed);
-}

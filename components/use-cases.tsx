@@ -22,10 +22,8 @@ import { WORKLOADS, ask, type Answer, type Door, type UseCase, type UseCaseChang
  * nobody answers (it escalates or stops; it never proceeds). It is
  * registered as a draft, sent for approval, and approved.
  *
- * The section is ahead of its doors (`useCases`, `useCaseRegister`,
- * `useCase` in lib/api/pending.ts). Where the page above is already saying
- * nothing is connected (`calm`), it keeps to its heading and one line. No
- * row is ever made up.
+ * Its doors are `useCases`, `useCaseRegister` and `useCase` in
+ * lib/api/pending.ts. No row is ever made up.
  */
 
 type Notice = { tone: "ok" | "err"; text: string } | { door: Door };
@@ -263,7 +261,7 @@ export function UseCases({ workloads, calm }: { /** The workloads door's answer,
           {moving.to === "approved"
             ? recordOnly
               ? "The approval is recorded with your name. The use case is a record of what was agreed: runs are not yet held to its owner, data classes, autonomy level or gates."
-              : "The approval is recorded with your name. Runs of its workload may then start, and a dataset above its highest data class is refused. Its gates and autonomy level are recorded, not yet checked against runs."
+              : "The approval is recorded with your name. Runs of its workload may then start, and a dataset above its highest data class is refused. At each production deploy of the agent that runs it, the agent is held to the controls its autonomy level requires and needs an approval step for each of its gates (the gate's approver role, within its timeout); a gate's threshold, what happens on timeout and whom it escalates to are recorded and not checked."
             : recordOnly
               ? "It moves from draft to awaiting approval, and a person with the approve permission decides. It stays as registered until then."
               : "It moves from draft to awaiting approval, and a person with the approve permission decides. Until it is approved, a run of its workload is refused."}

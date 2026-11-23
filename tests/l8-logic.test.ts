@@ -1,6 +1,4 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { REGISTRY_SCHEMA } from "@/lib/server/db";
-import { DELETE_CONSOLE_HISTORY, LATEST_DONE_PER_SET, SET_HISTORY } from "@/lib/server/eval-sql";
 import * as l5 from "@/lib/api/l5";
 import * as l8 from "@/lib/api/l8";
 import { reachedOf } from "@/lib/api/l7";
@@ -32,10 +30,9 @@ import {
   stageLabel,
   whenText,
 } from "@/lib/lifecycle";
-import { historyRowOf, isBackendRow, lastComparison, liveOf, mergeHistory, rowStateText, settleOf, thresholdText, throttleOf, type HistoryRow } from "@/lib/evals";
+import { historyRowOf, isBackendRow, lastComparison, liveOf, mergeHistory, rowStateText, settleOf, thresholdText, throttleOf, unfinishedComparison, type HistoryRow } from "@/lib/evals";
 import { JOB_STATUS_META, jobLine, taintLine, taintOf } from "@/lib/queue";
 import { driftBenchmarkOf, overrideOfAttention, pauseOf, redirectGuidanceOf, rollbackOfAttention } from "@/lib/gates";
-import { mayText, outcomeText } from "@/lib/guardian";
 import { answerOf, peerCancelLine, peerTaskLine, reachedStateText } from "@/lib/run-tree";
 import { benchmarkEvalLine, driftVerdict } from "@/lib/drift";
 
@@ -43,8 +40,8 @@ import { benchmarkEvalLine, driftVerdict } from "@/lib/drift";
  * What the console decides about the L8 shapes on its own (phase L8, first
  * round), held without a browser and without a backend: the spine, the
  * gate's override, a review's access, rollback targets, retirement, drafts,
- * the eval page's readings of the backend's runner, the console's eval SQL
- * on the shared table, the L8 attention levers, the guardian's redirect,
+ * the eval page's readings of the backend's runner, the L8 attention
+ * levers, a guardian note in the journal,
  * a job's taint and a peer's answer to a cancel. tests/l8-contract.test.ts
  * holds the same functions against the backend's captured answers.
  */
@@ -112,24 +109,24 @@ describe("the gate's override", () => {
 
 describe("reviews", () => {
   const versions = [
-    { version: 1, digest: "d1", saved_by: "Ada <ada@ey.com>" },
-    { version: 2, digest: "d2", saved_by: "Bo <bo@ey.com>" },
-    { version: 3, digest: "d1", saved_by: "Cy <cy@ey.com>" },
-    { version: 4, digest: "d1", saved_by: "Ada <ada@ey.com>" },
+    { version: 1, digest: "d1", saved_by: "Ada <ada@example.com>" },
+    { version: 2, digest: "d2", saved_by: "Bo <bo@example.com>" },
+    { version: 3, digest: "d1", saved_by: "Cy <cy@example.com>" },
+    { version: 4, digest: "d1", saved_by: "Ada <ada@example.com>" },
   ];
 
   it("the authors of a digest: everyone who saved a version carrying it, once each", () => {
-    expect(authorsOf(versions, "d1")).toEqual(["Ada <ada@ey.com>", "Cy <cy@ey.com>"]);
+    expect(authorsOf(versions, "d1")).toEqual(["Ada <ada@example.com>", "Cy <cy@example.com>"]);
     expect(authorsOf(versions, "d9")).toEqual([]);
   });
 
   it("separation of duties first, administrator or not; then the role, from any of the claims the backend reads", () => {
     const authors = authorsOf(versions, "d1");
-    expect(reviewAccess({ name: "Cy", email: "cy@ey.com", appRoles: ["administrator"] }, authors, "policy-reviewer").ok).toBe(false);
-    expect(reviewAccess({ name: "Bo", email: "bo@ey.com", appRoles: ["administrator"] }, authors, "policy-reviewer").ok).toBe(true);
-    expect(reviewAccess({ name: "Bo", email: "bo@ey.com", roles: ["risk-board"] }, authors, "risk-board").ok).toBe(true);
-    expect(reviewAccess({ name: "Bo", email: "bo@ey.com", appRoles: ["policy-reviewer"] }, authors, "policy-reviewer").ok).toBe(true);
-    expect(reviewAccess({ name: "Bo", email: "bo@ey.com" }, authors, "policy-reviewer")).toEqual({ ok: false, reason: 'a policy review needs the "policy-reviewer" role (or an administrator); yours: none' });
+    expect(reviewAccess({ name: "Cy", email: "cy@example.com", appRoles: ["administrator"] }, authors, "policy-reviewer").ok).toBe(false);
+    expect(reviewAccess({ name: "Bo", email: "bo@example.com", appRoles: ["administrator"] }, authors, "policy-reviewer").ok).toBe(true);
+    expect(reviewAccess({ name: "Bo", email: "bo@example.com", roles: ["risk-board"] }, authors, "risk-board").ok).toBe(true);
+    expect(reviewAccess({ name: "Bo", email: "bo@example.com", appRoles: ["policy-reviewer"] }, authors, "policy-reviewer").ok).toBe(true);
+    expect(reviewAccess({ name: "Bo", email: "bo@example.com" }, authors, "policy-reviewer")).toEqual({ ok: false, reason: 'a policy review needs the "policy-reviewer" role (or an administrator); yours: none' });
   });
 
   it("the newest review of a digest", () => {
@@ -287,11 +284,12 @@ describe("the eval-set history on the shared table", () => {
     expect([rowStateText(row({ state: "running", results: [{ id: "a" }] })), rowStateText(row({ state: "failed", error: "interrupted" })), rowStateText(row({ state: "queued" })), rowStateText(row({}))]).toEqual(["running 1/2", "failed: interrupted", "queued", ""]);
   });
 
-  it("the last comparison: a backend batch reads its recommendation; a console batch is rebuilt; a batch still running, or with one leg, is not one", () => {
+  it("the last comparison: a backend batch reads its recommendation; a batch with no verdict is never rebuilt, and says what became of it", () => {
     const leg = (id: string, model: string, cost: number, at: string, extra: Record<string, unknown> = {}) =>
       row({ id, model, passed: 2, total: 2, at, summary: { batch_id: "b-1", compare: true, incumbent: "big", cost_per_case: cost, avg_ms: 10, ...extra } });
-    const rebuilt = lastComparison([leg("1", "big", 0.01, "2026-10-21T10:00:00Z"), leg("2", "small", 0.001, "2026-10-21T10:00:01Z")]);
-    expect([rebuilt?.incumbent, rebuilt?.recommended, rebuilt?.rationale]).toEqual(["big", "small", "small clears the incumbent's quality within 0.02 at 90% lower cost per case."]);
+    const noVerdict = [leg("1", "big", 0.01, "2026-10-21T10:00:00Z", { legs: 3 }), { ...leg("2", "small", 0.001, "2026-10-21T10:00:01Z", { legs: 3 }), state: "failed", error: "rate limit" }];
+    expect(lastComparison(noVerdict)).toBeNull();
+    expect(unfinishedComparison(noVerdict)).toEqual({ batch_id: "b-1", at: "2026-10-21T10:00:00Z", legs: 3, done: ["big"], failed: [{ model: "small", error: "rate limit" }], open: [] });
     const running = lastComparison([leg("1", "big", 0.01, "2026-10-21T10:00:00Z"), { ...leg("2", "small", 0.001, "2026-10-21T10:00:01Z"), state: "running" }]);
     expect(running).toBeNull();
     const backend = lastComparison([
@@ -309,33 +307,8 @@ describe("the eval-set history on the shared table", () => {
     expect(mergeHistory([a], [b, a]).map((r) => r.id)).toEqual(["b", "a"]);
   });
 
-  it("the set's headline is its latest finished eval: the SQL skips every row that is not done; the history lists them all, with the backend's columns", () => {
-    expect(LATEST_DONE_PER_SET).toMatch(/WHERE state = 'done'/);
-    expect(LATEST_DONE_PER_SET).toMatch(/DISTINCT ON \(set_id\)/);
-    for (const col of ["threshold", "passed_threshold", "by"]) expect(LATEST_DONE_PER_SET).toContain(col);
-    expect(SET_HISTORY).not.toMatch(/state = 'done'/);
-    for (const col of ["state", "threshold", "passed_threshold", "by", "version", "finished_at", "error"]) expect(SET_HISTORY).toContain(col);
-  });
 
-  it("deleting a set keeps the backend's eval records: only rows without the version they measured go", () => {
-    expect(DELETE_CONSOLE_HISTORY).toMatch(/^DELETE FROM eval_runs WHERE set_id = \$1 AND /);
-    expect(DELETE_CONSOLE_HISTORY).toContain("coalesce(summary->>'version_digest', '') = ''");
-  });
 
-  it("the console's schema adds the backend's columns to the shared table, declared exactly as the backend declares them", () => {
-    for (const ddl of [
-      "ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS threshold double precision;",
-      "ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS passed_threshold boolean;",
-      "ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS by text NOT NULL DEFAULT '';",
-      "ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS state text NOT NULL DEFAULT 'done';",
-      "ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS version int;",
-      "ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS finished_at timestamptz;",
-      "ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS error text NOT NULL DEFAULT '';",
-    ]) {
-      expect(REGISTRY_SCHEMA, ddl).toContain(ddl);
-    }
-    expect(REGISTRY_SCHEMA.indexOf("ADD COLUMN IF NOT EXISTS state")).toBeGreaterThan(REGISTRY_SCHEMA.indexOf("CREATE TABLE IF NOT EXISTS eval_runs"));
-  });
 });
 
 describe("the L8 attention levers, sparse", () => {
@@ -364,14 +337,7 @@ describe("the L8 attention levers, sparse", () => {
   });
 });
 
-describe("the guardian's redirect, in words", () => {
-  it("every combination of what it may do, and what it raises", () => {
-    expect(mayText(["block", "redirect"])).toBe("block (kill) a run, or redirect it with its reason as guidance; a hold is raised for a person");
-    expect(mayText(["redirect", "hold"])).toBe("hold a run at its next gate, or redirect it with its reason as guidance; a block is raised for a person");
-    expect(outcomeText({ outcome: "acted", action: "redirect", why: "" })).toBe("Redirected: its reason went to the run as guidance for its next model call");
-    expect(outcomeText({ outcome: "attention", action: "redirect", why: "" })).toBe("Raised for a person: it would redirect the run, but it may not act");
-  });
-
+describe("a guardian note in the journal", () => {
   it("a guardian note of a redirect without guidance keeps its reason", () => {
     expect(l5.operatorOf({ kind: "note", title: "Guardian: redirected the run", data: { control: "guardian", action: "redirect", reason: "stay on it" } })).toMatchObject({ action: "Guardian redirected the run", detail: "stay on it" });
   });

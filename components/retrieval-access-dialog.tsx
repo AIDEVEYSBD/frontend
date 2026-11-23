@@ -88,7 +88,7 @@ export function ChangeDialog({ act, data, busy, onConfirm, onClose }: { act: Act
         {picked.length > 0 &&
           (taking ? (
             <span>
-              <span className="font-medium text-fg">{agent}</span> can no longer {rightsPhrase(picked)} <span className="font-medium text-fg">{store}</span>. The revocation is recorded; agents do not retrieve on this deployment yet, so it changes no run today.
+              <span className="font-medium text-fg">{agent}</span> can no longer {rightsPhrase(picked)} <span className="font-medium text-fg">{store}</span>. The revocation is recorded and refuses its next retrieval through retrieval.search, including in a run already under way.
             </span>
           ) : (
             <span>
@@ -130,7 +130,7 @@ export function ChangeDialog({ act, data, busy, onConfirm, onClose }: { act: Act
       >
         {taking ? (
           <span>
-            <span className="font-medium text-fg">{agent}</span> can no longer read from, write to or delete in any store it holds. The revocation is recorded; agents do not retrieve on this deployment yet, so it changes no run today.
+            <span className="font-medium text-fg">{agent}</span> can no longer read from, write to or delete in any store it holds. The revocation is recorded and refuses its next retrieval through retrieval.search, including in a run already under way.
           </span>
         ) : (
           <span>

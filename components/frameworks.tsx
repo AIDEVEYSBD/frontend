@@ -132,6 +132,8 @@ function FrameworksPage() {
   const router = useRouter();
   const [frameworks, setFrameworks] = useState<FrameworkInfo[] | null>(null);
   const [agents, setAgents] = useState<AgentSummary[]>([]);
+  /** Why the agents were not read: the agent picker says so, never offering an empty list as the estate's. */
+  const [agentsError, setAgentsError] = useState("");
   const [agent, setAgent] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -160,8 +162,14 @@ function FrameworksPage() {
       .then(setFrameworks)
       .catch((e) => setError((e as Error).message));
     listAgents()
-      .then(setAgents)
-      .catch(() => setAgents([]));
+      .then((a) => {
+        setAgents(a);
+        setAgentsError("");
+      })
+      .catch((e) => {
+        setAgents([]);
+        setAgentsError((e as Error).message);
+      });
   }, []);
   const groups = useMemo(() => {
     const all = frameworks ?? [];
@@ -225,7 +233,7 @@ function FrameworksPage() {
           }
         >
           <div className="grid gap-3 md:grid-cols-3">
-            <Field label="Agent">
+            <Field label="Agent" error={agentsError ? `the agents could not be read, so none can be picked: ${agentsError}` : undefined}>
               <Pick value={agent} onChange={setAgent} options={[{ value: "", label: "Every agent" }, ...agents.map((a) => ({ value: a.id, label: a.name }))]} />
             </Field>
             <Field label="From" hint="the default is 30 days back">

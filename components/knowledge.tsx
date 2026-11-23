@@ -9,6 +9,7 @@ import { CURRENT_USER } from "@/lib/user";
 import { useSession, signerName } from "@/lib/use-session";
 import { soon } from "@/lib/soon";
 import { Markdown, headingsOf } from "./markdown";
+import { SafeLink } from "./safe-link";
 import { BrandMark } from "./brand";
 import { Donut } from "./charts";
 import { PipelineView } from "./pipeline";
@@ -392,7 +393,7 @@ export function Knowledge() {
             </>
           }
         >
-          The sources people can search here; agents do not retrieve on this deployment yet. A person adds a source, a copy of it is fetched, and a person admits that copy before any of it can be searched; a bucket connector&rsquo;s documents are admitted instead by its rule, which a second person admits once. Each
+          The sources people search here, and agents with a read grant search through their retrieval.search tool. A person adds a source, a copy of it is fetched, and a person admits that copy before any of it can be searched; a bucket connector&rsquo;s documents are admitted instead by its rule, which a second person admits once. Each
           engagement has its own corpus; the one open here is <span className="font-mono text-[11.5px] text-fg">{ns}</span>.
         </GroupHeader>
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-4 py-2.5 elev-1">
@@ -1164,9 +1165,9 @@ function DocumentModal({ id, namespace, locate, onClose, onDone }: { id: string;
                 <span>·</span>
                 <span>{doc.publisher}</span>
                 <span>·</span>
-                <a href={doc.url.split(/\s+/)[0]} target="_blank" rel="noreferrer" className="focusable truncate underline">
+                <SafeLink href={doc.url.split(/\s+/)[0]} className="focusable truncate underline">
                   {doc.url.split(/\s+/)[0]}
-                </a>
+                </SafeLink>
                 {doc.parts > 1 && <span>· {doc.parts} parts</span>}
               </span>
             )}
@@ -1489,9 +1490,9 @@ function SourceDialog({
             <dd className="flex min-w-0 flex-col gap-0.5">
               {urls.length === 0 && <span className="text-ghost">no address</span>}
               {urls.slice(0, 3).map((u) => (
-                <a key={u} href={u} target="_blank" rel="noreferrer" className="focusable truncate rounded-sm font-mono text-[11px] text-dim underline decoration-line hover:text-fg">
+                <SafeLink key={u} href={u} className="focusable truncate rounded-sm font-mono text-[11px] text-dim underline decoration-line hover:text-fg">
                   {u}
-                </a>
+                </SafeLink>
               ))}
               {urls.length > 3 && <span className="text-[11px] text-faint">and {urls.length - 3} more addresses, fetched as one document</span>}
             </dd>
@@ -1510,7 +1511,7 @@ function SourceDialog({
               <span id="source-class-label" className="text-[12.5px] font-medium text-mist">Data class</span>
               <ClassChips value={cls} onChange={setCls} disabled={pending || saving} labelledBy="source-class-label" />
             </div>
-            <Field label="Entitled" hint="Names an agent must hold one of to retrieve from it, separated by commas. It applies to agent retrieval only, which is not built yet; people with either console role read every class and every source.">
+            <Field label="Entitled" hint="Names an agent must hold one of to retrieve from it, separated by commas: an agent holds one name, its own id, and every retrieval.search applies this. People with either console role read every class and every source.">
               <Input value={entitled} onChange={setEntitled} disabled={pending || saving} autoComplete="off" />
             </Field>
             {error && (<p role="alert" className="text-[11.5px] leading-[1.5] text-err">{error}</p>)}

@@ -482,7 +482,7 @@ export function usePeers() {
  * is addressed as `#peer-<id>`: a kill receipt, a breaker and a finding link
  * a peer to its row.
  */
-export function PeerList({ peers, twoPerson, me, error, refresh, bare = false }: { peers: PeerWithKey[] | null; twoPerson: boolean; me: Me | null; error: string; refresh: () => void; /** The console has nothing behind it (null: not known yet). */ bare?: boolean | null }) {
+export function PeerList({ peers, twoPerson, me, error, refresh }: { peers: PeerWithKey[] | null; twoPerson: boolean; me: Me | null; error: string; refresh: () => void }) {
   const [adding, setAdding] = useState(false);
   const addDoor = useDoorOff("POST", "/api/peers");
   const [added, setAdded] = useState<Peer | null>(null);
@@ -492,9 +492,8 @@ export function PeerList({ peers, twoPerson, me, error, refresh, bare = false }:
   // Said only from a registry that answered: with its read failed, whether a second person is needed is not known here.
   const approvalRule = error ? "" : twoPerson ? "Two-person approval is on: whoever registers a peer cannot approve its card." : "One approval admits a peer; two-person approval is off on this deployment.";
 
-  // Quiet (lib/quiet.ts): a registry that could not be read is not shown as an empty one with zero counts.
-  // Not known yet whether anything is behind the console: no "no peer is registered" in the meantime.
-  if (peers === null || (none && bare === null && !adding && !error)) return <p className="px-4 py-3 text-[11.5px] text-faint">Reading the registry&hellip;</p>;
+  // A registry that could not be read is not shown as an empty one with zero counts (usePeers keeps the error beside an empty list).
+  if (peers === null) return <p className="px-4 py-3 text-[11.5px] text-faint">Reading the registry&hellip;</p>;
 
   return (
     <>

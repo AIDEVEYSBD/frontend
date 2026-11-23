@@ -231,10 +231,10 @@ describe("templates", () => {
 
   it("who may certify: nobody unknown; an author never, administrator or not; an administrator otherwise; the role by any claim", () => {
     expect(certifyAccess(null, [], "template-certifier").ok).toBe(false);
-    const admin = { name: "Ada", email: "ada@ey.com", appRoles: ["administrator"] };
-    expect(certifyAccess(admin, ["Ada <ada@ey.com>"], "template-certifier").ok).toBe(false);
-    expect(certifyAccess(admin, ["Ben <ben@ey.com>"], "template-certifier").ok).toBe(true);
-    expect(certifyAccess({ name: "Ivy", email: "ivy@ey.com", roles: ["design-authority"] }, [], "design-authority").ok).toBe(true);
+    const admin = { name: "Ada", email: "ada@example.com", appRoles: ["administrator"] };
+    expect(certifyAccess(admin, ["Ada <ada@example.com>"], "template-certifier").ok).toBe(false);
+    expect(certifyAccess(admin, ["Ben <ben@example.com>"], "template-certifier").ok).toBe(true);
+    expect(certifyAccess({ name: "Ivy", email: "ivy@example.com", roles: ["design-authority"] }, [], "design-authority").ok).toBe(true);
   });
 
   it("refusals the console does not know read as the backend's message; the lines", () => {

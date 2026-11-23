@@ -1,92 +1,28 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE, readSessionCookie } from "@/lib/auth-cookie";
-import { isMachineDoor, isOpenPage, isPassthroughPath, upstreamFor } from "@/lib/route-policy";
-import { passthrough } from "@/lib/passthrough";
+import { PUBLIC_ORIGIN } from "@/lib/site";
 
 /**
- * The seam between the console and the control plane.
+ * The seam between the console and the platform's service.
  *
- * Three variables shape it, and every deployment sets some of them:
+ * This server serves the pages and nothing else. Every /api request, and the
+ * agent card at /.well-known/agent.json, goes to the service at
+ * BACKEND_ORIGIN with its headers unchanged, the signed assertion Google
+ * Identity-Aware Proxy adds (x-goog-iap-jwt-assertion) among them. The
+ * service verifies that assertion on every request against its own
+ * IAP_AUDIENCE, decides who the person is and what they may do, and answers
+ * sign-in itself (/api/auth/session, /api/auth/login). Nothing is decided
+ * here and no session is kept here.
  *
- *   BACKEND_ORIGIN set: the API paths the backend owns (BACKEND_PREFIXES in
- *   lib/route-policy.ts: runs, approvals, agents, authoring, drafts, roster,
- *   keys, attached agents, IAM, the vault, the trigger, webhook, queue and
- *   worker doors, the applications register with its gateway, retrieval and
- *   chatbot doors, the attention, fleet, lockdown and external answer doors,
- *   the MCP registry (not the platform's own MCP server at /api/mcp/server,
- *   which stays here), the SDK door, the ports' health doors, the L7 doors
- *   (the dependency map, drift, the guardian, the peer registry, the
- *   estate's breakers, and the A2A doors with the agent card at
- *   /.well-known/agent.json), the L8 doors (the eval runner's reads at
- *   /api/evals/runs, the templates, the deliverables, the registers and the
- *   eval sets at /api/eval-sets; the lifecycle, canary and lineage doors
- *   travel with /api/agents), the L9 doors (policy changes and simulation at
- *   /api/policy, the ledger, the controls catalogue, evidence, attestations,
- *   autonomy tiers, retention and the regulatory views; a run's chain travels
- *   with /api/runs, the AI-BOM with /api/agents), and the health check) are forwarded
- *   there at request time, with the shared secret attached and the session
- *   cookie forwarded. This happens before, and independently of, the
- *   RUNTIME_ORIGIN rewrite below. The local backend is `http://localhost:8000`
- *   (backend/CONTRACT.md). Without BACKEND_ORIGIN those paths have no
- *   answer here: the console serves pages and the domains that have not
- *   moved yet (frontend/README.md lists them).
+ * BACKEND_ORIGIN is read at run time. Without it every request is answered
+ * 503 with the reason: there is no console-only mode.
  *
- *   The A2A doors (PASSTHROUGH_DOORS) are signed end to end, so they are
- *   not rewritten: lib/passthrough.ts sends the path, query, body and
- *   headers on as received and the signed answer back as sent, uncompressed.
- *
- *   RUNTIME_ORIGIN set (Vercel): every other /api request is proxied to the
- *   control plane behind the tunnel, at request time, with the shared secret
- *   attached. The pages stay same-origin and unchanged.
- *
- *   RUNTIME_KEY set, no origin (the container): every /api request must carry
- *   that secret, except the trigger endpoint, which has its own API keys and
- *   is the one door external systems are meant to use. With neither origin
- *   nor key set the API is open, which is right for a laptop and wrong for
- *   anything public.
- *
- * With AUTH_SECRET set, sign-in is on: a page needs a valid session cookie
- * or is sent to /login, and a console API route needs it or answers 401.
- * The cookie is verified here without a database (an HMAC over id and
- * expiry), which is what lets the Vercel side decide before proxying. The
- * machine doors keep their own API keys and stay outside the sign-in. The
- * backend verifies the same cookie again and loads the session itself.
+ * The one check made before forwarding: a write must come from the
+ * console's own origin, since IAP's own session rides on a cookie.
  */
 
-const ORIGIN = process.env.RUNTIME_ORIGIN?.replace(/\/+$/, "") ?? "";
 const BACKEND = process.env.BACKEND_ORIGIN?.replace(/\/+$/, "") ?? "";
-const KEY = process.env.RUNTIME_KEY ?? "";
-const HEADER = "x-runtime-key";
-const AUTH_SECRET = process.env.AUTH_SECRET ?? "";
-const INTERNAL_HEADER = "x-internal-auth";
-// Behind Google IAP the person is already signed in when the request arrives: a page without a console session goes straight to the door that reads IAP's header, not to a sign-in page.
-const IAP = Boolean(process.env.IAP_AUDIENCE);
-const PUBLIC_ORIGIN = (process.env.NEXT_PUBLIC_ORIGIN ?? process.env.PUBLIC_ORIGIN ?? "https://agent-factory.example.com").replace(/\/+$/, "");
 
-// The doors a machine opens with an API key (or, for a webhook, the spec's
-// own secret; for the external answer door, the signed link token; for the
-// A2A doors, a signature under a shared secret), so the cookie gate never
-// stands in front of them: the backend's trigger, webhook and worker doors,
-// the L4 gateway, retrieval and chatbot doors (application keys), the L5
-// answer door, the L6 SDK door (an attached agent's scoped key), the L7 A2A
-// doors and the agent card at the root, and the console's platform-MCP door.
-// The list is MACHINE_DOORS in lib/route-policy.ts, so tests/proxy.test.ts
-// holds it. Sign-in itself is open too, or nobody could start; so is the
-// external answer page, which is where that token is used (OPEN_PAGES and
-// OPEN_PREFIXES there, held by the same test).
-
-const machineDoor = isMachineDoor;
-
-/**
- * Connected to the platform behind Identity-Aware Proxy (BACKEND_ORIGIN and
- * IAP_AUDIENCE both set): this server serves pages and forwards. Every /api
- * request goes to the platform with its headers unchanged, IAP's signed
- * assertion among them, and the platform decides who the person is and what
- * they may do on every request. Nothing is decided here and no session is
- * kept here. The one check made before forwarding is that a write comes from
- * the console's own origin, since IAP's own session rides on a cookie.
- */
-const PLATFORM = Boolean(BACKEND) && IAP;
+const NOT_CONFIGURED = "This console has no service to talk to: BACKEND_ORIGIN is not set on this deployment.";
 
 function forwardToPlatform(request: NextRequest): NextResponse {
   const { pathname, search } = request.nextUrl;
@@ -102,74 +38,15 @@ function forwardToPlatform(request: NextRequest): NextResponse {
 }
 
 export async function proxy(request: NextRequest) {
-  const { pathname, search } = request.nextUrl;
+  const { pathname } = request.nextUrl;
   const isApi = pathname.startsWith("/api/");
 
-  if (PLATFORM) {
-    if (isApi || pathname === "/.well-known/agent.json") return forwardToPlatform(request);
-    return NextResponse.next();
+  if (!BACKEND) {
+    if (isApi) return NextResponse.json({ error: NOT_CONFIGURED }, { status: 503 });
+    return new NextResponse(NOT_CONFIGURED, { status: 503, headers: { "content-type": "text/plain; charset=utf-8" } });
   }
 
-  if (AUTH_SECRET && !machineDoor(pathname) && request.headers.get(INTERNAL_HEADER) !== AUTH_SECRET) {
-    const open = !isApi && isOpenPage(pathname);
-    if (!open) {
-      const cookie = await readSessionCookie(request.cookies.get(SESSION_COOKIE)?.value, AUTH_SECRET);
-      if (!cookie) {
-        if (isApi) return NextResponse.json({ error: "sign in to continue", reauth: true }, { status: 401 });
-        const to = new URL(IAP ? "/api/auth/login" : "/login", request.url);
-        to.searchParams.set("next", `${pathname}${search}`);
-        return NextResponse.redirect(to);
-      }
-      // A cookie-authenticated write must come from the console's own origin.
-      // SameSite=Lax already withholds the cookie from cross-site posts; this
-      // is the second lock on the same door.
-      if (isApi && request.method !== "GET" && request.method !== "HEAD") {
-        const origin = request.headers.get("origin") ?? "";
-        const allowed = [PUBLIC_ORIGIN, `${request.nextUrl.protocol}//${request.headers.get("host") ?? request.nextUrl.host}`];
-        if (origin && !allowed.includes(origin.replace(/\/+$/, ""))) {
-          return NextResponse.json({ error: "cross-origin writes are refused" }, { status: 403 });
-        }
-      }
-    }
-  }
-
-  // Sign-in off on the box that holds the backend: the runtime key is the only
-  // lock on it, and the router below adds that key to whatever it forwards, so
-  // the caller has to show it first. A machine door keeps its own key. The
-  // hosted console (RUNTIME_ORIGIN) is the caller here, and it sends the key.
-  if (isApi && KEY && !AUTH_SECRET && !ORIGIN && !machineDoor(pathname) && request.headers.get(HEADER) !== KEY) {
-    return NextResponse.json(
-      { error: "this control plane is reachable only through its console; the trigger endpoint accepts API keys" },
-      { status: 401 },
-    );
-  }
-
-  // The path router: a backend-owned path to BACKEND_ORIGIN, else everything
-  // to RUNTIME_ORIGIN when that is set. Either way the request's own headers
-  // travel (the session cookie among them) with the runtime key added. The
-  // agent card is the one page path that is routed; every other page is
-  // served here.
-  const upstream = upstreamFor(pathname, search, { backendOrigin: BACKEND, runtimeOrigin: ORIGIN });
-  if (!isApi && upstream.to === "next") return NextResponse.next();
-  if (upstream.to !== "next") {
-    // A2A is signed end to end: forwarded byte for byte, never rewritten.
-    if (isPassthroughPath(pathname)) return passthrough(request, upstream.url, { key: KEY, keyHeader: HEADER });
-    const headers = new Headers(request.headers);
-    if (KEY) headers.set(HEADER, KEY);
-    headers.delete("host");
-    return NextResponse.rewrite(new URL(upstream.url), { request: { headers } });
-  }
-
-  if (KEY && !pathname.startsWith("/api/trigger/")) {
-    const presented = request.headers.get(HEADER) ?? "";
-    if (presented !== KEY) {
-      return NextResponse.json(
-        { error: "this control plane is reachable only through its console; the trigger endpoint accepts API keys" },
-        { status: 401 },
-      );
-    }
-  }
-
+  if (isApi || pathname === "/.well-known/agent.json") return forwardToPlatform(request);
   return NextResponse.next();
 }
 

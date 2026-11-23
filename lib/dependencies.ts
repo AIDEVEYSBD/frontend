@@ -167,11 +167,14 @@ export function drawnEnds(e: Pick<DepEdge, "from" | "to" | "kind">): { from: str
   return e.kind === "serves" ? { from: e.to, to: e.from } : { from: e.from, to: e.to };
 }
 
-/** An edge's figures in one line: how often, what it cost, what failed or was refused. */
+/** An edge's figures in one line: how often, what it cost ("no price set" when a model call on it had none), what failed or was refused. */
 export function edgeLine(e: Pick<DepEdge, "count" | "cost" | "failures" | "refusals" | "kind">, fmtUsd: (n: number) => string): string {
   const unit = e.kind === "sub_run" ? "sub-run" : "call";
   const parts = [`${e.count} ${unit}${e.count === 1 ? "" : "s"}`];
-  if (e.cost > 0) parts.push(fmtUsd(e.cost));
+  // A model edge with calls and a null cost had a call with no price set; with no calls there is nothing to price.
+  if (e.cost === null) {
+    if (e.count > 0) parts.push("no price set");
+  } else if (e.cost > 0) parts.push(fmtUsd(e.cost));
   if (e.failures) parts.push(`${e.failures} failed`);
   if (e.refusals) parts.push(`${e.refusals} refused`);
   return parts.join(" · ");

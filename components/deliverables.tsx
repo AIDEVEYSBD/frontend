@@ -329,6 +329,8 @@ function DeliverablesPage() {
   /** The platform answers 501 for the registers: the section reads "not built", not empty and not failed. */
   const registersUnbuilt = Boolean(notBuiltDoorOf(registersFailed));
   const [agents, setAgents] = useState<AgentSummary[]>([]);
+  /** Why the agents were not read: the agent picker says so, never offering an empty list as the estate's. */
+  const [agentsError, setAgentsError] = useState("");
 
   const go = useCallback(
     (next: Record<string, string | null>) => {
@@ -360,8 +362,14 @@ function DeliverablesPage() {
   useEffect(() => soon(load), [load]);
   useEffect(() => {
     listAgents()
-      .then(setAgents)
-      .catch(() => setAgents([]));
+      .then((a) => {
+        setAgents(a);
+        setAgentsError("");
+      })
+      .catch((e) => {
+        setAgents([]);
+        setAgentsError((e as Error).message);
+      });
   }, []);
   useEffect(() => {
     if (!selected) return;
@@ -429,7 +437,7 @@ function DeliverablesPage() {
               </span>
             </div>
             <div className="w-56">
-              <Field label="Agent">
+              <Field label="Agent" error={agentsError ? `the agents could not be read, so none can be picked: ${agentsError}` : undefined}>
                 <Pick value={agent} onChange={(v) => go({ agent: v || null, id: null })} options={[{ value: "", label: "Every agent" }, ...agents.map((a) => ({ value: a.id, label: a.id }))]} />
               </Field>
             </div>

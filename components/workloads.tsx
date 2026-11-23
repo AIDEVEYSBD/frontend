@@ -42,10 +42,8 @@ import {
  * address (`&tab=`): the guided set-up (`&step=`), its findings, where its
  * reports are and its acceptance record.
  *
- * The door (`GET /api/workloads`, lib/api/pending.ts) is ahead of the
- * backend. Until it answers, every card says it is not connected and the
- * set-up shows its default form disabled. No screen here says a workload
- * ran, found or was accepted anything unless a door said so.
+ * The door is `GET /api/workloads` (lib/api/pending.ts). No screen here says
+ * a workload ran, found or was accepted anything unless a door said so.
  */
 
 /* ═══════════════════ the four, as cards ═══════════════════ */
@@ -66,7 +64,7 @@ function WorkloadCard({ profile, reading }: { profile: WorkloadProfile; reading:
   const handsOver = form.from === "door" ? form.inputs.map((i) => i.label) : profile.handsOver;
   const decides = gates.from === "door" && gates.gates.length ? gates.gates.map((g) => [g.name, g.role].filter(Boolean).join(": ")) : profile.decides;
   // The workload's own console, where a run is set up; absent until the deployment gives its address.
-  const links = useConsoleLinks();
+  const { links, error: linksError } = useConsoleLinks();
   const url = links?.workloads[profile.id] ?? "";
 
   return (
@@ -94,6 +92,8 @@ function WorkloadCard({ profile, reading }: { profile: WorkloadProfile; reading:
             <>
               Run by <AgentLink agent={reading.agent} />
             </>
+          ) : linksError ? (
+            <span className="text-err">The console addresses could not be read, so whether this workload&rsquo;s console is live is not known: {linksError}</span>
           ) : links && !url ? (
             "A run is set up in this workload's own console, which is not live yet."
           ) : (
@@ -104,7 +104,7 @@ function WorkloadCard({ profile, reading }: { profile: WorkloadProfile; reading:
           Findings and report
         </Button>
         {/* A run is set up in the workload's own console, which this one opens and does not embed. Until a deployment names its address, it is not live. */}
-        <span className="flex items-center gap-2" title={url ? undefined : `The ${profile.name.toLowerCase()} console is not live yet.`}>
+        <span className="flex items-center gap-2" title={url ? undefined : linksError ? `The console addresses could not be read: ${linksError}` : links ? `The ${profile.name.toLowerCase()} console is not live yet.` : "Reading the console addresses…"}>
           <Button size="sm" variant="solid" tone="ink" disabled={!url} onClick={() => url && window.open(url, "_blank", "noopener,noreferrer")}>
             Set up a run
             {url && <NavIcon name="external-link" size={12} className="ml-1.5" />}

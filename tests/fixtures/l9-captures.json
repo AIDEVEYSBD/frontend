@@ -9,13 +9,13 @@
    "stages": [
     {
      "at": "2026-11-04T13:05:58.336Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "digest": "0fbcb7f8a58bf68b",
      "lit": true,
      "record": {
       "digest": "0fbcb7f8a58bf68b",
       "saved_at": "2026-11-04T13:05:58.336Z",
-      "saved_by": "Ada <ada@ey.com>",
+      "saved_by": "Ada <ada@example.com>",
       "version": 2
      },
      "stage": "designed",
@@ -23,17 +23,17 @@
     },
     {
      "at": "2026-11-04T13:05:58.373Z",
-     "by": "Rui <rui@ey.com>",
+     "by": "Rui <rui@example.com>",
      "digest": "0fbcb7f8a58bf68b",
      "lit": true,
      "record": {
       "agent": "triage",
       "at": "2026-11-04T13:05:58.373Z",
       "authors": [
-       "Ada <ada@ey.com>"
+       "Ada <ada@example.com>"
       ],
-      "by": "Rui <rui@ey.com>",
-      "by_sub": "autox|rui@ey.com",
+      "by": "Rui <rui@example.com>",
+      "by_sub": "iap|rui@example.com",
       "digest": "0fbcb7f8a58bf68b",
       "id": "rv-648b662ab14044b3",
       "note": "policy holds",
@@ -93,7 +93,7 @@
     "deployment": {
      "agent": "triage",
      "at": "2026-11-04T13:05:58.481Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "decision": "gd-828f10dc5d2640ec",
      "digest": "ae164934c963c793",
      "environment": "production",
@@ -104,7 +104,7 @@
      "override": {
       "at": "2026-11-04T13:05:58.481Z",
       "audit_id": 7,
-      "by": "Ada <ada@ey.com>",
+      "by": "Ada <ada@example.com>",
       "passed": [
        "autonomy"
       ],
@@ -129,13 +129,13 @@
    "stages": [
     {
      "at": "2026-11-04T13:05:58.535Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "digest": "259166559ed614f7",
      "lit": true,
      "record": {
       "digest": "259166559ed614f7",
       "saved_at": "2026-11-04T13:05:58.535Z",
-      "saved_by": "Ada <ada@ey.com>",
+      "saved_by": "Ada <ada@example.com>",
       "version": 2
      },
      "stage": "designed",
@@ -209,7 +209,7 @@
      "autonomy": "L1",
      "id": "boxed",
      "name": "boxed",
-     "owner": "owen@ey.com"
+     "owner": "owen@example.com"
     },
     "spec": {
      "edges": [],
@@ -328,7 +328,7 @@
      "name": "boxed",
      "nodes": 1,
      "saved_at": "2026-11-04T13:05:58.638Z",
-     "saved_by": "Chandresh Singh",
+     "saved_by": "Asha Rao",
      "tools": [
       "crm.lookup",
       "peer.send",
@@ -380,7 +380,7 @@
     "rubric": ""
    },
    "applied_at": "2026-11-04T13:05:55.758Z",
-   "applied_by": "Ben <ben@ey.com>",
+   "applied_by": "Ben <ben@example.com>",
    "applied_diff": {
     "changes": [
      {
@@ -403,7 +403,7 @@
     }
    },
    "approved_at": "2026-11-04T13:05:55.758Z",
-   "approved_by": "Ben <ben@ey.com>",
+   "approved_by": "Ben <ben@example.com>",
    "audit_id": 8,
    "before": {
     "agents": [],
@@ -443,19 +443,19 @@
    "history": [
     {
      "at": "2026-11-04T13:05:55.714Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "note": "more room",
      "state": "pending"
     },
     {
      "at": "2026-11-04T13:05:55.758Z",
-     "by": "Ben <ben@ey.com>",
+     "by": "Ben <ben@example.com>",
      "note": "agreed",
      "state": "approved"
     },
     {
      "at": "2026-11-04T13:05:55.758Z",
-     "by": "Ben <ben@ey.com>",
+     "by": "Ben <ben@example.com>",
      "note": "guardian's hourly cap: 10 → 15",
      "state": "applied"
     }
@@ -466,7 +466,7 @@
     "max_actions_per_hour": 15
    },
    "proposed_at": "2026-11-04T13:05:55.714Z",
-   "proposed_by": "Ada <ada@ey.com>",
+   "proposed_by": "Ada <ada@example.com>",
    "reason": "more room",
    "reject_reason": "",
    "rejected_at": null,
@@ -492,7 +492,7 @@
     ]
    },
    "applied_at": "2026-11-04T13:05:56.127Z",
-   "applied_by": "Ben <ben@ey.com>",
+   "applied_by": "Ben <ben@example.com>",
    "applied_diff": {
     "changes": [
      {
@@ -529,7 +529,7 @@
     }
    },
    "approved_at": "2026-11-04T13:05:56.127Z",
-   "approved_by": "Ben <ben@ey.com>",
+   "approved_by": "Ben <ben@example.com>",
    "audit_id": 12,
    "before": {
     "gate_at": "",
@@ -576,19 +576,19 @@
    "history": [
     {
      "at": "2026-11-04T13:05:56.105Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "note": "the desk needs lookups",
      "state": "pending"
     },
     {
      "at": "2026-11-04T13:05:56.127Z",
-     "by": "Ben <ben@ey.com>",
+     "by": "Ben <ben@example.com>",
      "note": "",
      "state": "approved"
     },
     {
      "at": "2026-11-04T13:05:56.127Z",
-     "by": "Ben <ben@ey.com>",
+     "by": "Ben <ben@example.com>",
      "note": "grant crm.lookup added for copilot; grant crm.update added for copilot; gate risk: never → write for copilot",
      "state": "applied"
     }
@@ -603,7 +603,7 @@
     ]
    },
    "proposed_at": "2026-11-04T13:05:56.105Z",
-   "proposed_by": "Ada <ada@ey.com>",
+   "proposed_by": "Ada <ada@example.com>",
    "reason": "the desk needs lookups",
    "reject_reason": "",
    "rejected_at": null,
@@ -636,7 +636,7 @@
     ]
    },
    "applied_at": "2026-11-04T13:05:58.983Z",
-   "applied_by": "Ben <ben@ey.com>",
+   "applied_by": "Ben <ben@example.com>",
    "applied_diff": {
     "changes": [
      {
@@ -685,7 +685,7 @@
     }
    },
    "approved_at": "2026-11-04T13:05:58.983Z",
-   "approved_by": "Ben <ben@ey.com>",
+   "approved_by": "Ben <ben@example.com>",
    "audit_id": 5,
    "before": {
     "all": [],
@@ -748,19 +748,19 @@
    "history": [
     {
      "at": "2026-11-04T13:05:58.971Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "note": "personal data",
      "state": "pending"
     },
     {
      "at": "2026-11-04T13:05:58.983Z",
-     "by": "Ben <ben@ey.com>",
+     "by": "Ben <ben@example.com>",
      "note": "",
      "state": "approved"
     },
     {
      "at": "2026-11-04T13:05:58.983Z",
-     "by": "Ben <ben@ey.com>",
+     "by": "Ben <ben@example.com>",
      "note": "redacted from internal up email added; redacted at restricted employee_id added; redaction pattern employee_id added",
      "state": "applied"
     }
@@ -779,7 +779,7 @@
     ]
    },
    "proposed_at": "2026-11-04T13:05:58.971Z",
-   "proposed_by": "Ada <ada@ey.com>",
+   "proposed_by": "Ada <ada@example.com>",
    "reason": "personal data",
    "reject_reason": "",
    "rejected_at": null,
@@ -798,8 +798,8 @@
  "approve.refused.proposer": {
   "body": {
    "control": "separation_of_duties",
-   "error": "Ada <ada@ey.com> proposed policy change pc-016bad55f7014f51: its proposer may not approve it; another administrator does",
-   "proposed_by": "Ada <ada@ey.com>"
+   "error": "Ada <ada@example.com> proposed policy change pc-016bad55f7014f51: its proposer may not approve it; another administrator does",
+   "proposed_by": "Ada <ada@example.com>"
   },
   "status": 403
  },
@@ -830,7 +830,7 @@
    "applied_by": "",
    "applied_diff": null,
    "approved_at": "2026-11-04T13:05:55.917Z",
-   "approved_by": "Ben <ben@ey.com>",
+   "approved_by": "Ben <ben@example.com>",
    "audit_id": 25,
    "before": null,
    "diff": {
@@ -860,13 +860,13 @@
    "history": [
     {
      "at": "2026-11-04T13:05:55.905Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "note": "tighten it",
      "state": "pending"
     },
     {
      "at": "2026-11-04T13:05:55.917Z",
-     "by": "Ben <ben@ey.com>",
+     "by": "Ben <ben@example.com>",
      "note": "",
      "state": "approved"
     }
@@ -877,7 +877,7 @@
     "calls": 9
    },
    "proposed_at": "2026-11-04T13:05:55.905Z",
-   "proposed_by": "Ada <ada@ey.com>",
+   "proposed_by": "Ada <ada@example.com>",
    "reason": "tighten it",
    "reject_reason": "",
    "rejected_at": null,
@@ -971,7 +971,7 @@
       },
       "method": "POST",
       "path": "/api/agents/triage/attestations",
-      "says": "owen@ey.com (or an administrator) attests triage still does what was approved, reading the diff since the last attestation"
+      "says": "owen@example.com (or an administrator) attests triage still does what was approved, reading the diff since the last attestation"
      },
      "age_s": 2592000.1,
      "agent": "triage",
@@ -988,7 +988,7 @@
        "agent": "triage",
        "as_role": "administrator",
        "at": "2026-07-07T13:05:58.077Z",
-       "by": "Ada <ada@ey.com>",
+       "by": "Ada <ada@example.com>",
        "deployed": {
         "digest": "3a802c629fc8f32b",
         "version": 1
@@ -1061,7 +1061,7 @@
        "period_days": 90,
        "previous": {
         "at": "2026-11-04T13:05:58.065Z",
-        "by": "Owen <owen@ey.com>",
+        "by": "Owen <owen@example.com>",
         "digest": "3a802c629fc8f32b",
         "id": "at-0ceeaabc480e4d73",
         "version": 1
@@ -1070,14 +1070,14 @@
        "version": 2
       },
       "owner": {
-       "owner": "owen@ey.com",
+       "owner": "owen@example.com",
        "owner_sub": "",
        "source": "spec"
       },
       "period_days": 90
      },
      "deadline": null,
-     "detail": "last attested by Ada <ada@ey.com> at 2026-07-07T13:05:58.077Z; every 90 days; owner owen@ey.com",
+     "detail": "last attested by Ada <ada@example.com> at 2026-07-07T13:05:58.077Z; every 90 days; owner owen@example.com",
      "holds": "",
      "id": "attestation:triage",
      "job": "",
@@ -1118,7 +1118,7 @@
       "override": {
        "at": "2026-11-04T13:05:58.481Z",
        "audit_id": 7,
-       "by": "Ada <ada@ey.com>",
+       "by": "Ada <ada@example.com>",
        "passed": [
         "autonomy"
        ],
@@ -1143,7 +1143,7 @@
      "runs": [],
      "severity": 6,
      "since": "2026-11-04T13:05:58.481Z",
-     "title": "triage: version 1 deployed past the promotion gate by Ada <ada@ey.com> (autonomy)"
+     "title": "triage: version 1 deployed past the promotion gate by Ada <ada@example.com> (autonomy)"
     }
    ]
   },
@@ -1166,7 +1166,7 @@
      "agents": [],
      "data": {
       "audit_id": 14,
-      "by": "Ada <ada@ey.com>",
+      "by": "Ada <ada@example.com>",
       "change": "pc-bc4918f497384cd9",
       "reason": "the cap let a run through",
       "rollback_of": "pc-016bad55f7014f51",
@@ -1186,7 +1186,7 @@
      "runs": [],
      "severity": 7,
      "since": "2026-11-04T13:05:55.814Z",
-     "title": "Ada <ada@ey.com> rolled back policy change pc-016bad55f7014f51 on guardian"
+     "title": "Ada <ada@example.com> rolled back policy change pc-016bad55f7014f51 on guardian"
     }
    ]
   },
@@ -1197,7 +1197,7 @@
    "agent": "triage",
    "as_role": "owner",
    "at": "2026-11-04T13:05:58.065Z",
-   "by": "Owen <owen@ey.com>",
+   "by": "Owen <owen@example.com>",
    "deployed": {
     "digest": "3a802c629fc8f32b",
     "version": 1
@@ -1238,9 +1238,9 @@
  "attest.refused.not_owner": {
   "body": {
    "control": "attestation_owner",
-   "error": "only triage's owner (owen@ey.com) or an administrator attests it",
+   "error": "only triage's owner (owen@example.com) or an administrator attests it",
    "owner": {
-    "owner": "owen@ey.com",
+    "owner": "owen@example.com",
     "owner_sub": "",
     "source": "spec"
    }
@@ -1252,7 +1252,7 @@
    "agent": "triage",
    "as_role": "administrator",
    "at": "2026-11-04T13:05:58.077Z",
-   "by": "Ada <ada@ey.com>",
+   "by": "Ada <ada@example.com>",
    "deployed": {
     "digest": "3a802c629fc8f32b",
     "version": 1
@@ -1325,7 +1325,7 @@
    "period_days": 90,
    "previous": {
     "at": "2026-11-04T13:05:58.065Z",
-    "by": "Owen <owen@ey.com>",
+    "by": "Owen <owen@example.com>",
     "digest": "3a802c629fc8f32b",
     "id": "at-0ceeaabc480e4d73",
     "version": 1
@@ -1344,7 +1344,7 @@
    "last_at": null,
    "overdue": false,
    "owner": {
-    "owner": "owen@ey.com",
+    "owner": "owen@example.com",
     "owner_sub": "",
     "source": "spec"
    },
@@ -1366,7 +1366,7 @@
      "agent": "triage",
      "as_role": "administrator",
      "at": "2026-11-04T13:05:58.077Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "deployed": {
       "digest": "3a802c629fc8f32b",
       "version": 1
@@ -1439,7 +1439,7 @@
      "period_days": 90,
      "previous": {
       "at": "2026-11-04T13:05:58.065Z",
-      "by": "Owen <owen@ey.com>",
+      "by": "Owen <owen@example.com>",
       "digest": "3a802c629fc8f32b",
       "id": "at-0ceeaabc480e4d73",
       "version": 1
@@ -1451,7 +1451,7 @@
      "agent": "triage",
      "as_role": "owner",
      "at": "2026-11-04T13:05:58.065Z",
-     "by": "Owen <owen@ey.com>",
+     "by": "Owen <owen@example.com>",
      "deployed": {
       "digest": "3a802c629fc8f32b",
       "version": 1
@@ -1472,7 +1472,7 @@
    "last_at": "2026-11-04T13:05:58.077Z",
    "overdue": false,
    "owner": {
-    "owner": "owen@ey.com",
+    "owner": "owen@example.com",
     "owner_sub": "",
     "source": "spec"
    },
@@ -1521,7 +1521,7 @@
     }
    ],
    "name": "boxed",
-   "owner": "owen@ey.com",
+   "owner": "owen@example.com",
    "peers": [
     {
      "card": {
@@ -1545,7 +1545,7 @@
     "version": "0.1.0"
    },
    "saved_at": "2026-11-04T13:05:58.638Z",
-   "saved_by": "Chandresh Singh",
+   "saved_by": "Asha Rao",
    "servers": [
     {
      "builtin": false,
@@ -1756,7 +1756,7 @@
       },
       {
        "name": "agentfactory:owner",
-       "value": "owen@ey.com"
+       "value": "owen@example.com"
       }
      ],
      "type": "application",
@@ -2029,7 +2029,7 @@
       "decide"
      ],
      "route": {
-      "endpoint": "the deployment's model gateway (FOUNDRY_ENDPOINT)",
+      "endpoint": "the deployment's model gateway (MODEL_ENDPOINT)",
       "kind": "gateway",
       "local": false,
       "provider": "",
@@ -2046,7 +2046,7 @@
     "version": "0.1.0"
    },
    "saved_at": "2026-11-04T13:05:58.760Z",
-   "saved_by": "Chandresh Singh",
+   "saved_by": "Asha Rao",
    "servers": [],
    "templates": {
     "cut_from": null,
@@ -2109,7 +2109,7 @@
     }
    },
    "approved_at": "2026-11-04T13:05:55.917Z",
-   "approved_by": "Ben <ben@ey.com>",
+   "approved_by": "Ben <ben@example.com>",
    "audit_id": 26,
    "before": {
     "calls": 200,
@@ -2144,13 +2144,13 @@
    "history": [
     {
      "at": "2026-11-04T13:05:55.905Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "note": "tighten it",
      "state": "pending"
     },
     {
      "at": "2026-11-04T13:05:55.917Z",
-     "by": "Ben <ben@ey.com>",
+     "by": "Ben <ben@example.com>",
      "note": "",
      "state": "approved"
     },
@@ -2167,7 +2167,7 @@
     "calls": 9
    },
    "proposed_at": "2026-11-04T13:05:55.905Z",
-   "proposed_by": "Ada <ada@ey.com>",
+   "proposed_by": "Ada <ada@example.com>",
    "reason": "tighten it",
    "reject_reason": "",
    "rejected_at": null,
@@ -2190,7 +2190,7 @@
    "applied_by": "",
    "applied_diff": null,
    "approved_at": "2026-11-04T13:05:56.150Z",
-   "approved_by": "Ben <ben@ey.com>",
+   "approved_by": "Ben <ben@example.com>",
    "audit_id": 16,
    "before": null,
    "diff": {
@@ -2220,13 +2220,13 @@
    "history": [
     {
      "at": "2026-11-04T13:05:56.148Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "note": "tighten it",
      "state": "pending"
     },
     {
      "at": "2026-11-04T13:05:56.150Z",
-     "by": "Ben <ben@ey.com>",
+     "by": "Ben <ben@example.com>",
      "note": "",
      "state": "approved"
     },
@@ -2243,7 +2243,7 @@
     "gate_at": "risky"
    },
    "proposed_at": "2026-11-04T13:05:56.148Z",
-   "proposed_by": "Ada <ada@ey.com>",
+   "proposed_by": "Ada <ada@example.com>",
    "reason": "tighten it",
    "reject_reason": "",
    "rejected_at": null,
@@ -2279,7 +2279,7 @@
     "rubric": ""
    },
    "applied_at": "2026-11-04T13:05:55.814Z",
-   "applied_by": "Ada <ada@ey.com>",
+   "applied_by": "Ada <ada@example.com>",
    "applied_diff": {
     "changes": [
      {
@@ -2302,7 +2302,7 @@
     }
    },
    "approved_at": "2026-11-04T13:05:55.814Z",
-   "approved_by": "Ada <ada@ey.com>",
+   "approved_by": "Ada <ada@example.com>",
    "audit_id": 14,
    "before": {
     "agents": [],
@@ -2342,7 +2342,7 @@
    "history": [
     {
      "at": "2026-11-04T13:05:55.814Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "note": "emergency rollback of pc-016bad55f7014f51: the cap let a run through",
      "state": "applied"
     }
@@ -2353,7 +2353,7 @@
     "max_actions_per_hour": 10
    },
    "proposed_at": "2026-11-04T13:05:55.814Z",
-   "proposed_by": "Ada <ada@ey.com>",
+   "proposed_by": "Ada <ada@example.com>",
    "reason": "the cap let a run through",
    "reject_reason": "",
    "rejected_at": null,
@@ -2383,7 +2383,7 @@
     "rubric": ""
    },
    "applied_at": "2026-11-04T13:05:55.758Z",
-   "applied_by": "Ben <ben@ey.com>",
+   "applied_by": "Ben <ben@example.com>",
    "applied_diff": {
     "changes": [
      {
@@ -2406,7 +2406,7 @@
     }
    },
    "approved_at": "2026-11-04T13:05:55.758Z",
-   "approved_by": "Ben <ben@ey.com>",
+   "approved_by": "Ben <ben@example.com>",
    "audit_id": 8,
    "before": {
     "agents": [],
@@ -2446,25 +2446,25 @@
    "history": [
     {
      "at": "2026-11-04T13:05:55.714Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "note": "more room",
      "state": "pending"
     },
     {
      "at": "2026-11-04T13:05:55.758Z",
-     "by": "Ben <ben@ey.com>",
+     "by": "Ben <ben@example.com>",
      "note": "agreed",
      "state": "approved"
     },
     {
      "at": "2026-11-04T13:05:55.758Z",
-     "by": "Ben <ben@ey.com>",
+     "by": "Ben <ben@example.com>",
      "note": "guardian's hourly cap: 10 → 15",
      "state": "applied"
     },
     {
      "at": "2026-11-04T13:05:55.814Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "note": "by pc-bc4918f497384cd9: the cap let a run through",
      "state": "rolled_back"
     }
@@ -2475,7 +2475,7 @@
     "max_actions_per_hour": 15
    },
    "proposed_at": "2026-11-04T13:05:55.714Z",
-   "proposed_by": "Ada <ada@ey.com>",
+   "proposed_by": "Ada <ada@example.com>",
    "reason": "more room",
    "reject_reason": "",
    "rejected_at": null,
@@ -2539,7 +2539,7 @@
       }
      },
      "approved_at": "2026-11-04T13:05:55.917Z",
-     "approved_by": "Ben <ben@ey.com>",
+     "approved_by": "Ben <ben@example.com>",
      "audit_id": 26,
      "before": {
       "calls": 200,
@@ -2574,13 +2574,13 @@
      "history": [
       {
        "at": "2026-11-04T13:05:55.905Z",
-       "by": "Ada <ada@ey.com>",
+       "by": "Ada <ada@example.com>",
        "note": "tighten it",
        "state": "pending"
       },
       {
        "at": "2026-11-04T13:05:55.917Z",
-       "by": "Ben <ben@ey.com>",
+       "by": "Ben <ben@example.com>",
        "note": "",
        "state": "approved"
       },
@@ -2597,7 +2597,7 @@
       "calls": 9
      },
      "proposed_at": "2026-11-04T13:05:55.905Z",
-     "proposed_by": "Ada <ada@ey.com>",
+     "proposed_by": "Ada <ada@example.com>",
      "reason": "tighten it",
      "reject_reason": "",
      "rejected_at": null,
@@ -2624,7 +2624,7 @@
       "rubric": ""
      },
      "applied_at": "2026-11-04T13:05:55.814Z",
-     "applied_by": "Ada <ada@ey.com>",
+     "applied_by": "Ada <ada@example.com>",
      "applied_diff": {
       "changes": [
        {
@@ -2647,7 +2647,7 @@
       }
      },
      "approved_at": "2026-11-04T13:05:55.814Z",
-     "approved_by": "Ada <ada@ey.com>",
+     "approved_by": "Ada <ada@example.com>",
      "audit_id": 14,
      "before": {
       "agents": [],
@@ -2687,7 +2687,7 @@
      "history": [
       {
        "at": "2026-11-04T13:05:55.814Z",
-       "by": "Ada <ada@ey.com>",
+       "by": "Ada <ada@example.com>",
        "note": "emergency rollback of pc-016bad55f7014f51: the cap let a run through",
        "state": "applied"
       }
@@ -2698,7 +2698,7 @@
       "max_actions_per_hour": 10
      },
      "proposed_at": "2026-11-04T13:05:55.814Z",
-     "proposed_by": "Ada <ada@ey.com>",
+     "proposed_by": "Ada <ada@example.com>",
      "reason": "the cap let a run through",
      "reject_reason": "",
      "rejected_at": null,
@@ -2736,7 +2736,7 @@
       "rubric": ""
      },
      "applied_at": "2026-11-04T13:05:55.814Z",
-     "applied_by": "Ada <ada@ey.com>",
+     "applied_by": "Ada <ada@example.com>",
      "applied_diff": {
       "changes": [
        {
@@ -2759,7 +2759,7 @@
       }
      },
      "approved_at": "2026-11-04T13:05:55.814Z",
-     "approved_by": "Ada <ada@ey.com>",
+     "approved_by": "Ada <ada@example.com>",
      "audit_id": 14,
      "before": {
       "agents": [],
@@ -2799,7 +2799,7 @@
      "history": [
       {
        "at": "2026-11-04T13:05:55.814Z",
-       "by": "Ada <ada@ey.com>",
+       "by": "Ada <ada@example.com>",
        "note": "emergency rollback of pc-016bad55f7014f51: the cap let a run through",
        "state": "applied"
       }
@@ -2810,7 +2810,7 @@
       "max_actions_per_hour": 10
      },
      "proposed_at": "2026-11-04T13:05:55.814Z",
-     "proposed_by": "Ada <ada@ey.com>",
+     "proposed_by": "Ada <ada@example.com>",
      "reason": "the cap let a run through",
      "reject_reason": "",
      "rejected_at": null,
@@ -2837,7 +2837,7 @@
       "rubric": ""
      },
      "applied_at": "2026-11-04T13:05:55.758Z",
-     "applied_by": "Ben <ben@ey.com>",
+     "applied_by": "Ben <ben@example.com>",
      "applied_diff": {
       "changes": [
        {
@@ -2860,7 +2860,7 @@
       }
      },
      "approved_at": "2026-11-04T13:05:55.758Z",
-     "approved_by": "Ben <ben@ey.com>",
+     "approved_by": "Ben <ben@example.com>",
      "audit_id": 8,
      "before": {
       "agents": [],
@@ -2900,25 +2900,25 @@
      "history": [
       {
        "at": "2026-11-04T13:05:55.714Z",
-       "by": "Ada <ada@ey.com>",
+       "by": "Ada <ada@example.com>",
        "note": "more room",
        "state": "pending"
       },
       {
        "at": "2026-11-04T13:05:55.758Z",
-       "by": "Ben <ben@ey.com>",
+       "by": "Ben <ben@example.com>",
        "note": "agreed",
        "state": "approved"
       },
       {
        "at": "2026-11-04T13:05:55.758Z",
-       "by": "Ben <ben@ey.com>",
+       "by": "Ben <ben@example.com>",
        "note": "guardian's hourly cap: 10 → 15",
        "state": "applied"
       },
       {
        "at": "2026-11-04T13:05:55.814Z",
-       "by": "Ada <ada@ey.com>",
+       "by": "Ada <ada@example.com>",
        "note": "by pc-bc4918f497384cd9: the cap let a run through",
        "state": "rolled_back"
       }
@@ -2929,7 +2929,7 @@
       "max_actions_per_hour": 15
      },
      "proposed_at": "2026-11-04T13:05:55.714Z",
-     "proposed_by": "Ada <ada@ey.com>",
+     "proposed_by": "Ada <ada@example.com>",
      "reason": "more room",
      "reject_reason": "",
      "rejected_at": null,
@@ -2999,7 +2999,7 @@
      "history": [
       {
        "at": "2026-11-04T13:05:55.616Z",
-       "by": "Ada <ada@ey.com>",
+       "by": "Ada <ada@example.com>",
        "note": "a sensitive agent",
        "state": "pending"
       }
@@ -3010,7 +3010,7 @@
       "period_days": 30
      },
      "proposed_at": "2026-11-04T13:05:55.616Z",
-     "proposed_by": "Ada <ada@ey.com>",
+     "proposed_by": "Ada <ada@example.com>",
      "reason": "a sensitive agent",
      "reject_reason": "",
      "rejected_at": null,
@@ -3060,7 +3060,7 @@
      "history": [
       {
        "at": "2026-11-04T13:05:55.605Z",
-       "by": "Ada <ada@ey.com>",
+       "by": "Ada <ada@example.com>",
        "note": "tighter for L5",
        "state": "pending"
       }
@@ -3071,7 +3071,7 @@
       "attestation_within_days": 14
      },
      "proposed_at": "2026-11-04T13:05:55.605Z",
-     "proposed_by": "Ada <ada@ey.com>",
+     "proposed_by": "Ada <ada@example.com>",
      "reason": "tighter for L5",
      "reject_reason": "",
      "rejected_at": null,
@@ -3121,7 +3121,7 @@
      "history": [
       {
        "at": "2026-11-04T13:05:55.594Z",
-       "by": "Ada <ada@ey.com>",
+       "by": "Ada <ada@example.com>",
        "note": "one noisy agent",
        "state": "pending"
       }
@@ -3132,7 +3132,7 @@
       "run_starts_per_minute": 2
      },
      "proposed_at": "2026-11-04T13:05:55.594Z",
-     "proposed_by": "Ada <ada@ey.com>",
+     "proposed_by": "Ada <ada@example.com>",
      "reason": "one noisy agent",
      "reject_reason": "",
      "rejected_at": null,
@@ -3192,7 +3192,7 @@
      "history": [
       {
        "at": "2026-11-04T13:05:55.583Z",
-       "by": "Ada <ada@ey.com>",
+       "by": "Ada <ada@example.com>",
        "note": "the records schedule",
        "state": "pending"
       }
@@ -3204,7 +3204,7 @@
       "runs": 365
      },
      "proposed_at": "2026-11-04T13:05:55.583Z",
-     "proposed_by": "Ada <ada@ey.com>",
+     "proposed_by": "Ada <ada@example.com>",
      "reason": "the records schedule",
      "reject_reason": "",
      "rejected_at": null,
@@ -3280,7 +3280,7 @@
      "history": [
       {
        "at": "2026-11-04T13:05:55.573Z",
-       "by": "Ada <ada@ey.com>",
+       "by": "Ada <ada@example.com>",
        "note": "case ids",
        "state": "pending"
       }
@@ -3299,7 +3299,7 @@
       ]
      },
      "proposed_at": "2026-11-04T13:05:55.573Z",
-     "proposed_by": "Ada <ada@ey.com>",
+     "proposed_by": "Ada <ada@example.com>",
      "reason": "case ids",
      "reject_reason": "",
      "rejected_at": null,
@@ -3354,7 +3354,7 @@
      "history": [
       {
        "at": "2026-11-04T13:05:55.562Z",
-       "by": "Ada <ada@ey.com>",
+       "by": "Ada <ada@example.com>",
        "note": "the new phrasing",
        "state": "pending"
       }
@@ -3368,7 +3368,7 @@
       ]
      },
      "proposed_at": "2026-11-04T13:05:55.562Z",
-     "proposed_by": "Ada <ada@ey.com>",
+     "proposed_by": "Ada <ada@example.com>",
      "reason": "the new phrasing",
      "reject_reason": "",
      "rejected_at": null,
@@ -9433,16 +9433,16 @@
     },
     {
      "condition": "review",
-     "detail": "approved by Rui <rui@ey.com> at 2026-11-04T13:05:58.480Z",
+     "detail": "approved by Rui <rui@example.com> at 2026-11-04T13:05:58.480Z",
      "items": [
       {
        "agent": "triage",
        "at": "2026-11-04T13:05:58.480Z",
        "authors": [
-        "Ada <ada@ey.com>"
+        "Ada <ada@example.com>"
        ],
-       "by": "Rui <rui@ey.com>",
-       "by_sub": "autox|rui@ey.com",
+       "by": "Rui <rui@example.com>",
+       "by_sub": "iap|rui@example.com",
        "digest": "ae164934c963c793",
        "id": "rv-d49d834f35394ae5",
        "note": "policy holds",
@@ -9513,7 +9513,7 @@
    "override": {
     "at": "2026-11-04T13:05:58.481Z",
     "audit_id": 7,
-    "by": "Ada <ada@ey.com>",
+    "by": "Ada <ada@example.com>",
     "passed": [
      "autonomy"
     ],
@@ -9569,16 +9569,16 @@
     },
     {
      "condition": "review",
-     "detail": "approved by Rui <rui@ey.com> at 2026-11-04T13:05:58.277Z",
+     "detail": "approved by Rui <rui@example.com> at 2026-11-04T13:05:58.277Z",
      "items": [
       {
        "agent": "triage",
        "at": "2026-11-04T13:05:58.277Z",
        "authors": [
-        "Ada <ada@ey.com>"
+        "Ada <ada@example.com>"
        ],
-       "by": "Rui <rui@ey.com>",
-       "by_sub": "autox|rui@ey.com",
+       "by": "Rui <rui@example.com>",
+       "by_sub": "iap|rui@example.com",
        "digest": "ae164934c963c793",
        "id": "rv-7723072ec85f412c",
        "note": "policy holds",
@@ -9991,7 +9991,7 @@
     "framework": null,
     "from": "2026-10-05T13:05:57.780Z",
     "generated_at": "2026-11-04T13:05:57.780Z",
-    "generated_by": "Chandresh Singh",
+    "generated_by": "Asha Rao",
     "keys": [],
     "to": "2026-11-04T13:05:57.780Z"
    },
@@ -10168,7 +10168,7 @@
      "agent": "gated",
      "approved": true,
      "at": "2026-11-04T13:05:57.441Z",
-     "by": "Chandresh Singh",
+     "by": "Asha Rao",
      "chained": true,
      "control_ids": [
       "AF-HO-01"
@@ -10215,7 +10215,7 @@
       "saved a version"
      ],
      "count": 2,
-     "identity": "Chandresh Singh"
+     "identity": "Asha Rao"
     }
    ],
    "pack": {
@@ -10224,7 +10224,7 @@
     "framework": null,
     "from": "2026-10-05T13:05:57.445Z",
     "generated_at": "2026-11-04T13:05:57.446Z",
-    "generated_by": "Chandresh Singh",
+    "generated_by": "Asha Rao",
     "keys": [],
     "to": "2026-11-04T13:05:57.445Z"
    },
@@ -10238,7 +10238,7 @@
       "digest": "1bdcc09ebdcb7a76",
       "reviews": [],
       "saved_at": "2026-11-04T13:05:57.436Z",
-      "saved_by": "Chandresh Singh",
+      "saved_by": "Asha Rao",
       "version": 1
      }
     ]
@@ -10413,7 +10413,7 @@
     "framework": null,
     "from": "2026-10-05T13:05:57.425Z",
     "generated_at": "2026-11-04T13:05:57.425Z",
-    "generated_by": "Chandresh Singh",
+    "generated_by": "Asha Rao",
     "keys": [],
     "to": "2026-11-04T13:05:57.425Z"
    },
@@ -10578,7 +10578,7 @@
      "agent": "gated",
      "approved": true,
      "at": "2026-11-04T13:05:57.546Z",
-     "by": "Chandresh Singh",
+     "by": "Asha Rao",
      "chained": true,
      "control_ids": [
       "AF-HO-01"
@@ -10589,7 +10589,7 @@
      "digest": "sha256:a0975d1700c6d5914472d7fb3e01d7cfdbb42fdf5eb63d3815c93ac777811f12",
      "disagrees": [
       {
-       "chain": "Chandresh Singh",
+       "chain": "Asha Rao",
        "field": "by",
        "record": "Mallory <mallory@evil.example>"
       }
@@ -10632,7 +10632,7 @@
       "saved a version"
      ],
      "count": 2,
-     "identity": "Chandresh Singh"
+     "identity": "Asha Rao"
     }
    ],
    "pack": {
@@ -10641,7 +10641,7 @@
     "framework": null,
     "from": "2026-10-05T13:05:57.611Z",
     "generated_at": "2026-11-04T13:05:57.611Z",
-    "generated_by": "Chandresh Singh",
+    "generated_by": "Asha Rao",
     "keys": [],
     "to": "2026-11-04T13:05:57.611Z"
    },
@@ -10655,7 +10655,7 @@
       "digest": "1bdcc09ebdcb7a76",
       "reviews": [],
       "saved_at": "2026-11-04T13:05:57.540Z",
-      "saved_by": "Chandresh Singh",
+      "saved_by": "Asha Rao",
       "version": 1
      }
     ]
@@ -10670,7 +10670,7 @@
      "disagrees": [
       {
        "at": 7,
-       "chain": "Chandresh Singh",
+       "chain": "Asha Rao",
        "entry": "857d4a88cd03",
        "field": "decisions[0].by",
        "record": "Mallory <mallory@evil.example>"
@@ -13694,7 +13694,7 @@
      "agent": "gated",
      "approved": true,
      "at": "2026-11-04T13:05:57.441Z",
-     "by": "Chandresh Singh",
+     "by": "Asha Rao",
      "chained": true,
      "control_ids": [
       "AF-HO-01"
@@ -13741,7 +13741,7 @@
       "saved a version"
      ],
      "count": 2,
-     "identity": "Chandresh Singh"
+     "identity": "Asha Rao"
     }
    ],
    "pack": {
@@ -13750,7 +13750,7 @@
     "framework": "eu_ai_act",
     "from": "2026-10-05T13:05:57.458Z",
     "generated_at": "2026-11-04T13:05:57.458Z",
-    "generated_by": "Chandresh Singh",
+    "generated_by": "Asha Rao",
     "keys": [],
     "to": "2026-11-04T13:05:57.458Z"
    },
@@ -13764,7 +13764,7 @@
       "digest": "1bdcc09ebdcb7a76",
       "reviews": [],
       "saved_at": "2026-11-04T13:05:57.436Z",
-      "saved_by": "Chandresh Singh",
+      "saved_by": "Asha Rao",
       "version": 1
      }
     ]
@@ -13823,7 +13823,7 @@
     "framework": "dpdp",
     "from": "2026-10-05T13:05:57.359Z",
     "generated_at": "2026-11-04T13:05:57.359Z",
-    "generated_by": "Chandresh Singh",
+    "generated_by": "Asha Rao",
     "keys": [],
     "to": "2026-11-04T13:05:57.359Z"
    },
@@ -14023,7 +14023,7 @@
     "framework": null,
     "from": "2026-10-05T13:05:57.823Z",
     "generated_at": "2026-11-04T13:05:57.823Z",
-    "generated_by": "Chandresh Singh",
+    "generated_by": "Asha Rao",
     "keys": [],
     "to": "2026-11-04T13:05:57.823Z"
    },
@@ -14189,14 +14189,14 @@
       "rolled back a policy change"
      ],
      "count": 3,
-     "identity": "Ada <ada@ey.com>"
+     "identity": "Ada <ada@example.com>"
     },
     {
      "acted_as": [
       "approved a policy change"
      ],
      "count": 1,
-     "identity": "Ben <ben@ey.com>"
+     "identity": "Ben <ben@example.com>"
     }
    ],
    "pack": {
@@ -14205,7 +14205,7 @@
     "framework": null,
     "from": "2026-10-05T13:05:57.871Z",
     "generated_at": "2026-11-04T13:05:57.872Z",
-    "generated_by": "Owen <owen@ey.com>",
+    "generated_by": "Owen <owen@example.com>",
     "keys": [],
     "to": "2026-11-04T13:05:57.871Z"
    },
@@ -14213,15 +14213,15 @@
     "changes": [
      {
       "applied_at": "2026-11-04T13:05:57.864Z",
-      "applied_by": "Ben <ben@ey.com>",
+      "applied_by": "Ben <ben@example.com>",
       "approved_at": "2026-11-04T13:05:57.864Z",
-      "approved_by": "Ben <ben@ey.com>",
+      "approved_by": "Ben <ben@example.com>",
       "audit_id": 5,
       "emergency": false,
       "id": "pc-f5f8f222a61a40d2",
       "in_force_at_start": false,
       "proposed_at": "2026-11-04T13:05:57.862Z",
-      "proposed_by": "Ada <ada@ey.com>",
+      "proposed_by": "Ada <ada@example.com>",
       "reason": "tighten it",
       "rollback_of": "",
       "rolled_back_by": "pc-4ae6f3c220f843f8",
@@ -14234,15 +14234,15 @@
      },
      {
       "applied_at": "2026-11-04T13:05:57.868Z",
-      "applied_by": "Ada <ada@ey.com>",
+      "applied_by": "Ada <ada@example.com>",
       "approved_at": "2026-11-04T13:05:57.868Z",
-      "approved_by": "Ada <ada@ey.com>",
+      "approved_by": "Ada <ada@example.com>",
       "audit_id": 8,
       "emergency": true,
       "id": "pc-4ae6f3c220f843f8",
       "in_force_at_start": false,
       "proposed_at": "2026-11-04T13:05:57.868Z",
-      "proposed_by": "Ada <ada@ey.com>",
+      "proposed_by": "Ada <ada@example.com>",
       "reason": "undo",
       "rollback_of": "pc-f5f8f222a61a40d2",
       "rolled_back_by": "",
@@ -14456,7 +14456,7 @@
      "agent": "quarterly",
      "approved": true,
      "at": "2026-11-04T13:05:57.678Z",
-     "by": "Chandresh Singh",
+     "by": "Asha Rao",
      "chained": true,
      "control_ids": [
       "AF-HO-01"
@@ -14520,7 +14520,7 @@
       "saved a version"
      ],
      "count": 2,
-     "identity": "Chandresh Singh"
+     "identity": "Asha Rao"
     }
    ],
    "pack": {
@@ -14529,7 +14529,7 @@
     "framework": null,
     "from": "2026-10-05T13:05:57.729Z",
     "generated_at": "2026-11-04T13:05:57.730Z",
-    "generated_by": "Chandresh Singh",
+    "generated_by": "Asha Rao",
     "keys": [],
     "to": "2026-11-04T13:05:57.729Z"
    },
@@ -14543,7 +14543,7 @@
       "digest": "d0668b2588b95155",
       "reviews": [],
       "saved_at": "2026-11-04T13:05:57.641Z",
-      "saved_by": "Chandresh Singh",
+      "saved_by": "Asha Rao",
       "version": 1
      }
     ]
@@ -14719,7 +14719,7 @@
     "framework": null,
     "from": "2026-10-05T13:05:57.513Z",
     "generated_at": "2026-11-04T13:05:57.513Z",
-    "generated_by": "Chandresh Singh",
+    "generated_by": "Asha Rao",
     "keys": [],
     "to": "2026-11-04T13:05:57.513Z"
    },
@@ -18177,7 +18177,7 @@
    "history": [
     {
      "at": "2026-11-04T13:05:55.714Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "note": "more room",
      "state": "pending"
     }
@@ -18188,7 +18188,7 @@
     "max_actions_per_hour": 15
    },
    "proposed_at": "2026-11-04T13:05:55.714Z",
-   "proposed_by": "Ada <ada@ey.com>",
+   "proposed_by": "Ada <ada@example.com>",
    "reason": "more room",
    "reject_reason": "",
    "rejected_at": null,
@@ -18255,7 +18255,7 @@
    "history": [
     {
      "at": "2026-11-04T13:05:56.105Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "note": "the desk needs lookups",
      "state": "pending"
     }
@@ -18270,7 +18270,7 @@
     ]
    },
    "proposed_at": "2026-11-04T13:05:56.105Z",
-   "proposed_by": "Ada <ada@ey.com>",
+   "proposed_by": "Ada <ada@example.com>",
    "reason": "the desk needs lookups",
    "reject_reason": "",
    "rejected_at": null,
@@ -18323,7 +18323,7 @@
    "history": [
     {
      "at": "2026-11-04T13:05:55.616Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "note": "a sensitive agent",
      "state": "pending"
     }
@@ -18334,7 +18334,7 @@
     "period_days": 30
    },
    "proposed_at": "2026-11-04T13:05:55.616Z",
-   "proposed_by": "Ada <ada@ey.com>",
+   "proposed_by": "Ada <ada@example.com>",
    "reason": "a sensitive agent",
    "reject_reason": "",
    "rejected_at": null,
@@ -18387,7 +18387,7 @@
    "history": [
     {
      "at": "2026-11-04T13:05:55.905Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "note": "tighten it",
      "state": "pending"
     }
@@ -18398,7 +18398,7 @@
     "calls": 9
    },
    "proposed_at": "2026-11-04T13:05:55.905Z",
-   "proposed_by": "Ada <ada@ey.com>",
+   "proposed_by": "Ada <ada@example.com>",
    "reason": "tighten it",
    "reject_reason": "",
    "rejected_at": null,
@@ -18456,7 +18456,7 @@
    "history": [
     {
      "at": "2026-11-04T13:05:55.562Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "note": "the new phrasing",
      "state": "pending"
     }
@@ -18470,7 +18470,7 @@
     ]
    },
    "proposed_at": "2026-11-04T13:05:55.562Z",
-   "proposed_by": "Ada <ada@ey.com>",
+   "proposed_by": "Ada <ada@example.com>",
    "reason": "the new phrasing",
    "reject_reason": "",
    "rejected_at": null,
@@ -18523,7 +18523,7 @@
    "history": [
     {
      "at": "2026-11-04T13:05:56.304Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "note": "the new contract",
      "state": "pending"
     }
@@ -18534,7 +18534,7 @@
     "max_data_class": "confidential"
    },
    "proposed_at": "2026-11-04T13:05:56.304Z",
-   "proposed_by": "Ada <ada@ey.com>",
+   "proposed_by": "Ada <ada@example.com>",
    "reason": "the new contract",
    "reject_reason": "",
    "rejected_at": null,
@@ -18587,7 +18587,7 @@
    "history": [
     {
      "at": "2026-11-04T13:05:55.594Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "note": "one noisy agent",
      "state": "pending"
     }
@@ -18598,7 +18598,7 @@
     "run_starts_per_minute": 2
    },
    "proposed_at": "2026-11-04T13:05:55.594Z",
-   "proposed_by": "Ada <ada@ey.com>",
+   "proposed_by": "Ada <ada@example.com>",
    "reason": "one noisy agent",
    "reject_reason": "",
    "rejected_at": null,
@@ -18677,7 +18677,7 @@
    "history": [
     {
      "at": "2026-11-04T13:05:55.573Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "note": "case ids",
      "state": "pending"
     }
@@ -18696,7 +18696,7 @@
     ]
    },
    "proposed_at": "2026-11-04T13:05:55.573Z",
-   "proposed_by": "Ada <ada@ey.com>",
+   "proposed_by": "Ada <ada@example.com>",
    "reason": "case ids",
    "reject_reason": "",
    "rejected_at": null,
@@ -18775,7 +18775,7 @@
    "history": [
     {
      "at": "2026-11-04T13:05:58.971Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "note": "personal data",
      "state": "pending"
     }
@@ -18794,7 +18794,7 @@
     ]
    },
    "proposed_at": "2026-11-04T13:05:58.971Z",
-   "proposed_by": "Ada <ada@ey.com>",
+   "proposed_by": "Ada <ada@example.com>",
    "reason": "personal data",
    "reject_reason": "",
    "rejected_at": null,
@@ -18857,7 +18857,7 @@
    "history": [
     {
      "at": "2026-11-04T13:05:55.583Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "note": "the records schedule",
      "state": "pending"
     }
@@ -18869,7 +18869,7 @@
     "runs": 365
    },
    "proposed_at": "2026-11-04T13:05:55.583Z",
-   "proposed_by": "Ada <ada@ey.com>",
+   "proposed_by": "Ada <ada@example.com>",
    "reason": "the records schedule",
    "reject_reason": "",
    "rejected_at": null,
@@ -18922,7 +18922,7 @@
    "history": [
     {
      "at": "2026-11-04T13:05:55.605Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "note": "tighter for L5",
      "state": "pending"
     }
@@ -18933,7 +18933,7 @@
     "attestation_within_days": 14
    },
    "proposed_at": "2026-11-04T13:05:55.605Z",
-   "proposed_by": "Ada <ada@ey.com>",
+   "proposed_by": "Ada <ada@example.com>",
    "reason": "tighter for L5",
    "reject_reason": "",
    "rejected_at": null,
@@ -19095,13 +19095,13 @@
    "history": [
     {
      "at": "2026-11-04T13:05:55.869Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "note": "tighten it",
      "state": "pending"
     },
     {
      "at": "2026-11-04T13:05:55.882Z",
-     "by": "Ben <ben@ey.com>",
+     "by": "Ben <ben@example.com>",
      "note": "too tight for the batch window",
      "state": "rejected"
     }
@@ -19112,11 +19112,11 @@
     "calls": 7
    },
    "proposed_at": "2026-11-04T13:05:55.869Z",
-   "proposed_by": "Ada <ada@ey.com>",
+   "proposed_by": "Ada <ada@example.com>",
    "reason": "tighten it",
    "reject_reason": "too tight for the batch window",
    "rejected_at": "2026-11-04T13:05:55.882Z",
-   "rejected_by": "Ben <ben@ey.com>",
+   "rejected_by": "Ben <ben@example.com>",
    "rollback_of": "",
    "rolled_back_at": null,
    "rolled_back_by": "",
@@ -19148,7 +19148,7 @@
     "aborted": false,
     "approved": true,
     "at": "2026-11-04T13:05:57.183Z",
-    "by": "Chandresh Singh",
+    "by": "Asha Rao",
     "by_sub": "local:operator",
     "control_ids": [
      "AF-HO-01"
@@ -19266,7 +19266,7 @@
     "rubric": ""
    },
    "applied_at": "2026-11-04T13:05:55.814Z",
-   "applied_by": "Ada <ada@ey.com>",
+   "applied_by": "Ada <ada@example.com>",
    "applied_diff": {
     "changes": [
      {
@@ -19289,7 +19289,7 @@
     }
    },
    "approved_at": "2026-11-04T13:05:55.814Z",
-   "approved_by": "Ada <ada@ey.com>",
+   "approved_by": "Ada <ada@example.com>",
    "audit_id": 14,
    "before": {
     "agents": [],
@@ -19329,7 +19329,7 @@
    "history": [
     {
      "at": "2026-11-04T13:05:55.814Z",
-     "by": "Ada <ada@ey.com>",
+     "by": "Ada <ada@example.com>",
      "note": "emergency rollback of pc-016bad55f7014f51: the cap let a run through",
      "state": "applied"
     }
@@ -19340,7 +19340,7 @@
     "max_actions_per_hour": 10
    },
    "proposed_at": "2026-11-04T13:05:55.814Z",
-   "proposed_by": "Ada <ada@ey.com>",
+   "proposed_by": "Ada <ada@example.com>",
    "reason": "the cap let a run through",
    "reject_reason": "",
    "rejected_at": null,
@@ -19393,7 +19393,7 @@
      "aborted": false,
      "approved": true,
      "at": "2026-11-04T13:05:57.183Z",
-     "by": "Chandresh Singh",
+     "by": "Asha Rao",
      "by_sub": "local:operator",
      "chained": true,
      "control_ids": [
@@ -19555,14 +19555,14 @@
       "data": {
        "answer": {
         "approved": true,
-        "by": "Chandresh Singh",
+        "by": "Asha Rao",
         "inputs": {
          "verdict": "benign"
         },
         "note": "fine"
        }
       },
-      "detail": "approved by Chandresh Singh",
+      "detail": "approved by Asha Rao",
       "hash": "7dc1f12b84db0f74fd1b4ba68587e659572443837e65ab7484459fd9b24c00cf",
       "id": "164151774629",
       "kind": "resume",
@@ -19578,14 +19578,14 @@
       ],
       "data": {
        "approved": true,
-       "by": "Chandresh Singh",
+       "by": "Asha Rao",
        "controls": [
         "gate"
        ],
        "note": "fine",
        "opened": "1d9e5e9548fe"
       },
-      "detail": "Chandresh Singh: fine",
+      "detail": "Asha Rao: fine",
       "hash": "70a19f5d08594b78ffc149cd5c4463e004fc8d559ce4a8ca10b449d5d27951e2",
       "id": "d690f42906c0",
       "kind": "gate.answer",
@@ -19755,7 +19755,7 @@
      "aborted": false,
      "approved": true,
      "at": "2026-11-04T11:03:17.561Z",
-     "by": "Chandresh Singh",
+     "by": "Asha Rao",
      "by_sub": "local:operator",
      "control_ids": [
       "AF-HO-01"
@@ -19908,14 +19908,14 @@
       "data": {
        "answer": {
         "approved": true,
-        "by": "Chandresh Singh",
+        "by": "Asha Rao",
         "inputs": {
          "verdict": "benign"
         },
         "note": "fine"
        }
       },
-      "detail": "approved by Chandresh Singh",
+      "detail": "approved by Asha Rao",
       "hash": "95033042f3c58de928ca3b1bdf4bd25f0f4b774568332e4c6b0ebbe776742f9e",
       "id": "69c79fc44b74",
       "kind": "resume",
@@ -19931,10 +19931,10 @@
       ],
       "data": {
        "approved": true,
-       "by": "Chandresh Singh",
+       "by": "Asha Rao",
        "note": "fine"
       },
-      "detail": "Chandresh Singh: fine",
+      "detail": "Asha Rao: fine",
       "hash": "8219000a9c0f16cc50b82f8d961f8381c7b58a5dd74f4c07c39ecc20cd1e56af",
       "id": "452517687c0b",
       "kind": "gate.answer",
@@ -20183,7 +20183,7 @@
           "meta": {
            "bytes": 36
           },
-          "origin": "/private/var/folders/61/jr7y7qys75b8m5kzjfkklys40000gn/T/pytest-of-plazor/pytest-860/test_run_record_data_class0/workspace/documents/pay.md",
+          "origin": "/private/var/folders/61/jr7y7qys75b8m5kzjfkklys40000gn/T/pytest-of-builder/pytest-860/test_run_record_data_class0/workspace/documents/pay.md",
           "score": 1.0,
           "source": "hr",
           "title": "pay"
@@ -20226,7 +20226,7 @@
            "meta": {
             "bytes": 36
            },
-           "origin": "/private/var/folders/61/jr7y7qys75b8m5kzjfkklys40000gn/T/pytest-of-plazor/pytest-860/test_run_record_data_class0/workspace/documents/pay.md",
+           "origin": "/private/var/folders/61/jr7y7qys75b8m5kzjfkklys40000gn/T/pytest-of-builder/pytest-860/test_run_record_data_class0/workspace/documents/pay.md",
            "score": 1.0,
            "source": "hr",
            "title": "pay"
@@ -20695,7 +20695,7 @@
      "aborted": false,
      "approved": true,
      "at": "2026-11-04T13:05:57.546Z",
-     "by": "Chandresh Singh",
+     "by": "Asha Rao",
      "by_sub": "local:operator",
      "chained": true,
      "control_ids": [
@@ -20707,7 +20707,7 @@
      "digest": "sha256:a0975d1700c6d5914472d7fb3e01d7cfdbb42fdf5eb63d3815c93ac777811f12",
      "disagrees": [
       {
-       "chain": "Chandresh Singh",
+       "chain": "Asha Rao",
        "field": "by",
        "record": "Mallory <mallory@evil.example>"
       }
@@ -20864,14 +20864,14 @@
       "data": {
        "answer": {
         "approved": true,
-        "by": "Chandresh Singh",
+        "by": "Asha Rao",
         "inputs": {
          "verdict": "benign"
         },
         "note": "fine"
        }
       },
-      "detail": "approved by Chandresh Singh",
+      "detail": "approved by Asha Rao",
       "hash": "96f9144267861ec33de9a32a07e086c7144187522fa93aace355a4ad0d17787f",
       "id": "839bcf89301b",
       "kind": "resume",
@@ -20887,14 +20887,14 @@
       ],
       "data": {
        "approved": true,
-       "by": "Chandresh Singh",
+       "by": "Asha Rao",
        "controls": [
         "gate"
        ],
        "note": "fine",
        "opened": "eaa95169878a"
       },
-      "detail": "Chandresh Singh: fine",
+      "detail": "Asha Rao: fine",
       "hash": "224ce38976eca75565f54c6fa2d19144f67cdae0563dc99eff3b5d0ddc8137f7",
       "id": "857d4a88cd03",
       "kind": "gate.answer",
@@ -21744,7 +21744,7 @@
    "disagrees": [
     {
      "at": 7,
-     "chain": "Chandresh Singh",
+     "chain": "Asha Rao",
      "entry": "857d4a88cd03",
      "field": "decisions[0].by",
      "record": "Mallory <mallory@evil.example>"
@@ -22343,7 +22343,7 @@
       "agent": "triage",
       "as_role": "administrator",
       "at": "2026-11-04T13:05:58.077Z",
-      "by": "Ada <ada@ey.com>",
+      "by": "Ada <ada@example.com>",
       "deployed": {
        "digest": "3a802c629fc8f32b",
        "version": 1
@@ -22416,7 +22416,7 @@
       "period_days": 90,
       "previous": {
        "at": "2026-11-04T13:05:58.065Z",
-       "by": "Owen <owen@ey.com>",
+       "by": "Owen <owen@example.com>",
        "digest": "3a802c629fc8f32b",
        "id": "at-0ceeaabc480e4d73",
        "version": 1
@@ -22426,7 +22426,7 @@
      },
      "overdue": false,
      "owner": {
-      "owner": "owen@ey.com",
+      "owner": "owen@example.com",
       "owner_sub": "",
       "source": "spec"
      },
@@ -22459,7 +22459,7 @@
      "last": null,
      "overdue": false,
      "owner": {
-      "owner": "owen@ey.com",
+      "owner": "owen@example.com",
       "owner_sub": "",
       "source": "spec"
      },
@@ -22485,7 +22485,7 @@
       "agent": "triage",
       "as_role": "administrator",
       "at": "2026-07-07T13:05:58.077Z",
-      "by": "Ada <ada@ey.com>",
+      "by": "Ada <ada@example.com>",
       "deployed": {
        "digest": "3a802c629fc8f32b",
        "version": 1
@@ -22558,7 +22558,7 @@
       "period_days": 90,
       "previous": {
        "at": "2026-11-04T13:05:58.065Z",
-       "by": "Owen <owen@ey.com>",
+       "by": "Owen <owen@example.com>",
        "digest": "3a802c629fc8f32b",
        "id": "at-0ceeaabc480e4d73",
        "version": 1
@@ -22568,7 +22568,7 @@
      },
      "overdue": true,
      "owner": {
-      "owner": "owen@ey.com",
+      "owner": "owen@example.com",
       "owner_sub": "",
       "source": "spec"
      },
@@ -22594,7 +22594,7 @@
       "agent": "triage",
       "as_role": "administrator",
       "at": "2026-07-07T13:05:58.077Z",
-      "by": "Ada <ada@ey.com>",
+      "by": "Ada <ada@example.com>",
       "deployed": {
        "digest": "3a802c629fc8f32b",
        "version": 1
@@ -22667,7 +22667,7 @@
       "period_days": 90,
       "previous": {
        "at": "2026-11-04T13:05:58.065Z",
-       "by": "Owen <owen@ey.com>",
+       "by": "Owen <owen@example.com>",
        "digest": "3a802c629fc8f32b",
        "id": "at-0ceeaabc480e4d73",
        "version": 1
@@ -22677,7 +22677,7 @@
      },
      "overdue": true,
      "owner": {
-      "owner": "owen@ey.com",
+      "owner": "owen@example.com",
       "owner_sub": "",
       "source": "spec"
      },
@@ -24082,7 +24082,7 @@
    "set_by": "",
    "sources": {
     "changes": "policy target autonomy_tiers",
-    "doc": "docs/agentic-ai-security-abb.md §1.2 (Autonomy levels, EY synthesis)",
+    "doc": "docs/agentic-ai-security-abb.md §1.2 (Autonomy levels, synthesis)",
     "requirements": "agentfactory.autonomy.REQUIREMENTS",
     "tiers": "agentfactory.autonomy.tiers()"
    },
@@ -24183,7 +24183,7 @@
       "attestation_30d"
      ],
      "description": "Unattended end to end: on top of L4, a person approves a review of every deploy, and the owner attests every 30 days that it still does what was approved.",
-     "doc_minimum_controls": "Full AEGIS phase 4",
+     "doc_minimum_controls": "Full HARBOR phase 4",
      "doc_name": "Multi-agent",
      "example": "Supply-chain orchestration",
      "name": "Full",
@@ -24299,10 +24299,10 @@
     }
    ],
    "set_at": "2026-11-04T13:05:58.577Z",
-   "set_by": "Ben <ben@ey.com>",
+   "set_by": "Ben <ben@example.com>",
    "sources": {
     "changes": "policy target autonomy_tiers",
-    "doc": "docs/agentic-ai-security-abb.md §1.2 (Autonomy levels, EY synthesis)",
+    "doc": "docs/agentic-ai-security-abb.md §1.2 (Autonomy levels, synthesis)",
     "requirements": "agentfactory.autonomy.REQUIREMENTS",
     "tiers": "agentfactory.autonomy.tiers()"
    },
@@ -24403,7 +24403,7 @@
       "attestation_30d"
      ],
      "description": "Unattended end to end: on top of L4, a person approves a review of every deploy, and the owner attests every 30 days that it still does what was approved.",
-     "doc_minimum_controls": "Full AEGIS phase 4",
+     "doc_minimum_controls": "Full HARBOR phase 4",
      "doc_name": "Multi-agent",
      "example": "Supply-chain orchestration",
      "name": "Full",
@@ -24546,7 +24546,7 @@
    "set_by": "",
    "sources": {
     "changes": "policy target autonomy_tiers",
-    "doc": "docs/agentic-ai-security-abb.md §1.2 (Autonomy levels, EY synthesis)",
+    "doc": "docs/agentic-ai-security-abb.md §1.2 (Autonomy levels, synthesis)",
     "requirements": "agentfactory.autonomy.REQUIREMENTS",
     "tiers": "agentfactory.autonomy.tiers()"
    },
@@ -24647,7 +24647,7 @@
       "attestation_30d"
      ],
      "description": "Unattended end to end: on top of L4, a person approves a review of every deploy, and the owner attests every 30 days that it still does what was approved.",
-     "doc_minimum_controls": "Full AEGIS phase 4",
+     "doc_minimum_controls": "Full HARBOR phase 4",
      "doc_name": "Multi-agent",
      "example": "Supply-chain orchestration",
      "name": "Full",
@@ -24819,7 +24819,7 @@
    "set_by": "",
    "sources": {
     "changes": "policy target autonomy_tiers",
-    "doc": "docs/agentic-ai-security-abb.md §1.2 (Autonomy levels, EY synthesis)",
+    "doc": "docs/agentic-ai-security-abb.md §1.2 (Autonomy levels, synthesis)",
     "requirements": "agentfactory.autonomy.REQUIREMENTS",
     "tiers": "agentfactory.autonomy.tiers()"
    },
@@ -24920,7 +24920,7 @@
       "attestation_30d"
      ],
      "description": "Unattended end to end: on top of L4, a person approves a review of every deploy, and the owner attests every 30 days that it still does what was approved.",
-     "doc_minimum_controls": "Full AEGIS phase 4",
+     "doc_minimum_controls": "Full HARBOR phase 4",
      "doc_name": "Multi-agent",
      "example": "Supply-chain orchestration",
      "name": "Full",
@@ -25092,7 +25092,7 @@
    "set_by": "",
    "sources": {
     "changes": "policy target autonomy_tiers",
-    "doc": "docs/agentic-ai-security-abb.md §1.2 (Autonomy levels, EY synthesis)",
+    "doc": "docs/agentic-ai-security-abb.md §1.2 (Autonomy levels, synthesis)",
     "requirements": "agentfactory.autonomy.REQUIREMENTS",
     "tiers": "agentfactory.autonomy.tiers()"
    },
@@ -25193,7 +25193,7 @@
       "attestation_30d"
      ],
      "description": "Unattended end to end: on top of L4, a person approves a review of every deploy, and the owner attests every 30 days that it still does what was approved.",
-     "doc_minimum_controls": "Full AEGIS phase 4",
+     "doc_minimum_controls": "Full HARBOR phase 4",
      "doc_name": "Multi-agent",
      "example": "Supply-chain orchestration",
      "name": "Full",

@@ -45,16 +45,15 @@ import { WORKLOADS, ask, type Door, type Finding, type FindingList, type Finding
  * with a note. `?run=`, `?workload=`, `?severity=` and `?status=` preset the
  * filters, so a run's page and the outcome dashboard can link here.
  *
- * The doors are ahead of the backend (lib/api/pending.ts): until they answer,
- * the page shows its filters and columns and says it is not connected.
+ * The doors are named in lib/api/pending.ts.
  */
 
 const LIMIT = 500;
 
-/* "My team" is shown and not offered: nothing sets a person's team, and the platform answers a person with no team their own findings instead. */
+/* A person's team is set on the IAM page; the platform answers a person with no team their own findings for "My team". */
 const SCOPES: { id: Scope; label: string; title: string; off?: boolean }[] = [
   { id: "mine", label: "Mine", title: "Findings of runs you started" },
-  { id: "team", label: "My team", title: "Not built: nothing on this platform sets a person's team, so findings cannot be filtered by one.", off: true },
+  { id: "team", label: "My team", title: "Findings of runs your team started; with no team set on the IAM page, your own" },
   { id: "all", label: "All", title: "Every finding you may see" },
 ];
 
@@ -367,11 +366,13 @@ function FindingsPage() {
   const status = params.get("status") ?? "";
   const agent = params.get("agent") ?? "";
   const scopeParam = params.get("scope");
-  // `team` is not built (SCOPES): an old link asking for it is read as every finding, not as a person's own under another name.
-  const scope: Scope = scopeParam === "mine" ? scopeParam : "all";
+  // `mine`, `team` (the platform answers a person with no team their own) or every finding.
+  const scope: Scope = scopeParam === "mine" || scopeParam === "team" ? scopeParam : "all";
   const selected = params.get("id");
   const [q, setQ] = useState("");
   const [agents, setAgents] = useState<string[]>([]);
+  /** Why the agents were not read: the agent filter then offers only those on the findings read, and says why. */
+  const [agentsError, setAgentsError] = useState("");
 
   const hrefWith = useCallback(
     (next: Record<string, string | null>) => {
@@ -392,8 +393,16 @@ function FindingsPage() {
   useEffect(() => {
     let live = true;
     listAgents()
-      .then((a) => live && setAgents(a.map((x) => x.id)))
-      .catch(() => live && setAgents([]));
+      .then((a) => {
+        if (!live) return;
+        setAgents(a.map((x) => x.id));
+        setAgentsError("");
+      })
+      .catch((e) => {
+        if (!live) return;
+        setAgents([]);
+        setAgentsError((e as Error).message);
+      });
     return () => {
       live = false;
     };
@@ -460,6 +469,7 @@ function FindingsPage() {
           </Filter>
           <Filter label="Agent" width="w-44">
             <Pick value={agent} onChange={(v) => filter({ agent: v || null })} aria-label="Agent" options={[{ value: "", label: "Every agent" }, ...agentOptions.map((a) => ({ value: a, label: a }))]} />
+            {agentsError && <span className="text-[10.5px] leading-[1.4] text-err" title={agentsError}>The agents could not be read: only those on these findings are offered.</span>}
           </Filter>
           <Filter label="Search" width="w-52">
             <span className="flex h-8 items-center">
@@ -528,7 +538,7 @@ function FindingsPage() {
             ) : rows.length === 0 ? (
               <EmptyState
                 title={set > 0 ? "No finding matches these filters" : "No findings yet"}
-                detail={set > 0 ? "Nothing on record has this workload, status, agent, run and owner." : "Runs on this deployment do not record findings yet: no engine step writes one."}
+                detail={set > 0 ? "Nothing on record has this workload, status, agent, run and owner." : "No finding has been recorded yet. A run records one through its finding.record tool."}
               />
             ) : (
               <EmptyState title="No finding matches" detail="The findings read do not include one with this severity and search text." />

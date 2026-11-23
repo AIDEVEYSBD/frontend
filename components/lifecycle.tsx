@@ -547,8 +547,8 @@ interface Loaded {
   /** An agent cut from a template: its lineage and drift; null for one made by hand. */
   lineage: Lineage | null;
   error: string;
-  /** Why the reviews, the deployments and the benchmark were not read, when they were not: each is shown in its own section, never as an empty one. */
-  failed: { reviews: string; deployments: string; benchmark: string };
+  /** Why the reviews, the deployments, the benchmark, the versions and the lineage were not read, when they were not: each is shown in its own section, never as an empty one. */
+  failed: { reviews: string; deployments: string; benchmark: string; versions: string; lineage: string };
 }
 
 function AgentLifecycle({ agent, digest }: { agent: string; digest: string | null }) {
@@ -573,8 +573,16 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
     const val = <T,>(r: PromiseSettledResult<T>): T | null => (r.status === "fulfilled" ? r.value : null);
     const why = <T,>(r: PromiseSettledResult<T>): string => (r.status === "rejected" ? (r.reason as Error).message : "");
     const firstError = [detail, lifecycle].find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
-    // Only an agent cut from a template has a lineage to read.
-    const lineage = val(detail)?.lineage ? await getLineage(agent).catch(() => null) : null;
+    // Only an agent cut from a template has a lineage to read; a lineage that could not be read says so, never "made by hand".
+    let lineage: Lineage | null = null;
+    let lineageFailed = "";
+    if (val(detail)?.lineage) {
+      try {
+        lineage = await getLineage(agent);
+      } catch (e) {
+        lineageFailed = (e as Error).message;
+      }
+    }
     setData({
       detail: val(detail),
       lifecycle: val(lifecycle),
@@ -584,15 +592,23 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
       versions: val(versions)?.versions ?? [],
       lineage,
       error: firstError ? (firstError.reason as Error).message : "",
-      failed: { reviews: why(reviews), deployments: why(deployments), benchmark: why(benchmark) },
+      failed: { reviews: why(reviews), deployments: why(deployments), benchmark: why(benchmark), versions: why(versions), lineage: lineageFailed },
     });
   }, [agent, digest]);
 
   useEffect(() => soon(load), [load]);
+  /** Why the other agents were not read: the retirement form then offers no replacement, and says why. */
+  const [agentsError, setAgentsError] = useState("");
   useEffect(() => {
     listAgents()
-      .then(setAgents)
-      .catch(() => setAgents([]));
+      .then((a) => {
+        setAgents(a);
+        setAgentsError("");
+      })
+      .catch((e) => {
+        setAgents([]);
+        setAgentsError((e as Error).message);
+      });
   }, []);
 
   const who: Reviewer | null = session ? { name: session.name, email: session.email, sub: session.sub, roles: session.roles, appRoles: session.appRoles, groups: session.groups } : null;
@@ -681,6 +697,7 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
         </Section>
       </> : <>
       <Section title="Spine" meta="each stage lit only by its own record">
+        {data?.failed.versions && <Failure what="The versions could not be read, so the spine, the review form and the canary form offer none to choose" message={data.failed.versions} />}
         {versionOptions.length > 1 && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[11px] text-faint">Drawn for</span>
@@ -735,13 +752,14 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
         )}
       </Section>
 
-      {data?.lineage && (
+      {(data?.lineage || data?.failed.lineage) && (
         <Section id="lineage" title="Lineage" meta="the certified template it was cut from, and the drift since">
-          <LineageView lineage={data.lineage} />
+          {data.lineage ? <LineageView lineage={data.lineage} /> : <Failure what="This agent was cut from a template, and its lineage could not be read" message={data.failed.lineage} />}
         </Section>
       )}
 
       <Section title="Retirement" meta="refuses new work everywhere; its records stay">
+        {agentsError && !retired && <Failure what="The other agents could not be read, so no replacement can be named here" message={agentsError} />}
         {retired ? (
           <p className="text-[12px] text-faint">Retired {whenText(retired.at)}. Nothing restarts it; save its document as a new agent to carry it on.</p>
         ) : (

@@ -2366,9 +2366,9 @@ export interface components {
         AgentFigures: {
             /**
              * Cost
-             * @default 0
+             * @description null when a model call in it had no price set
              */
-            cost: number;
+            cost: number | null;
             /**
              * Nodes
              * @default 0
@@ -4404,9 +4404,9 @@ export interface components {
         DepEdge: {
             /**
              * Cost
-             * @default 0
+             * @description null when a model call in it had no price set
              */
-            cost: number;
+            cost: number | null;
             /**
              * Count
              * @default 0
@@ -4843,9 +4843,9 @@ export interface components {
             checks?: components["schemas"]["EvalCheck"][];
             /**
              * Duration Ms
-             * @default 0
+             * @description null when the case was not measured (its start was refused)
              */
-            duration_ms: number;
+            duration_ms: number | null;
             /**
              * Error
              * @default
@@ -5294,9 +5294,9 @@ export interface components {
         Figures: {
             /**
              * Cost
-             * @default 0
+             * @description null when a model call in it had no price set
              */
-            cost: number;
+            cost: number | null;
             /**
              * Refusals
              * @default 0
@@ -8531,12 +8531,8 @@ export interface components {
             model: string;
             /** Parent Run */
             parent_run?: string | null;
-            /**
-             * Provider
-             * @default foundry
-             * @enum {string}
-             */
-            provider: "foundry" | "scripted";
+            /** Provider */
+            provider?: string;
             /** Spec */
             spec?: {
                 [key: string]: unknown;
@@ -9773,9 +9769,11 @@ export interface components {
             agent: string;
             /**
              * Cost
-             * @default 0
+             * @description null when a model call in it had no price set
              */
-            cost: number;
+            cost: number | null;
+            /** Unpriced: the models its own calls used with no price set */
+            unpriced?: string[];
             /**
              * Depth
              * @default 0
@@ -9842,9 +9840,9 @@ export interface components {
             };
             /**
              * Cost
-             * @default 0
+             * @description null when a model call in it had no price set
              */
-            cost: number;
+            cost: number | null;
             /**
              * Refusals
              * @default 0
@@ -9958,8 +9956,6 @@ export interface components {
             email_verified: boolean;
             /** First Seen */
             first_seen: string;
-            /** Is Ey Employee */
-            is_ey_employee: boolean;
             /** Last App Roles */
             last_app_roles: string[];
             /** Last Roles */

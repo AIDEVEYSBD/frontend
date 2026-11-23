@@ -148,7 +148,7 @@ export function RegisterDialog({ workloads, onDone, onClose }: { workloads: { va
               <Pick size="md" aria-label="Workload it uses" value={workload} onChange={setWorkload} options={[{ value: "", label: "Choose a workload" }, ...workloads]} disabled={busy} invalid={tried && !workload} />
             </Field>
             <div className="sm:col-span-2">
-              <Field label="Autonomy level" error={need(!autonomy, "Choose an autonomy level.")} hint={tried && !autonomy ? undefined : tier ? `${tier.label}: a label, recorded with the use case and not applied to runs.` : "A label for how much a run of it may do without a person; recorded, not applied."}>
+              <Field label="Autonomy level" error={need(!autonomy, "Choose an autonomy level.")} hint={tried && !autonomy ? undefined : tier ? `${tier.label}: checked at each production deploy of the agent that runs it, against the controls this level requires.` : "How much a run of it may do without a person; a production deploy of the agent that runs it is held to the controls the level requires."}>
                 <Pick size="md" aria-label="Autonomy level" value={autonomy} onChange={setAutonomy} options={[{ value: "", label: "Choose a level" }, ...TIER_CHOICES.map((t) => ({ value: t.value, label: t.label }))]} disabled={busy} invalid={tried && !autonomy} />
               </Field>
             </div>

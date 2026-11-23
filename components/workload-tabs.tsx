@@ -22,8 +22,8 @@ import { workloadHref, type OfferReading, type WorkloadProfile } from "@/lib/wor
  * reports are, and its acceptance record, each in brief with a link to the
  * page that holds the whole of it.
  *
- * Findings and acceptance are ahead of their doors (lib/api/pending.ts): they
- * say so and show no row until the door answers. The report tab reads the
+ * Findings and acceptance read their doors (lib/api/pending.ts). The report
+ * tab reads the
  * deliverables of the agent the workloads door names, through the door the
  * Deliverables page reads.
  */

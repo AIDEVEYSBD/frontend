@@ -5,13 +5,12 @@ import { byAgentRows, deliveryText, fmtUsd, inFlightNodes, isRecordReached, kill
 import { limitText, rateLimitText, scopeText, secondsLeft, waitText } from "@/lib/rate-limit";
 import { adjacency, blastCountsLine, blastIds, blastRefusalText, drawnEnds, edgeLook, groupByLayer, nameOf, nodeTitle, pathText } from "@/lib/dependencies";
 import { driftVerdict, orderDrift, sideText, statText, thresholdText, windowsLine } from "@/lib/drift";
-import { cadenceText, capText, coverageText, formOf, formProblems, mayText, patchOf } from "@/lib/guardian";
 
 /**
  * The pure logic the L7 pages render with, on shapes built here: the run
  * tree's outline and rollup, the kill's receipt, a rate limit in words, the
  * dependency map's layers and a node's neighbourhood, the blast radius in
- * words, drift's figures and the guardian's form. tests/l7-contract.test.ts
+ * words and drift's figures. tests/l7-contract.test.ts
  * holds the same helpers against captured responses; these hold the cases
  * a capture does not reach (deeper trees, torn records, odd figures).
  */
@@ -289,41 +288,6 @@ describe("drift's figures", () => {
     expect(driftVerdict({ enough: true, drifted: false, measures: [], says: "" })).toEqual({ tone: "ok", label: "Within thresholds", detail: "no measure past its threshold" });
     const a = (agent: string, drifted: boolean, enough: boolean) => ({ agent, drifted, enough, says: "", outcome_field: null, measures: [], ...w });
     expect(orderDrift([a("c", false, false), a("b", false, true), a("z", true, true), a("a", true, true)]).map((x) => x.agent)).toEqual(["a", "z", "b", "c"]);
-  });
-});
-
-describe("the guardian's form", () => {
-  const view = { enabled: true, model: "", agents: ["triage"] as string[] | "*", may: ["hold"] as ("hold" | "block")[], max_actions_per_hour: 10, min_confidence: 0.8, rubric: "", every_entries: 5, every_s: 15, set_by: "", set_at: "", audit_id: null, actions_last_hour: 0, stats: { evaluations: 0, ok: 0, acted: 0, attention: 0, unparseable: 0, errors: 0, repeated: 0, watching: 0 } };
-
-  it("refuses before sending what the door would refuse", () => {
-    const f = formOf(view);
-    expect(formProblems(f)).toEqual({});
-    expect(Object.keys(formProblems({ ...f, max_actions_per_hour: "1.5", min_confidence: "", every_entries: "0", every_s: "0.05", agents: ["Bad Id"], rubric: "x".repeat(4001) })).sort()).toEqual(["agents", "every_entries", "every_s", "max_actions_per_hour", "min_confidence", "rubric"]);
-    // Every agent: the ids typed are not read.
-    expect(formProblems({ ...f, allAgents: true, agents: ["Bad Id"] })).toEqual({});
-  });
-
-  it("sends a reordered agent list as a change, and trims", () => {
-    expect(patchOf({ ...view, agents: ["a", "b"] }, { ...formOf({ ...view, agents: ["a", "b"] }), agents: ["b", "a"] })).toEqual({ agents: ["b", "a"] });
-    expect(patchOf(view, { ...formOf(view), model: "  gpt-4o  ", agents: [" triage ", "triage"] })).toEqual({ model: "gpt-4o" });
-    expect(patchOf(view, { ...formOf(view), hold: false })).toEqual({ may: [] });
-  });
-
-  it("says what it watches, what it may do, its cap and its cadence", () => {
-    expect([coverageText({ enabled: false, agents: "*" }), coverageText({ enabled: true, agents: [] }), coverageText({ enabled: true, agents: "*" }), coverageText({ enabled: true, agents: ["a", "b"] })]).toEqual([
-      "off: it judges no run",
-      "on, but no agent is named: it judges no run",
-      "every agent's runs",
-      "the runs of a, b",
-    ]);
-    // Since L8 the guardian may also redirect, so a guardian that may only block raises a redirect for a person too.
-    expect([mayText([]), mayText(["block"]), mayText(["hold", "block"])]).toEqual([
-      "nothing on its own: every verdict is raised for a person",
-      "block (kill) a run; a hold or a redirect is raised for a person",
-      "hold a run at its next gate, or block (kill) it; a redirect is raised for a person",
-    ]);
-    expect(capText({ actions_last_hour: 3, max_actions_per_hour: 0 })).toBe("3 acts in the last hour; the cap is 0, so it acts on nothing");
-    expect(cadenceText({ every_entries: 1, every_s: 0.5 })).toBe("every 1 new entry, or after 0.5 s with at least one");
   });
 });
 

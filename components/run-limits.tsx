@@ -50,6 +50,11 @@ export interface LimitEntry {
 export interface RunFacts {
   /** The spec document stored with the run, when the record holds one. */
   spec: unknown;
+  /**
+   * `spec` is the agent's latest saved version as this page loaded it to start the run, not the copy the platform
+   * stored with the run (which is the deployed version, or a canary candidate).
+   */
+  specLoaded?: boolean;
   specDigest: string;
   /** The runtime's own meter (`tool_calls`, `tokens`, `cost_usd`, `wall_clock_s`); empty on a record written before it. */
   spent: Rec;
@@ -67,7 +72,7 @@ export interface RunFacts {
  * `Budget.tool_calls`, `Delegation.max_depth`, `Node.max_steps`). Named as
  * defaults wherever they are shown, never as the spec's own word.
  */
-const RUNTIME_DEFAULT = { tool_calls: 200, max_depth: 3, max_steps: 12 } as const;
+const RUNTIME_DEFAULT = { tool_calls: 200, max_depth: 3, max_steps: 12, max_visits: 8 } as const;
 
 /* ═══════════════════ the spec a run is read against ═══════════════════ */
 
@@ -82,8 +87,11 @@ export function specBody(doc: unknown): Rec | null {
 
 export interface RunSpec {
   body: Rec | null;
-  /** `record`: the copy stored with the run. `agent`: the agent's spec as it is today. `none`: neither could be read. */
-  from: "record" | "agent" | "none";
+  /**
+   * `record`: the copy stored with the run. `loaded`: the agent's latest saved version as the page loaded it to start
+   * the run. `agent`: the agent's spec as it is today. `none`: neither could be read.
+   */
+  from: "record" | "loaded" | "agent" | "none";
   loading: boolean;
   /** The digest of the agent's spec today, when that is what is shown. */
   agentDigest: string;
@@ -92,7 +100,7 @@ export interface RunSpec {
 }
 
 /** The spec to read a run against: its own copy, else the agent's spec today. */
-export function useRunSpec(recordSpec: unknown, system: string, runDigest: string): RunSpec {
+export function useRunSpec(recordSpec: unknown, system: string, runDigest: string, loaded = false): RunSpec {
   const own = specBody(recordSpec);
   const [fetched, setFetched] = useState<{ system: string; body: Rec | null; digest: string } | null>(null);
   useEffect(() => {
@@ -112,7 +120,7 @@ export function useRunSpec(recordSpec: unknown, system: string, runDigest: strin
       live = false;
     };
   }, [own, system]);
-  if (own) return { body: own, from: "record", loading: false, agentDigest: "", runDigest, system };
+  if (own) return { body: own, from: loaded ? "loaded" : "record", loading: false, agentDigest: "", runDigest, system };
   const mine = fetched && fetched.system === system ? fetched : null;
   if (!mine) return { body: null, from: "none", loading: Boolean(system), agentDigest: "", runDigest, system };
   return { body: mine.body, from: mine.body ? "agent" : "none", loading: false, agentDigest: mine.digest, runDigest, system };
@@ -124,6 +132,12 @@ const short = (d: string) => d.slice(0, 8);
 export function specLine(s: RunSpec): { tone: Tone; text: string } {
   if (s.loading) return { tone: "neutral", text: "Reading the spec…" };
   if (s.from === "record") return { tone: "neutral", text: "Read from the spec stored with this run." };
+  if (s.from === "loaded") {
+    return {
+      tone: "warn",
+      text: "These are the limits of the agent's latest saved version, as this page loaded it to start the run. The platform runs the deployed version, or a canary candidate, which may differ: the run's own page, once it is recorded, reads the spec stored with it.",
+    };
+  }
   if (s.from === "none") {
     return {
       tone: "warn",
@@ -290,6 +304,10 @@ export function spendRows(
   stopped: Stopped | null,
   /** False when the platform names tool calls as not built: the row is left out and the panel says why. */ toolCalls = true,
   /** The run's cost budget as a person raised it on a budget decision; null when it was not raised. */ raisedCost: number | null = null,
+  /**
+   * What the run tree said of `cost`: `priced` (a figure), `unpriced` (the ledger has a call with no price set, and
+   * these models are the ones named), or `unread` (the tree was not read, so `cost` is not known either way).
+   */ costFrom: { state: "priced" | "unread" } | { state: "unpriced"; models: string[] } = { state: cost === null ? "unread" : "priced" },
 ): SpendRow[] {
   const budget = obj(obj(spec?.policy).budget);
   const metered = (k: string) => num(facts.spent[k]);
@@ -312,7 +330,11 @@ export function spendRows(
   const tok = metered("tokens");
   const usd = metered("cost_usd") ?? cost;
   // The models a call used with no price set (`spent.unpriced`): while any is named, the run has no cost figure.
-  const unpriced = Array.isArray(facts.spent.unpriced) ? (facts.spent.unpriced as unknown[]).map(String) : [];
+  const unpriced = [
+    ...new Set([...(Array.isArray(facts.spent.unpriced) ? (facts.spent.unpriced as unknown[]).map(String) : []), ...(costFrom.state === "unpriced" && metered("cost_usd") === null ? costFrom.models : [])]),
+  ];
+  // The ledger's figure is null for a call with no price set: "no price set", even when the models are not named here.
+  const ledgerUnpriced = metered("cost_usd") === null && costFrom.state === "unpriced";
   const wall = metered("wall_clock_s") ?? clocked ?? journalClock;
   const callRow: SpendRow = {
     key: "tool_calls",
@@ -339,10 +361,29 @@ export function spendRows(
       key: "cost_usd",
       label: "Cost",
       used: usd,
-      usedText: usd === null || unpriced.length ? (unpriced.length ? `not priced: ${unpriced.join(", ")} ${unpriced.length === 1 ? "has" : "have"} no price set` : "not priced") : fmtUsd(usd),
+      usedText:
+        usd === null || unpriced.length
+          ? unpriced.length
+            ? `not priced: ${unpriced.join(", ")} ${unpriced.length === 1 ? "has" : "have"} no price set`
+            : ledgerUnpriced
+              ? "no price set"
+              : costFrom.state === "unread"
+                ? "not read"
+                : "not priced"
+          : fmtUsd(usd),
       ceiling: raisedCost ?? ceiling("cost_usd"),
       ceilingText: raisedCost !== null ? `${fmtUsd(raisedCost)}, raised on a budget decision` : ceiling("cost_usd") === null ? none : fmtUsd(ceiling("cost_usd") as number),
-      basis: unpriced.length ? "a model call used a model with no price set on the Models tab, so the platform keeps no cost figure for this run" : metered("cost_usd") !== null ? "counted by the runtime at the prices set on the Models tab" : cost !== null ? "priced as the ledger prices it" : "the platform keeps no cost figure for this run",
+      basis: unpriced.length
+        ? "a model call used a model with no price set on the Models tab, so the platform keeps no cost figure for this run"
+        : metered("cost_usd") !== null
+          ? "counted by the runtime at the prices set on the Models tab"
+          : cost !== null
+            ? "priced as the ledger prices it"
+            : ledgerUnpriced
+              ? "a model call in this run or a run below it had no price set on the Models tab, so the ledger keeps no cost figure"
+              : costFrom.state === "unread"
+                ? "the run tree, which carries the ledger's price, could not be read"
+                : "the platform keeps no cost figure for this run",
       stopped: stopped?.kind === "cost_usd",
     },
     {
@@ -616,13 +657,14 @@ export function BoundsView({ spec, steps, stopped, visits }: { spec: Rec | null;
               </>
             ) : stopped?.kind === "reentry" && stopped.limit !== null ? (
               <>
-                Not set in the spec
+                <span className="tnum text-fg">{stopped.limit}</span>, the runtime&rsquo;s cap
                 <span className="block text-[10px] text-faint">the runtime stopped {stopped.node} after {stopped.limit} entries</span>
               </>
-            ) : !spec ? (
-              <span className="text-faint">{unknown}</span>
             ) : (
-              "Not set in the spec"
+              <>
+                <span className="tnum text-fg">{RUNTIME_DEFAULT.max_visits}</span> entries of one step, the runtime&rsquo;s cap
+                <span className="block text-[10px] text-faint">the definition has no field for it: every run is held to it</span>
+              </>
             )}
             {most && most[1] > 0 && <span className="block text-[10px] text-faint">most entries of one step in this run: {most[1]} ({most[0]})</span>}
           </dd>
@@ -690,12 +732,16 @@ export function RunLimitsPanel({
   // The ledger's price for this run's own entries: the run tree's node for it.
   const { tree } = useRunTree(runId, live);
   const own = tree?.nodes.find((n) => n.run === tree.asked);
-  const cost = own ? (own.listed?.cost ?? own.cost) : null;
+  // The record's row (its sub-runs folded in) when the tree has it, else its own figure. A null there is a call with no
+  // price set: it never falls through to a priced figure that leaves that call out.
+  const cost = own ? (own.listed ? own.listed.cost : own.cost) : null;
+  const costFrom = !own ? { state: "unread" as const } : cost === null ? { state: "unpriced" as const, models: own.unpriced } : { state: "priced" as const };
   /** The run ledger's not-built list: tool calls are neither made nor counted while it names them. */
   const [ledgerNotBuilt, setLedgerNotBuilt] = useState<string[]>([]);
   useEffect(() => {
     let alive = true;
-    void readRunRowsNotBuilt().then((l) => alive && setLedgerNotBuilt(l));
+    // A failed read names nothing as not built: the strip shows the calls it counted, as it would with the list read.
+    void readRunRowsNotBuilt().then((r) => alive && setLedgerNotBuilt(r.ok ? r.list : []));
     return () => {
       alive = false;
     };
@@ -710,7 +756,7 @@ export function RunLimitsPanel({
   const budgetStop = error.match(/stopped at its budget by .+$/)?.[0] ?? "";
   const stoppedAtBudget = Boolean(budgetStop);
   const raised = [...pauses].reverse().find((p) => p.scope === "run" && p.decided?.raise_to != null)?.decided?.raise_to ?? null;
-  const rows = spendRows(spec.body, facts, entries, cost, stopped, !toolCallsUnbuilt, raised);
+  const rows = spendRows(spec.body, facts, entries, cost, stopped, !toolCallsUnbuilt, raised, costFrom);
   // Left to itself, the strip opens when a limit ended the run, or while it waits on a decision on its budget.
   const open = asked ?? chosen ?? (Boolean(stopped) || waitingOnBudget);
   const steps = stepBounds(spec.body, entries, facts.visits);

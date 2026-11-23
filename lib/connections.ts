@@ -1,14 +1,13 @@
 /**
- * Connections: every tool's pluggable backends, described once.
+ * Connections: each connector kind a definition can carry, described once.
  *
- * This is the retrieval pattern made uniform. Each tool card that connects to
- * the outside declares a config *slot* on its binding (`sources`, `backends`,
- * `transports`, `engines`, `roots`), and each connector kind describes the
- * fields a person configures. The builder renders all of them from this table
- * — adding a connector kind is a row here plus its runtime class, never new UI.
+ * A tool that connects to the outside keeps its connections in a config
+ * *slot* on its binding (`sources`, `backends`, `transports`, `engines`,
+ * `roots`), and each connector kind names the fields it needs. The
+ * Configuration page names the sources the service lists by these labels,
+ * and lib/spec.ts reads a definition's connections through listConnections.
  */
 
-import { TOOL_BY_ID } from "./catalogue";
 import type { AgentSystem } from "./spec";
 import { newSource, SOURCE_META } from "./retrieval";
 import { dataClassChoices } from "./bom";
@@ -262,8 +261,4 @@ export function listConnections(system: AgentSystem): Connection[] {
 /** The binding a slot's config lives on — first tool of that server. */
 export function bindingFor(system: AgentSystem, server: string): string | undefined {
   return system.tools.find((t) => t.server === server)?.name;
-}
-
-export function toolCardForConnector(def: ConnectorDef) {
-  return TOOL_BY_ID.get(def.tool);
 }

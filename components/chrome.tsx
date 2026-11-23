@@ -479,7 +479,6 @@ export function Chrome({ children }: { children: React.ReactNode }) {
     initials: CURRENT_USER.initials,
     appRoles: [] as string[],
     sso: false,
-    demoDefaultApplied: false,
     email: "",
   };
   const roleLabel = session

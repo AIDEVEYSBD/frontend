@@ -121,8 +121,9 @@ const ms = (n: number) =>
 
 const tokens = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
+/** A call's cost: six decimals under a cent, so a cheap priced call never reads as free; "no price set" for an unpriced one. */
 const money = (n: number | null | undefined) =>
-  n === null || n === undefined ? "unpriced" : `$${n < 0.01 ? n.toFixed(4) : n.toFixed(2)}`;
+  n === null || n === undefined ? "no price set" : n === 0 ? "$0" : n < 0.000001 ? "<$0.000001" : `$${n < 0.01 ? n.toFixed(6).replace(/0+$/, "") : n.toFixed(2)}`;
 
 function depthOf(spans: Span[]): Map<string, number> {
   const byId = new Map(spans.map((s) => [s.id, s]));

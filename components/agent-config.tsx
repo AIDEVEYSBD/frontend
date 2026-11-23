@@ -1,6 +1,7 @@
 "use client";
 
 import { ControlsInForce } from "./controls-in-force";
+import { Failure } from "./pending";
 import { GATE_TIMEOUT_LINE, GATE_TIMEOUT_SHORT } from "@/lib/gates";
 import { AgentHeader, AgentStatus } from "./agent-header";
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
@@ -175,7 +176,8 @@ function Code({ children }: { children: ReactNode }) {
 
 /* ═══════════════════ sections ═══════════════════ */
 
-type Registry = { built: boolean | null; risk: Map<string, string> };
+/** `error`: why the registered risks were not read (the configuration, or the tool servers), so none is shown and the page says so. */
+type Registry = { built: boolean | null; risk: Map<string, string>; error?: string };
 
 const BUDGET: { key: BudgetKey; label: string; hint: string; unset: string; placeholder?: string }[] = [
   { key: "cost_usd", label: "Cost (USD)", hint: "Tokens at the price set for each model on the Models tab, checked after each model reply.", unset: "No limit set" },
@@ -205,7 +207,7 @@ function Limits({ form, registry }: { form: Form; registry: Registry }) {
         ))}
       </div>
       <Hint>
-        One tally for the whole run, across every step. Tokens and cost are checked after each model reply (the call that crosses the line has been made and is in the journal), wall-clock time between steps. Reaching a limit ends the run as failed, naming the limit. Leave a field empty for no limit.
+        One tally for the whole run, across every step. Tokens and cost are checked after each model reply (the call that crosses the line has been made and is in the journal), wall-clock time between steps. Reaching the cost limit pauses the run for a person to decide whether it goes on; reaching another limit ends the run as failed, naming the limit. Leave a field empty for no limit.
       </Hint>
     </Section>
   );
@@ -251,7 +253,7 @@ function Bounds({ form, steps, registry }: { form: Form; steps: StepRow[]; regis
                   </td>
                   <td className="px-3 py-2.5">
                     {loop ? (
-                      <span className="text-faint">Not built: delegate steps do not run on this deployment</span>
+                      <FieldText form={form} k={limit} label={`${s.label}: model calls`} numeric placeholder="12" unset="12, the runtime default" hint="Every model call the step makes counts, across gates; running out fails the step." />
                     ) : s.harness === "sequence" ? (
                       <span className="text-faint">{plural(s.fixed, "fixed step")}</span>
                     ) : (
@@ -260,7 +262,7 @@ function Bounds({ form, steps, registry }: { form: Form; steps: StepRow[]; regis
                   </td>
                   <td className="px-3 py-2.5">
                     {loop ? (
-                      <span className="text-faint">Not built</span>
+                      <FieldText form={form} k={stop} label={`${s.label}: stop when`} mono unset="Not set: the step ends when a reply asks for no tool and fits what it emits" hint="Read after each turn of calls, over the fields emitted so far and the counters step, tool_calls, denials and tools_used; a field not emitted yet reads as not holding." />
                     ) : s.harness === "sequence" ? (
                       <span className="text-faint">Ends after its last step</span>
                     ) : (
@@ -423,8 +425,9 @@ function useRegistry(): Registry {
   const [got, setGot] = useState<Registry>({ built: null, risk: new Map() });
   useEffect(() => {
     let live = true;
-    void Promise.all([readConfiguration(), listServers().catch(() => null)]).then(([r, servers]) => {
-      if (!live || !r.ok) return;
+    void Promise.all([readConfiguration(), listServers().then((s) => ({ s, failed: "" })).catch((e) => ({ s: null, failed: (e as Error).message }))]).then(([r, { s: servers, failed }]) => {
+      if (!live) return;
+      if (!r.ok) return setGot({ built: null, risk: new Map(), error: `the configuration could not be read${"message" in r && r.message ? `: ${r.message}` : ""}` });
       if (notBuilt(r.notBuilt, "tools")) return setGot({ built: false, risk: new Map() });
       const risk = new Map<string, string>();
       for (const row of Array.isArray(r.body.tools) ? r.body.tools : []) {
@@ -436,7 +439,7 @@ function useRegistry(): Registry {
         if (s.status !== "approved") continue;
         for (const t of s.pin?.tools ?? []) risk.set(`${s.id}.${t.name}`, toolRisk(t).risk);
       }
-      setGot({ built: true, risk });
+      setGot({ built: true, risk, error: failed ? `the tool servers could not be read, so the registered risk of a tool a server serves is not shown: ${failed}` : "" });
     });
     return () => {
       live = false;
@@ -572,6 +575,7 @@ function Tools({ doc, form, registry }: { doc: Doc; form: Form; registry: Regist
           </tbody>
         </table>
       </div>
+      {registry.error && <Failure inline message={`Registered risks: ${registry.error}`} />}
       <Hint>
         {registry.built === false
           ? "The platform names its tool registry as not built on this deployment, so these grants are what the document declares; no step can call a tool until it is built."
@@ -585,9 +589,10 @@ function Tools({ doc, form, registry }: { doc: Doc; form: Form; registry: Regist
 }
 
 /**
- * Fallback models (5.5), ahead of its backend for a workflow: the spec has
- * no field for them (runtime/agentfactory/spec.py) and a failed model call
- * is retried on the same endpoint. The field is shown, disabled, and says so.
+ * Fallback models (5.5). A workflow's document names none: each offered
+ * model's fallbacks are set once for the deployment, under Configuration,
+ * Models, and a call whose model is unavailable falls back along that list.
+ * The field is shown, disabled, and says so.
  */
 function Fallbacks({ steps }: { steps: StepRow[] }) {
   const named = [...new Set(steps.map((s) => s.model).filter(Boolean))];
@@ -597,7 +602,7 @@ function Fallbacks({ steps }: { steps: StepRow[] }) {
         <input disabled aria-label="Fallback models, separated by commas" className={`${INPUT} cursor-not-allowed bg-raise font-mono text-[12px] text-ghost`} />
       </Cell>
       <span className="text-[11.5px] leading-[1.5] text-faint" data-pending="spec.policy.fallbacks">
-        Not connected on this deployment: a workflow&rsquo;s document has no fallback field the runtime reads. A model call that fails is retried on the same endpoint, and the field stays disabled until the runtime takes one.
+        A workflow&rsquo;s document names no fallbacks. Each model&rsquo;s fallbacks are set once for the deployment, under Configuration, Models: a call whose model cannot be reached, times out, is rate limited or fails on its side goes to the next model on that list cleared for the call&rsquo;s data, and the run&rsquo;s journal records it.
       </span>
       {named.length > 0 && <span className="text-[11.5px] text-faint">The steps of this agent name: {named.join(", ")}. A step that names none takes the deployment&rsquo;s default.</span>}
     </Section>

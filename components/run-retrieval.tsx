@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { Button, Mono, Status, Tag } from "./ui";
+import { SafeLink } from "./safe-link";
 
 /**
  * A retrieval call, as a reviewer reads one: which sources were consulted
@@ -116,6 +117,7 @@ export function retrievalLine(r: Retrieval): string {
 }
 
 const flat = (s: string) => s.replace(/\s+/g, " ").trim();
+// A web address is offered as a link through lib/safe-link.ts (https only); any other origin (an upload, a corpus) is text.
 const isWeb = (s: string) => /^https?:\/\//i.test(s);
 const verdictTone = (a: string) => (/block|refus|deny|reject|withh/i.test(a) ? "err" : /flag|warn|redact/i.test(a) ? "warn" : "ok");
 
@@ -173,9 +175,9 @@ export function RetrievalBody({ r, initial = 3 }: { r: Retrieval; initial?: numb
                   </span>
                   {p.origin &&
                     (isWeb(p.origin) ? (
-                      <a href={p.origin} target="_blank" rel="noreferrer noopener" className="focusable min-w-0 truncate rounded-sm font-mono text-[10px] text-dim hover:underline">
+                      <SafeLink href={p.origin} className="focusable min-w-0 truncate rounded-sm font-mono text-[10px] text-dim hover:underline">
                         {p.origin}
-                      </a>
+                      </SafeLink>
                     ) : (
                       <span className="min-w-0 truncate font-mono text-[10px] text-dim">{p.origin}</span>
                     ))}

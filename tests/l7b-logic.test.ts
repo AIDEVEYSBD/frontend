@@ -56,7 +56,7 @@ describe("a peer's registration form", () => {
     expect(peerFormProblem({ ...ok, secret_name: "" })).toBe("Name the vault secret the two sides share.");
     expect(peerFormProblem({ ...ok, secret_name: "pasted secret value" })).toMatch(/never the secret itself/);
     expect(peerFormProblem({ ...ok, agent: "Not An Id" })).toBe('"Not An Id" is not an agent id.');
-    expect(peerFormProblem({ ...ok, id: "soc", agent: "aegis-dlp-triage-v3" })).toBe("");
+    expect(peerFormProblem({ ...ok, id: "soc", agent: "dlp-triage-v3" })).toBe("");
   });
 
   it("sends the contract's body: trimmed, blank optional fields left out", () => {
@@ -101,12 +101,12 @@ describe("a peer's status, card and access", () => {
   });
 
   it("who may approve: never twice, never without a card, never the registrant when two people must", () => {
-    const pending = peer({ card: card("sha256:x"), added_by: "Chandresh Singh" });
-    const me = { name: "Chandresh Singh", email: "", sub: "" };
+    const pending = peer({ card: card("sha256:x"), added_by: "Asha Rao" });
+    const me = { name: "Asha Rao", email: "", sub: "" };
     expect(approvePeerAccess(pending, me, false)).toEqual({ ok: true, reason: "" });
     // Local mode signs with the bare name, and the name decides.
     expect(approvePeerAccess(pending, me, true)).toEqual({ ok: false, reason: "a second person must approve" });
-    expect(approvePeerAccess(pending, { name: "Bo", email: "bo@ey.com" }, true)).toEqual({ ok: true, reason: "" });
+    expect(approvePeerAccess(pending, { name: "Bo", email: "bo@example.com" }, true)).toEqual({ ok: true, reason: "" });
     // An entry adopted from the runtime's file names nobody: anyone may.
     expect(approvePeerAccess({ ...pending, added_by: "" }, me, true)).toEqual({ ok: true, reason: "" });
     expect(approvePeerAccess({ ...pending, status: "approved" }, me, false).reason).toBe("the card is already approved");

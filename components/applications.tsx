@@ -187,8 +187,14 @@ export function Applications() {
     {
       id: "cost",
       label: "Spend",
-      value: apps && !pending ? (priced.length || !unpriced ? money(cost) : "no price set") : "…",
-      sub: unpriced ? `last 30 days · ${unpriced} call${unpriced === 1 ? "" : "s"} with no price set, not in it` : "last 30 days, registered applications",
+      // An application whose metrics were not read is left out of the sum and named; none read is "not read", never $0.00.
+      value: apps && !pending ? (unread && !known.length ? "not read" : priced.length || !unpriced ? money(cost) : "no price set") : "…",
+      sub: [
+        "last 30 days",
+        unpriced ? `${unpriced} call${unpriced === 1 ? "" : "s"} with no price set, not in it` : "",
+        unread ? `${unread} not read, not in it` : "",
+      ].filter(Boolean).join(" · ") + (unpriced || unread ? "" : ", registered applications"),
+      tone: unread ? "warn" : undefined,
     },
   ];
 

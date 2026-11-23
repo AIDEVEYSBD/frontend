@@ -51,7 +51,7 @@ export function PipelineView() {
                 <span className="text-[13px] font-semibold">Pick a stage to read what it does</span>
                 <span className="max-w-[90ch] text-[12px] leading-[1.6] text-dim">
                   A source is added to the register, fetched, split and indexed by its words, and then waits for a person. Only an admitted document is embedded and can be
-                  searched. Agents do not retrieve on this deployment yet.
+                  searched, by a person here or by an agent with a read grant through its retrieval.search tool.
                 </span>
               </>
             )}

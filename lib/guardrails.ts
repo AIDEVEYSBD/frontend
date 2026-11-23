@@ -587,7 +587,7 @@ export const STANDARDS: { std: string; title: string; note: string }[] = [
   {
     std: "OWASP LLM",
     title: "OWASP Top 10 for LLM Applications, 2026",
-    note: "Reissued August 2026. Excessive agency rose to third and hidden context exposure replaced system prompt leakage; this catalogue addresses both directly.",
+    note: "Published 4 August 2026 by the OWASP GenAI Security Project (GenAI-LLM-Top10, 2026/final). Excessive agency rose to third and hidden context exposure replaced system prompt leakage; this catalogue cites the 2026 numbering throughout.",
   },
   {
     std: "NIST AI RMF",

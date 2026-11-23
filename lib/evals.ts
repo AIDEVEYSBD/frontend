@@ -1,5 +1,5 @@
-import { derive, type Matrix } from "./metrics";
-import { isEvalOver, type EvalCaseResult, type EvalComparison, type EvalRateLimited, type EvalRunView, type ModelSummary } from "./api/l8";
+import type { Matrix } from "./metrics";
+import { comparisonOf, isEvalOver, type EvalCaseResult, type EvalComparison, type EvalRateLimited, type EvalRunView } from "./api/l8";
 
 /**
  * The Evals page's readings of the backend's runner (phase L8): the runner
@@ -88,7 +88,11 @@ export interface HistorySummary {
   forced?: boolean;
   compare?: boolean;
   tier?: "small" | "medium" | "large" | null;
-  avg_ms?: number;
+  /** null when no case ran: nothing was measured. */
+  avg_ms?: number | null;
+  /** This row's place among a comparison's candidates, and how many there are. */
+  leg?: number;
+  legs?: number;
   tokens?: { in: number; out: number };
   model_calls?: number;
   cost_total?: number | null;
@@ -140,7 +144,7 @@ export function historyRowOf(v: unknown): HistoryRow {
       checks: (Array.isArray(c.checks) ? c.checks : []).map((k) => ({ kind: s_(o_(k).kind), ok: o_(k).ok === true, note: s_(o_(k).note) })),
       expected: typeof c.expected === "string" ? c.expected : null,
       predicted: typeof c.predicted === "string" ? c.predicted : null,
-      duration_ms: n_(c.duration_ms) ?? 0,
+      duration_ms: n_(c.duration_ms),
       run_file: s_(c.run_file),
       outcome: s_(c.outcome),
     };
@@ -201,105 +205,64 @@ export function mergeHistory(history: readonly HistoryRow[], seen: readonly Hist
 /** Whether a history row was written by the backend's runner: it names the version it measured. Only these count for the gate. */
 export const isBackendRow = (r: Pick<HistoryRow, "summary">): boolean => Boolean(r.summary?.version_digest);
 
-const quality = (m: Pick<ModelSummary, "headline_f1" | "pass_rate">) => m.headline_f1 ?? m.pass_rate;
-
-/**
- * The most recent comparison in a set's history. A batch the backend ran
- * carries its recommendation on every row (`summary.comparison`): that is
- * read as it is. A batch the console's own runner wrote before L8 carries
- * none, and is rebuilt from its rows (one per model), as the page always
- * did. A batch with fewer than two finished legs is not a comparison and
- * must not hide the last one that was.
- */
-export function lastComparison(runs: readonly HistoryRow[], positive?: string): CompareResult | null {
+/** The rows of each model comparison in a set's history, newest batch first; each batch's rows in the history's order. */
+function comparisonBatches(runs: readonly HistoryRow[]): HistoryRow[][] {
   const batches = new Map<string, HistoryRow[]>();
   for (const r of runs) {
     const b = r.summary?.batch_id;
-    if (!b || !r.summary?.compare || r.state !== "done") continue;
+    if (!b || !r.summary?.compare) continue;
     batches.set(b, [...(batches.get(b) ?? []), r]);
   }
-  const latest = [...batches.values()]
-    .filter((rows) => rows.length >= 2 || rows.some((r) => r.summary?.comparison))
-    .sort((a, b) => new Date(b[0].at).getTime() - new Date(a[0].at).getTime())[0];
-  if (!latest) return null;
-  const withCmp = latest.find((r) => r.summary?.comparison && typeof r.summary.comparison === "object");
-  if (withCmp) {
-    const c = o_(withCmp.summary?.comparison);
-    const models = (Array.isArray(c.models) ? c.models : []).map((x) => {
-      const m = o_(x);
-      const t = o_(m.tokens);
-      return {
-        model: s_(m.model),
-        forced: m.forced === true,
-        tier: s_(m.tier) || null,
-        run_id: s_(m.run_id),
-        passed: n_(m.passed) ?? 0,
-        total: n_(m.total) ?? 0,
-        pass_rate: n_(m.pass_rate) ?? 0,
-        headline_f1: n_(m.headline_f1),
-        macro_f1: n_(m.macro_f1),
-        invalid: n_(m.invalid) ?? 0,
-        avg_ms: n_(m.avg_ms) ?? 0,
-        tokens: { in: n_(t.in) ?? 0, out: n_(t.out) ?? 0 },
-        model_calls: n_(m.model_calls) ?? 0,
-        cost_total: n_(m.cost_total),
-        cost_per_case: n_(m.cost_per_case),
-      };
-    });
-    if (models.length >= 2) {
-      return {
-        batch_id: s_(c.batch_id),
-        incumbent: s_(c.incumbent) || models[0].model,
-        models,
-        recommended: s_(c.recommended) || null,
-        rationale: s_(c.rationale),
-        runs: Array.isArray(c.runs) ? c.runs.map(s_) : models.map((m) => m.run_id),
-        digest: withCmp.summary?.version_digest || withCmp.digest,
-        at: withCmp.finished_at ?? withCmp.at,
-      };
-    }
+  const started = (rows: HistoryRow[]) => Math.min(...rows.map((r) => Date.parse(r.at)).filter((t) => !Number.isNaN(t)));
+  return [...batches.values()].sort((a, b) => started(b) - started(a));
+}
+
+const hasVerdict = (r: HistoryRow) => Boolean(r.summary?.comparison && typeof r.summary.comparison === "object");
+
+/**
+ * The most recent comparison in a set's history that the backend gave a
+ * verdict: its runner writes the recommendation (`summary.comparison`) on
+ * every candidate's row once the last candidate finishes. That is read as it
+ * is; the console never builds a recommendation of its own. A batch with no
+ * verdict yet (a candidate still queued or running, or the last one failed)
+ * is not a comparison: `unfinishedComparison` says what became of it.
+ */
+export function lastComparison(runs: readonly HistoryRow[]): CompareResult | null {
+  for (const rows of comparisonBatches(runs)) {
+    const withCmp = rows.find(hasVerdict);
+    if (!withCmp) continue;
+    const c = comparisonOf(withCmp.summary?.comparison);
+    if (!c || c.models.length < 2) continue;
+    return { ...c, runs: c.runs.length ? c.runs : c.models.map((m) => m.run_id), digest: withCmp.summary?.version_digest || withCmp.digest, at: withCmp.finished_at ?? withCmp.at };
   }
-  if (latest.length < 2) return null;
-  const models: ModelSummary[] = latest.map((r) => {
-    const m = r.matrix ? derive(r.matrix, positive) : null;
-    const durations = r.results.map((c) => c.duration_ms);
-    return {
-      model: r.model,
-      forced: r.summary?.forced === true,
-      run_id: r.id,
-      tier: r.summary?.tier ?? null,
-      passed: r.passed,
-      total: r.total,
-      pass_rate: r.passed / Math.max(1, r.total),
-      headline_f1: m?.headlineF1 ?? null,
-      macro_f1: m?.macroF1 ?? null,
-      invalid: m?.invalid ?? 0,
-      avg_ms: r.summary?.avg_ms ?? Math.round(durations.reduce((a, b) => a + b, 0) / Math.max(1, durations.length)),
-      tokens: r.summary?.tokens ?? { in: 0, out: 0 },
-      model_calls: r.summary?.model_calls ?? 0,
-      cost_total: r.summary?.cost_total ?? null,
-      cost_per_case: r.summary?.cost_per_case ?? null,
-    };
-  });
-  const incumbent = latest[0].summary?.incumbent ?? models[0].model;
-  const inc = models.find((m) => m.model === incumbent) ?? models[0];
-  const eligible = models
-    .filter((m) => quality(m) >= quality(inc) - 0.02 && m.invalid === 0 && m.cost_per_case !== null)
-    .sort((a, b) => (a.cost_per_case as number) - (b.cost_per_case as number) || a.avg_ms - b.avg_ms);
-  const best = eligible[0] ?? null;
+  return null;
+}
+
+/** The newest comparison in a set's history when the backend has given it no verdict: what finished, what failed, what is still to run. */
+export interface UnfinishedComparison {
+  batch_id: string;
+  at: string;
+  /** Candidates in the batch, as the backend counted them (`summary.legs`), else the rows the history holds. */
+  legs: number;
+  done: string[];
+  failed: { model: string; error: string }[];
+  /** Candidates still queued or running. */
+  open: string[];
+}
+
+/** The newest model comparison, when it has no verdict from the backend; null when it has one, or there is none. */
+export function unfinishedComparison(runs: readonly HistoryRow[]): UnfinishedComparison | null {
+  const newest = comparisonBatches(runs)[0];
+  if (!newest || newest.some(hasVerdict)) return null;
+  const label = (r: HistoryRow) => r.model || "default";
+  const legs = Math.max(newest.length, ...newest.map((r) => (typeof r.summary?.legs === "number" ? r.summary.legs : 0)));
   return {
-    batch_id: latest[0].summary?.batch_id ?? "",
-    digest: latest[0].digest,
-    at: latest[0].at,
-    incumbent: inc.model,
-    models,
-    recommended: best?.model ?? null,
-    runs: models.map((m) => m.run_id),
-    rationale: best
-      ? best.model === inc.model
-        ? "The incumbent is already the cheapest model that clears the bar."
-        : `${best.model} clears the incumbent's quality within 0.02${inc.cost_per_case && best.cost_per_case !== null ? ` at ${Math.round((1 - best.cost_per_case / inc.cost_per_case) * 100)}% lower cost per case` : ""}.`
-      : "No candidate cleared the incumbent's quality with a known cost; keep the incumbent.",
+    batch_id: newest[0].summary?.batch_id ?? "",
+    at: newest.map((r) => r.at).sort()[0] ?? "",
+    legs,
+    done: newest.filter((r) => r.state === "done").map(label),
+    failed: newest.filter((r) => r.state === "failed").map((r) => ({ model: label(r), error: r.error })),
+    open: newest.filter((r) => r.state === "queued" || r.state === "running").map(label),
   };
 }
 

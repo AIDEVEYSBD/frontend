@@ -80,7 +80,6 @@ function IamPage() {
   const { session: me } = useSession();
   const byName = signerName(me, CURRENT_USER.name);
   /** Behind Google IAP a person's roles come from this deployment's role map, never from the sign-in. */
-  const iap = me?.via === "iap";
   const [busy, setBusy] = useState("");
   /** What the last action did. `keys` is a held-out person's unrevoked API keys, which keep working; `secret` a key shown this once. */
   const [notice, setNotice] = useState<{ tone: Tone; text: string; secret?: string; keys?: LiveKey[] } | null>(null);
@@ -105,8 +104,7 @@ function IamPage() {
 
   /* ── the register ── */
 
-  // This console starts empty: an identity the control plane marks as a seeded sample is not shown as part of the estate.
-  const all = useMemo(() => (reg?.identities ?? []).filter((i) => !i.facts?.demo), [reg]);
+  const all = useMemo(() => reg?.identities ?? [], [reg]);
   /** The kinds the register names as not built: none can be listed, so none is counted as zero. */
   const unbuiltKinds = useMemo(() => notBuiltOf(reg).filter((k) => (KINDS as string[]).includes(k)), [reg]);
   const unbuiltWords = unbuiltKinds.map((k) => UNBUILT_WORD[k] ?? KIND_META[k as keyof typeof KIND_META].plural.toLowerCase());
@@ -121,19 +119,11 @@ function IamPage() {
     return m;
   }, [reg]);
 
-  /* ── people; with sign-in off, the console's own operator as the session door names it ── */
+  /* ── people: everyone who has signed in, as the users door lists them ── */
 
   const peopleRead = Boolean(people) || Boolean(peopleError);
-  const persons: Person[] = useMemo(() => {
-    // Nothing until the users door has answered or failed: the first paint is the same on the server and here.
-    if (!peopleRead) return [];
-    const rows = people?.users ?? [];
-    if (rows.length === 0 && me && me.mode === "local") {
-      // No identity provider gave this row anything: no organisation, and no sign-in times.
-      return [{ sub: me.sub, email: me.email, email_verified: null, name: me.name, preferred_username: null, last_roles: me.roles, last_app_roles: me.appRoles, permissions: me.permissions, first_seen: null, last_seen: null, sessions: 1, disabled_at: null, disabled_by: null }];
-    }
-    return rows;
-  }, [people, peopleRead, me]);
+  // Nothing until the users door has answered or failed: the first paint is the same on the server and here.
+  const persons: Person[] = useMemo(() => (peopleRead ? (people?.users ?? []) : []), [people, peopleRead]);
 
   const entries: Entry[] = useMemo(() => [...persons.map(personEntry), ...all.map(identityEntry)], [persons, all]);
   const entry = selected ? findEntry(entries, selected) : null;
@@ -159,7 +149,7 @@ function IamPage() {
   usePageFacts(
     reg && people
       ? {
-          people: { signedIn: persons.length, sessionsOpen, ssoConfigured: people.sso.configured, demoDefaultRole: people.sso.demo_default_role, roles: people.roles },
+          people: { signedIn: persons.length, sessionsOpen, ssoConfigured: people.sso.configured, roles: people.roles },
           identities: reg.counts,
           ownership: { owned, unowned },
           findings: reg.findings.map((f) => ({ severity: f.severity, title: f.title, identity: f.identity.name })),
@@ -294,7 +284,7 @@ function IamPage() {
   const notRead = (what: string) => (what ? "Not read." : "");
 
   const strip: { label: string; value: string; sub: string; go: () => void }[] = [
-    { label: "People", value: people ? String(persons.length) : "—", sub: people ? (people.sso.configured ? "signed in through the identity provider" : "sign-in is off") : "", go: () => show({ groups: ["people"] }) },
+    { label: "People", value: people ? String(persons.length) : "—", sub: people ? (people.sso.configured ? "signed in through Identity-Aware Proxy" : "sign-in is not set up on the service") : "", go: () => show({ groups: ["people"] }) },
     { label: "Sessions open", value: people ? String(sessionsOpen) : "—", sub: people ? "people seen in the last 30 minutes" : "", go: () => show({ groups: ["people"], statuses: ["signed in"] }) },
     {
       label: "Non-human identities",
@@ -396,17 +386,15 @@ function IamPage() {
       <header className="flex flex-col gap-1.5">
         <span className="flex flex-wrap items-center gap-2.5">
           <h1 className="text-[24px] font-semibold tracking-[-0.02em]">Identity and access</h1>
-          {people && (people.sso.configured ? <Tag tone="ok">Identity provider connected</Tag> : <Tag tone="warn">Sign-in is off</Tag>)}
-          {people?.sso.demo_default_role && <Tag tone="warn">people with no role are treated as {people.sso.demo_default_role}</Tag>}
+          {people && (people.sso.configured ? <Tag tone="ok">Signed in through Identity-Aware Proxy</Tag> : <Tag tone="err">Sign-in is not set up on the service</Tag>)}
         </span>
         <p className="max-w-[86ch] text-[13.5px] leading-relaxed text-dim">
           The people who sign in, and the workflows, attached agents and API keys that can act on this deployment, in one roster. Open one for what needs attention, what it may do and what it has done.
           {unbuiltLine && <span className="text-faint"> {unbuiltLine[0].toUpperCase() + unbuiltLine.slice(1)}, so none is listed.</span>}
         </p>
         {people && !people.sso.configured && (
-          <p className="max-w-[86ch] text-[12px] leading-[1.55] text-faint">
-            Sign-in is off on this deployment, so the console runs as its own operator. Once people sign in through the identity provider they are listed here with the roles their token carried, and their gate answers are signed
-            with that identity.
+          <p className="max-w-[86ch] text-[12px] leading-[1.55] text-err">
+            The service names no IAP_AUDIENCE, so it cannot verify anyone&rsquo;s Google sign-in and refuses every person until it is set.
           </p>
         )}
       </header>
@@ -579,7 +567,7 @@ function IamPage() {
           ) : (
             <span className="text-[12px] text-faint">{peopleError ? notRead("Each role is listed here with the permissions it carries and how many people hold it.") : "Reading…"}</span>
           )}
-          <span className="mt-auto text-[10.5px] text-faint">{iap ? "Roles come from this deployment's map from a person's email to a role; this platform decides what each one may do." : "Roles are assigned in the identity provider; this platform decides what each one may do."}</span>
+          <span className="mt-auto text-[10.5px] text-faint">Roles come from this deployment&rsquo;s map from a person&rsquo;s email to a role; this platform decides what each one may do.</span>
         </section>
       </div>
 
@@ -588,18 +576,14 @@ function IamPage() {
         id="roles"
         {...fold("roles")}
         title="Roles and permissions"
-        caption={
-          iap
-            ? "Behind Google Identity-Aware Proxy the sign-in names a person and never a role: each person's role comes from this deployment's role map, read on every request, and this platform maps each role to what it may do here."
-            : "Roles are assigned centrally and read from every token; this platform maps each role to what it may do here and stores no decision of its own."
-        }
+        caption="Behind Google Identity-Aware Proxy the sign-in names a person and never a role: each person's role comes from this deployment's role map, read on every request, and this platform maps each role to what it may do here."
         meta={people ? <Tag>{roleList.length} roles</Tag> : null}
       >
         {!people && <p className="px-4 py-3 text-[12px] text-faint">{peopleError ? notRead("Roles are listed here with their permissions and holders, beside what each permission lets a person do.") : "Reading…"}</p>}
         {people && (
           <div className="grid gap-px bg-line lg:grid-cols-2">
             <div className="flex flex-col bg-surface">
-              <span className="border-b border-line px-4 py-2 text-[11px] text-faint">{iap ? "Roles this deployment recognises, as its role map names them" : "Roles this deployment recognises, as the identity provider names them"}</span>
+              <span className="border-b border-line px-4 py-2 text-[11px] text-faint">Roles this deployment recognises, as its role map names them</span>
               {roleList.map((r) => (
                 <button key={r.role} type="button" onClick={() => show({ groups: ["people"], roles: [r.role] })} className="focusable flex cursor-pointer flex-wrap items-start gap-x-3 gap-y-1 border-b border-line px-4 py-2 text-left last:border-0 hover:bg-raise/40">
                   <Mono className="w-[120px] shrink-0 pt-px text-[11.5px] text-fg">{r.role}</Mono>

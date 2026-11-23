@@ -47,7 +47,7 @@ function controlLabel(key: string): string {
   return c ? `${c.id} ${c.title}` : key;
 }
 
-export function GuardrailsWatch({ events, quiet = false }: { events: WatchEvent[] | null; /** Quiet (lib/quiet.ts), no record read: the whole layout is drawn empty, each part saying what it holds. */ quiet?: boolean }) {
+export function GuardrailsWatch({ events }: { events: WatchEvent[] | null }) {
   const [now] = useState(() => Date.now());
   const [kinds, setKinds] = useState<Set<string>>(new Set());
   const [controls, setControls] = useState<Set<string>>(new Set());
@@ -110,13 +110,9 @@ export function GuardrailsWatch({ events, quiet = false }: { events: WatchEvent[
               className={`focusable -mr-px -mb-px flex cursor-pointer flex-col gap-1 border-r border-b border-line px-3 py-2.5 text-left transition-colors ${active ? "bg-raise/80" : "hover:bg-raise/50"}`}
             >
               <span className="truncate text-[10.5px] text-faint">{t.label}</span>
-              {quiet && !events ? (
-                <span className="flex h-[22px] items-center text-[12px] text-faint">Not connected</span>
-              ) : (
-                <span className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]" style={t.tone && t.value ? { color: `var(--color-${t.tone})` } : undefined}>
-                  {events ? t.value.toLocaleString("en-GB") : "…"}
-                </span>
-              )}
+              <span className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]" style={t.tone && t.value ? { color: `var(--color-${t.tone})` } : undefined}>
+                {events ? t.value.toLocaleString("en-GB") : "…"}
+              </span>
               <span className="truncate text-[10px] text-ghost">{t.sub}</span>
             </div>
           );
@@ -131,7 +127,7 @@ export function GuardrailsWatch({ events, quiet = false }: { events: WatchEvent[
             <span className="text-[11px] leading-[1.55] text-faint">pick one to filter</span>
           </div>
           <div className="p-4">
-            {!events && (quiet ? <p className="text-[11.5px] text-faint">Events are split here by the control that caught them.</p> : <Skeleton lines={4} />)}
+            {!events && <Skeleton lines={4} />}
             {events && donut.length === 0 && <p className="text-[11.5px] text-faint">No screened hit, taint-to-sink refusal or egress refusal is on the record yet.</p>}
             {donut.length > 0 && (
               <Donut
@@ -151,7 +147,7 @@ export function GuardrailsWatch({ events, quiet = false }: { events: WatchEvent[
           <FilterBar count={filterCount} onClear={clear}>
             <Chips
               label="Kind"
-              items={(["screened", "taint_sink", "egress"] as WatchKind[]).map((k) => ({ value: k, label: WATCH_LABEL[k], count: quiet && !events ? undefined : all.filter((e) => e.kind === k).length, active: kinds.has(k), tone: KIND_TONE[k] }))}
+              items={(["screened", "taint_sink", "egress"] as WatchKind[]).map((k) => ({ value: k, label: WATCH_LABEL[k], count: events ? all.filter((e) => e.kind === k).length : undefined, active: kinds.has(k), tone: KIND_TONE[k] }))}
               onToggle={(v) => setKinds((s) => toggleIn(s, v))}
             />
             <Chips
@@ -173,7 +169,7 @@ export function GuardrailsWatch({ events, quiet = false }: { events: WatchEvent[
         <div className="flex w-full items-start gap-3 border-b border-line bg-raise/55 px-4 py-2.5">
           <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Watch</span>
           <span className="max-w-[110ch] text-[11px] leading-[1.55] text-faint">
-            {events ? `${shown.length.toLocaleString("en-GB")} of ${all.length.toLocaleString("en-GB")} events · newest first · excerpts are redacted of every secret this deployment holds` : quiet ? "newest first · excerpts are redacted of every secret this deployment holds" : "reading the journals…"}
+            {events ? `${shown.length.toLocaleString("en-GB")} of ${all.length.toLocaleString("en-GB")} events · newest first · excerpts are masked by credential shape, and a vault value the run was given is masked in its journal; a secret that looks like neither is not` : "reading the journals…"}
           </span>
         </div>
         <div className="overflow-x-auto">
@@ -209,11 +205,6 @@ export function GuardrailsWatch({ events, quiet = false }: { events: WatchEvent[
                   <td className="tnum px-3 py-2 text-right align-top whitespace-nowrap text-faint">{ago(e.at, now)}</td>
                 </tr>
               ))}
-              {quiet && !events && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-[11.5px] text-faint">Screened hits, taint-to-sink refusals and egress refusals are listed here, newest first.</td>
-                </tr>
-              )}
               {events && shown.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-6 text-center text-[11.5px] text-faint">{all.length ? "Nothing matches these filters." : "Nothing on the watch yet."}</td>
@@ -255,7 +246,7 @@ export function GuardrailsWatch({ events, quiet = false }: { events: WatchEvent[
             <Fact k="When" v={`${ago(open.at, now)} · ${open.at ? new Date(open.at).toLocaleString("en-GB") : "unknown"} · ${(open.t / 1000).toFixed(1)}s into the run`} />
           </div>
           <div className="flex flex-col gap-1 border-t border-line px-4 py-3">
-            <span className="text-[10.5px] font-medium tracking-[0.04em] text-ghost uppercase">What the control saw · redacted</span>
+            <span className="text-[10.5px] font-medium tracking-[0.04em] text-ghost uppercase">What the control saw · masked by credential shape</span>
             <pre className="max-h-64 overflow-auto rounded-sm border border-line bg-canvas px-3 py-2 font-mono text-[10.5px] leading-[1.55] whitespace-pre-wrap text-mist">{open.excerpt || open.detail || "(no excerpt recorded)"}</pre>
           </div>
           {open.because.length > 0 && (

@@ -12,12 +12,9 @@ import { profileOf } from "@/lib/workloads";
 /**
  * Asking a security workload to do something, from chat (feature 2.3).
  *
- * This part is ahead of its door (`chatStart` in lib/api/pending.ts:
- * `POST /api/chat/requests`). The composer is drawn as it will be and stays
- * disabled while nothing serves the workloads it would offer
- * (`GET /api/workloads`); no workload is listed that the control plane did
- * not name. Once the workloads door answers, the composer opens, and a
- * request that still finds no chat door says so in place of a reply.
+ * Its door is `chatStart` in lib/api/pending.ts (`POST /api/chat/requests`).
+ * The workloads it offers are the ones the workloads door
+ * (`GET /api/workloads`) names.
  *
  * lib/api/pending.ts names the door and not yet its shapes. What is sent
  * and read here is the smallest thing the screen needs:

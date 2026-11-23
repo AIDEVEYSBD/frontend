@@ -4,7 +4,8 @@ import { Failure } from "./pending";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Status } from "./ui";
 import { Markdown } from "./markdown";
-import { AssistantChart, ChartDrawing, parseChart } from "./assistant-charts";
+import { AssistantChart, ChartDrawing, ChartRefused, parseChart } from "./assistant-charts";
+import { SafeLink } from "./safe-link";
 
 /**
  * Ask the corpus.
@@ -102,7 +103,7 @@ export function AskCorpus({
   const [mode, setMode] = useState<"search" | "answer" | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNoticeText] = useState<string | null>(null);
-  /** Whether the notice is a failure (the search or the answer did not come) and not a plain "nothing found". A quiet console (lib/quiet.ts) does not print the reason. */
+  /** Whether the notice is a failure (the search or the answer did not come) and not a plain "nothing found". */
   const [fault, setFault] = useState(false);
   const setNotice = (text: string | null, failed = false) => {
     setNoticeText(text);
@@ -293,8 +294,8 @@ export function AskCorpus({
               fence={(lang, code, closed) => {
                 if (lang !== "chart" && lang !== "json chart") return null;
                 if (!closed) return <ChartDrawing />;
-                const spec = parseChart(code);
-                return spec ? <AssistantChart spec={spec} /> : <p className="my-1 text-[11px] text-faint">The chart could not be drawn from the data given.</p>;
+                const chart = parseChart(code);
+                return "spec" in chart ? <AssistantChart spec={chart.spec} /> : <ChartRefused reason={chart.error} />;
               }}
             />
           </div>
@@ -388,7 +389,7 @@ export function AskCorpus({
                 </span>
               )}
               <button type="button" onClick={() => onLocate(h.documentId, h.body)} className="focusable shrink-0 text-[10.5px] text-faint underline hover:text-fg">open at passage</button>
-              <a href={h.url} target="_blank" rel="noreferrer" className="focusable shrink-0 text-[10.5px] text-faint underline">source</a>
+              <SafeLink href={h.url} className="focusable shrink-0 text-[10.5px] text-faint underline">source</SafeLink>
             </span>
             {"meta" in h && h.meta?.refs && Object.keys(h.meta.refs).length > 0 && (
               <span className="flex flex-wrap gap-1">
@@ -445,7 +446,7 @@ function Cite({ c, onLocate }: { c: Citation; onLocate: (documentId: string, bod
           <span className="max-h-[7.5em] overflow-hidden text-[11px] leading-[1.5] text-dim">{c.body}</span>
           <span className="flex items-center gap-3 pt-0.5 text-[10px] text-faint">
             <button type="button" onClick={() => onLocate(c.documentId, c.body)} className="focusable underline hover:text-fg">open the document at this passage</button>
-            <a href={c.url} target="_blank" rel="noreferrer" className="focusable underline hover:text-fg" onClick={(e) => e.stopPropagation()}>original source</a>
+            <SafeLink href={c.url} className="focusable underline hover:text-fg" onClick={(e) => e.stopPropagation()}>original source</SafeLink>
           </span>
         </span>
       )}

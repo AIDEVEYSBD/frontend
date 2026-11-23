@@ -23,8 +23,8 @@ export function applyAccent(on: boolean) {
   }
 }
 
-/** The body of Configuration's Appearance panel (components/configuration.tsx). `bare`: the console has nothing behind it, so nothing keeps the choice. */
-export function Appearance({ bare = false }: { bare?: boolean | null }) {
+/** The body of Configuration's Appearance panel (components/configuration.tsx). */
+export function Appearance() {
   const [accent, setAccent] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -56,7 +56,6 @@ export function Appearance({ bare = false }: { bare?: boolean | null }) {
     }
   };
 
-  void bare;
   return (
     <>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5">

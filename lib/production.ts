@@ -8,8 +8,8 @@
  * backend shows it beside the budget as `shadow_spent`), not the run counts,
  * costs, tokens, latencies or refusals the Control and FinOps pages compute
  * from the journals. It still appears wherever runs are listed, marked as a
- * shadow. Pure: lib/server/budget.ts, app/api/control/route.ts and
- * app/api/finops/route.ts use it; tests/l8b-logic.test.ts holds it.
+ * shadow. Pure: the Agents list and the Control page use it;
+ * tests/l8b-logic.test.ts holds it.
  */
 
 /** A run row or a run record: the record's `shadow: true` marks a shadow run. */

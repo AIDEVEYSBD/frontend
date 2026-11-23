@@ -22,7 +22,7 @@ import { RateLimitNote } from "./rate-limit";
 import type { RateLimit } from "@/lib/api/l7";
 import { listAgents } from "@/lib/api/l2";
 import { editableDocument, evalRunViewOf, isEvalOver, retiredOf, retiredRefusalOf, saveAgent, startEval, type EvalCaseResult, type EvalRunView, type ModelSummary, type Retired } from "@/lib/api/l8";
-import { historyRowFromView, historyRowOf, lastComparison, liveOf, mergeHistory, mergeSetRows, rowStateText, settleOf, thresholdText, thresholdTone, throttleOf, type CompareResult, type HistoryRow, type SetRow } from "@/lib/evals";
+import { historyRowFromView, historyRowOf, lastComparison, liveOf, mergeHistory, mergeSetRows, rowStateText, settleOf, thresholdText, thresholdTone, throttleOf, unfinishedComparison, type CompareResult, type HistoryRow, type SetRow, type UnfinishedComparison } from "@/lib/evals";
 import { getEvalSet, listEvalSets, type EvalSetDocument } from "@/lib/api/l8b";
 import { retiredLine, savedLine } from "@/lib/lifecycle";
 
@@ -110,20 +110,20 @@ const fullSetOf = (d: EvalSetDocument): FullSet => ({
 
 /**
  * One set with its cases: as the backend's runner reads it (`GET
- * /api/eval-sets/{id}`), else, with no backend to ask, the console's own
- * read of the shared table; null when neither has it.
+ * /api/eval-sets/{id}`), else as the builder edits it (`GET /api/evals?id=`).
+ * Throws with both reasons when neither answers it.
  */
-async function readSet(id: string): Promise<FullSet | null> {
+async function readSet(id: string): Promise<FullSet> {
+  let first = "";
   try {
     return fullSetOf(await getEvalSet(id));
-  } catch {
-    try {
-      const d = await (await fetch(`/api/evals?id=${encodeURIComponent(id)}`)).json();
-      return d.set ? (d.set as FullSet) : null;
-    } catch {
-      return null;
-    }
+  } catch (e) {
+    first = (e as Error).message;
   }
+  const res = await fetch(`/api/evals?id=${encodeURIComponent(id)}`);
+  const d = await res.json().catch(() => null);
+  if (res.ok && d?.set) return d.set as FullSet;
+  throw new Error(`${first}; and GET /api/evals?id=${id}: ${res.ok ? "the answer holds no set" : errorText(d, res, "GET", "/api/evals")}`);
 }
 
 const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
@@ -153,7 +153,9 @@ function checkForSave(ch: Check): Check | null {
 const STATE_OPTS = [
   { value: "done", label: "done" },
   { value: "failed", label: "failed" },
-  { value: "suspended", label: "suspended (awaiting a person)" },
+  { value: "suspended", label: "suspended (waits at its own gate)" },
+  // The run is still running and rests on a person elsewhere: the backend grades it `waiting` (quality/grading.py RUN_STATES).
+  { value: "waiting", label: "waits on a person (a sub-run's gate or a budget decision)" },
   { value: "killed", label: "killed" },
 ];
 
@@ -432,9 +434,13 @@ export function Evals() {
             onToggle={() => setOpenId(openId === s.id ? null : s.id)}
             onChanged={refresh}
             onEdit={async () => {
-              // The set as the backend's runner reads it: the shared table, else its workspace file.
-              const d = await readSet(s.id);
-              if (d) setBuilding(d);
+              // The set as the backend's runner reads it, else as the builder edits it; a set neither answers says why.
+              try {
+                setBuilding(await readSet(s.id));
+                setFailures((f) => f.filter((x) => x.what !== `The benchmark ${s.name || s.id} could not be opened for editing`));
+              } catch (e) {
+                setFailures((f) => [...f.filter((x) => x.what !== `The benchmark ${s.name || s.id} could not be opened for editing`), { what: `The benchmark ${s.name || s.id} could not be opened for editing`, message: (e as Error).message }]);
+              }
               window.scrollTo({ top: 0, behavior: "smooth" });
             }}
           />
@@ -503,17 +509,25 @@ function SetBuilder({
   /* The agent's spec names its own inputs — derive the case form from it.
      A change of agent clears the keys during render; the fetch below refills them. */
   const [keysFor, setKeysFor] = useState(agent);
+  /** The agent's definition could not be read: its inputs are not known, and the form says so rather than offering none. */
+  const [keysError, setKeysError] = useState("");
   if (agent !== keysFor) {
     setKeysFor(agent);
     setInputKeys([]);
+    setKeysError("");
   }
   useEffect(() => {
     if (!agent) return;
     let stop = false;
     fetch(`/api/agents?id=${encodeURIComponent(agent)}`)
-      .then((r) => r.json())
+      .then(async (r) => {
+        const d = await r.json().catch(() => null);
+        if (!r.ok || !d?.spec) throw new Error(r.ok ? `the answer for ${agent} holds no definition` : errorText(d, r, "GET", "/api/agents"));
+        return d;
+      })
       .then((d) => {
-        if (stop || !d.spec) return;
+        if (stop) return;
+        setKeysError("");
         const keys = inputKeysOf(fromDocument(d.spec));
         setInputKeys(keys);
         setCases((cs) =>
@@ -526,7 +540,11 @@ function SetBuilder({
         );
         setName((n) => n || `${d.spec?.metadata?.name ?? agent} benchmark`);
       })
-      .catch(() => !stop && setInputKeys([]));
+      .catch((e) => {
+        if (stop) return;
+        setInputKeys([]);
+        setKeysError((e as Error).message);
+      });
     return () => {
       stop = true;
     };
@@ -598,6 +616,7 @@ function SetBuilder({
 
   return (
     <div className="mt-5 flex flex-col gap-4 rounded-md border border-line bg-surface p-4">
+      {keysError && <Failure what={`The definition of ${agent} could not be read, so its inputs are not known: the case fields and the CSV template below do not name them`} message={keysError} />}
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-[13.5px] font-semibold text-fg">
           {initial ? `Edit — ${initial.name}` : "New benchmark"}
@@ -1193,6 +1212,8 @@ function SetCard({
 
   const runs = detail ? mergeHistory(detail.runs, seen) : seen;
   const activeCmp = cmp ?? lastComparison(runs);
+  // The newest comparison, when the backend has given it no verdict: said so, and nothing is recommended for it.
+  const unfinished = cmp ? null : unfinishedComparison(runs);
   /* Which compared model's run is on screen: the one picked, else the
      recommendation, else the incumbent, else the latest run of all. */
   const viewRun = (() => {
@@ -1375,6 +1396,7 @@ function SetCard({
             </div>
           )}
           {live && live.cases.length > 0 && <CaseTable cases={live.cases} grades={grades[live.id]} />}
+          {!running && unfinished && <UnfinishedNote u={unfinished} earlier={Boolean(activeCmp)} modelLabel={(id) => modelLabel(id === "default" ? "" : id)} />}
           {!running && activeCmp && (
             <>
               <Recommendation cmp={activeCmp} models={models} onUse={useModel} currentModel={row.model} onChanged={onChanged} agent={row.agent} />
@@ -1440,10 +1462,8 @@ function SetCard({
                 ))}
               </div>
             </div>
-          ) : !running ? (
-            <p className="text-[12px] text-faint">
-              Never run. The first run sets the baseline — every later score compares against it.
-            </p>
+          ) : !running && !historyError && detail ? (
+            <p className="text-[12px] text-faint">This set has not been evaluated yet.</p>
           ) : null}
         </div>
       )}
@@ -1568,7 +1588,7 @@ export function CaseTable({ cases, grades }: { cases: CaseResult[]; grades?: Rec
               <span className={`size-1.5 shrink-0 rounded-[2px] ${grade === "passed" ? "bg-ok" : grade === "failed" ? "bg-err" : "bg-warn"}`} />
               <span className="min-w-0 grow truncate text-[12.5px] font-medium text-fg">{c.id}</span>
               {c.note && <span className="hidden truncate text-[11px] text-faint sm:inline">{c.note}</span>}
-              <Mono className="shrink-0 text-[10px] text-ghost">{c.run_file ? `${(c.duration_ms / 1000).toFixed(1)}s` : "no run"}</Mono>
+              <Mono className="shrink-0 text-[10px] text-ghost">{c.run_file ? (c.duration_ms === null ? "time not measured" : `${(c.duration_ms / 1000).toFixed(1)}s`) : "no run"}</Mono>
               <span className={`shrink-0 text-[11px] font-semibold ${tone}`}>{GRADE_TEXT[grade]}</span>
             </button>
             {openCase === c.id && (
@@ -1721,7 +1741,27 @@ function ConfusionPanel({ matrix, positive }: { matrix: Matrix; positive?: strin
 
 const fmtCost = (c: number | null) =>
   c === null ? "unknown" : c === 0 ? "$0" : c < 0.0005 ? "<$0.001" : c < 0.01 ? `$${c.toFixed(4)}` : `$${c.toFixed(3)}`;
-const fmtMs = (ms: number) => (ms >= 60_000 ? `${(ms / 60_000).toFixed(1)}m` : `${(ms / 1000).toFixed(1)}s`);
+/** A time; "not measured" when no case ran (the backend's null), never 0.0s. */
+const fmtMs = (ms: number | null) => (ms === null ? "not measured" : ms >= 60_000 ? `${(ms / 60_000).toFixed(1)}m` : `${(ms / 1000).toFixed(1)}s`);
+
+/** The newest comparison has no verdict from the backend: what became of its candidates, and that nothing is recommended for it. */
+function UnfinishedNote({ u, earlier, modelLabel }: { u: UnfinishedComparison; earlier: boolean; modelLabel: (id: string) => string }) {
+  const names = (l: string[]) => l.map(modelLabel).join(", ");
+  const parts = [
+    `${u.done.length} of ${u.legs} candidate${u.legs === 1 ? "" : "s"} finished${u.done.length ? ` (${names(u.done)})` : ""}`,
+    ...(u.open.length ? [`${names(u.open)} ${u.open.length === 1 ? "is" : "are"} still queued or running`] : []),
+    ...u.failed.map((f) => `${modelLabel(f.model)} failed${f.error ? `: ${f.error}` : ""}`),
+  ];
+  return (
+    <div className="flex flex-col gap-1 rounded-md border border-warn-line bg-warn-bg px-3 py-2.5">
+      <span className="text-[12.5px] font-semibold text-warn">{u.open.length ? "The newest model comparison has not finished" : "The newest model comparison has no recommendation"}</span>
+      <span className="text-[11.5px] leading-[1.5] text-dim">
+        Started {ago(u.at)}: {parts.join("; ")}. The platform writes its recommendation only when the last candidate finishes, so nothing is recommended for this comparison
+        {earlier ? ". The comparison below is an earlier one, with the version and time it measured." : "."}
+      </span>
+    </div>
+  );
+}
 
 /**
  * The same benchmark, one candidate model at a time, as each run's default
@@ -1783,7 +1823,10 @@ export function ComparePanel({
                 {m.tier && <Tag>{m.tier}</Tag>}
                 {isInc && <Tag>incumbent</Tag>}
                 {isRec && <Tag tone="ok">recommended</Tag>}
-                {m.invalid > 0 && <Tag tone="warn">{m.invalid} invalid</Tag>}
+                {m.invalid !== null && m.invalid > 0 && <Tag tone="warn">{m.invalid} invalid</Tag>}
+                {m.state !== "done" && <Tag tone="warn">did not finish: {m.state}; left out of the recommendation</Tag>}
+                {(m.refused ?? 0) > 0 && <Tag tone="warn">{m.refused} refused</Tag>}
+                {(m.not_graded ?? 0) > 0 && <Tag tone="warn">{m.not_graded} not graded</Tag>}
                 <span className="grow" />
                 {!isInc && m.model !== currentModel && m.model !== "default" && (
                   <Button size="sm" variant="solid" onClick={() => onUse(m.model)}>

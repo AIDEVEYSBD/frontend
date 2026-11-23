@@ -866,7 +866,7 @@ function DrillView({ drill, now, name, onClose }: { drill: Drill; now: number; n
   const cost = (c: number | null, unpriced: boolean) => (c !== null ? fmtUsd(c) : unpriced ? "no price set" : "none");
   if (drill.kind === "calls") {
     return (
-      <DrillModal title={drill.title} subtitle={drill.subtitle} count={drill.rows.length} onClose={onClose}>
+      <DrillModal title={drill.title} subtitle={<>{drill.subtitle}{drill.rows.length > 500 ? ` · the first 500 of ${drill.rows.length.toLocaleString("en-GB")} are listed below` : ""}</>} count={drill.rows.length} onClose={onClose}>
         <DrillTable
           columns={[
             { label: "When", cell: (c: Call) => <span className="whitespace-nowrap text-dim">{ago(c.at, now)}</span> },
@@ -898,7 +898,7 @@ function DrillView({ drill, now, name, onClose }: { drill: Drill; now: number; n
     );
   }
   return (
-    <DrillModal title={drill.title} subtitle={drill.subtitle} count={drill.rows.length} onClose={onClose}>
+    <DrillModal title={drill.title} subtitle={<>{drill.subtitle}{drill.rows.length > 500 ? ` · the first 500 of ${drill.rows.length.toLocaleString("en-GB")} are listed below` : ""}</>} count={drill.rows.length} onClose={onClose}>
       <DrillTable
         columns={[
           { label: "When", cell: (r: Run) => <span className="whitespace-nowrap text-dim">{ago(r.at, now)}</span> },

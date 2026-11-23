@@ -552,7 +552,7 @@ body {
    subject (lib/hue.ts): spend green, approvals amber, live activity blue,
    refusals red, knowledge violet, identity teal, models and traces indigo.
    The tint is translucent so the page grain shows through it. Kickers and
-   the active navigation item take EY yellow. Body text and figures keep
+   the active navigation item take the accent yellow. Body text and figures keep
    their ink. Removing this block leaves the data-hue attributes inert. */
 :root,
 [data-theme="light"] {

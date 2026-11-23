@@ -315,6 +315,10 @@ function AgentsPage() {
   const [declared, setDeclared] = useState<Record<string, string | null>>({});
   /** Why a door that only adds to a row did not answer; printed when the console is not quiet. */
   const [reasons, setReasons] = useState<Record<string, string>>({});
+  /** The platform answers 501 for each agent's steps (`GET /api/roster`): not built, said once in a neutral line, and no row offers to open. */
+  const [rosterOff, setRosterOff] = useState(false);
+  /** Why an export did not happen: said in the bar, never a silent no-op. */
+  const [exportError, setExportError] = useState("");
 
   const [q, setQ] = useState(params.get("q") ?? "");
   const [state, setState] = useState<StateId | "">("");
@@ -361,6 +365,11 @@ function AgentsPage() {
       .then(({ data, error: err, response }) => {
         if (!live) return;
         const d: Roster | undefined = data;
+        if (response?.status === 501) {
+          setRoster(null);
+          setRosterOff(true);
+          return;
+        }
         if (!d || !Array.isArray(d.groups)) {
           setRoster(null);
           return down("steps")(new Error(errorText(err, response)));
@@ -440,7 +449,7 @@ function AgentsPage() {
   // The list could not be read: the failure is shown and nothing is counted.
   const unread = Boolean(error) && (agents?.length ?? 0) === 0;
   const activity = runs !== null || roster !== null;
-  const partDown = [runs, roster, apps, fleet].some((x) => x === null);
+  const partDown = [runs, rosterOff ? undefined : roster, apps, fleet].some((x) => x === null);
   const stateChips: Chip[] = STATE_ORDER.map((id) => ({ id, n: rows.filter((r) => r.state === id).length }))
     .filter((x) => x.n > 0 || x.id === "deployed" || x.id === "not_deployed" || x.id === state)
     .map((x) => ({ value: x.id, label: STATE[x.id].label, count: unread ? undefined : x.n, active: state === x.id }));
@@ -465,8 +474,14 @@ function AgentsPage() {
 
   const exportJson = async (id: string) => {
     setMenu(null);
-    const spec = await agentDocument(id).catch(() => null);
-    if (!spec) return;
+    setExportError("");
+    let spec: unknown;
+    try {
+      spec = await agentDocument(id);
+    } catch (e) {
+      setExportError(`${id} could not be exported: ${(e as Error).message}`);
+      return;
+    }
     const url = URL.createObjectURL(new Blob([JSON.stringify(spec, null, 2)], { type: "application/json" }));
     const link = document.createElement("a");
     link.href = url;
@@ -495,7 +510,7 @@ function AgentsPage() {
     <div className="min-h-full" data-hue="blue">
       <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7">
         <GroupHeader group="agents" tab="agents" actions={<AddAgent onSaved={refresh} />}>
-          Every agent saved on this deployment: what it does, who owns it, whether production runs it and when it last ran. Open an agent for its configuration, versions and bill of materials, or open its row for the steps inside it.
+          Every agent saved on this deployment: what it does, who owns it, whether production runs it and when it last ran. Open an agent for its configuration, versions and bill of materials{rosterOff ? "." : ", or open its row for the steps inside it."}
         </GroupHeader>
 
         {unread && <Failure what="The agents could not be read" message={error} />}
@@ -533,6 +548,8 @@ function AgentsPage() {
                 )}
                 {error && (<span className="text-[11px] text-err">{error}</span>)}
                 {!error && partDown && (<span className="text-[11px] text-err">Not read: {Object.entries(reasons).map(([door, why]) => `${door} (${why})`).join("; ")}</span>)}
+                {exportError && <span className="text-[11px] text-err">{exportError}</span>}
+                {rosterOff && <span className="text-[11px] text-faint">Each agent&rsquo;s steps are not built here: GET /api/roster answers 501.</span>}
                 <span className="grow" />
                 <SearchBox value={q} onChange={setQ} placeholder="Name, id, owner or step" width="w-[240px]" />
               </div>
@@ -577,6 +594,7 @@ function AgentsPage() {
                             }}
                           >
                             <td className="py-2 pl-3">
+                              {!rosterOff && (
                               <button
                                 type="button"
                                 aria-expanded={isOpen}
@@ -587,6 +605,7 @@ function AgentsPage() {
                               >
                                 <Chevron open={isOpen} />
                               </button>
+                              )}
                             </td>
                             <td className="min-w-[230px] px-2 py-2">
                               <span className="flex min-w-0 flex-col gap-0.5">
@@ -681,8 +700,9 @@ function AgentsPage() {
                                   {paused && <p className="max-w-[110ch] text-[11.5px] leading-[1.55] text-faint">{pausedLine(a.name, paused)}</p>}
                                   {!retired && <UnsupportedParts parts={unsupportedOf(a)} heading={unsupportedHeading(a.version, a.deployed_version)} />}
                                   {roster === undefined && <p className="text-[12px] text-faint">Reading its steps&hellip;</p>}
-                                  {/* A quiet console has said once, in the bar above, that something is not connected. */}
-                                  {roster === null && <p className="text-[11.5px] text-err">Its steps could not be read: {reasons.steps}</p>}
+                                  {/* The failure was said once, in the bar above. */}
+                                  {roster === null && !rosterOff && <p className="text-[11.5px] text-err">Its steps could not be read: {reasons.steps}</p>}
+                                  {rosterOff && <p className="text-[12px] text-faint">Each agent&rsquo;s steps are not built here.</p>}
                                   {roster && !steps && <p className="text-[12px] text-faint">The registry lists no steps for this agent.</p>}
                                   {steps && <Steps group={steps} />}
                                 </div>

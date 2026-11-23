@@ -19,8 +19,7 @@ import { DoorError } from "./l5";
  * refusal carries more than the generated ErrorBody types (the control on a
  * 403, the field on a 400 or 409, the peer a failed rescan recorded on a
  * 502), and every answer is read defensively. Same-origin: proxy.ts forwards
- * `/api/peers` and `/api/breakers` to the backend (lib/route-policy.ts
- * BACKEND_PREFIXES), behind the cookie.
+ * every /api request to the service at BACKEND_ORIGIN.
  *
  * Registering a peer is admission, not trust, as registering a tool server
  * is: its agent card is fetched signed under the shared secret and pinned by

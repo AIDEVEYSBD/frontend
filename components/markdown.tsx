@@ -1,13 +1,17 @@
 "use client";
 
-import Link from "next/link";
 import type { ReactNode } from "react";
+import { BlockBoundary } from "./block-boundary";
+import { SafeLink } from "./safe-link";
 
 /**
  * A small markdown renderer for what the platform produces and fetches:
  * headings, paragraphs, lists, tables, code, quotes, bold, inline code and
- * links. No HTML passes through. Headings get stable ids when asked, so a
- * table of contents can scroll to them.
+ * links. No HTML passes through. A link goes through lib/safe-link.ts: a
+ * console page or an https site, anything else shown as text. Headings get
+ * stable ids when asked, so a table of contents can scroll to them. A text,
+ * or one block drawn from it, that fails to draw is replaced by a line saying
+ * so (components/block-boundary.tsx), not the page.
  */
 
 export function DataTable({ columns, rows, dense = false, cite }: { columns: string[]; rows: string[][]; dense?: boolean; cite?: Cite }) {
@@ -54,13 +58,8 @@ export function inline(text: string, keyBase: string, cite?: Cite): ReactNode[] 
     else if (tok.startsWith("`")) out.push(<code key={k} className="rounded-sm bg-raise px-1 font-mono text-[11px]">{tok.slice(1, -1)}</code>);
     else {
       const mm = /\[([^\]]+)\]\(([^)]+)\)/.exec(tok)!;
-      const href = mm[2];
       out.push(
-        href.startsWith("/") ? (
-          <Link key={k} href={href} className="focusable underline decoration-line-strong underline-offset-2 hover:decoration-fg">{mm[1]}</Link>
-        ) : (
-          <a key={k} href={href} target="_blank" rel="noreferrer" className="focusable underline decoration-line-strong underline-offset-2 hover:decoration-fg">{mm[1]}</a>
-        ),
+        <SafeLink key={k} href={mm[2]} className="focusable underline decoration-line-strong underline-offset-2 hover:decoration-fg">{mm[1]}</SafeLink>,
       );
     }
     last = m.index + tok.length;
@@ -73,19 +72,24 @@ const LIST = /^\s*([-*•]|\d+[.)])\s+/;
 const ROW = /^\s*\|.*\|\s*$/;
 const RULE = /^\s*\|?\s*:?-{2,}/;
 
-export function Markdown({
-  text,
-  headingIds = false,
-  fence,
-  cite,
-}: {
+type MarkdownProps = {
   text: string;
   headingIds?: boolean;
   /** Render a fenced block with a given language yourself; return null to fall back to a code block. */
   fence?: (lang: string, code: string, closed: boolean) => ReactNode | null;
   /** Render `[n]` citation markers. */
   cite?: Cite;
-}) {
+};
+
+export function Markdown(props: MarkdownProps) {
+  return (
+    <BlockBoundary what="This text">
+      <MarkdownBody {...props} />
+    </BlockBoundary>
+  );
+}
+
+function MarkdownBody({ text, headingIds = false, fence, cite }: MarkdownProps) {
   const blocks: ReactNode[] = [];
   const lines = text.replace(/\r/g, "").split("\n");
   let i = 0;
@@ -103,7 +107,7 @@ export function Markdown({
       const closed = i < lines.length;
       i++;
       const custom = fence?.(lang, code.join("\n"), closed);
-      if (custom !== null && custom !== undefined) { blocks.push(<div key={b++}>{custom}</div>); continue; }
+      if (custom !== null && custom !== undefined) { blocks.push(<div key={b++}><BlockBoundary what={lang === "chart" || lang === "json chart" ? "This chart" : "This block"}>{custom}</BlockBoundary></div>); continue; }
       blocks.push(<pre key={b++} className="my-1.5 overflow-x-auto rounded-sm border border-line bg-raise px-2 py-1.5 font-mono text-[11px] leading-[1.5]">{code.join("\n")}</pre>);
       continue;
     }

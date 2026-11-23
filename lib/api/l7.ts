@@ -5,7 +5,8 @@ import { DoorError } from "./l5";
  * The L7 doors (backend/CONTRACT.md, "L7: multi-agent systems governed",
  * with its "As built" notes for the first half): the run tree and the kill
  * that reaches it, rate limits across agents, the dependency map with its
- * blast radius, drift per agent, and the guardian.
+ * blast radius, and drift per agent. (The Guardian page reads its own
+ * doors: components/guardian.tsx.)
  *
  * Every shape here was written against responses captured from the
  * backend's own app (driven in-process through its doors), not against the
@@ -16,9 +17,8 @@ import { DoorError } from "./l5";
  * refusal carries more than the generated ErrorBody types (a 429's scope,
  * limit and figures, a 409's candidates, a 400's field), and every answer is
  * read defensively, so a renamed field fails the contract test instead of
- * leaving a panel blank. Same-origin: proxy.ts forwards `/api/runs`,
- * `/api/dependencies`, `/api/drift` and `/api/guardian` to the backend
- * (lib/route-policy.ts BACKEND_PREFIXES).
+ * leaving a panel blank. Same-origin: proxy.ts forwards every /api request
+ * to the service at BACKEND_ORIGIN.
  */
 
 /* ═══════════════════ reading ═══════════════════ */
@@ -41,9 +41,9 @@ export const TREE_NODE_KINDS: TreeNodeKind[] = ["run", "sub_run", "peer"];
 export type TreeLink = Schemas["TreeNode"]["link"];
 export const TREE_LINKS: TreeLink[] = ["root", "parent", "trace", "journal"];
 
-/** Cost (priced as the ledger prices it), tokens in plus out, tool calls, refusals. */
+/** Cost (priced as the ledger prices it; null when a model call in it had no price set), tokens in plus out, tool calls, refusals. */
 export interface Figures {
-  cost: number;
+  cost: number | null;
   tokens: number;
   tool_calls: number;
   refusals: number;
@@ -84,8 +84,10 @@ export interface TreeNode {
   parent: string | null;
   /** Levels below the root, as the backend counts them. */
   depth: number;
-  /** This node's own figures: its own entries only, so nothing is counted twice. */
-  cost: number;
+  /** This node's own figures: its own entries only, so nothing is counted twice. cost is null when one of its model calls had no price set. */
+  cost: number | null;
+  /** The models its own calls used with no price set (the backend's `unpriced`); empty when every call was priced. */
+  unpriced: string[];
   tokens: number;
   tool_calls: number;
   refusals: number;
@@ -136,7 +138,8 @@ export interface RunTree {
 
 export function figuresOf(v: unknown): Figures {
   const o = obj(v);
-  return { cost: num(o.cost), tokens: num(o.tokens), tool_calls: num(o.tool_calls), refusals: num(o.refusals) };
+  // A null cost is the backend saying a call in it had no price set: it stays null, never 0.
+  return { cost: numOrNull(o.cost), tokens: num(o.tokens), tool_calls: num(o.tool_calls), refusals: num(o.refusals) };
 }
 
 export function peerOf(v: unknown): PeerInfo | null {
@@ -158,6 +161,7 @@ export function treeNodeOf(v: unknown): TreeNode {
     parent: strOrNull(o.parent),
     depth: num(o.depth),
     ...own,
+    unpriced: strs(o.unpriced),
     peer: peerOf(o.peer),
     kind: pick(o.kind, TREE_NODE_KINDS, "run"),
     link: pick(o.link, TREE_LINKS, "root"),
@@ -412,7 +416,8 @@ export interface DepEdge {
   to: string;
   kind: EdgeKind;
   count: number;
-  cost: number;
+  /** null when a model call on it had no price set; a tool call carries no cost (0). */
+  cost: number | null;
   failures: number;
   refusals: number;
   last_at: string | null;
@@ -458,7 +463,7 @@ export function depEdgeOf(v: unknown): DepEdge {
     to: str(o.to),
     kind: pick(o.kind, EDGE_KINDS, "calls"),
     count: num(o.count),
-    cost: num(o.cost),
+    cost: numOrNull(o.cost),
     failures: num(o.failures),
     refusals: num(o.refusals),
     last_at: strOrNull(o.last_at),
@@ -755,130 +760,6 @@ export function rateSideOf(v: Record<string, unknown>): RateSide | null {
   return typeof v.rate === "number" ? { rate: v.rate, runs_with: num(v.runs_with), n: num(v.n) } : null;
 }
 
-/* ═══════════════════ the guardian ═══════════════════ */
-
-/** hold: at the run's next gate; block: kill it and what it set off; redirect (L8): its reason handed to the run as guidance at its next model call. */
-export type GuardianAct = "hold" | "block" | "redirect";
-export const GUARDIAN_ACTS: GuardianAct[] = ["hold", "block", "redirect"];
-
-/** What it has done since this backend instance started (kept in memory, not on the record). */
-export interface GuardianStats {
-  evaluations: number;
-  ok: number;
-  acted: number;
-  attention: number;
-  /** Answers that were not exactly a verdict: read as ok, never acted on. */
-  unparseable: number;
-  /** Model calls that failed. */
-  errors: number;
-  /** Verdicts already acted on or raised for that run. */
-  repeated: number;
-  /** Runs being watched now. */
-  watching: number;
-}
-
-/** `GET /api/guardian`, and what `PUT` answers. */
-export interface GuardianView {
-  enabled: boolean;
-  /** "" is the deployment's default model. */
-  model: string;
-  /** Agent ids, or "*" for every agent. */
-  agents: string[] | "*";
-  may: GuardianAct[];
-  max_actions_per_hour: number;
-  min_confidence: number;
-  rubric: string;
-  /** Judge a run once this many new entries have landed since it was last judged… */
-  every_entries: number;
-  /** …or once this many seconds have passed with at least one. */
-  every_s: number;
-  set_by: string;
-  set_at: string;
-  /** The audit event that set this configuration, on the IAM page's trail. */
-  audit_id: number | null;
-  /** Acts in the last hour, against `max_actions_per_hour` (counted from the table). */
-  actions_last_hour: number;
-  stats: GuardianStats;
-}
-
-/** The guardian's limits a change may name; a field left out keeps its value. Since L9 they are proposed through the policy door (target `guardian`). */
-export type GuardianPatch = Partial<Pick<GuardianView, "enabled" | "model" | "agents" | "may" | "max_actions_per_hour" | "min_confidence" | "rubric" | "every_entries" | "every_s">>;
-
-/** One row of `GET /api/guardian/actions`: a verdict it acted on, or one it raised for a person instead. */
-export interface GuardianAction {
-  id: string;
-  at: string;
-  run: string;
-  agent: string;
-  /** The verdict the model gave: hold, block or redirect. */
-  verdict: string;
-  confidence: number;
-  reason: string;
-  model: string;
-  /** What it did, or would have done. */
-  action: GuardianAct;
-  /** acted: the hold, the kill or the redirect landed on the run. attention: outside its limits, raised for a person. */
-  outcome: "acted" | "attention";
-  /** Why it only raised attention: an action it may not take, the hourly cap, confidence under the floor. */
-  why: string;
-  /** Journal entries it had read when it judged. */
-  entries: number;
-  source: string;
-}
-
-export function guardianStatsOf(v: unknown): GuardianStats {
-  const o = obj(v);
-  return {
-    evaluations: num(o.evaluations),
-    ok: num(o.ok),
-    acted: num(o.acted),
-    attention: num(o.attention),
-    unparseable: num(o.unparseable),
-    errors: num(o.errors),
-    repeated: num(o.repeated),
-    watching: num(o.watching),
-  };
-}
-
-export function guardianOf(v: unknown): GuardianView {
-  const o = obj(v);
-  return {
-    enabled: o.enabled === true,
-    model: str(o.model),
-    agents: o.agents === "*" ? "*" : strs(o.agents),
-    may: strs(o.may).filter((x): x is GuardianAct => GUARDIAN_ACTS.includes(x as GuardianAct)),
-    max_actions_per_hour: num(o.max_actions_per_hour, 10),
-    min_confidence: num(o.min_confidence, 0.8),
-    rubric: str(o.rubric),
-    every_entries: num(o.every_entries, 5),
-    every_s: num(o.every_s, 15),
-    set_by: str(o.set_by),
-    set_at: str(o.set_at),
-    audit_id: typeof o.audit_id === "number" && Number.isFinite(o.audit_id) ? o.audit_id : null,
-    actions_last_hour: num(o.actions_last_hour),
-    stats: guardianStatsOf(o.stats),
-  };
-}
-
-export function guardianActionOf(v: unknown): GuardianAction {
-  const o = obj(v);
-  return {
-    id: str(o.id),
-    at: str(o.at),
-    run: str(o.run),
-    agent: str(o.agent),
-    verdict: str(o.verdict),
-    confidence: num(o.confidence),
-    reason: str(o.reason),
-    model: str(o.model),
-    action: pick(o.action, GUARDIAN_ACTS, "hold"),
-    outcome: o.outcome === "acted" ? "acted" : "attention",
-    why: str(o.why),
-    entries: num(o.entries),
-    source: str(o.source),
-  };
-}
-
 /* ═══════════════════ calls ═══════════════════ */
 
 /**
@@ -959,33 +840,6 @@ export function candidatesOf(e: unknown): string[] {
 /** `GET /api/drift?agent=`: per agent, the last day against the thirty before it. */
 export async function getDrift(agent?: string): Promise<DriftReport> {
   return call("GET", agent ? `/api/drift?agent=${encodeURIComponent(agent)}` : "/api/drift", undefined, driftOf);
-}
-
-/** `GET /api/guardian`: the limits a person set, and what it has done since this backend started. */
-export async function getGuardian(): Promise<GuardianView> {
-  return call("GET", "/api/guardian", undefined, guardianOf);
-}
-
-/**
- * `PUT /api/guardian` (configure). Refused since L9: it answers 409 naming the
- * policy door, and its answer here is that DoorError. The Guardian page proposes
- * instead (`proposePolicyChange`, lib/api/l9.ts); only the contract tests call this.
- */
-export async function setGuardian(patch: GuardianPatch): Promise<GuardianView> {
-  return call("PUT", "/api/guardian", patch, guardianOf);
-}
-
-/** `GET /api/guardian/actions?run=&limit=`: newest first. */
-export async function listGuardianActions(opts: { run?: string; limit?: number } = {}): Promise<{ actions: GuardianAction[]; count: number }> {
-  const q = new URLSearchParams();
-  if (opts.run) q.set("run", opts.run);
-  if (opts.limit) q.set("limit", String(opts.limit));
-  const qs = q.toString();
-  return call("GET", `/api/guardian/actions${qs ? `?${qs}` : ""}`, undefined, (j) => {
-    const o = obj(j);
-    const actions = (Array.isArray(o.actions) ? o.actions : []).map(guardianActionOf).filter((a) => a.id);
-    return { actions, count: num(o.count, actions.length) };
-  });
 }
 
 /** A DoorError's 429, read as a rate limit (the body, and the header folded in). */

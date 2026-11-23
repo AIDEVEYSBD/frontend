@@ -19,7 +19,7 @@ import { Pick } from "./select";
 import { fromDocument, HARNESS, inputKeysOf, toDocument, type AgentSystem, type Kind } from "@/lib/spec";
 import { useModels } from "@/lib/use-models";
 import { runBlockers, unsupportedOf, unsupportedReason, type UnsupportedPart } from "@/lib/unsupported";
-import { notBuilt, readRunRowsNotBuilt } from "@/lib/not-built";
+import { notBuilt, notBuiltOf, readRunRowsNotBuilt } from "@/lib/not-built";
 import { UnsupportedParts } from "./unsupported";
 import { SpanDetail, Waterfall, useTrace, type Span } from "./waterfall";
 import { controlLabel, explainControl } from "@/lib/guardrails";
@@ -350,10 +350,10 @@ const agentsOf = (r: unknown, system: string): string[] => {
   return Array.isArray(a) ? [...new Set(a.filter((x): x is string => typeof x === "string" && x !== "" && x !== system))] : [];
 };
 
-/* "My team" is shown and not offered: nothing sets a person's team, so the ledger has nothing to filter on. */
+/* "My team" is shown and not offered: the run list cannot be filtered by team yet (a person's team is set on the IAM page, and findings are filtered by it). */
 const SCOPES: { id: Scope; label: string; off?: string }[] = [
   { id: "mine", label: "Mine" },
-  { id: "team", label: "My team", off: "Not built: nothing on this platform sets a person's team, so runs cannot be filtered by one." },
+  { id: "team", label: "My team", off: "Not built: runs cannot be filtered by team yet." },
   { id: "all", label: "All" },
 ];
 
@@ -376,6 +376,8 @@ function Launcher() {
   /* Why each of the two reads failed, when it did. A failed read is shown as the failure, never as "no workflow yet" or "no runs yet". */
   const [agentsError, setAgentsError] = useState("");
   const [historyError, setHistoryError] = useState("");
+  /** The ledger's own `not_built` list, from the list's answer: a field it names is said to be not built above the list. */
+  const [historyNotBuilt, setHistoryNotBuilt] = useState<string[]>([]);
 
   useEffect(() => {
     listAgents()
@@ -397,6 +399,7 @@ function Launcher() {
         }
         setHistory(data.runs);
         setHistoryError("");
+        setHistoryNotBuilt(notBuiltOf(data));
         if (data.runs.some((r) => ownerOf(r))) setOwned(true);
       })
       .catch((e) => {
@@ -547,6 +550,9 @@ function Launcher() {
                 <Skeleton lines={3} />
               </div>
             )}
+            {history && history.length > 0 && notBuilt(historyNotBuilt, "review") && (
+              <p className="border-b border-line px-4 py-2 text-[11px] text-faint">Not built: a run of a version someone rolled back from is not flagged for review here, so no row carries that mark.</p>
+            )}
             {history?.length === 0 && (
               <p className="px-4 py-5 text-[12px] text-faint">{scope === "mine" ? "No run of yours is recorded." : "No runs recorded yet."}</p>
             )}
@@ -695,9 +701,10 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
   }, [phase]);
   // The journal's clock: the latest folded time on the transcript.
   const journalMs = useMemo(() => entries.reduce((m, e) => Math.max(m, e.t), 0), [entries]);
-  // The spec this run is started from is the one in hand: its limits are shown beside the run as it goes.
+  // The agent's latest saved version, as this page loaded it: its limits are shown beside the run as it goes, captioned
+  // as that version (the platform runs the deployed one, or a canary candidate), never as the spec stored with the run.
   const liveFacts = useMemo<RunFacts | null>(
-    () => (system ? { spec: toDocument(system), specDigest: "", spent: {}, visits: {}, provider: "", model: "", dataClass: "", startedAt: "", finishedAt: "" } : null),
+    () => (system ? { spec: toDocument(system), specLoaded: true, specDigest: "", spent: {}, visits: {}, provider: "", model: "", dataClass: "", startedAt: "", finishedAt: "" } : null),
     [system],
   );
 
@@ -845,11 +852,21 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
       const field = entry?.expects?.find((f) => f.kind === "string")?.name ?? "topic";
       parsed = { [field]: prompt };
     } else if (!jsonMode && fields.length) {
+      // A number field that does not read as a number, or a required one left empty, refuses the start, naming the field: it is
+      // never sent as 0. An optional number left empty is left out of the input.
+      const entryNode = system.nodes.find((n) => n.id === system.entry);
+      const optional = (name: string) => entryNode?.expects?.find((x) => x.name === name)?.required === false;
+      const emptyOptional = (f: { name: string; kind: Kind; value: string }) => f.kind === "number" && f.value.trim() === "" && optional(f.name);
+      const notNumber = fields.find((f) => f.kind === "number" && !emptyOptional(f) && (f.value.trim() === "" || !Number.isFinite(Number(f.value))));
+      if (notNumber) {
+        setError(notNumber.value.trim() === "" ? `${notNumber.name} is a number the run requires, and it is empty: give it a value before starting.` : `${notNumber.name} is a number, and "${notNumber.value}" does not read as one.`);
+        return;
+      }
       parsed = Object.fromEntries(
-        fields.map((f) => [
+        fields.filter((f) => !emptyOptional(f)).map((f) => [
           f.name,
           f.kind === "number"
-            ? Number(f.value) || 0
+            ? Number(f.value)
             : f.kind === "bool"
               ? f.value === "true"
               : f.kind === "object" || f.kind === "list"
@@ -918,7 +935,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
       {killAsk && (
         <KillDialog
           title="Kill this run?"
-          what={`${system.name} · ${killAsk}. A worker running it stops before its next model call, step or node; a call already in flight finishes. A run waiting for a person stops at once. Child runs it started are not stopped. The journal records the reason and your name.`}
+          what={`${system.name} · ${killAsk}. A worker running it stops before its next model call, step or node; a call already in flight finishes. A run waiting for a person stops at once. The kill also reaches every run below it in its tree, each stopped before its next model or tool call; tasks handed to peers are not reached. The journal records the reason and your name.`}
           onClose={() => setKillAsk(null)}
           onConfirm={(reason) => {
             const id = killAsk;
@@ -1601,7 +1618,7 @@ function FollowTheater({
       {killAsk && (
         <KillDialog
           title="Kill this run?"
-          what={`${system || "run"} · ${id}. A worker running it stops before its next model call, step or node; a call already in flight finishes. A run waiting for a person stops at once. Child runs it started are not stopped. The journal records the reason and your name.`}
+          what={`${system || "run"} · ${id}. A worker running it stops before its next model call, step or node; a call already in flight finishes. A run waiting for a person stops at once. The kill also reaches every run below it in its tree, each stopped before its next model or tool call; tasks handed to peers are not reached. The journal records the reason and your name.`}
           onClose={() => setKillAsk(false)}
           onConfirm={(reason) => {
             setKillAsk(false);
@@ -2027,10 +2044,6 @@ function Theater({
   /** `?entry=`: the journal entry a link points at; the transcript opens on it, marked. */
   locate?: string;
 }) {
-  const draftId =
-    result && typeof result.draft_id === "string" && /^[a-z][a-z0-9-]{0,62}$/.test(result.draft_id)
-      ? result.draft_id
-      : null;
   const modelCalls = entries.filter((e) => e.kind === "model.call").length;
   const denied = entries.filter((e) => e.kind === "denied" || e.kind === "contract.breach").length;
   const artifacts = useMemo(() => artifactsOf(entries), [entries]);
@@ -2038,7 +2051,7 @@ function Theater({
   const [rowsNotBuilt, setRowsNotBuilt] = useState<string[]>([]);
   useEffect(() => {
     let live = true;
-    void readRunRowsNotBuilt().then((l) => live && setRowsNotBuilt(l));
+    void readRunRowsNotBuilt().then((r) => live && setRowsNotBuilt(r.ok ? r.list : []));
     return () => {
       live = false;
     };
@@ -2075,7 +2088,7 @@ function Theater({
   };
   // The whole journal, not the scrub position: a limit is a fact about the record.
   const record = allEntries ?? entries;
-  const spec = useRunSpec(limits?.facts.spec, limits?.system ?? "", limits?.facts.specDigest ?? "");
+  const spec = useRunSpec(limits?.facts.spec, limits?.system ?? "", limits?.facts.specDigest ?? "", limits?.facts.specLoaded === true);
 
   /* Node states from the journal: entered without exit = active. */
   const nodeState = useMemo(() => {
@@ -2241,18 +2254,6 @@ function Theater({
                 <p className="text-[12px] leading-[1.55] text-dim">
                   Paused at <Mono className="text-[11px]">{suspension.node}</Mono> — the decision is
                   in the banner above.
-                </p>
-              </div>
-            )}
-
-            {draftId && finalState === "done" && (
-              <div className="relative flex flex-col gap-2.5 overflow-hidden rounded-md border border-line bg-surface p-3 pl-4">
-                <span className="absolute inset-y-0 left-0 w-[3px] bg-run" />
-                <span className="text-[12px] font-semibold text-fg">A draft was authored</span>
-                <p className="text-[12px] leading-[1.55] text-mist">
-                  The agent designed <code className="font-mono text-[11px]">{draftId}</code> and it
-                  passed the deployment parser. It is a draft, not a deployed agent: nothing runs
-                  it until it has been reviewed and deployed.
                 </p>
               </div>
             )}

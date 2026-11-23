@@ -24,7 +24,7 @@ import { useSession } from "@/lib/use-session";
  * under the person's name.
  *
  * And a security workload, asked to do something in plain words
- * (components/chat-workload.tsx), which is ahead of its door.
+ * (components/chat-workload.tsx).
  *
  * The "Ask" drawer on every page is a third thing and not this: it answers
  * questions about the console itself.

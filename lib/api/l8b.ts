@@ -19,10 +19,8 @@ import { agentSavedOf, conditionOf, gateRefusalBodyOf, type AgentSaved, type Con
  * carries more than the generated ErrorBody types (the unmet conditions on a
  * canary's 409, the control on a 403 or a 409, the field and what a template
  * takes on a 400, why a file is not served), and every answer is read
- * defensively. Same-origin: proxy.ts forwards `/api/agents` (the canary, the
- * lineage, an agent's eval sets), `/api/templates`, `/api/deliverables`,
- * `/api/registers` and `/api/eval-sets` to the backend (lib/route-policy.ts
- * BACKEND_PREFIXES), behind the cookie.
+ * defensively. Same-origin: proxy.ts forwards every /api request to the
+ * service at BACKEND_ORIGIN.
  */
 
 /* ═══════════════════ reading ═══════════════════ */
@@ -291,7 +289,7 @@ export interface TemplateDocument extends TemplateView {
 export interface TemplateList {
   templates: TemplateView[];
   count: number;
-  /** The role a certifier holds (`TEMPLATE_CERTIFIER_ROLE`, default `template-certifier`); an administrator passes. */
+  /** The roles whose holders may certify, as the platform names them (those that hold the approve permission, comma-separated); "" when the answer names none. */
   role: string;
 }
 
@@ -374,7 +372,7 @@ export function templateDocumentOf(v: unknown): TemplateDocument {
 export function templateListOf(v: unknown): TemplateList {
   const o = obj(v);
   const templates = objs(o.templates).map(templateOf).filter((t) => t.id);
-  return { templates, count: num(o.count, templates.length), role: str(o.role) || "template-certifier" };
+  return { templates, count: num(o.count, templates.length), role: str(o.role) };
 }
 
 export function lineageRefOf(v: unknown): LineageRef | null {

@@ -13,6 +13,8 @@
  * it becomes a refusal saying so, shown where the block would have been.
  */
 
+import { consolePath } from "./safe-link";
+
 export type BlockFormat = "text" | "number" | "usd" | "time" | "id";
 export type Value = string | number | boolean | null;
 
@@ -92,11 +94,8 @@ const FORMATS: BlockFormat[] = ["text", "number", "usd", "time", "id"];
 const fmtOf = (v: unknown): BlockFormat | null => (FORMATS.includes(v as BlockFormat) ? (v as BlockFormat) : null);
 const valueOf = (v: unknown): Value => (typeof v === "string" || typeof v === "boolean" || (typeof v === "number" && Number.isFinite(v)) ? v : null);
 const numOrNull = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
-const hrefOf = (v: unknown): string | null => {
-  const h = str(v);
-  // Only a page inside the console: a path, never another site or a scheme.
-  return h.startsWith("/") && !h.startsWith("//") ? h : null;
-};
+// Only a page inside the console, resolved (lib/safe-link.ts): never another site or a scheme, and not `/\host`, which a browser reads as `//host`.
+const hrefOf = (v: unknown): string | null => consolePath(v);
 
 class Unreadable extends Error {}
 

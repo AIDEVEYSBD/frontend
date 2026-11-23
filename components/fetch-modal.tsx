@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, Status } from "./ui";
 import { BrandMark } from "./brand";
+import { SafeLink } from "./safe-link";
 import { CURRENT_USER } from "@/lib/user";
 import { useSession, signerName } from "@/lib/use-session";
 
@@ -274,7 +275,7 @@ export function FetchModal({
                   <span className="text-[10.5px] font-medium tracking-[0.04em] text-ghost uppercase">Fetched from</span>
                   <span className="flex max-h-[4.8em] flex-col overflow-y-auto text-[10.5px] leading-[1.6]">
                     {(doc.pages?.length ? doc.pages : [doc.url]).map((u) => (
-                      <a key={u} href={u} target="_blank" rel="noreferrer" className="focusable truncate font-mono text-faint underline decoration-line hover:text-fg">{u}</a>
+                      <SafeLink key={u} href={u} className="focusable truncate font-mono text-faint underline decoration-line hover:text-fg">{u}</SafeLink>
                     ))}
                   </span>
                 </div>

@@ -3,7 +3,6 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { api } from "@/lib/api/client";
 import { EscalationHistoryList, GateMeta } from "@/components/gate-form";
-import { runTool } from "@/lib/server/console-tools";
 import * as l5 from "@/lib/api/l5";
 import { allowedVerdicts, chainOf, declaresNote, escalationPath, historyOf, HOLDS_LABEL, lastMoved, orderAttention, refusalErrors, stepLine, URGENT_SEVERITY, validateForm, validateVerdicts } from "@/lib/gates";
 import { PUBLIC_ORIGIN } from "@/lib/site";
@@ -154,7 +153,7 @@ const FX: Record<string, Fixture> = {
       "pending": [
         {
           "run": "holdme-2026-10-21T06-42-43-3pq4", "agent": "holdme", "node": "decide", "kind": "approval",
-          "asks": "records.write — held by Chandresh Singh: the next call at or above write waits for a human", "approvers": ["owner"], "timeout_s": 86400.0,
+          "asks": "records.write — held by Asha Rao: the next call at or above write waits for a human", "approvers": ["owner"], "timeout_s": 86400.0,
           "on_timeout": "escalate", "waiting_since": "2026-10-21T06:42:43.992Z", "shape": "decision", "fields": [], "items": [], "verdicts": [],
           "transitions": {}, "chain": [], "escalations": 0, "deadline": "2026-10-22T06:42:43Z", "external": false, "decided": {},
           "evidence": {
@@ -166,8 +165,8 @@ const FX: Record<string, Fixture> = {
               },
               {
                 "id": "6733821fdeb7", "t": 2, "kind": "gate.open", "node": "decide", "title": "Awaiting a human decision on records.write",
-                "detail": "held by Chandresh Singh: the next call at or above write waits for a human", "tool": "records.write",
-                "summary": "held by Chandresh Singh: the next call at or above write waits for a human", "tainted": false
+                "detail": "held by Asha Rao: the next call at or above write waits for a human", "tool": "records.write",
+                "summary": "held by Asha Rao: the next call at or above write waits for a human", "tainted": false
               }
             ]
           },
@@ -213,7 +212,7 @@ const FX: Record<string, Fixture> = {
   "approvals_batch": {
     "status": 200,
     "body": {
-      "answered": 2, "of": 3, "remaining": 0, "approved": true, "by": "Chandresh Singh",
+      "answered": 2, "of": 3, "remaining": 0, "approved": true, "by": "Asha Rao",
       "results": [
         {
           "run": "gated-2026-10-21T06-42-43-5m6k", "ok": true, "state": "running", "error": "", "result": null, "continuing": true,
@@ -238,7 +237,7 @@ const FX: Record<string, Fixture> = {
       "path": "/api/answer/f92bc7463cf2406c.1792568563.hnSnvT0vel8iktKFCNV1zBJ2XugCf2jKFdzRXjAEaWY",
       "token": "f92bc7463cf2406c.1792568563.hnSnvT0vel8iktKFCNV1zBJ2XugCf2jKFdzRXjAEaWY", "run": "formed-2026-10-21T06-42-43-alog",
       "gate": "review#590d8bce8c66", "email": "counsel@vendor.com", "expires_at": "2026-10-21T07:42:43Z", "deadline": "2026-10-21T07:42:43Z",
-      "by": "Chandresh Singh"
+      "by": "Asha Rao"
     }
   },
   "link_409": {"status": 409, "body": {"error": "the gate at triage does not allow an external answer (interface.external.allowed is not set)"}},
@@ -262,7 +261,7 @@ const FX: Record<string, Fixture> = {
     "body": {
       "run": "twostep-2026-10-21T06-42-43-iels", "state": "running",
       "steer": {
-        "guidance": "Prefer the conservative reading", "hold_at_next_gate": null, "model": "gpt-4o-mini", "by": "Chandresh Singh",
+        "guidance": "Prefer the conservative reading", "hold_at_next_gate": null, "model": "gpt-4o-mini", "by": "Asha Rao",
         "at": "2026-10-21T06:42:43.952Z"
       },
       "delivery": "in-process"
@@ -272,7 +271,7 @@ const FX: Record<string, Fixture> = {
     "status": 202,
     "body": {
       "run": "holdme-2026-10-21T06-42-43-3pq4", "state": "running",
-      "steer": {"guidance": null, "hold_at_next_gate": true, "model": null, "by": "Chandresh Singh", "at": "2026-10-21T06:42:43.990Z"}, "delivery": "in-process"
+      "steer": {"guidance": null, "hold_at_next_gate": true, "model": null, "by": "Asha Rao", "at": "2026-10-21T06:42:43.990Z"}, "delivery": "in-process"
     }
   },
   "steer_worker_merged": {
@@ -280,7 +279,7 @@ const FX: Record<string, Fixture> = {
     "body": {
       "run": "tiny-2026-10-21T06-42-44-e6c4ec", "state": "running",
       "steer": {
-        "guidance": "Check the sender's domain and the amount", "hold_at_next_gate": true, "model": "gpt-4o-mini", "by": "Chandresh Singh",
+        "guidance": "Check the sender's domain and the amount", "hold_at_next_gate": true, "model": "gpt-4o-mini", "by": "Asha Rao",
         "at": "2026-10-21T06:42:44.105Z"
       },
       "delivery": "worker"
@@ -291,25 +290,25 @@ const FX: Record<string, Fixture> = {
   "fleet_pause": {
     "status": 200,
     "body": {
-      "action": "pause", "agents": ["tiny"], "reason": "connector incident INC-42", "by": "Chandresh Singh", "at": "2026-10-21T06:42:44.141Z", "killed": [],
-      "paused": {"tiny": {"mode": "pause", "reason": "connector incident INC-42", "by": "Chandresh Singh", "at": "2026-10-21T06:42:44.141Z"}}
+      "action": "pause", "agents": ["tiny"], "reason": "connector incident INC-42", "by": "Asha Rao", "at": "2026-10-21T06:42:44.141Z", "killed": [],
+      "paused": {"tiny": {"mode": "pause", "reason": "connector incident INC-42", "by": "Asha Rao", "at": "2026-10-21T06:42:44.141Z"}}
     }
   },
   "fleet_kill": {
     "status": 200,
     "body": {
-      "action": "kill", "agents": ["twostep"], "reason": "runaway", "by": "Chandresh Singh", "at": "2026-10-21T06:42:44.151Z",
+      "action": "kill", "agents": ["twostep"], "reason": "runaway", "by": "Asha Rao", "at": "2026-10-21T06:42:44.151Z",
       "killed": ["twostep-2026-10-21T06-42-44-06v4"],
       "paused": {
-        "tiny": {"mode": "pause", "reason": "connector incident INC-42", "by": "Chandresh Singh", "at": "2026-10-21T06:42:44.141Z"},
-        "other": {"mode": "drain", "reason": "rolling the connector", "by": "Chandresh Singh", "at": "2026-10-21T06:42:44.142Z"}
+        "tiny": {"mode": "pause", "reason": "connector incident INC-42", "by": "Asha Rao", "at": "2026-10-21T06:42:44.141Z"},
+        "other": {"mode": "drain", "reason": "rolling the connector", "by": "Asha Rao", "at": "2026-10-21T06:42:44.142Z"}
       }
     }
   },
   "fleet_resume": {
     "status": 200,
     "body": {
-      "action": "resume", "agents": ["other", "tiny"], "reason": "incident closed", "by": "Chandresh Singh", "at": "2026-10-21T06:42:44.178Z", "killed": [],
+      "action": "resume", "agents": ["other", "tiny"], "reason": "incident closed", "by": "Asha Rao", "at": "2026-10-21T06:42:44.178Z", "killed": [],
       "paused": {}
     }
   },
@@ -317,11 +316,11 @@ const FX: Record<string, Fixture> = {
     "status": 200,
     "body": {
       "paused": {
-        "tiny": {"mode": "pause", "reason": "connector incident INC-42", "by": "Chandresh Singh", "at": "2026-10-21T06:42:44.141Z"},
-        "other": {"mode": "drain", "reason": "rolling the connector", "by": "Chandresh Singh", "at": "2026-10-21T06:42:44.142Z"}
+        "tiny": {"mode": "pause", "reason": "connector incident INC-42", "by": "Asha Rao", "at": "2026-10-21T06:42:44.141Z"},
+        "other": {"mode": "drain", "reason": "rolling the connector", "by": "Asha Rao", "at": "2026-10-21T06:42:44.142Z"}
       },
       "lockdown": {
-        "on": true, "reason": "credential leak under investigation", "by": "Chandresh Singh", "at": "2026-10-21T06:42:44.148Z",
+        "on": true, "reason": "credential leak under investigation", "by": "Asha Rao", "at": "2026-10-21T06:42:44.148Z",
         "controls": [
           "gates: every tool call above read in a new or resumed run waits for a human (control lockdown)",
           "sinks: every call to a sink is held the same way, whatever its risk",
@@ -338,7 +337,7 @@ const FX: Record<string, Fixture> = {
   "lockdown_post_on": {
     "status": 200,
     "body": {
-      "on": true, "reason": "credential leak under investigation", "by": "Chandresh Singh", "at": "2026-10-21T06:42:44.148Z",
+      "on": true, "reason": "credential leak under investigation", "by": "Asha Rao", "at": "2026-10-21T06:42:44.148Z",
       "controls": [
         "gates: every tool call above read in a new or resumed run waits for a human (control lockdown)",
         "sinks: every call to a sink is held the same way, whatever its risk",
@@ -348,7 +347,7 @@ const FX: Record<string, Fixture> = {
     }
   },
   "lockdown_400": {"status": 400, "body": {"error": "a lockdown needs a reason"}},
-  "lockdown_post_off": {"status": 200, "body": {"on": false, "reason": "contained", "by": "Chandresh Singh", "at": "2026-10-21T06:42:44.179Z", "controls": []}},
+  "lockdown_post_off": {"status": 200, "body": {"on": false, "reason": "contained", "by": "Asha Rao", "at": "2026-10-21T06:42:44.179Z", "controls": []}},
   "answer_get": {
     "status": 200,
     "body": {
@@ -442,12 +441,12 @@ const FX: Record<string, Fixture> = {
     "body": [
       {
         "t": 3, "kind": "note", "node": "decide", "title": "Operator guidance", "detail": "Prefer the conservative reading",
-        "data": {"control": "operator.guidance", "by": "Chandresh Singh", "text": "Prefer the conservative reading"}, "id": "b4e44ce73349", "tainted": false
+        "data": {"control": "operator.guidance", "by": "Asha Rao", "text": "Prefer the conservative reading"}, "id": "b4e44ce73349", "tainted": false
       },
       {
         "t": 3, "kind": "note", "node": "decide", "title": "Model set to gpt-4o-mini by the operator",
-        "detail": "Chandresh Singh sent this call to gpt-4o-mini instead of scripted",
-        "data": {"control": "operator.model", "by": "Chandresh Singh", "model": "gpt-4o-mini", "instead_of": "scripted"}, "id": "240ef9d0f3ed", "tainted": false
+        "detail": "Asha Rao sent this call to gpt-4o-mini instead of scripted",
+        "data": {"control": "operator.model", "by": "Asha Rao", "model": "gpt-4o-mini", "instead_of": "scripted"}, "id": "240ef9d0f3ed", "tainted": false
       }
     ]
   },
@@ -456,12 +455,12 @@ const FX: Record<string, Fixture> = {
     "body": [
       {
         "t": 2, "kind": "note", "node": "decide", "title": "Held at the operator's request",
-        "detail": "records.write is write; Chandresh Singh asked that the next such call wait for a human",
-        "data": {"control": "operator.hold", "by": "Chandresh Singh", "tool": "records.write"}, "id": "040cbed2578e", "tainted": false
+        "detail": "records.write is write; Asha Rao asked that the next such call wait for a human",
+        "data": {"control": "operator.hold", "by": "Asha Rao", "tool": "records.write"}, "id": "040cbed2578e", "tainted": false
       },
       {
         "t": 2, "kind": "gate.open", "node": "decide", "title": "Awaiting a human decision on records.write",
-        "detail": "held by Chandresh Singh: the next call at or above write waits for a human",
+        "detail": "held by Asha Rao: the next call at or above write waits for a human",
         "data": {"tool": "records.write", "args": {"type": "finding", "fields": {"title": "x"}}, "control": "operator.hold", "approvers": ["owner"]},
         "id": "6733821fdeb7", "tainted": false
       }
@@ -471,10 +470,10 @@ const FX: Record<string, Fixture> = {
     "status": 200,
     "body": [
       {
-        "t": 0, "kind": "note", "node": "", "title": "Steered by Chandresh Singh",
+        "t": 0, "kind": "note", "node": "", "title": "Steered by Asha Rao",
         "detail": "guidance for the next prompt: Check the sender's domain first; hold at the next call at or above write",
         "data": {
-          "control": "operator.steer", "by": "Chandresh Singh", "at": "2026-10-21T06:42:44.103Z", "guidance": "Check the sender's domain first",
+          "control": "operator.steer", "by": "Asha Rao", "at": "2026-10-21T06:42:44.103Z", "guidance": "Check the sender's domain first",
           "hold_at_next_gate": true, "delivery": "worker"
         },
         "id": "97641bb4ec55", "tainted": false
@@ -515,13 +514,11 @@ const FX: Record<string, Fixture> = {
   "port_telemetry": {"status": 200, "body": {"port": "telemetry", "implementation": "local", "configured": false, "ok": null, "region": "", "detail": {"detail": "not configured: nothing to check"}, "checked_at": "2026-10-21T08:23:23.587Z"}},
   "port_billing_broken": {"status": 200, "body": {"port": "billing", "implementation": "local", "configured": true, "ok": false, "region": "", "detail": {"detail": "RuntimeError: bucket gone"}, "checked_at": "2026-10-21T08:23:23.593Z"}},
   "port_region": {"status": 404, "body": {"error": "no port \"region\"; the ports are identity, secrets, store, provider, screener, telemetry, billing"}},
-  "fleet_pause_audited": {"status": 200, "body": {"action": "pause", "agents": ["tiny"], "reason": "connector incident INC-42", "by": "Chandresh Singh", "at": "2026-10-21T08:23:23.617Z", "killed": [], "paused": {"tiny": {"mode": "pause", "reason": "connector incident INC-42", "by": "Chandresh Singh", "at": "2026-10-21T08:23:23.617Z"}}, "audit_id": 9}},
-  "lockdown_on": {"status": 200, "body": {"on": true, "reason": "credential leak under investigation", "by": "Chandresh Singh", "at": "2026-10-21T08:23:23.620Z", "controls": ["queue: no worker claims a job while it lasts; the queue drains as the runs in flight finish", "doors: the trigger, webhook and cron doors still enqueue, so no event is lost (the answer says the lockdown holds the job); POST /api/runs answers 423", "gates: every tool call above read in a run resumed while it lasts waits for a human (control lockdown), as in a job claimed as the switch landed", "sinks: every call to a sink in those runs is held the same way, whatever its risk"], "audit_id": 13}},
-  "fleet_state_locked": {"status": 200, "body": {"paused": {}, "lockdown": {"on": true, "reason": "credential leak under investigation", "by": "Chandresh Singh", "at": "2026-10-21T08:23:23.620Z", "controls": ["queue: no worker claims a job while it lasts; the queue drains as the runs in flight finish", "doors: the trigger, webhook and cron doors still enqueue, so no event is lost (the answer says the lockdown holds the job); POST /api/runs answers 423", "gates: every tool call above read in a run resumed while it lasts waits for a human (control lockdown), as in a job claimed as the switch landed", "sinks: every call to a sink in those runs is held the same way, whatever its risk"], "audit_id": 13}, "live": {}}},
-  "runs_start_locked": {"status": 423, "body": {"error": "the estate is locked down: credential leak under investigation (by Chandresh Singh, 2026-10-21T08:23:23.620Z). Nothing starts until it is lifted with POST /api/lockdown {\"on\": false}.", "lockdown": {"on": true, "reason": "credential leak under investigation", "by": "Chandresh Singh", "at": "2026-10-21T08:23:23.620Z", "controls": ["queue: no worker claims a job while it lasts; the queue drains as the runs in flight finish", "doors: the trigger, webhook and cron doors still enqueue, so no event is lost (the answer says the lockdown holds the job); POST /api/runs answers 423", "gates: every tool call above read in a run resumed while it lasts waits for a human (control lockdown), as in a job claimed as the switch landed", "sinks: every call to a sink in those runs is held the same way, whatever its risk"], "audit_id": 13}}},
-  "trigger_locked": {"status": 202, "body": {"job": "726cd37f-b6e8-4785-b0a9-477b8315a4f2", "agent": "tiny", "status": "queued", "external_id": "alert-1", "source": "local", "attempts": 0, "max_attempts": 3, "run_id": null, "trace_id": "", "result": null, "error": null, "dead": false, "claimed_by": null, "lease_until": null, "created_at": "2026-10-21T08:23:23.624Z", "started_at": null, "finished_at": null, "status_url": "/api/trigger/tiny/jobs/726cd37f-b6e8-4785-b0a9-477b8315a4f2", "run_url": null, "duplicate": false, "retried": false, "note": "the estate is locked down (credential leak under investigation; by Chandresh Singh): the job is queued and no worker claims it until the lockdown is lifted", "lockdown": {"reason": "credential leak under investigation", "by": "Chandresh Singh", "at": "2026-10-21T08:23:23.620Z", "says": "the estate is locked down (credential leak under investigation; by Chandresh Singh): the job is queued and no worker claims it until the lockdown is lifted"}}},
-  "trigger_open": {"status": 202, "body": {"job": "887a1daa-bbea-42f7-8353-cc929bcaee81", "agent": "tiny", "status": "queued", "external_id": null, "source": "local", "attempts": 0, "max_attempts": 3, "run_id": null, "trace_id": "", "result": null, "error": null, "dead": false, "claimed_by": null, "lease_until": null, "created_at": "2026-10-21T08:23:23.627Z", "started_at": null, "finished_at": null, "status_url": "/api/trigger/tiny/jobs/887a1daa-bbea-42f7-8353-cc929bcaee81", "run_url": null, "duplicate": false, "retried": false, "note": null, "lockdown": null}},
-  "lockdown_lifted": {"status": 200, "body": {"on": false, "reason": "contained", "by": "Chandresh Singh", "at": "2026-10-21T08:23:23.626Z", "controls": [], "audit_id": 18}},
+  "fleet_pause_audited": {"status": 200, "body": {"action": "pause", "agents": ["tiny"], "reason": "connector incident INC-42", "by": "Asha Rao", "at": "2026-10-21T08:23:23.617Z", "killed": [], "paused": {"tiny": {"mode": "pause", "reason": "connector incident INC-42", "by": "Asha Rao", "at": "2026-10-21T08:23:23.617Z"}}, "audit_id": 9}},
+  "lockdown_on": {"status": 200, "body": {"on": true, "reason": "credential leak under investigation", "by": "Asha Rao", "at": "2026-10-21T08:23:23.620Z", "controls": ["queue: no worker claims a job while it lasts; the queue drains as the runs in flight finish", "doors: the trigger, webhook and cron doors still enqueue, so no event is lost (the answer says the lockdown holds the job); POST /api/runs answers 423", "gates: every tool call above read in a run resumed while it lasts waits for a human (control lockdown), as in a job claimed as the switch landed", "sinks: every call to a sink in those runs is held the same way, whatever its risk"], "audit_id": 13}},
+  "fleet_state_locked": {"status": 200, "body": {"paused": {}, "lockdown": {"on": true, "reason": "credential leak under investigation", "by": "Asha Rao", "at": "2026-10-21T08:23:23.620Z", "controls": ["queue: no worker claims a job while it lasts; the queue drains as the runs in flight finish", "doors: the trigger, webhook and cron doors still enqueue, so no event is lost (the answer says the lockdown holds the job); POST /api/runs answers 423", "gates: every tool call above read in a run resumed while it lasts waits for a human (control lockdown), as in a job claimed as the switch landed", "sinks: every call to a sink in those runs is held the same way, whatever its risk"], "audit_id": 13}, "live": {}}},
+  "runs_start_locked": {"status": 423, "body": {"error": "the estate is locked down: credential leak under investigation (by Asha Rao, 2026-10-21T08:23:23.620Z). Nothing starts until it is lifted with POST /api/lockdown {\"on\": false}.", "lockdown": {"on": true, "reason": "credential leak under investigation", "by": "Asha Rao", "at": "2026-10-21T08:23:23.620Z", "controls": ["queue: no worker claims a job while it lasts; the queue drains as the runs in flight finish", "doors: the trigger, webhook and cron doors still enqueue, so no event is lost (the answer says the lockdown holds the job); POST /api/runs answers 423", "gates: every tool call above read in a run resumed while it lasts waits for a human (control lockdown), as in a job claimed as the switch landed", "sinks: every call to a sink in those runs is held the same way, whatever its risk"], "audit_id": 13}}},
+  "lockdown_lifted": {"status": 200, "body": {"on": false, "reason": "contained", "by": "Asha Rao", "at": "2026-10-21T08:23:23.626Z", "controls": [], "audit_id": 18}},
   "attention_with_health": {"status": 200, "body": {"items": [{"id": "health:billing", "kind": "health", "severity": 8, "age_s": 0.0, "rank": 8.0, "title": "the billing port is failing", "detail": "RuntimeError: bucket gone", "agent": "", "run": "", "job": "", "since": "", "deadline": null, "holds": "", "action": {"method": "GET", "path": "/api/ports/billing/health", "body": null, "says": "fix the billing port's configuration (PORT_BILLING and what it needs), then read its health again here"}}], "count": 1}},
 };
 
@@ -684,8 +681,8 @@ describe("POST /api/approvals/{run} and the batch", () => {
   it("a decision batch goes to the batch door with approved up front; a gate it cannot answer is a row", async () => {
     const calls = serve("approvals_batch");
     const b = await l5.answerGates(["a", "b", "c"], { approved: true }, "fine");
-    expect(calls[0]).toEqual({ url: "/api/approvals", method: "POST", body: { runs: ["a", "b", "c"], answer: { approved: true }, note: "fine", by: "Chandresh Singh", approved: true } });
-    expect(b).toMatchObject({ answered: 2, of: 3, remaining: 0, by: "Chandresh Singh" });
+    expect(calls[0]).toEqual({ url: "/api/approvals", method: "POST", body: { runs: ["a", "b", "c"], answer: { approved: true }, note: "fine", by: "Asha Rao", approved: true } });
+    expect(b).toMatchObject({ answered: 2, of: 3, remaining: 0, by: "Asha Rao" });
     expect(b.results.map((r) => r.ok)).toEqual([true, true, false]);
     expect(b.results[2]).toMatchObject({ state: "suspended", error: "residual_risk: is required" });
   });
@@ -796,7 +793,7 @@ describe("POST /api/runs/{id}/steer and the operator's journal", () => {
     const calls = serve("steer_in_process");
     const r = await l5.steerRun("r", { guidance: "Prefer the conservative reading", model: "gpt-4o-mini" });
     expect(calls[0].body).toEqual({ guidance: "Prefer the conservative reading", model: "gpt-4o-mini" });
-    expect(r).toEqual({ run: "twostep-2026-10-21T06-42-43-iels", state: "running", applied: { guidance: "Prefer the conservative reading", model: "gpt-4o-mini" }, by: "Chandresh Singh", at: "2026-10-21T06:42:43.952Z", delivery: "in-process" });
+    expect(r).toEqual({ run: "twostep-2026-10-21T06-42-43-iels", state: "running", applied: { guidance: "Prefer the conservative reading", model: "gpt-4o-mini" }, by: "Asha Rao", at: "2026-10-21T06:42:43.952Z", delivery: "in-process" });
   });
 
   it("a hold, and a worker's run whose steers merge until its next heartbeat", async () => {
@@ -818,14 +815,14 @@ describe("POST /api/runs/{id}/steer and the operator's journal", () => {
   it("the journal's operator notes read as operator actions; the gate a hold opened stays a gate", () => {
     type E = { kind: string; title?: string; detail?: string; data?: Record<string, unknown> };
     expect((fx("steer_journal_in_process").body as E[]).map(l5.operatorOf)).toEqual([
-      { action: "Guidance for the next step", by: "Chandresh Singh", at: "", detail: "Prefer the conservative reading" },
-      { action: "Model for the next call: gpt-4o-mini", by: "Chandresh Singh", at: "", detail: "Chandresh Singh sent this call to gpt-4o-mini instead of scripted" },
+      { action: "Guidance for the next step", by: "Asha Rao", at: "", detail: "Prefer the conservative reading" },
+      { action: "Model for the next call: gpt-4o-mini", by: "Asha Rao", at: "", detail: "Asha Rao sent this call to gpt-4o-mini instead of scripted" },
     ]);
     const [hold, opened] = (fx("steer_hold_journal").body as E[]).map(l5.operatorOf);
-    expect(hold).toEqual({ action: "Held for a person", by: "Chandresh Singh", at: "", detail: "records.write is write; Chandresh Singh asked that the next such call wait for a human" });
+    expect(hold).toEqual({ action: "Held for a person", by: "Asha Rao", at: "", detail: "records.write is write; Asha Rao asked that the next such call wait for a human" });
     expect(opened).toBeNull();
     expect((fx("steer_journal_worker").body as E[]).map(l5.operatorOf)).toEqual([
-      { action: "Steered", by: "Chandresh Singh", at: "2026-10-21T06:42:44.103Z", detail: "guidance for the next prompt: Check the sender's domain first; hold at the next call at or above write" },
+      { action: "Steered", by: "Asha Rao", at: "2026-10-21T06:42:44.103Z", detail: "guidance for the next prompt: Check the sender's domain first; hold at the next call at or above write" },
     ]);
     expect(l5.operatorOf({ kind: "note", data: {} })).toBeNull();
   });
@@ -840,10 +837,10 @@ describe("fleet and lockdown", () => {
       action: "pause",
       agents: ["tiny"],
       reason: "connector incident INC-42",
-      by: "Chandresh Singh",
+      by: "Asha Rao",
       at: "2026-10-21T06:42:44.141Z",
       killed: [],
-      paused: { tiny: { mode: "pause", reason: "connector incident INC-42", by: "Chandresh Singh", at: "2026-10-21T06:42:44.141Z" } },
+      paused: { tiny: { mode: "pause", reason: "connector incident INC-42", by: "Asha Rao", at: "2026-10-21T06:42:44.141Z" } },
       // Captured before the backend named the audit event it wrote; the close-out fixtures below carry it.
       audit_id: null,
     });
@@ -858,10 +855,10 @@ describe("fleet and lockdown", () => {
     serve("fleet_get", "fleet_get_empty");
     const s = await l5.getFleet();
     expect(s.paused).toEqual({
-      tiny: { mode: "pause", reason: "connector incident INC-42", by: "Chandresh Singh", at: "2026-10-21T06:42:44.141Z" },
-      other: { mode: "drain", reason: "rolling the connector", by: "Chandresh Singh", at: "2026-10-21T06:42:44.142Z" },
+      tiny: { mode: "pause", reason: "connector incident INC-42", by: "Asha Rao", at: "2026-10-21T06:42:44.141Z" },
+      other: { mode: "drain", reason: "rolling the connector", by: "Asha Rao", at: "2026-10-21T06:42:44.142Z" },
     });
-    expect(s.lockdown).toMatchObject({ on: true, reason: "credential leak under investigation", by: "Chandresh Singh" });
+    expect(s.lockdown).toMatchObject({ on: true, reason: "credential leak under investigation", by: "Asha Rao" });
     expect(s.lockdown.controls).toHaveLength(4);
     expect(s.live).toEqual({ twostep: 1 });
     expect(await l5.getFleet()).toEqual({ paused: {}, lockdown: { on: false, reason: "", by: "", at: null, controls: [], audit_id: null }, live: {} });
@@ -872,10 +869,10 @@ describe("fleet and lockdown", () => {
     expect(await l5.getLockdown()).toEqual({ on: false, reason: "", by: "", at: null, controls: [], audit_id: null });
     const on = await l5.setLockdown(true, "credential leak under investigation");
     expect(calls[1].body).toEqual({ on: true, reason: "credential leak under investigation" });
-    expect(on).toMatchObject({ on: true, reason: "credential leak under investigation", by: "Chandresh Singh", at: "2026-10-21T06:42:44.148Z" });
+    expect(on).toMatchObject({ on: true, reason: "credential leak under investigation", by: "Asha Rao", at: "2026-10-21T06:42:44.148Z" });
     expect(on.controls[3]).toBe("doors: the runs, trigger and webhook doors still accept work; it runs gated");
     expect((await refused(l5.setLockdown(true, ""))).message).toBe("a lockdown needs a reason");
-    expect(await l5.setLockdown(false, "contained")).toEqual({ on: false, reason: "contained", by: "Chandresh Singh", at: "2026-10-21T06:42:44.179Z", controls: [], audit_id: null });
+    expect(await l5.setLockdown(false, "contained")).toEqual({ on: false, reason: "contained", by: "Asha Rao", at: "2026-10-21T06:42:44.179Z", controls: [], audit_id: null });
   });
 
   it("the fleet buttons say what the backend does: a pause kills what is in flight, a kill does not pause", () => {
@@ -1008,25 +1005,13 @@ describe("fleet and lockdown name their audit event", () => {
     });
     expect(data).toBeUndefined();
     const locked = l5.lockdownRefusalOf(response.status, error);
-    expect(locked).toMatchObject({ on: true, reason: "credential leak under investigation", by: "Chandresh Singh", at: "2026-10-21T08:23:23.620Z", audit_id: 13 });
+    expect(locked).toMatchObject({ on: true, reason: "credential leak under investigation", by: "Asha Rao", at: "2026-10-21T08:23:23.620Z", audit_id: 13 });
     const text = l5.lockdownRefusalText(locked!);
-    expect(text).toMatch(/^The estate is locked down: credential leak under investigation \(by Chandresh Singh, .+\)\. Nothing starts until the lockdown is lifted on the Control page; audit event #13\.$/);
+    expect(text).toMatch(/^The estate is locked down: credential leak under investigation \(by Asha Rao, .+\)\. Nothing starts until the lockdown is lifted on the Control page; audit event #13\.$/);
     // Not the door's own instructions, and nothing for any other refusal.
     expect(text).not.toContain("POST /api/lockdown");
     expect(l5.lockdownRefusalOf(409, error)).toBeNull();
     expect(l5.lockdownRefusalOf(423, { error: "locked" })).toBeNull();
   });
 
-  it("a trigger during a lockdown is queued and held; the console's trigger tool says so before anything else", async () => {
-    const held = fx("trigger_locked").body as { status: string; lockdown: { reason: string; by: string; at: string; says: string } };
-    expect(held.status).toBe("queued");
-    expect(held.lockdown).toMatchObject({ reason: "credential leak under investigation", by: "Chandresh Singh" });
-    expect(held.lockdown.says).toContain("no worker claims it until the lockdown is lifted");
-    serve("trigger_locked", "trigger_open");
-    const said = await runTool("http://console.test", "trigger_workflow", { workflow: "tiny", input: { case: "C-1" } });
-    expect(said.startsWith(`{"held_by_lockdown":${JSON.stringify(held.lockdown.says)}`)).toBe(true);
-    const open = await runTool("http://console.test", "trigger_workflow", { workflow: "tiny", input: { case: "C-3" } });
-    expect(open).not.toContain("held_by_lockdown");
-    expect(JSON.parse(open).lockdown).toBeNull();
-  });
 });

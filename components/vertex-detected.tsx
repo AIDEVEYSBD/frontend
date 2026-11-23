@@ -14,8 +14,7 @@ import type { VertexAnswer, VertexGroup } from "@/lib/service-answers";
  * The platform service reads the list with its own Google identity, so this
  * shows the models the moment the deployment can reach Vertex AI, before any
  * of them is offered to agents or routed to. It states that plainly: these
- * are detected, not in use. With no connection it shows nothing in a quiet
- * console and one line otherwise.
+ * are detected, not in use.
  */
 
 let cached: VertexAnswer | null = null;

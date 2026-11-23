@@ -9,7 +9,7 @@ import { PageHeader } from "./section";
 import { usePageFacts } from "./assistant";
 import { WINDOWS, WindowPick, type Win } from "./window-pick";
 import { OutcomesBody } from "./outcomes";
-import { fmtAge, fmtCount, fmtMoney, leaders, plural, spendText, unpricedIn, unpricedWords, useFigures, useWaiting, windowWords } from "./overview-data";
+import { fmtAge, fmtCount, fmtMoney, leaders, NotIncludedNote, plural, spendText, unpricedIn, unpricedWords, useFigures, useWaiting, windowWords } from "./overview-data";
 import { Card, CardFigure, FigureTile, FootNote, Nothing, RankList, TrendBars } from "./overview-parts";
 import { rankControls, rankRefusals, resultTotals, spendByAgent, spendByModel, windowBudget, windowDays } from "./dashboards-data";
 import { notBuilt, notBuiltOf } from "@/lib/not-built";
@@ -429,6 +429,7 @@ function CostBoard({ win, setWin }: BoardProps) {
   return (
     <>
       <FiguresBanners figures={figures} unread={unread} stale={stale} />
+      {f && <NotIncludedNote list={f.not_included} />}
       {f && !latest && <BoardNote>No agent has run on this deployment yet. Spend shows here from the first model call.</BoardNote>}
       {f && latest && total === 0 && <EmptyWindow win={win} setWin={setWin} age={now - Date.parse(latest)} />}
 

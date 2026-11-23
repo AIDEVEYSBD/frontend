@@ -216,6 +216,8 @@ function AttestationsPage() {
   const agent = params.get("agent");
   const [standings, setStandings] = useState<Standings | null>(null);
   const [agents, setAgents] = useState<AgentSummary[]>([]);
+  /** Why the agents were not read: the agent picker says so, never offering an empty list as the estate's. */
+  const [agentsError, setAgentsError] = useState("");
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [error, setError] = useState("");
   const load = useCallback(() => {
@@ -229,8 +231,14 @@ function AttestationsPage() {
   useEffect(() => soon(load), [load]);
   useEffect(() => {
     listAgents()
-      .then(setAgents)
-      .catch(() => setAgents([]));
+      .then((a) => {
+        setAgents(a);
+        setAgentsError("");
+      })
+      .catch((e) => {
+        setAgents([]);
+        setAgentsError((e as Error).message);
+      });
   }, []);
   const rows = (standings?.agents ?? []).filter((r) => !overdueOnly || r.overdue);
   const never = (standings?.agents ?? []).filter((r) => !r.last).length;
@@ -274,7 +282,7 @@ function AttestationsPage() {
         )}
       </Section>
       <div className="w-full max-w-sm">
-        <Field label="An agent" hint="any saved agent, deployed or not">
+        <Field label="An agent" hint="any saved agent, deployed or not" error={agentsError ? `the agents could not be read, so none can be picked: ${agentsError}` : undefined}>
           <Pick value={agent ?? ""} onChange={(v) => router.push(v ? standingHref(v) : "/attestations")} options={[{ value: "", label: "Pick one" }, ...agents.map((a) => ({ value: a.id, label: a.name }))]} />
         </Field>
       </div>

@@ -40,25 +40,35 @@ export function notBuilt(list: readonly string[] | null | undefined, field: stri
 }
 
 /*
- * The run ledger's own list (`GET /api/runs` `not_built`: `runs[].artifacts`,
- * `runs[].toolCalls`, ...), read once per page load and shared, for a screen
- * that shows one run and would otherwise count a not-built field as zero.
- * Empty until read, and empty when the read fails: an unknown list says
- * nothing is not built, and the screen shows what it counted.
+ * The run ledger's own list (`GET /api/runs` `not_built`, written as
+ * `runs[].<field>`: `runs[].review`, `runs[].step_p95_ms` today), read once
+ * per page load and shared, for a screen that shows one run and would
+ * otherwise count a not-built field as zero. A failed read is `{ok: false}`
+ * with its reason and is not kept: the next screen that asks reads again.
  */
-let runRows: string[] | null = null;
-let runRowsRead: Promise<string[]> | null = null;
+export type RunRowsNotBuilt = { ok: true; list: string[] } | { ok: false; message: string };
 
-export function readRunRowsNotBuilt(): Promise<string[]> {
-  if (runRows) return Promise.resolve(runRows);
+let runRows: string[] | null = null;
+let runRowsRead: Promise<RunRowsNotBuilt> | null = null;
+
+export function readRunRowsNotBuilt(): Promise<RunRowsNotBuilt> {
+  if (runRows) return Promise.resolve({ ok: true, list: runRows });
   runRowsRead ??= globalThis
     // Only the list of names is wanted: `scope=mine` keeps the rows that come with it few.
     .fetch("/api/runs?scope=mine", { cache: "no-store" })
-    .then((r) => (r.ok ? r.json() : null))
-    .then((d) => (runRows = notBuiltOf(d)))
-    .catch(() => {
+    .then(async (r): Promise<RunRowsNotBuilt> => {
+      const d = await r.json().catch(() => null);
+      if (!r.ok || !d) {
+        runRowsRead = null;
+        const said = d && typeof d.error === "string" ? d.error : "";
+        return { ok: false, message: said ? `${said} (${r.status} from GET /api/runs)` : `the backend did not answer GET /api/runs (${r.status})` };
+      }
+      runRows = notBuiltOf(d);
+      return { ok: true, list: runRows };
+    })
+    .catch((e: Error): RunRowsNotBuilt => {
       runRowsRead = null;
-      return [];
+      return { ok: false, message: `the backend did not answer GET /api/runs (${e.message})` };
     });
   return runRowsRead;
 }

@@ -143,7 +143,7 @@ const AREAS: Area[] = [
     pages: [
       { href: "/workloads", label: "Workloads", what: "Configure security workloads and access their findings and reports." },
       { href: "/agents", label: "Agents", what: "Define execution steps, approval roles and resource limits." },
-      { href: "/evals", label: "Evaluations", what: "Assess agent performance against recorded runs before release." },
+      { href: "/evals", label: "Evaluations", what: "Run benchmark cases against an agent version before release: each case is a new run." },
       { href: "/acceptance", label: "Acceptance", what: "Review acceptance criteria, results and accountable sign-off." },
     ],
   },

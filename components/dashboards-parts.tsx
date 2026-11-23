@@ -113,9 +113,8 @@ function whenText(iso: string): string {
  * deployment's resources: the ones still active first, then by severity,
  * the newest first. Each says what it is about, the resource, when it was
  * found and its state, and opens in the provider's console when the door
- * gives a link. The card is ahead of its door (`cloudFindings`,
- * lib/api/pending.ts): until it answers the card says, in one line, what it
- * will list. No finding is ever made up.
+ * gives a link. The door is `cloudFindings` (lib/api/pending.ts). No finding
+ * is ever made up.
  */
 export function CloudFindingsCard({ now }: { /** The board's clock, stamped when its reads land; 0 until then. */ now: number }) {
   const { answer, reload } = useDoor<CloudFindingList>("cloudFindings");
@@ -137,6 +136,10 @@ export function CloudFindingsCard({ now }: { /** The board's clock, stamped when
   const shown = all ? findings : findings.slice(0, FINDINGS_SHOWN);
   const source = answer?.state === "ok" ? answer.data?.source : undefined;
   const off = answer?.state === "pending";
+  // The security centre answers one page: when it holds more, every count below is of that page, and says so.
+  const truncated = answer?.state === "ok" && answer.data?.truncated === true;
+  const total = answer?.state === "ok" && typeof answer.data?.total === "number" ? answer.data.total : null;
+  const partial = truncated ? (total !== null ? ` · counted from the first ${fmtCount(findings.length)} of ${fmtCount(total)}` : ` · counted from the first ${fmtCount(findings.length)}; the security centre holds more`) : "";
 
   return (
     <Card
@@ -146,12 +149,12 @@ export function CloudFindingsCard({ now }: { /** The board's clock, stamped when
         <>
           <FootNote>
             {findings.length
-              ? `${fmtCount(count("active"))} active${worst.length ? ` (${worst.map((x) => `${fmtCount(x.n)} ${x.s}`).join(", ")})` : ""} · ${fmtCount(count("muted"))} muted · ${fmtCount(count("fixed"))} fixed${source ? ` · from ${source}` : ""}`
+              ? `${fmtCount(count("active"))} active${worst.length ? ` (${worst.map((x) => `${fmtCount(x.n)} ${x.s}`).join(", ")})` : ""} · ${fmtCount(count("muted"))} muted · ${fmtCount(count("fixed"))} fixed${partial}${source ? ` · from ${source}` : ""}`
               : "Findings the cloud provider's security centre holds for this deployment's resources"}
           </FootNote>
           {findings.length > FINDINGS_SHOWN && (
             <Button size="sm" onClick={() => setAll((v) => !v)}>
-              {all ? `Show the first ${FINDINGS_SHOWN}` : `Show all ${fmtCount(findings.length)}`}
+              {all ? `Show the first ${FINDINGS_SHOWN}` : truncated ? `Show the first ${fmtCount(findings.length)}${total !== null ? ` of ${fmtCount(total)}` : ""}` : `Show all ${fmtCount(findings.length)}`}
             </Button>
           )}
         </>

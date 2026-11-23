@@ -1,78 +1,49 @@
 # Agent Factory console
 
-The console is a Next.js app (app router, React 19) that serves the pages and the parts of the API that have not yet moved to the backend. Since phase L2 it is a client of the backend (`backend/`, a FastAPI service with the runtime imported in-process) for everything that touches runs, agents, approvals, drafts, the roster, keys, attached agents, IAM and the vault, and it starts no process of its own: nothing under `app/` or `lib/` spawns `python3` (`tests/no-python.test.ts` holds it to that).
+The console is the pages of Agent Factory: a Next.js app (app router, React 19) that runs in the browser and calls the platform's service for everything it shows or changes. It keeps no data, no session and no setting of its own beyond the two below. It has no API routes of its own: its only server-side logic is `proxy.ts`, which forwards.
 
-## Run it
+## How it fits
 
-```bash
-npm install
-npm run dev            # next dev; the port is yours to pick with -p
-npm test               # vitest: route guards, the path router, the SSE decoder, the no-spawn rule
-npx tsc --noEmit       # types
-npm run lint           # eslint
-npm run gen:api        # regenerate lib/api/backend.d.ts from ../backend/openapi.json
+```
+browser ──► Google IAP ──► console (Next.js) ──► platform service (BACKEND_ORIGIN)
+                            pages                every /api request, unchanged
 ```
 
-Point it at a backend before opening anything beyond the landing page: without `BACKEND_ORIGIN` the paths the backend owns have no answer here, so the Workflows, Runs, Control, Configuration, IAM and Builder pages read empty or 503.
+- **Sign-in.** Google Identity-Aware Proxy signs a person in before a request reaches the console. The console forwards every `/api` request with its headers unchanged, IAP's signed assertion (`x-goog-iap-jwt-assertion`) among them. The service verifies that assertion on every request, gives the person their role from its role map, and answers who is signed in (`GET /api/auth/session`) and whether they may enter (`GET /api/auth/login`, which sends a person it refuses to `/no-access` with the reason). The console decides nothing about who someone is or what they may do; it greys out what the session says a person may not do, and the service refuses it anyway.
+- **Forwarding.** `proxy.ts` sends every `/api` request, and the agent card at `/.well-known/agent.json`, to `BACKEND_ORIGIN`. The one check it makes first: a write must come from the console's own origin (`NEXT_PUBLIC_ORIGIN`), since IAP's own session rides on a cookie. Without `BACKEND_ORIGIN` it answers every request 503 with the reason. There is no console-only mode.
+- **Machine addresses.** Applications, attached agents, triggers, webhooks and MCP clients reach the service on its own route, not through the console. The console prints those addresses from the session's `machineOrigin` (the service's `PUBLIC_API_URL`), read at run time, and prints none where the service names none (`lib/site.ts`).
+- **Reading answers.** Each screen reads its doors through the mapping functions in `lib/api/*`; the doors read through `ask` are named once in `lib/api/pending.ts`, where the service's 501 (a part it names as not built) is told apart from any other refusal.
 
-## Environment
+## Settings
 
-| Variable | Meaning |
-|---|---|
-| `BACKEND_ORIGIN` | **Required for anything beyond the pages.** The backend's origin (`http://localhost:8000` on a laptop, the container's name inside the compose network). The path router in `proxy.ts` forwards every backend-owned prefix there at request time, with the session cookie forwarded and the runtime key attached; route handlers that still live here reach the same doors through `lib/server/backend.ts` on the caller's behalf. |
-| `RUNTIME_KEY` | The shared secret the backend expects in `x-runtime-key`; set the same value on both sides when the API is closed. |
-| `RUNTIME_ORIGIN` | Split deployment (the Vercel console): every API path the backend does not own is proxied to the control plane behind the tunnel. |
-| `AUTH_SECRET` | Sign-in on: the session cookie's HMAC key, verified here without a database and again by the backend. Unset means local mode, where every request is the operator holding `AUTH_LOCAL_ROLE`. |
-| `AUTH_LOCAL_ROLE` | Local mode's role (administrator, operator, viewer). |
-| `AUTOX_CLIENT_ID`, `AUTOX_CLIENT_SECRET`, `AUTOX_ISSUER` | The identity provider, for sign-in. |
-| `AUTH_GROUPS_CLAIM` | The claim the identity provider puts a person's groups in, stored on the session at sign-in (and on each refresh whose tokens carry it) so a gate's approvers can name a group (plan L5). Default `groups`. Read from the ID token and the access token together; a claim name with `:`, `/` or `.` is read as a literal key first, then as a dotted path into a nested claim (`realm_access.roles`). Values are kept as sent (names, or object ids from Entra ID), so a gate names a group exactly as the provider spells it. A provider that withholds the list (Entra ID's groups overage) is noted on the sign-in event; the console does not call Microsoft Graph. |
-| `NEXT_PUBLIC_ORIGIN` | The console's public origin (`lib/site.ts`), used in everything user-facing; never localhost. |
-| `FOUNDRY_ENDPOINT`, `FOUNDRY_API_KEY` | The model gateway, for the parts of the console that call a model themselves: the assistant, the authoring conversation, knowledge answers. |
-| `AGENTFACTORY_DB_*` / `AGENTFACTORY_DB_DSN` | Postgres, for the domains that still read it here (below): host, port, name, user and password, or one connection string. The DSN also switches on the DB-backed schema test in `tests/registry-db.test.ts`, which works in a scratch schema of its own. |
-| `KNOWLEDGE_DB_*` / `KNOWLEDGE_DB_DSN` | The knowledge index (pgvector, `docker compose up -d vectors`, port 5458 on a laptop): host, port, name, user and password, or one connection string. The DSN also switches on the DB-backed test in `tests/knowledge-db.test.ts`. |
+| Variable | When | Meaning |
+|---|---|---|
+| `NEXT_PUBLIC_ORIGIN` | build | The address people open the console at, in full, no trailing slash. Compiled into the pages. |
+| `BACKEND_ORIGIN` | run | The service's address as the console's server reaches it. |
 
-## What the backend owns
+Sign-in (`IAP_AUDIENCE`, `IAP_ROLE_MAP`, `IAP_SIGNOUT_URL`, `IAP_JWKS_URL`), the machine route (`PUBLIC_API_URL`) and everything else are the service's settings. `.env.example` lists the console's; `deploy/console/README.md` walks through a deployment.
 
-Every request under these prefixes is the backend's (`lib/route-policy.ts` `BACKEND_PREFIXES`, the contract in `backend/CONTRACT.md`): `/api/runs`, `/api/approvals`, `/api/agents`, `/api/author`, `/api/drafts`, `/api/roster`, `/api/keys`, `/api/attached`, `/api/iam`, `/api/vault`, `/api/trigger`, `/api/webhooks`, `/api/queue`, `/api/worker`, `/api/screener`, `/api/applications`, `/api/gateway`, `/api/retrieval`, `/api/apps`, `/api/attention`, `/api/fleet`, `/api/lockdown`, `/api/answer`, the MCP registry (`/api/mcp`), the SDK door (`/api/sdk`), the ports' health doors (`/api/ports/{name}/health`), the L7 doors (the dependency map and its blast radius at `/api/dependencies`, drift at `/api/drift`, the guardian at `/api/guardian`, the peer registry at `/api/peers`, the estate's breakers at `/api/breakers`; the run tree at `/api/runs/{id}/tree` travels with `/api/runs`), the L8 eval runner's reads (`/api/evals/runs`, the one backend prefix beneath the console's `/api/evals`; the lifecycle doors, an eval's start among them, travel with `/api/agents`), the second round's templates (`/api/templates`), deliverables (`/api/deliverables`), registers (`/api/registers`) and eval sets as the backend reads them (`/api/eval-sets`; the canary, the lineage and an agent's eval sets travel with `/api/agents`, the queue's jobs with `/api/queue`), the L9 doors (policy changes and simulation at `/api/policy`, the ledger at `/api/ledger`, the controls catalogue at `/api/controls`, evidence packs at `/api/evidence`, attestation standings at `/api/attestations`, autonomy tiers at `/api/autonomy-tiers`, retention at `/api/retention`, regulatory views at `/api/frameworks`; a run's chain travels with `/api/runs`, an agent's attestations and AI-BOM with `/api/agents`), the A2A doors (`/api/a2a` and everything beneath it: the signed tasks door and the agent card there, the tool broker at `/api/a2a/mcp/{agent}`, the model gateway alias at `/api/a2a/gateway/v1/...`) with the agent card at the root (`/.well-known/agent.json`, the one backend path outside `/api`, `BACKEND_PATHS`), and `/api/healthz`. No route file under `app/api` answers for them (`tests/routes.test.ts`); the typed client in `lib/api/client.ts` is generated from the backend's OpenAPI document and calls them same-origin.
+## Run it locally
 
-The A2A doors are signed end to end (a request's signature covers its raw path and query, its body and its `x-af-*` headers; the answer's `x-af-signature` covers its status and body), so `proxy.ts` does not rewrite them: `lib/passthrough.ts` sends the path, query, body and headers on as received and the answer back as sent, with `accept-encoding: identity` upstream and `cache-control: no-transform` on the way back so nothing compresses it (`PASSTHROUGH_DOORS`; `tests/proxy.test.ts` holds it byte for byte).
+The console needs the service running and a stand-in for IAP in front of it, since the service refuses a request that IAP did not sign.
 
-Two exceptions, named in `CONSOLE_UNDER_BACKEND`: `/api/author/chat` is the console's own authoring loop (the conversation goes to Foundry; every runtime step is a call to the backend's `/api/author/reference` and `/api/author/propose`), and `/api/mcp/server` is the platform's own MCP server, served here under the backend's registry prefix.
+```bash
+npm ci
+BACKEND_ORIGIN=http://localhost:8471 NEXT_PUBLIC_ORIGIN=http://localhost:8098 npx next dev -p 3200
+```
 
-## What still runs in Next
+Then open the console through the IAP stand-in at the address `NEXT_PUBLIC_ORIGIN` names. The service's repository has the stand-in (`dev/standins/iap.py serve --port 8098 --to http://localhost:3200`), which signs assertions the way IAP documents them; the service must be started with the matching `IAP_AUDIENCE` and `IAP_JWKS_URL`.
 
-Until later phases move them, these answer from `app/api` here, against Postgres and the runtime workspace where they always did:
+```bash
+npx tsc --noEmit -p .  # types
+npm run lint           # eslint
+npm test               # vitest
+```
 
-- **Knowledge**: sources, fetch, admit, search, the agentic answer loop, the document view and which admitted documents are stale against their source (`/api/knowledge/*`; the last feeds the per-application view), with the local cross-encoder rerank.
-- **Evals**: sets and their history (`/api/evals`), on the `eval_runs` table the backend shares. The runner is the backend's since phase L8: the Evals page starts an eval with `POST /api/agents/{id}/evals/run` and follows it at `GET /api/evals/runs/{id}`; a deploy gate trusts only a score the backend produced itself. Since L8's second round the page reads the sets themselves through the backend (`GET /api/agents/{id}/eval-sets`, `GET /api/eval-sets/{id}`); a set's history and latest score, and saving or deleting a set, stay here (the backend has no door for them).
-- **FinOps** (`/api/finops`), providers and model discovery (`/api/providers/*`, `/api/models`), the deployment config (`/api/config`), and the configuration read (`/api/configuration`, which reads vault names, keys and the queue from the backend's doors).
-- **Control aggregation** (`/api/control`, `/api/guardrails`, `/api/logs`, `/api/artifact`).
-- **The assistant** (`/api/assistant`) and its tool catalogue (`lib/server/console-tools.ts`).
-- **Observability** (`/api/observability`, `/api/observability/export`).
-- **The platform MCP server** (`/api/mcp/server`).
-- Sign-in (`/api/auth/*`) and the UI preferences (`/api/ui`).
+## The types of the service's answers
 
-The machine door among these (`/api/mcp/server`) keeps its own API keys and stays outside the cookie gate, as do the backend's trigger, webhook, worker, SDK and A2A doors and the agent card. The A2A doors and the agent card moved to the backend in phase L7: the console starts no process of its own any more (`tests/no-python.test.ts`).
+`lib/api/backend.d.ts` types the typed client in `lib/api/client.ts`. It was generated from an earlier version of the service's OpenAPI and is now kept by hand: the service's `/openapi.json` lists its paths but not its answer shapes, so generating from it would drop every type the screens name. The mapping functions in `lib/api/*` are what each screen relies on, and they read every answer at run time.
 
-## Knowledge namespaces
+## Tests
 
-The knowledge index holds one corpus per engagement, in one store. Every row (sources, documents, sections, chunks, admissions) carries a `namespace`, and every read and write under `/api/knowledge/*` names one: `namespace` in the JSON body or the query string, matching `^[a-z0-9][a-z0-9-]{0,62}$`. A search in one namespace never returns another's passages; the predicate is in the SQL (`lib/server/knowledge-sql.ts`), not applied after, and `tests/knowledge-namespace.test.ts` holds every statement to it.
-
-- **The default.** A request that names no namespace reads and writes `default`, which is where an index built before namespaces keeps everything it had. The console assistant's `search_knowledge` tool and the platform MCP server search `default` unless the call passes `namespace`.
-- **Picking one.** The Knowledge page has a corpus picker in its header, fed by `GET /api/knowledge?namespaces=1` (the namespaces that exist, the default always among them) plus "new…", which takes a name and opens it. The choice is remembered per browser and sent on every call the page makes: status, fetch, document, admit, search and answer.
-- **What a new namespace starts with.** The curated catalogue, seeded on first read, with every source enabled; nothing fetched, nothing admitted. Curation (enabling a source, admitting a document, superseding an older version) acts on that namespace alone.
-
-## Sign-in through Google Identity-Aware Proxy
-
-For a deployment that sits behind IAP, the console reads who the person is from the header IAP signs (`x-goog-iap-jwt-assertion`), verifies it, and keeps its usual server-side session. The backend trusts that session as it does any other, so nothing behind the console changes.
-
-| Variable | Meaning |
-|---|---|
-| `IAP_AUDIENCE` | Switches IAP sign-in on. The audience IAP's assertions carry: `/projects/NUMBER/global/backendServices/ID` for GKE or Compute Engine, `/projects/NUMBER/locations/REGION/services/NAME` for Cloud Run, `/projects/NUMBER/apps/ID` for App Engine. |
-| `AUTH_SECRET` | The key the session cookie is signed with. Needed, and the same value the backend holds. |
-| `IAP_ROLE_MAP` | JSON giving people their role, since IAP names a person and never a role: `{"alice@example.com": "administrator", "@example.com": ["operator"]}`. A key is an address or `@domain`; the address wins. Roles are those in `lib/permissions.ts`. |
-| `AUTH_DEMO_DEFAULT_ROLE` | The role of someone the map does not name. Unset, it is `viewer`. |
-| `IAP_SIGNOUT_URL` | Where IAP's own sign-out is. Without it the console shows no sign-out button, because ending only the console's session signs the person straight back in. |
-| `IAP_JWKS_URL` | A mirror of Google's IAP keys, for a network that cannot reach `www.gstatic.com`. |
-
-A page opened without a console session goes to `/api/auth/login`, which verifies the assertion, provisions the person, creates the session and sends them on. A request with no assertion did not come through IAP and is told so. `tests/iap.test.ts` holds the verification and the role mapping.
+`tests/` holds the console's own logic against shapes built in the test and against answers captured from an earlier version of the service (`tests/fixtures/`, and inline fixtures in the `l*-contract` tests). The captures were taken from an earlier version of the service and have not been taken again from the current one.

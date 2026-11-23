@@ -31,9 +31,12 @@ export const isLive = (s: Session): boolean => s.state === "active" || s.state =
  * still has something to stop: the person can come back, the key still works.
  * An attached agent's own key (client `sdk`) is not ended here: the platform
  * revokes it by detaching the agent, or refuses it while the agent is blocked,
- * both on Configuration, Third-party agents.
+ * both on Configuration, Third-party agents. A run's use of a tool server
+ * (`tool_server`) is not a connection the platform holds: there is nothing
+ * to end, and the platform refuses it (409); removing the server from the
+ * registry stops calls to it.
  */
-export const isEndable = (s: Session): boolean => s.state !== "revoked" && !attachedKey(s);
+export const isEndable = (s: Session): boolean => s.state !== "revoked" && !attachedKey(s) && s.kind !== "tool_server";
 
 /** An attached agent's session: its own key at the SDK, gateway and broker doors. */
 export const attachedKey = (s: Session): boolean => s.kind === "agent" && s.client.kind === "sdk";
@@ -95,6 +98,8 @@ export function consequence(s: Session): string {
     return `Every token issued to ${who} until now is refused. A token its issuer issues later signs it in again; to keep it out, remove its subject from the issuer.`;
   if (attachedKey(s))
     return `${who} is an attached agent: its session is not ended here. Block it to refuse its key until it is unblocked, or detach it to revoke its key and stop its runs in flight, both on Configuration, Third-party agents.`;
+  if (s.kind === "tool_server")
+    return `This is a run's record of its calls to ${s.target.name || "a tool server"}: nothing is held open, so there is no session to end. Remove the server from the registry (Configuration, Tools) to stop calls to it.`;
   return `${who} is stopped from its next request.`;
 }
 

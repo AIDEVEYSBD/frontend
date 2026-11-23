@@ -9,8 +9,11 @@ import { DataTable } from "./markdown";
  * The model emits a fenced ```chart block carrying one JSON object; the
  * renderer turns it into the same chart primitives the console uses, in the
  * same palette, so a chart in the conversation looks like a chart on the
- * page. Anything malformed renders as a quiet note rather than an error, and
- * a block still being streamed shows as "drawing" until its fence closes.
+ * page. The object is model output, and the model may have read a poisoned
+ * document, so `parseChart` checks it field by field before anything is
+ * drawn: a field of the wrong shape refuses the chart with the field named,
+ * and a value that is not a number is never drawn as zero. A block still
+ * being streamed shows as "drawing" until its fence closes.
  */
 
 export interface ChartSpec {
@@ -30,42 +33,150 @@ export interface ChartSpec {
   note?: string;
 }
 
+/** A chart checked and ready to draw, or the reason it cannot be. */
+export type ChartParse = { spec: ChartSpec } | { error: string };
+
+const TYPES: ChartSpec["type"][] = ["bar", "line", "donut", "kpi", "table", "stacked"];
 const PALETTE = ["var(--t-c2)", "var(--t-c5)", "var(--t-c1)", "var(--t-c7)", "var(--t-c8)", "var(--t-c3)", "var(--t-c6)", "var(--t-c9)"];
 const color = (i: number) => PALETTE[i % PALETTE.length];
 
-export function parseChart(raw: string): ChartSpec | null {
+class Unreadable extends Error {}
+
+const shown = (v: unknown): string => {
+  const s = JSON.stringify(v) ?? String(v);
+  return s.length > 40 ? `${s.slice(0, 40)}…` : s;
+};
+
+function record(v: unknown, where: string): Record<string, unknown> {
+  if (!v || typeof v !== "object" || Array.isArray(v)) throw new Unreadable(`${where} is not an object`);
+  return v as Record<string, unknown>;
+}
+
+function list(v: unknown, where: string, least = 1): unknown[] {
+  if (!Array.isArray(v)) throw new Unreadable(`${where} is ${v === undefined ? "missing" : `${shown(v)}, not a list`}`);
+  if (v.length < least) throw new Unreadable(`${where} has ${v.length} ${v.length === 1 ? "entry" : "entries"}, and at least ${least} are needed`);
+  return v;
+}
+
+/** A label: text, or a number written as text (a year, a count). */
+function label(v: unknown, where: string): string {
+  if (typeof v === "string" && v.trim()) return v;
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  throw new Unreadable(`${where} is ${v === undefined ? "missing" : `${shown(v)}, not a label`}`);
+}
+
+function optionalText(v: unknown, where: string): string | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v === "string") return v;
+  throw new Unreadable(`${where} is ${shown(v)}, not text`);
+}
+
+/** A number, or text that is wholly one ("1,234", "12%", "$5"). Anything else refuses the chart, never zero. */
+function number(v: unknown, where: string): number {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string" && /^\s*[-+]?[$€£]?\s*\d[\d,]*(\.\d+)?\s*%?\s*$/.test(v)) return Number(v.replace(/[^0-9.+-]/g, ""));
+  throw new Unreadable(`${where} is ${v === undefined ? "missing" : shown(v)}, not a number`);
+}
+
+function notNegative(values: number[], where: string): void {
+  const i = values.findIndex((x) => x < 0);
+  if (i >= 0) throw new Unreadable(`${where}[${i}] is ${values[i]}, and this chart cannot show a value below zero`);
+}
+
+function chartOf(raw: unknown): ChartSpec {
+  const j = record(raw, "the chart");
+  if (!TYPES.includes(j.type as ChartSpec["type"])) throw new Unreadable(`"type" is ${shown(j.type)}, which this console does not draw (it draws ${TYPES.join(", ")})`);
+  const type = j.type as ChartSpec["type"];
+  const spec: ChartSpec = { type, title: optionalText(j.title, '"title"'), unit: optionalText(j.unit, '"unit"'), note: optionalText(j.note, '"note"') };
+  switch (type) {
+    case "bar":
+    case "donut": {
+      spec.items = list(j.items, '"items"').map((it, i) => {
+        const x = record(it, `items[${i}]`);
+        return { label: label(x.label, `items[${i}].label`), value: number(x.value, `items[${i}].value`), meta: optionalText(x.meta, `items[${i}].meta`) };
+      });
+      notNegative(spec.items.map((it) => it.value), '"items" value');
+      break;
+    }
+    case "line":
+    case "stacked": {
+      spec.labels = list(j.labels, '"labels"', type === "line" ? 2 : 1).map((l, i) => label(l, `labels[${i}]`));
+      const points = spec.labels.length;
+      spec.series = list(j.series, '"series"').map((s, i) => {
+        const x = record(s, `series[${i}]`);
+        const data = list(x.data, `series[${i}].data`).map((d, k) => number(d, `series[${i}].data[${k}]`));
+        if (data.length !== points) throw new Unreadable(`series[${i}].data has ${data.length} values for ${points} labels`);
+        if (type === "stacked") notNegative(data, `series[${i}].data`);
+        return { name: optionalText(x.name, `series[${i}].name`) || `Series ${i + 1}`, data };
+      });
+      break;
+    }
+    case "kpi": {
+      spec.kpis = list(j.kpis, '"kpis"').map((k, i) => {
+        const x = record(k, `kpis[${i}]`);
+        const value = x.value;
+        if (!(typeof value === "string" || (typeof value === "number" && Number.isFinite(value)))) throw new Unreadable(`kpis[${i}].value is ${shown(value)}, not a number or text`);
+        return { label: label(x.label, `kpis[${i}].label`), value, sub: optionalText(x.sub, `kpis[${i}].sub`) };
+      });
+      break;
+    }
+    case "table": {
+      spec.columns = list(j.columns, '"columns"').map((c, i) => label(c, `columns[${i}]`));
+      const width = spec.columns.length;
+      spec.rows = list(j.rows, '"rows"').map((r, i) => {
+        const cells = list(r, `rows[${i}]`).map((c, k) => {
+          if (typeof c === "string" || (typeof c === "number" && Number.isFinite(c))) return c;
+          throw new Unreadable(`rows[${i}][${k}] is ${shown(c)}, not a number or text`);
+        });
+        if (cells.length !== width) throw new Unreadable(`rows[${i}] has ${cells.length} cells for ${width} columns`);
+        return cells;
+      });
+      break;
+    }
+  }
+  return spec;
+}
+
+/** The chart in a fenced block, checked field by field; the reason when it cannot be drawn. */
+export function parseChart(raw: string): ChartParse {
+  let j: unknown;
   try {
-    const j = JSON.parse(raw.trim()) as ChartSpec;
-    if (!j || typeof j !== "object" || !j.type) return null;
-    return j;
+    j = JSON.parse(raw.trim());
   } catch {
-    return null;
+    return { error: "the block is not valid JSON" };
+  }
+  try {
+    return { spec: chartOf(j) };
+  } catch (e) {
+    if (e instanceof Unreadable) return { error: e.message };
+    throw e;
   }
 }
 
-function num(v: unknown): number {
-  const n = typeof v === "number" ? v : Number(String(v ?? "").replace(/[^0-9.-]/g, ""));
-  return Number.isFinite(n) ? n : 0;
+export function ChartRefused({ reason }: { reason: string }) {
+  return <p className="my-1 text-[11px] text-faint">The chart could not be drawn: {reason}.</p>;
 }
 
+/** Draws a chart `parseChart` returned. */
 export function AssistantChart({ spec }: { spec: ChartSpec }) {
-  const items = (spec.items ?? []).map((it) => ({ label: String(it.label ?? ""), value: num(it.value), meta: it.meta })).filter((it) => it.label);
-  const labels = (spec.labels ?? []).map(String);
-  const series = (spec.series ?? []).map((s, i) => ({ name: String(s.name ?? `Series ${i + 1}`), data: (s.data ?? []).map(num), color: color(i) }));
+  const items = spec.items ?? [];
+  const labels = spec.labels ?? [];
+  const series = (spec.series ?? []).map((s, i) => ({ ...s, color: color(i) }));
 
-  let body: React.ReactNode = null;
+  let body: React.ReactNode;
   switch (spec.type) {
     case "bar":
-      if (!items.length || items.every((it) => it.value <= 0)) break;
-      body = <RankBar data={items.map((it, i) => ({ label: it.label, value: it.value, color: color(i), meta: it.meta ?? (spec.unit ? `${it.value}${spec.unit}` : undefined) }))} />;
-      break;
     case "donut":
-      if (!items.length || items.every((it) => it.value <= 0)) break;
-      body = <Donut data={items.filter((it) => it.value > 0).map((it, i) => ({ label: it.label, value: it.value, color: color(i) }))} size={104} />;
+      if (items.every((it) => it.value === 0)) {
+        body = <p className="text-[11px] text-faint">Every value is zero: there is nothing to draw.</p>;
+      } else if (spec.type === "bar") {
+        body = <RankBar data={items.map((it, i) => ({ label: it.label, value: it.value, color: color(i), meta: it.meta ?? (spec.unit ? `${it.value}${spec.unit}` : undefined) }))} />;
+      } else {
+        body = <Donut data={items.filter((it) => it.value > 0).map((it, i) => ({ label: it.label, value: it.value, color: color(i) }))} size={104} />;
+      }
       break;
     case "line":
-      if (!series.length || labels.length < 2 || series.some((s) => s.data.length !== labels.length)) break;
-      if (series.every((s) => s.data.every((v) => v <= 0))) {
+      if (series.every((s) => s.data.every((v) => v === 0))) {
         body = <p className="text-[11px] text-faint">No activity in this period: every value is zero.</p>;
         break;
       }
@@ -74,8 +185,8 @@ export function AssistantChart({ spec }: { spec: ChartSpec }) {
           <LineChart series={series} labels={labels} height={150} unit={spec.unit ?? ""} />
           {series.length > 1 && (
             <span className="flex flex-wrap gap-x-3 gap-y-1">
-              {series.map((s) => (
-                <span key={s.name} className="flex items-center gap-1.5 text-[10.5px] text-dim">
+              {series.map((s, i) => (
+                <span key={i} className="flex items-center gap-1.5 text-[10.5px] text-dim">
                   <span className="h-0.5 w-3 rounded-[2px]" style={{ background: s.color }} />
                   {s.name}
                 </span>
@@ -86,23 +197,24 @@ export function AssistantChart({ spec }: { spec: ChartSpec }) {
       );
       break;
     case "stacked":
-      if (!series.length || !labels.length || series.every((s) => s.data.every((v) => v <= 0))) break;
+      if (series.every((s) => s.data.every((v) => v === 0))) {
+        body = <p className="text-[11px] text-faint">Every value is zero: there is nothing to draw.</p>;
+        break;
+      }
       body = (
         <StackedBar
-          data={labels.map((l, i) => ({ label: l, values: series.map((s) => s.data[i] ?? 0) }))}
+          data={labels.map((l, i) => ({ label: l, values: series.map((s) => s.data[i]) }))}
           keys={series.map((s) => s.name)}
           colors={series.map((s) => s.color)}
           height={150}
         />
       );
       break;
-    case "kpi": {
-      const kpis = (spec.kpis ?? []).filter((k) => k && k.label);
-      if (!kpis.length) break;
+    case "kpi":
       body = (
         <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-3">
-          {kpis.map((k) => (
-            <div key={k.label} className="flex flex-col gap-0.5 bg-surface px-3 py-2">
+          {(spec.kpis ?? []).map((k, i) => (
+            <div key={i} className="flex flex-col gap-0.5 bg-surface px-3 py-2">
               <span className="tnum text-[18px] leading-none font-semibold tracking-[-0.02em]">{String(k.value)}</span>
               <span className="text-[10.5px] text-faint">{k.label}</span>
               {k.sub && <span className="truncate text-[9.5px] text-ghost">{k.sub}</span>}
@@ -111,19 +223,11 @@ export function AssistantChart({ spec }: { spec: ChartSpec }) {
         </div>
       );
       break;
-    }
-    case "table": {
-      const cols = (spec.columns ?? []).map(String);
-      const rows = (spec.rows ?? []).filter(Array.isArray);
-      if (!cols.length || !rows.length) break;
-      body = <DataTable columns={cols} rows={rows.map((r) => r.map(String))} />;
+    case "table":
+      body = <DataTable columns={spec.columns ?? []} rows={(spec.rows ?? []).map((r) => r.map(String))} />;
       break;
-    }
   }
 
-  if (!body) {
-    return <p className="my-1 text-[11px] text-faint">The chart could not be drawn from the data given.</p>;
-  }
   return (
     <figure className="my-2 flex flex-col gap-2 rounded-md border border-line bg-surface p-3">
       {spec.title && <figcaption className="text-[11.5px] font-semibold text-fg">{spec.title}</figcaption>}

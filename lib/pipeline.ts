@@ -99,17 +99,3 @@ export const RETRIEVAL_STAGES: Stage[] = [
     detail: "A source removed from the register and a document nobody admitted are left out in the query itself.",
   },
 ];
-
-/**
- * Kept only because lib/server/assistant-prompt.ts imports them. The
- * Knowledge page draws neither: a telemetry lane and a list of features are
- * not things this page operates or measures.
- */
-export const TELEMETRY_LANE: Lane = {
-  id: "telemetry",
-  name: "Tools and telemetry",
-  purpose: "Findings from security tooling, landed as structured records an agent can query.",
-  stages: [],
-};
-
-export const FEATURES: { n: number; text: string }[] = [];

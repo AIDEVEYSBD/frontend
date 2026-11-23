@@ -25,8 +25,8 @@ export const PAGES: Record<string, PageInfo> = {
   "/finops": {
     title: "Costs",
     shows:
-      "Model spend by provider, workflow and step, computed from every journalled model call at the configured price, over a selectable window with per-card overrides. It shows hand-off candidates (steps whose call profile and eval evidence suit a smaller or local model), a calculator that replays the workload on any model, per-step model routing that outranks the spec, the model endpoints the deployment can reach and billing against budget.",
-    suggested: ["Which steps could move to a local model?", "What would this month cost on a smaller model?", "How does routing precedence work?"],
+      "What model calls cost, from the cost recorded with each call, by model, person, team, agent, application and step, over a selectable window; a call with no price set is counted as unpriced, never as free. Cost planning prices each step's recorded tokens on every other offered, priced model (a price comparison, not a measurement; whether a smaller model could do the step is not built). It also checks each run's recorded calls against the cost the run records, holds the budgets per rolling period, and shows where each step's calls are routed and by which rule.",
+    suggested: ["What would this step cost on another offered model?", "Why is a cost shown as unpriced?", "How does routing precedence work?"],
   },
   "/agents": {
     title: "Agents",
@@ -109,8 +109,8 @@ export const PAGES: Record<string, PageInfo> = {
   "/guardian": {
     title: "Guardian",
     shows:
-      "The guardian: a supervisory model that reads each covered run's trajectory against the run's goal and a rubric. Its limits are a person's, changed through a reviewed policy change: which agents it watches, whether it may hold a run at its next gate or block it, an hourly cap, a confidence floor, its model and cadence. Outside its limits it only raises attention. The page lists every verdict it acted on or raised, with the reason and the model.",
-    suggested: ["What may the guardian do on its own?", "Why was a verdict only raised for a person?", "How is the hourly cap counted?"],
+      "The guardian: a watcher, not a model, that checks every run in flight about every ten seconds against three per-run limits a person sets through a reviewed policy change: tool calls per run, cost per run in US dollars and refused calls per run, for every agent or the ones listed. Past a limit it does what that limit says: hold the run (its next call at or above write waits for a person), stop it, or raise it for a person. A run whose cost is unknown because a model it called has no price set is raised, never compared as if it cost nothing. The page lists every action it took or raised.",
+    suggested: ["What does the guardian do when a run passes a limit?", "Why was a run raised and not stopped?", "How is a run's cost compared when a model has no price set?"],
   },
   "/breakers": {
     title: "Breakers",

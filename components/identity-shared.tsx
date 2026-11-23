@@ -96,8 +96,8 @@ export interface AuthEvent {
 export interface People {
   users: Person[];
   events: AuthEvent[];
-  /** `demo_default_role` is null where nobody the role map leaves out is given a role. */
-  sso: { configured: boolean; issuer: string; demo_default_role: string | null };
+  /** `configured`: the service names an IAP_AUDIENCE, so it can verify a Google sign-in. Nobody the role map leaves out is given a role. */
+  sso: { configured: boolean; issuer: string };
   roles: { role: string; permissions: string[] }[];
   permissions: { permission: string; means: string }[];
   store: string;

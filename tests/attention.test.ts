@@ -31,9 +31,9 @@ describe("the attention queue", () => {
     // Shuffled on purpose: the backend's order is not relied on.
     const shuffled = [rows[6], rows[3], rows[1], rows[0], rows[5], rows[4], rows[2]];
     expect(orderAttention(shuffled).map((r) => r.id)).toEqual([
-      "refusal:aegis-0440", // rank 12
+      "refusal:harbor-0440", // rank 12
       "gate:counsel-0017", // rank 9.38, deadline 10:30
-      "gate:aegis-0442", // rank 9.38, deadline 10:45
+      "gate:harbor-0442", // rank 9.38, deadline 10:45
       "budget", // rank 8, no deadline, as old as the next: by id
       "health:telemetry", // rank 8
       "dead_letter:job-9a1", // rank 6, older (50 h)
@@ -66,7 +66,7 @@ describe("the attention queue", () => {
   });
 
   it("fills in what a sparse row leaves out: an id, the backend's rank, an action from the kind", () => {
-    const r = attentionOf({ kind: "dead_letter", job: "j-1", agent: "aegis", severity: 2, age_s: 10 });
+    const r = attentionOf({ kind: "dead_letter", job: "j-1", agent: "harbor", severity: 2, age_s: 10 });
     expect(r.id).toBe("dead_letter:j-1");
     expect(r.rank).toBe(rankOf(2, 10));
     expect(rankOf(2, 10)).toBe(2);
