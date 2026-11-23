@@ -11,28 +11,34 @@ import { declaresNote, emptyForm, refusalErrors, validateForm, validateVerdicts,
 import { Deadline, EvidencePanel, GateFields, NextLines, ShapeTag, VerdictTable, useNow } from "./gate-form";
 
 /**
- * Why a link does not open, by the door's status: 410 is a link that was
- * one and is no more (used, expired, or its gate closed), 404 a token that
- * is not one of ours, 409 a run that is running right now.
+ * Why a link does not open, by the platform's status: 410 a link that was
+ * used or has expired, 404 a token that is not one, 403 a link made for
+ * another address than the one signed in, 401 nobody signed in, 409 a gate
+ * that has moved on (answered elsewhere, or the run moved on or ended).
  */
 function linkTrouble(status: number): { title: string; tail: string } {
   if (status === 410) return { title: "This link has been used or has expired", tail: "Ask the person who sent it for a new one." };
   if (status === 404) return { title: "This link is not valid", tail: "Check that the whole address was copied, or ask the person who sent it for a new one." };
-  if (status === 409) return { title: "The workflow is running right now", tail: "It is not waiting for an answer at this moment; try the link again shortly." };
+  if (status === 403) return { title: "This link was made for someone else", tail: "Sign in with the address it was sent to, or ask the person who sent it for a link to your own address." };
+  if (status === 401) return { title: "You are not signed in", tail: "Sign in, then open the link again." };
+  if (status === 409) return { title: "The question this link was made for has moved on", tail: "It was answered, or the workflow moved on or ended; this link cannot answer anything else." };
   return { title: "This link cannot be opened", tail: "Try again, or ask the person who sent it for a new one." };
 }
 
 /**
- * An outside participant answers one gate.
+ * An outside approver answers one gate.
  *
- * The page needs no sign-in: the token in its address is the signed link
- * an approver minted for one email, one run and one gate, and it is spent
- * when the answer lands. The backend hands over the gate's evidence and
- * shape (`GET /api/answer/{token}`), the same components the console's
- * inbox uses render it, and the answer goes back the same way (`POST
- * /api/answer/{token}`), written into the run record as
- * `external:<email>`, which the page says plainly before anything is
- * pressed.
+ * The person is signed in by the identity proxy like everyone else and
+ * holds no platform role. The link in the page's address was made by
+ * someone who could answer the gate, for one email address, one run and one
+ * gate; the platform lets only that address use it, once, before it
+ * expires. The platform hands over the gate's question, shape and evidence
+ * (`GET /api/answer/{token}`), the same components the console's inbox uses
+ * render it, and the answer goes back the same way (`POST
+ * /api/answer/{token}`), signed `external:<email>`, which the page says
+ * plainly before anything is pressed. The console's navigation stays off
+ * this page (lib/route-policy.ts OPEN_PREFIXES): nothing else of the
+ * console is shown to a person with no role.
  */
 export function AnswerPage({ token }: { token: string }) {
   const [data, setData] = useState<ExternalGate | null>(null);
@@ -167,7 +173,7 @@ export function AnswerPage({ token }: { token: string }) {
                 {failure && <p className="text-[11.5px] leading-[1.55] text-err">{failure}</p>}
                 {result && (
                   <p className={`text-[11.5px] leading-[1.55] ${done ? "text-ok" : "text-err"}`}>
-                    {done ? `${label}. ${result.delivered || "The workflow is continuing; thank you."}` : `${label}, but the workflow could not continue. ${result.error}`.trim()}
+                    {done ? `${label}. Your answer is recorded and the workflow carries on from here; this link is now spent.` : `${label}, but the workflow could not continue. ${result.error}`.trim()}
                   </p>
                 )}
               </div>
@@ -188,7 +194,7 @@ export function AnswerPage({ token }: { token: string }) {
                   </Button>
                 )}
                 <span className="grow" />
-                <span className="text-[10.5px] text-ghost">Signed by the link, as {data.answered_as || "external"}; nothing else about you is recorded.</span>
+                <span className="text-[10.5px] text-ghost">Signed {data.answered_as || "external"}. Opening this page and answering are written to the platform&rsquo;s audit trail under your sign-in.</span>
               </footer>
             </section>
           </>

@@ -1,11 +1,12 @@
 import { AnswerPage } from "@/components/answer";
 
 /**
- * The external answer page: an outside participant opens the signed link an
- * approver minted (`POST /api/approvals/{run}/links`) and answers one gate.
- * No sign-in: proxy.ts leaves `/answer/` open (lib/route-policy.ts
- * OPEN_PREFIXES) and the chrome stays off it; the token in the path is the
- * whole credential, and the backend spends it on answer.
+ * The outside approver's page: a person with no platform role opens the
+ * single-use link an approver made (`POST /api/approvals/{run}/links`) and
+ * answers one gate. They are signed in by the identity proxy like everyone
+ * else; the console's chrome stays off this page (lib/route-policy.ts
+ * OPEN_PREFIXES), every /api request goes to the platform unchanged, and the
+ * platform lets the link answer only for the address it was made for, once.
  */
 
 export const metadata = { title: "Answer a gate — Agent Factory" };

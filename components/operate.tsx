@@ -1,25 +1,32 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, Status } from "./ui";
-import { Field, Switch, Textarea } from "./forms";
+import { Button, Mono, Status } from "./ui";
+import { Checkbox, Field, Switch, Textarea } from "./forms";
+import { Failure } from "./pending";
 import { auditLine, fleet, FLEET_ACTIONS, getFleet, getLockdown, setLockdown, type FleetAction, type FleetResult, type FleetState, type LockdownState } from "@/lib/api/l5";
+import { listAgents, type AgentSummary } from "@/lib/api/l2";
+import { hueFor } from "@/lib/hue";
 import { soon } from "@/lib/soon";
 
 /**
  * Operating the estate: fleet actions on chosen agents, and the lockdown.
  *
- * Both are operator decisions the backend journals as one audit event with
+ * Both are operator decisions the platform records as one audit event with
  * a reason and who, so each is a dialog that names what it is about to do
  * and takes the reason before anything is sent (the shape of
- * components/kill-dialog.tsx). The two that stop work, killing the ticked
+ * components/kill-dialog.tsx). The two that stop work, stopping the ticked
  * agents' runs and switching the lockdown on, go to the one stop form
  * (components/stop-form.tsx) when the page gives a way to open it; pause,
  * resume, drain and lifting the lockdown keep the reason dialog here. Fleet
- * needs the run permission, lockdown configure; the buttons say so when the
- * person lacks it. Which agents stand paused or draining is the backend's
- * to say (`GET /api/fleet`).
+ * actions need the run permission, the lockdown configure (to lock and to
+ * lift); the buttons say so when the person lacks it. Which agents stand
+ * paused or draining is the platform's to say (`GET /api/fleet`).
  */
+
+/** What a lockdown holds while it is on, as the platform carries it out (agentfactory/control/lockdown.py). */
+export const LOCKDOWN_HOLDS =
+  "Every start is refused, and no worker takes up a run that has not started. Runs already in flight go on, and each of their tool calls at or above write, and each call of a tool that acts outside, waits for a person.";
 
 /* ═══════════════════ a reason dialog ═══════════════════ */
 
@@ -180,13 +187,22 @@ export function FleetBar({
   );
 }
 
-/** Which agents are paused or draining (`GET /api/fleet`), re-read every `everyMs` while `active`; null until the first read lands. */
+/**
+ * Which agents are paused or draining, and the runs in flight per agent
+ * (`GET /api/fleet`), re-read every `everyMs` while `active`; null until the
+ * first read lands. A failed read keeps the last state and says why in
+ * `error`, which a page shows: no mark is drawn as if the read had answered.
+ */
 export function useFleet(active = true, everyMs = 8000) {
   const [state, setState] = useState<FleetState | null>(null);
+  const [error, setError] = useState("");
   const load = useCallback(() => {
     getFleet()
-      .then(setState)
-      .catch(() => {});
+      .then((s) => {
+        setState(s);
+        setError("");
+      })
+      .catch((e) => setError((e as Error).message));
   }, []);
   useEffect(() => {
     if (!active) return;
@@ -197,7 +213,131 @@ export function useFleet(active = true, everyMs = 8000) {
       clearInterval(id);
     };
   }, [active, everyMs, load]);
-  return { fleet: state, reload: load };
+  return { fleet: state, error, reload: load };
+}
+
+/** Every saved agent (`GET /api/agents`), read once while `active` and again on `reload`; null until the first read lands. */
+export function useAgentList(active = true) {
+  const [agents, setAgents] = useState<AgentSummary[] | null>(null);
+  const [error, setError] = useState("");
+  const load = useCallback(() => {
+    listAgents()
+      .then((rows) => {
+        setAgents(rows);
+        setError("");
+      })
+      .catch((e) => setError((e as Error).message));
+  }, []);
+  useEffect(() => {
+    if (!active) return;
+    return soon(load);
+  }, [active, load]);
+  return { agents, error, reload: load };
+}
+
+/** Runs in flight across the estate, from `GET /api/fleet` `live` (running or waiting at a gate); null until it is read. */
+export function liveTotal(state: FleetState | null): number | null {
+  return state ? Object.values(state.live).reduce((n, k) => n + k, 0) : null;
+}
+
+/**
+ * The agents, to hold back and let go: every saved agent (`GET /api/agents`)
+ * with its hold and its runs in flight (`GET /api/fleet` `paused` and
+ * `live`), each with a tick box for the fleet bar. For the Control page
+ * while its estate read (`GET /api/control`) is not drawn: the fleet
+ * controls do not depend on that read, and nothing here is cut from it.
+ */
+export function FleetPanel({
+  agents,
+  agentsError,
+  fleet: state,
+  fleetError,
+  selected,
+  onSelect,
+  onDone,
+  onStop,
+}: {
+  agents: AgentSummary[] | null;
+  agentsError: string;
+  fleet: FleetState | null;
+  fleetError: string;
+  selected: Set<string>;
+  onSelect: (next: Set<string>) => void;
+  onDone: (r: FleetResult) => void;
+  /** Opens the stop form for the ticked agents (their runs, or a pause, drain or resume). */
+  onStop: () => void;
+}) {
+  const rows = agents ?? [];
+  const name = (id: string) => rows.find((a) => a.id === id)?.name || id;
+  const tick = (id: string, on: boolean) => {
+    const next = new Set(selected);
+    if (on) next.add(id);
+    else next.delete(id);
+    onSelect(next);
+  };
+  return (
+    <section className="flex h-fit flex-col overflow-hidden rounded-md border border-line bg-surface">
+      <div data-hue={hueFor("Estate")} className="flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-3 py-1.5">
+        <span className="text-[12px] font-semibold">Agents</span>
+        <span className="truncate text-[11px] text-faint">{selected.size ? "pause, resume, drain or stop the runs of the agents ticked" : "each agent, its hold and its runs in flight — tick rows for a fleet action"}</span>
+        <span className="grow" />
+        {selected.size > 0 && <FleetBar agents={[...selected]} names={name} onDone={onDone} onClear={() => onSelect(new Set())} onStop={onStop} />}
+      </div>
+      {agentsError && <Failure className="m-3" what="The agents could not be read" message={agentsError} />}
+      {fleetError && <Failure className="m-3" what={state ? "Which agents are held stopped answering; the marks below are as it last answered" : "Which agents are paused or draining could not be read"} message={fleetError} />}
+      {agents === null && !agentsError && <p className="px-4 py-3 text-[12px] text-faint">Reading the agents…</p>}
+      {agents && rows.length === 0 && <p className="px-4 py-3 text-[12px] text-faint">There are no saved agents.</p>}
+      {rows.length > 0 && (
+        <div className="max-h-[560px] overflow-auto">
+          <div className="sticky top-0 z-10 grid grid-cols-[28px_minmax(170px,1fr)_150px_96px] items-center gap-3 border-b border-line bg-surface px-4 py-2">
+            <Checkbox aria-label="Select every agent" checked={selected.size === rows.length} indeterminate={selected.size > 0 && selected.size < rows.length} onChange={(on) => onSelect(on ? new Set(rows.map((a) => a.id)) : new Set())} />
+            {["Agent", "Hold", "In flight"].map((h) => (
+              <span key={h} className="text-[11px] font-semibold text-dim">
+                {h}
+              </span>
+            ))}
+          </div>
+          {rows.map((a) => {
+            const hold = state?.paused[a.id];
+            const live = state ? (state.live[a.id] ?? 0) : null;
+            return (
+              <div key={a.id} className={`grid grid-cols-[28px_minmax(170px,1fr)_150px_96px] items-start gap-3 border-b border-line px-4 py-2.5 last:border-b-0 ${selected.has(a.id) ? "bg-raise/40" : ""}`}>
+                <span className="pt-0.5">
+                  <Checkbox aria-label={`Select ${a.name || a.id}`} checked={selected.has(a.id)} onChange={(on) => tick(a.id, on)} />
+                </span>
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="truncate text-[13px] font-semibold text-fg">{a.name || a.id}</span>
+                  <Mono className="truncate text-[10px] text-faint">
+                    {a.id}
+                    {a.retired ? " · retired" : a.deployed_version ? ` · deployed v${a.deployed_version}` : " · saved, not deployed"}
+                  </Mono>
+                </span>
+                <span className="flex min-w-0 flex-col gap-1">
+                  {!state ? (
+                    <span className="text-[11px] text-faint">{fleetError ? "not read" : "reading…"}</span>
+                  ) : hold ? (
+                    <>
+                      <span className="self-start">
+                        <Status tone="warn">{hold.mode === "drain" ? "Draining" : "Paused"}</Status>
+                      </span>
+                      <span className="text-[10.5px] leading-[1.45] text-dim">
+                        {hold.reason}
+                        {hold.by ? ` · ${hold.by}` : ""}
+                        {hold.at && !Number.isNaN(Date.parse(hold.at)) ? ` · ${new Date(hold.at).toLocaleString()}` : ""}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-[11.5px] text-faint">none</span>
+                  )}
+                </span>
+                <span className={`tnum text-[12.5px] ${live ? "font-semibold text-run" : "text-faint"}`}>{live === null ? "—" : live}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
 }
 
 /* ═══════════════════ lockdown ═══════════════════ */
@@ -247,7 +387,7 @@ export function LockdownSwitch({
     try {
       const s = await setLockdown(ask, reason);
       onChanged(s);
-      onNotice(`${ask ? "Lockdown on: nothing new starts or is claimed until it is lifted" : "Lockdown lifted"}${auditLine(s.audit_id)}`);
+      onNotice(`${ask ? "Lockdown on: every start is refused, and every write and outside call waits for a person, until it is lifted" : "Lockdown lifted"}${auditLine(s.audit_id)}`);
       setAsk(null);
     } catch (e) {
       onNotice(`Lockdown refused: ${(e as Error).message.slice(0, 140)}`);
@@ -256,15 +396,15 @@ export function LockdownSwitch({
     }
   };
   return (
-    <span className="flex items-center gap-2 rounded-md border border-line bg-surface px-2 py-1" title={on ? `Lockdown on · ${state?.reason ?? ""}` : "Lockdown off"}>
+    <span className="flex items-center gap-2 rounded-md border border-line bg-surface px-2 py-1" title={on ? `Lockdown on · ${state?.reason ?? ""}` : state === null ? "The lockdown has not been read yet" : "Lockdown off"}>
       <Switch checked={on} onChange={(next) => (next && onLockDown ? onLockDown() : setAsk(next))} disabled={state === null} label={on ? "Lockdown on" : "Lockdown"} />
       {ask !== null && (
         <ReasonDialog
           title={ask ? "Lock the estate down?" : "Lift the lockdown?"}
           what={
             ask
-              ? "Until this is lifted, no worker claims queued work and no run starts (a start is refused). The trigger, webhook and cron doors keep accepting work, which waits on the queue. A run resumed meanwhile waits for a person at every tool call above read and every sink. Runs already in flight finish as they started, so the queue drains. One audit event names the controls."
-              : `Workers claim the queue again, runs start, and gates and sinks return to their specs. The lockdown was set${state?.by ? ` by ${state.by}` : ""}${state?.reason ? ` because: ${state.reason}` : ""}.`
+              ? `Until it is lifted: ${LOCKDOWN_HOLDS} One audit event records it, with the reason and your name.`
+              : `Runs start again and workers take up the runs waiting; tool calls go back to what each agent's policy says. The lockdown was set${state?.by ? ` by ${state.by}` : ""}${state?.reason ? ` because: ${state.reason}` : ""}. One audit event records the lift, with the reason and your name.`
           }
           confirm={ask ? "Lock down" : "Lift lockdown"}
           tone={ask ? "err" : "ink"}
@@ -287,19 +427,17 @@ export function LockdownBanner({ state }: { state: LockdownState | null }) {
       <Status tone="err">Lockdown</Status>
       <span className="text-[13px] font-medium text-fg">The estate is locked down</span>
       <span className="min-w-0 text-[12.5px] leading-[1.5] text-dim">
-        Nothing new starts or is claimed; work is still accepted and waits on the queue, and a resumed run waits for a person above read and at every sink.
-        {state.reason ? ` Reason: ${state.reason}.` : ""}
+        {state.reason ? `Reason: ${state.reason}.` : ""}
         {state.by ? ` Set by ${state.by}` : ""}
         {state.at ? ` at ${new Date(state.at).toLocaleString()}` : ""}
         {state.audit_id !== null ? ` · audit event #${state.audit_id}` : ""}
       </span>
-      {state.controls.length > 0 && (
-        <ul className="flex w-full flex-col gap-0.5 text-[11.5px] leading-[1.5] text-faint">
-          {state.controls.map((c) => (
-            <li key={c}>{c}</li>
-          ))}
-        </ul>
-      )}
+      {/* What it holds, in the platform's words; the console's own sentence only when the answer names nothing. */}
+      <ul className="flex w-full flex-col gap-0.5 text-[11.5px] leading-[1.5] text-faint">
+        {(state.controls.length ? state.controls : [LOCKDOWN_HOLDS]).map((c) => (
+          <li key={c}>{c}</li>
+        ))}
+      </ul>
     </div>
   );
 }

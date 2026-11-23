@@ -6,7 +6,7 @@ import { Checkbox, Field, Input, Textarea } from "./forms";
 import { Pick } from "./select";
 import { CURRENT_USER } from "@/lib/user";
 import { useSession, signerName } from "@/lib/use-session";
-import { answerGate, DoorError, listGates, mintLink, type Answer, type AnswerResult, type Gate, type MintedLink } from "@/lib/api/l5";
+import { answerGate, answerGates, deliveredText, DoorError, listGates, mintLink, refusedResult, type Answer, type AnswerResult, type Gate, type MintedLink } from "@/lib/api/l5";
 import { SAMPLE_SIZE, batchCount, batchable, declaresNote, emptyForm, gateAccess, nextSample, refusalErrors, sampleGates, validateForm, validateVerdicts, type Access, type FormState } from "@/lib/gates";
 import { Deadline, EvidencePanel, GateFields, GateMeta, ShapeTag, SignerLine, VerdictTable, useNow } from "./gate-form";
 import { ReportGateDeliverables } from "./deliverables";
@@ -24,17 +24,25 @@ import { useDoorBuilt } from "@/lib/use-doors";
  * the gate goes if nobody does, and signs with the session: the identity
  * shown here is what the record will say, and it is never typed.
  *
- * The answer goes to the backend's approvals door, `POST
- * /api/approvals/{run}` (lib/api/l5.ts), which validates it against the
- * shape and resumes the run, or writes it onto an attached agent's record.
- * Several gates of one agent and one shape can be answered together through
- * the batch door, with any of them answered differently on its own. Before
- * a batch is answered, a sample of its gates is shown with their evidence
- * (three picked at random, or all of them when there are three or fewer,
- * and another sample on request), and the dialog says how many gates the
- * one answer goes to and how many are answered on their own. A gate
- * whose spec allows it can be handed to someone outside the firm as a
- * signed link, which the console shows and never sends.
+ * One answer goes to `POST /api/approvals/{run}` (lib/api/l5.ts), which
+ * checks it against the gate and puts the run back on the queue. Several
+ * gates of one agent and one shape are answered together through `POST
+ * /api/approvals` with `runs`: the platform answers each one on its own,
+ * checked as if it were answered alone, and lists each run as answered or
+ * skipped with the reason; any of them can be answered differently on its
+ * own, through its own address. Before a batch is answered, a sample of its
+ * gates is shown with their evidence (three picked at random, or all of
+ * them when there are three or fewer, and another sample on request), and
+ * the dialog says how many gates the one answer goes to and how many are
+ * answered on their own. Answering every gate an agent waits at in one
+ * request is not built, and the dialog never offers it.
+ *
+ * A gate whose definition allows an outside answer
+ * (`interface.external.allowed`) can be sent to one person outside the
+ * platform as a single-use link (`POST /api/approvals/{run}/links`), which
+ * the console shows once and never sends. That person signs in with the
+ * address the link names and holds no role here; the answer is signed
+ * `external:<address>`.
  */
 
 export type { Gate } from "@/lib/api/l5";
@@ -136,6 +144,8 @@ export function ApproveDialog({
   // Links for an outside approver are offered only while the platform has built their address (GET /api/doors); unknown leaves the offer, and a press then hears the answer.
   const linksBuilt = useDoorBuilt("POST", "/api/approvals/{run_id}/links");
   const [email, setEmail] = useState("");
+  /** How long the link works, in minutes: the platform's default is a day, its most a week. */
+  const [expires, setExpires] = useState(String(24 * 60));
   const [minted, setMinted] = useState<MintedLink | null>(null);
   const [minting, setMinting] = useState(false);
   const [linkError, setLinkError] = useState("");
@@ -184,19 +194,21 @@ export function ApproveDialog({
       if (!batch) {
         out.push(await answerGate(gate.run, shared.answer!, draft.note.trim()));
       } else {
-        // Each gate goes to its own address (POST /api/approvals/{run}); the batch address is not built.
-        for (const run of sharedRuns) {
+        // The shared answer goes to the batch address, which answers each run on its own and says which it skipped and why.
+        if (sharedRuns.length) {
           try {
-            out.push(await answerGate(run, shared.answer!, draft.note.trim()));
+            out.push(...(await answerGates(sharedRuns, shared.answer!, draft.note.trim())).results);
           } catch (e) {
-            out.push({ run, ok: false, state: "", continuing: false, delivered: "", error: (e as Error).message });
+            // Refused whole (a malformed request): no run was answered.
+            out.push(...sharedRuns.map((run) => refusedResult(run, e)));
           }
         }
+        // A gate answered on its own goes to its own address.
         for (const o of own) {
           try {
             out.push(await answerGate(o.run, o.answer, o.note));
           } catch (e) {
-            out.push({ run: o.run, ok: false, state: "", continuing: false, delivered: "", error: (e as Error).message });
+            out.push(refusedResult(o.run, e));
           }
         }
       }
@@ -215,13 +227,13 @@ export function ApproveDialog({
   const link = async () => {
     const to = email.trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
-      setLinkError("Enter the participant's email address; the link is bound to it.");
+      setLinkError("Enter their email address: only that address can use the link.");
       return;
     }
     setLinkError("");
     setMinting(true);
     try {
-      setMinted(await mintLink(gate.run, to));
+      setMinted(await mintLink(gate.run, to, Number(expires)));
     } catch (e) {
       setLinkError((e as Error).message);
     } finally {
@@ -231,10 +243,12 @@ export function ApproveDialog({
 
   const resultLine = (r: AnswerResult, label: string) =>
     r.ok
-      ? `${label}. ${r.delivered || `The run is continuing (${r.state || "running"}); its record settles as it runs.`}`
-      : r.state === "closed"
-        ? `${label} and recorded. ${r.error}`.trim()
-        : `${label}, but the run could not continue. ${r.error}`.trim();
+      ? `${label}. ${deliveredText(r.delivered) || `The run is continuing (${r.state || "running"}); its record settles as it runs.`}`
+      : r.skipped
+        ? `Not answered: ${r.error || "the platform gave no reason"}${r.state ? ` (the run is ${r.state})` : ""}.`
+        : r.state === "closed"
+          ? `${label} and recorded. ${r.error}`.trim()
+          : `${label}, but the run could not continue. ${r.error}`.trim();
 
   const wide = gate.shape !== "decision" || batch;
 
@@ -357,7 +371,7 @@ export function ApproveDialog({
 
           {gate.external.allowed && !batch && linksBuilt === false && (
             <div className="flex flex-col gap-1 border-t border-line px-4 py-3">
-              <span className="text-[11.5px] text-faint">This gate allows an answer from someone outside the firm, and links for an outside approver are not built.</span>
+              <span className="text-[11.5px] text-faint">This gate&rsquo;s definition allows an answer from outside, and links for an outside approver are not built.</span>
               <NotConnectedNote door={{ method: "POST", path: "/api/approvals/{run_id}/links" }} />
             </div>
           )}
@@ -365,9 +379,11 @@ export function ApproveDialog({
             <div className="flex flex-col gap-2 border-t border-line px-4 py-3">
               {!linking ? (
                 <span className="flex flex-wrap items-center gap-2">
-                  <span className="text-[11.5px] text-faint">This gate may be answered by someone outside the firm.</span>
+                  <span className="min-w-0 text-[11.5px] leading-[1.5] text-faint">
+                    This gate&rsquo;s definition allows an answer from outside: a single-use link for one person, who signs in with that address and holds no role here.
+                  </span>
                   <span className="grow" />
-                  <Button size="sm" variant="outline" permission="approve" onClick={() => setLinking(true)} disabled={done}>
+                  <Button size="sm" variant="solid" tone="neutral" permission="approve" onClick={() => setLinking(true)} disabled={done}>
                     Send to someone outside
                   </Button>
                 </span>
@@ -375,7 +391,7 @@ export function ApproveDialog({
                 <div className="flex flex-col gap-1.5">
                   <span className="text-[11.5px] text-faint">
                     Link for <span className="font-medium text-fg">{minted.email}</span>
-                    {minted.expires_at ? ` · expires ${new Date(minted.expires_at).toLocaleString()}` : ""} · single use
+                    {minted.expires_at ? ` · works until ${new Date(minted.expires_at).toLocaleString()}` : ""} · single use
                   </span>
                   <span className="flex items-center gap-2">
                     <code className="min-w-0 grow truncate rounded-sm border border-line bg-raise px-2 py-1.5 font-mono text-[11px] text-fg">{minted.url}</code>
@@ -393,13 +409,35 @@ export function ApproveDialog({
                       {copied ? "Copied" : "Copy link"}
                     </Button>
                   </span>
-                  <span className="text-[10.5px] text-ghost">Copy it and send it yourself; the console never emails it. Their answer is written as external:{minted.email}.</span>
+                  <span className="text-[10.5px] leading-[1.5] text-ghost">
+                    Copy it now and send it yourself: it is shown only here, the platform keeps no copy of it, and the console never emails it. Only {minted.email}, signed in as that address, can open it. Their answer is signed external:{minted.email}.
+                  </span>
                 </div>
               ) : (
                 <div className="flex flex-wrap items-end gap-2">
                   <div className="min-w-[220px] grow">
-                    <Field label="Participant's email" error={linkError || undefined} hint={linkError ? undefined : "The link is bound to this address and to this gate."}>
+                    <Field
+                      label="Their email address"
+                      error={linkError || undefined}
+                      hint={linkError ? undefined : "Only this address, signed in as itself, can use the link, and only for this gate. Not the run's starter or the author of the agent's version."}
+                    >
                       <Input type="email" value={email} onChange={setEmail} placeholder="name@example.com" disabled={minting} />
+                    </Field>
+                  </div>
+                  <div className="w-36">
+                    <Field label="Works for">
+                      <Pick
+                        value={expires}
+                        onChange={setExpires}
+                        options={[
+                          { value: "60", label: "1 hour" },
+                          { value: String(24 * 60), label: "24 hours" },
+                          { value: String(3 * 24 * 60), label: "3 days" },
+                          { value: String(7 * 24 * 60), label: "7 days" },
+                        ]}
+                        disabled={minting}
+                        aria-label="How long the link works"
+                      />
                     </Field>
                   </div>
                   <Button size="sm" variant="solid" tone="ink" permission="approve" loading={minting} onClick={link}>

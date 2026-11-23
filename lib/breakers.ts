@@ -1,21 +1,27 @@
 import type { BreakerOpening, BreakerThresholds, BreakersView } from "./api/l7b";
 
 /**
- * The estate's breakers as the console reads them (phase L7, second round):
- * what each one guards, why it opened, the thresholds in words, and what is
- * open now with the opening behind it. Pure: components/breakers.tsx
- * renders these, tests/l7b-logic.test.ts holds them.
+ * The estate's breakers as the console reads them: what each one guards,
+ * why it opened, the thresholds in words, and what is open now with the
+ * opening behind it. Pure: components/breakers.tsx renders these,
+ * tests/l7b-logic.test.ts holds them.
  *
- * The backend counts every sink call and every peer call it hears of, from
- * the engine's runs, the worker door and the SDK door, across all runs: past
- * `calls` in `window_s`, or after `failures` in a row, the breaker opens for
- * `cooldown_s`, is served to every worker on its claim and heartbeat, and
- * refuses the call in every run (`control: breaker`, `scope: estate`). After
- * the cooldown it lets one call through; a failure there opens it again at
- * once (`why: probe`). A person may close it by hand (configure).
+ * The platform (agentfactory/control/breakers.py) counts the outcome of
+ * every call of a tool that acts outside, across every run on every worker.
+ * A breaker opens on a tool when `failures` calls of it fail in a row, or
+ * when more than `calls` calls of it are made within `window_s`; it stays
+ * open for `cooldown_s`, and every run is refused a call of the tool until
+ * then. After a cooldown that ran out on its own, the first call is a
+ * probe: a failure opens it again at once (`why: probe`). A refusal (by
+ * policy, the host, the allow list or the vault) is never a failure and is
+ * not counted. A person with configure may close one by hand. The
+ * thresholds are the deployment's settings `BREAKER_FAILURES`,
+ * `BREAKER_CALLS`, `BREAKER_WINDOW_SECONDS` and `BREAKER_COOLDOWN_SECONDS`
+ * (0 turns a rule off; a cooldown of 0 turns breakers off); changing them
+ * by policy is not built.
  */
 
-/** What a breaker guards: a sink tool, or a peer (`peer:<name>`). */
+/** What a breaker guards: a tool, by its name; a `peer:<name>` (which an earlier platform opened breakers on) reads as that peer. */
 export function breakerTarget(name: string): { kind: "tool" | "peer"; label: string } {
   return name.startsWith("peer:") ? { kind: "peer", label: name.slice(5) } : { kind: "tool", label: name };
 }
@@ -38,24 +44,26 @@ export function spanText(seconds: number): string {
 export const WHY_TEXT: Record<string, string> = {
   calls: "too many calls across the estate",
   failures: "failures in a row",
-  probe: "failed again after its cooldown",
+  probe: "the first call after its cooldown failed",
 };
 
 export const whyText = (why: string): string => WHY_TEXT[why] ?? (why || "opened");
 
-/** What opened it, with the figures it was judged by: `4 calls within 60 s, past the 3 allowed`. */
-export function openingLine(o: Pick<BreakerOpening, "why" | "count" | "calls" | "window_s" | "failures">): string {
+/** What opened it: the platform's own sentence when the opening carries one, else one built from the figures it was judged by (`4 calls within 60 s, past the 3 allowed`). */
+export function openingLine(o: Pick<BreakerOpening, "why" | "count" | "calls" | "window_s" | "failures"> & { why_words?: string }): string {
+  if (o.why_words) return o.why_words;
   if (o.why === "calls") return `${o.count} calls within ${spanText(o.window_s)}, past the ${o.calls} allowed`;
   if (o.why === "failures") return `${o.count} calls failed in a row (it opens at ${o.failures})`;
-  if (o.why === "probe") return "the one call let through after the cooldown failed";
+  if (o.why === "probe") return "the first call after its cooldown failed";
   return o.count ? `${o.count} (${o.why || "opened"})` : o.why || "opened";
 }
 
-/** The thresholds in a sentence; a threshold of 0 is off. */
+/** The thresholds in a sentence: a rule of 0 is off, a window of 0 turns the calls rule off, a cooldown of 0 turns breakers off. */
 export function thresholdsLine(t: BreakerThresholds): string {
-  const rules = [t.calls ? `more than ${t.calls} calls to one sink or peer within ${spanText(t.window_s)}, across every run` : "", t.failures ? `${t.failures} failed calls in a row` : ""].filter(Boolean);
-  const opens = rules.length ? `Opens on ${rules.join(", or on ")}` : "Never opens: both the call and the failure thresholds are off";
-  return `${opens}; stays open ${spanText(t.cooldown_s)}, then lets one call through.`;
+  if (!t.cooldown_s) return "Breakers are off: with a cooldown of 0, none opens.";
+  const rules = [t.calls && t.window_s ? `more than ${t.calls} calls of one tool across the estate within ${spanText(t.window_s)}` : "", t.failures ? `${t.failures} failed calls of one tool in a row` : ""].filter(Boolean);
+  const opens = rules.length ? `Opens on ${rules.join(", or on ")}` : "Never opens: the calls and the failures rules are both off";
+  return `${opens}; stays open ${spanText(t.cooldown_s)}, and the first call after that is a probe: if it fails, the breaker opens again at once.`;
 }
 
 /** Seconds until `until`, from `now` (epoch ms); 0 once it has passed or when it cannot be read. */
@@ -91,9 +99,9 @@ export function pastOpenings(view: Pick<BreakersView, "openings">): BreakerOpeni
 }
 
 /** How an opening ended, or that it has not. */
-export function endedText(o: Pick<BreakerOpening, "open" | "closed_at" | "until">, now: number): string {
+export function endedText(o: Pick<BreakerOpening, "open" | "closed_at" | "until"> & { closed_by?: string }, now: number): string {
   if (o.open) return closesText(o.until, now);
-  if (o.closed_at) return `closed by hand ${o.closed_at.replace("T", " ").replace(/Z$/, " UTC")}`;
+  if (o.closed_at) return `closed by hand${o.closed_by ? ` by ${o.closed_by}` : ""} ${o.closed_at.replace("T", " ").replace(/Z$/, " UTC")}`;
   return `closed on its own ${o.until.replace("T", " ").replace(/Z$/, " UTC")}`;
 }
 

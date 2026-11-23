@@ -10,23 +10,24 @@ import { useNow } from "./gate-form";
 import { hueFor } from "@/lib/hue";
 import { soon } from "@/lib/soon";
 import { looksLikeRecordId } from "@/lib/api/l5";
-import { closeBreaker, getBreakers, type BreakerOpening, type BreakersView } from "@/lib/api/l7b";
+import { closeBreaker, getBreakers, type BreakerOpening, type BreakerOpeningMore, type BreakersRead } from "@/lib/api/l7b";
 import { breakerTarget, closesText, endedText, openBreakers, openingLine, spanText, thresholdsLine, whyText, type OpenBreaker } from "@/lib/breakers";
 
 /**
- * The estate's breakers (phase L7, second round; backend/CONTRACT.md "The
- * estate's breakers"): circuit breakers the control plane trips from what it
- * hears across every run, per sink tool and per peer. Past the calls
- * threshold in the window, or after the failures threshold in a row, one
- * opens for the cooldown: every worker is served it on its claim and
- * heartbeat, and every run, here or on a worker, is refused a call to it
- * (`control: breaker`, `scope: estate`). After the cooldown it lets one call
- * through, and a failure there opens it again at once.
+ * The estate's breakers (`GET /api/breakers`, agentfactory/control/breakers.py):
+ * breakers on the tools that act outside, across every run on every worker.
+ * A tool whose calls fail too many times in a row, or that is called too
+ * often across the estate within the window, is cut off for the cooldown:
+ * every run is refused a call of it until then. After a cooldown that ran
+ * out on its own, the first call is a probe, and a failure there opens it
+ * again at once.
  *
  * The view: what is open now, each with the opening behind it and when it
- * closes on its own; the thresholds every breaker is judged by; and the
- * recent openings, how each ended. Closing one by hand needs the configure
- * permission and is on the audit trail; a viewer reads all of it.
+ * closes on its own; the thresholds every breaker is judged by, which are
+ * the deployment's settings (changing them by policy is not built); and the
+ * newest openings, how each ended. Closing one by hand (`DELETE
+ * /api/breakers/{name}`) needs the configure permission and is on the audit
+ * trail; a viewer reads all of it.
  */
 
 const WHY_TONE: Record<string, "err" | "warn"> = { calls: "warn", failures: "err", probe: "err" };
@@ -46,7 +47,7 @@ function TargetTag({ name }: { name: string }) {
   const t = breakerTarget(name);
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5">
-      <Tag tone={t.kind === "peer" ? "run" : "neutral"}>{t.kind === "peer" ? "peer" : "sink tool"}</Tag>
+      <Tag tone={t.kind === "peer" ? "run" : "neutral"}>{t.kind === "peer" ? "peer" : "tool"}</Tag>
       {t.kind === "peer" ? (
         <Link href={`/configuration#peer-${encodeURIComponent(t.label)}`} className="focusable min-w-0 truncate rounded-sm font-mono text-[12px] font-semibold text-fg hover:underline" title={`${t.label} in the peer registry`}>
           {t.label}
@@ -112,7 +113,7 @@ export function OpenBreakerRow({ breaker: b, now, onClosed, onRefresh }: { break
         )}
       </div>
       {confirming && (
-        <span className="-mt-0.5 self-end text-[11px] text-warn">Every worker and every run may call it again at once; it opens again on the next run of calls or failures past the thresholds.</span>
+        <span className="-mt-0.5 self-end text-[11px] text-warn">Every run may call it again at once; it opens again when its calls or failures pass the thresholds.</span>
       )}
       {o ? (
         <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-dim">
@@ -123,7 +124,7 @@ export function OpenBreakerRow({ breaker: b, now, onClosed, onRefresh }: { break
           {o.source && <RunSourceTag run={{ source: o.source }} />}
         </span>
       ) : (
-        <span className="text-[11px] text-faint">Served to every worker as open; the opening behind it is not on this instance&rsquo;s list.</span>
+        <span className="text-[11px] text-faint">Open, but the opening behind it is not among the openings listed.</span>
       )}
       {error && (<span className="text-[11.5px] text-err">{error}</span>)}
     </div>
@@ -131,7 +132,7 @@ export function OpenBreakerRow({ breaker: b, now, onClosed, onRefresh }: { break
 }
 
 /** The recent openings, newest first, and how each ended. */
-export function OpeningsTable({ openings, now }: { openings: BreakerOpening[]; now: number }) {
+export function OpeningsTable({ openings, now }: { openings: (BreakerOpening & Partial<BreakerOpeningMore>)[]; now: number }) {
   if (!openings.length) return <p className="px-4 py-3 text-[11.5px] text-faint">No breaker has opened on this estate.</p>;
   return (
     <div className="overflow-x-auto">
@@ -180,7 +181,7 @@ export function OpeningsTable({ openings, now }: { openings: BreakerOpening[]; n
 }
 
 /** The view's body, from one read: presentational, so tests render it from a captured view. */
-export function BreakersBody({ view, now, onClosed, onRefresh }: { view: BreakersView; now: number; onClosed: (name: string) => void; onRefresh: () => void }) {
+export function BreakersBody({ view, now, onClosed, onRefresh }: { view: BreakersRead; now: number; onClosed: (name: string) => void; onRefresh: () => void }) {
   const open = openBreakers(view);
   const t = view.thresholds;
   return (
@@ -189,7 +190,7 @@ export function BreakersBody({ view, now, onClosed, onRefresh }: { view: Breaker
         <section className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">
           <div data-hue={hueFor("breaker refusals")} className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2.5">
             <span className="text-[12px] font-semibold">Open now</span>
-            <span className="text-[11px] text-faint">{open.length ? `${open.length} open: every run, here and on every worker, is refused a call to ${open.length === 1 ? "it" : "each"}` : "none: every sink and every peer may be called"}</span>
+            <span className="text-[11px] text-faint">{open.length ? `${open.length} open: every run is refused a call of ${open.length === 1 ? "it" : "each"} until it closes` : "none: every tool may be called"}</span>
           </div>
           {open.map((b) => (
             <OpenBreakerRow key={b.name} breaker={b} now={now} onClosed={onClosed} onRefresh={onRefresh} />
@@ -199,7 +200,7 @@ export function BreakersBody({ view, now, onClosed, onRefresh }: { view: Breaker
         <section className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">
           <div data-hue={hueFor("activity")} className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2.5">
             <span className="text-[12px] font-semibold">Recent openings</span>
-            <span className="text-[11px] text-faint">newest first; the last 50 the estate kept</span>
+            <span className="text-[11px] text-faint">{view.openings.length ? `newest first; the ${view.openings.length} most recent${view.truncated ? ", older ones not listed" : ""}` : "newest first"}</span>
           </div>
           <OpeningsTable openings={view.openings} now={now} />
         </section>
@@ -223,7 +224,9 @@ export function BreakersBody({ view, now, onClosed, onRefresh }: { view: Breaker
         </div>
         <p className="border-t border-line px-4 py-2.5 text-[11.5px] leading-[1.55] text-dim">{thresholdsLine(t)}</p>
         <p className="border-t border-line px-4 py-2.5 text-[11px] leading-[1.55] text-faint">
-          Counted across every run the control plane hears of, each call once: a sink tool by its name, a peer as <Mono className="text-[10.5px]">peer:&lt;name&gt;</Mono>. A refusal is never a failure, and a call that is neither a sink nor a peer is not counted. The deployment sets these (<Mono className="text-[10.5px]">AF_BREAKER_*</Mono>); the <Mono className="text-[10.5px]">breakers</Mono> settings row rules over them.
+          Counted per tool that acts outside, by its name, across every run on every worker. A refusal (by policy, the host, the allow list or the vault) is never a failure and is not counted. The deployment sets these:{" "}
+          <Mono className="text-[10.5px]">BREAKER_FAILURES</Mono>, <Mono className="text-[10.5px]">BREAKER_CALLS</Mono>, <Mono className="text-[10.5px]">BREAKER_WINDOW_SECONDS</Mono> and{" "}
+          <Mono className="text-[10.5px]">BREAKER_COOLDOWN_SECONDS</Mono>; 0 turns a rule off, and a cooldown of 0 turns breakers off. Changing them by policy is not built: it is a later phase.
         </p>
       </section>
     </div>
@@ -233,7 +236,7 @@ export function BreakersBody({ view, now, onClosed, onRefresh }: { view: Breaker
 
 export function Breakers() {
   const now = useNow();
-  const [view, setView] = useState<BreakersView | null>(null);
+  const [view, setView] = useState<BreakersRead | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const load = useCallback(() => {
@@ -256,8 +259,9 @@ export function Breakers() {
   return (
     <div className="mx-auto w-full max-w-[1520px] px-5 py-7" data-hue="red">
       <GroupHeader group="resilience" tab="breakers" meta={view && <Status tone={open ? "err" : "ok"}>{open ? `${open} open` : "none open"}</Status>}>
-        Circuit breakers the control plane trips across every run, per sink tool and per peer: too many calls in the window, or failures in a row, and the breaker opens for its cooldown. While
-        it is open every run is refused the call; then it lets one call through. A person may close one by hand once the downstream is mended.
+        Breakers on the tools that act outside, across every run: a tool whose calls fail too many times in a row, or that is called too often across the estate within the window, is cut off
+        for its cooldown, and every run is refused a call of it until then. After the cooldown the first call is a probe, and a failure opens the breaker again at once. A person with the configure
+        permission may close one by hand once what it calls is mended.
       </GroupHeader>
       {error && <Failure className="mt-4" what="The breakers could not be read" message={error} />}
       {notice && <p className="mt-4 text-[12px] text-ok">{notice}</p>}
@@ -268,7 +272,7 @@ export function Breakers() {
             now={now}
             onClosed={(name) => {
               const t = breakerTarget(name);
-              setNotice(`The breaker on ${t.kind === "peer" ? `the peer ${t.label}` : t.label} was closed: every worker and every run may call it again.`);
+              setNotice(`The breaker on ${t.kind === "peer" ? `the peer ${t.label}` : t.label} was closed: every run may call it again at once.`);
               load();
             }}
             onRefresh={load}

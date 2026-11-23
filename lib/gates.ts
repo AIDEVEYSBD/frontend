@@ -252,7 +252,7 @@ export function stepLine(step: EscalationStep): string {
 /* ═══════════════════ who may answer ═══════════════════ */
 
 export interface Who {
-  /** `autox:roles` from the token. */
+  /** The roles the platform's session names for the person. */
   roles: readonly string[];
   /** The roles the person holds here; a platform admin passes every gate that is not their own. */
   appRoles: readonly string[];
@@ -387,6 +387,9 @@ export function countdown(deadline: string | null, now: number): { text: string;
 
 export const ATTENTION_LABEL: Record<AttentionItem["kind"], string> = {
   gate: "gate",
+  run: "run",
+  fleet: "agent held",
+  lockdown: "lockdown",
   refusal: "refusal",
   budget: "budget",
   dead_letter: "dead letter",
@@ -411,13 +414,15 @@ export const ACTION_LABEL: Record<AttentionItem["action"]["kind"], string> = {
   close: "Close breaker",
   pause: "Pause agent…",
   redirect: "Redirect…",
+  resume: "Resume…",
+  lift: "Lift…",
 };
 
 /**
- * The severity (1 to 10) from which a row reads as urgent: a gate past its
- * deadline (10) or due within the hour (9), a breached budget or a failing
- * port (8), a gate due within the day that holds a sink or a destructive
- * call (8).
+ * The severity (1 to 10) from which a row reads as urgent. The platform's
+ * scale: a gate past its deadline 10, a gate due within the hour 9, the
+ * lockdown 9, an open breaker 8, any other gate 6, a failed run 5, a paused
+ * agent 5, a draining agent 4, a stopped run 3.
  */
 export const URGENT_SEVERITY = 8;
 
@@ -425,7 +430,7 @@ export const URGENT_SEVERITY = 8;
 export const HOLDS_LABEL: Record<string, string> = { sink: "holds a sink", destructive: "destructive call", risky: "risky call", write: "write call" };
 
 /**
- * The order the queue reads in: the backend's rank (severity × age) first,
+ * The order the queue reads in: the platform's rank (severity first, then age) first,
  * the nearer deadline next among equals, then the older row, then the id so
  * the order is total. Rows arrive ranked; this holds the order when a row
  * is added or aged between reads.

@@ -172,9 +172,12 @@ export type Answer = DecisionAnswer | FormAnswer | VerdictsAnswer;
 export interface AnswerResult {
   run: string;
   ok: boolean;
-  /** The run's state after the answer: running, done, failed, closed. */
+  /** Batch only: the run was not answered, and `error` says why (it was not waiting, the answer did not fit its gate, or this person may not answer it). */
+  skipped: boolean;
+  /** The run's state after the answer: running once the answer is taken; for a skipped run, the state it is in. */
   state: string;
   continuing: boolean;
+  /** How the run goes on: `queued` (a new job carries it on from the gate), or "" when the answer said nothing. */
   delivered: string;
   error: string;
 }
@@ -182,6 +185,7 @@ export interface AnswerResult {
 export interface BatchResult {
   answered: number;
   of: number;
+  /** The runs named that were not answered. */
   remaining: number;
   by: string;
   results: AnswerResult[];
@@ -189,11 +193,11 @@ export interface BatchResult {
 
 /** `POST /api/approvals/{run}/links` */
 export interface MintedLink {
-  /** The answer page, absolute: the backend's `url`, or this console's public origin before the path it answers when the backend has no PUBLIC_ORIGIN. */
+  /** The answer page, absolute: the backend's `url`, or this console's public origin before the path it answers when the backend gives only the path. */
   url: string;
-  /** The API door the page calls. */
+  /** The page's path, `/answer/<token>`. */
   path: string;
-  /** When the token stops working; never after the gate's deadline. */
+  /** When the link stops working. */
   expires_at: string | null;
   /** The gate's own deadline. */
   deadline: string | null;
@@ -214,7 +218,8 @@ export interface ExternalGate {
  * A refusal from an L5 door. The message is the backend's `error`; beside
  * it, what the body names: the field a 400 refuses, the role a 403 says is
  * missing (and the gate's approvers), the control that refused, the pause a
- * 409 carries. A spent or expired link is a 410, an unknown one a 404.
+ * 409 carries. On a link: 401 nobody signed in, 403 another person, 404 an
+ * unknown token, 409 a gate that has moved on, 410 a spent or expired link.
  */
 export class DoorError extends Error {
   readonly status: number;
@@ -238,8 +243,15 @@ export class DoorError extends Error {
 
 /* ═══════════════════ operating the estate ═══════════════════ */
 
-export type AttentionKind = "gate" | "refusal" | "budget" | "dead_letter" | "health" | "drift" | "guardian" | "side_channel" | "breaker" | "override" | "rollback" | "policy_rollback" | "attestation";
-const ATTENTION_KINDS: AttentionKind[] = ["gate", "refusal", "budget", "dead_letter", "health", "drift", "guardian", "side_channel", "breaker", "override", "rollback", "policy_rollback", "attestation"];
+/**
+ * The kinds of row the console knows. The platform raises five today
+ * (`gate`, `run`: a run that failed or was stopped in the last 24 hours,
+ * `breaker`, `fleet`: an agent paused or draining, and `lockdown`) and names
+ * the kinds it cannot raise yet in the answer's `not_built`; the rest are
+ * kinds an earlier platform raised, kept so a row of one still reads.
+ */
+export type AttentionKind = "gate" | "run" | "fleet" | "lockdown" | "refusal" | "budget" | "dead_letter" | "health" | "drift" | "guardian" | "side_channel" | "breaker" | "override" | "rollback" | "policy_rollback" | "attestation";
+const ATTENTION_KINDS: AttentionKind[] = ["gate", "run", "fleet", "lockdown", "refusal", "budget", "dead_letter", "health", "drift", "guardian", "side_channel", "breaker", "override", "rollback", "policy_rollback", "attestation"];
 /** The kinds L7 added: the fleet read as a system (drift per agent, the guardian's verdicts, two agents coordinating through a shared store, an estate breaker that opened). */
 export const L7_ATTENTION_KINDS: AttentionKind[] = ["drift", "guardian", "side_channel", "breaker"];
 /** The kinds L8 added: a deploy an administrator passed past the promotion gate, and a rollback with the runs it flagged (each 7 days). */
@@ -265,8 +277,14 @@ export const L9_ATTENTION_KINDS: AttentionKind[] = ["policy_rollback", "attestat
  * make names the steer it would have sent (`redirect`: `POST
  * /api/runs/{id}/steer {guidance}`); an override and a rollback open the
  * agent's lifecycle page.
+ *
+ * Operator controls: an agent paused or draining (`fleet`) and the
+ * lockdown name the Control page as the place to clear them; the queue sits
+ * on that page, so their rows carry the lever itself: `resume` (`POST
+ * /api/fleet {action: resume}`, the run permission) and `lift` (`POST
+ * /api/lockdown {on: false}`, configure), each with a reason.
  */
-export type AttentionActionKind = "answer" | "replay" | "check" | "open" | "kill" | "hold" | "close" | "pause" | "redirect";
+export type AttentionActionKind = "answer" | "replay" | "check" | "open" | "kill" | "hold" | "close" | "pause" | "redirect" | "resume" | "lift";
 
 export interface AttentionAction {
   kind: AttentionActionKind;
@@ -295,7 +313,7 @@ export interface AttentionItem {
   /** When it arose. */
   since: string;
   age_s: number;
-  /** severity × (1 + min(age in hours, 48) / 24), as the backend ranks it. */
+  /** severity + min(age in hours, 48) / 49, as the platform ranks it. */
   rank: number;
   deadline: string | null;
   /** For a gate, what it stands in front of: sink, destructive, risky, write, or "". */
@@ -317,22 +335,35 @@ const DELIVERIES: Delivery[] = ["in-process", "worker", "sdk"];
 
 export interface SteerResult {
   run: string;
-  /** running, or (an SDK run steered at its gate) suspended: a steer on a run that is not in flight is refused (409). */
+  /** The run's state when the levers were parked: running, or suspended (waiting at a gate; the levers wait for its next step). A run that has ended is refused (409). */
   state: string;
-  /** The levers as the backend recorded them; for a worker's or an SDK agent's run, merged with any not yet handed over (the latest guidance and model win, a hold stays). */
+  /** The levers this request parked, as the platform recorded them. */
   applied: SteerRequest;
   by: string;
   at: string;
-  /** in-process: taken at the run's next checkpoint here; worker: handed to the worker on its next heartbeat; sdk: handed to the attached agent on its next control poll. */
+  /** in-process: the run takes the lever at its next step (the only value this platform answers); worker and sdk are kept for an earlier platform's answers. */
   delivery: Delivery;
 }
 
 export type FleetAction = "pause" | "resume" | "drain" | "kill";
+/** The four fleet actions, each `what` in the platform's terms (`POST /api/fleet`, agentfactory/control/fleet.py). */
 export const FLEET_ACTIONS: { id: FleetAction; label: string; verb: string; tone: "ink" | "warn" | "err"; what: string }[] = [
-  { id: "pause", label: "Pause", verb: "Paused", tone: "warn", what: "stops new starts and queue claims for these agents, and kills every run of theirs already in flight" },
-  { id: "resume", label: "Resume", verb: "Resumed", tone: "ink", what: "lifts a pause or a drain; starts and claims are accepted again" },
-  { id: "drain", label: "Drain", verb: "Draining", tone: "warn", what: "stops new starts and queue claims for these agents and lets every run in flight finish" },
-  { id: "kill", label: "Kill", verb: "Killed", tone: "err", what: "kills every run in flight for these agents before its next model or tool call; it does not pause them, so new runs still start" },
+  {
+    id: "pause",
+    label: "Pause",
+    verb: "Paused",
+    tone: "warn",
+    what: "starts no new run of these agents and lets no worker take up one that has not started; every run of theirs in flight, running or waiting at a gate, is stopped",
+  },
+  { id: "resume", label: "Resume", verb: "Resumed", tone: "ink", what: "lifts a pause or a drain: these agents' runs start again, and workers take up the ones waiting" },
+  {
+    id: "drain",
+    label: "Drain",
+    verb: "Draining",
+    tone: "warn",
+    what: "starts no new run of these agents and lets no worker take up one that has not started; their runs in flight finish, with the sub-runs they start",
+  },
+  { id: "kill", label: "Kill", verb: "Killed", tone: "err", what: "stops every run of these agents in flight, running or waiting at a gate; it holds nothing, so new runs still start" },
 ];
 
 /** A pause or a drain on an agent (`workflows.paused`). */
@@ -350,11 +381,13 @@ export interface FleetResult {
   reason: string;
   by: string;
   at: string;
-  /** The runs the action killed (pause and kill), in-process and worker-started. */
+  /** The runs the action stopped (pause and kill). */
   killed: string[];
+  /** The runs an earlier stop request is already stopping, which this one did not ask again (pause and kill). */
+  already: string[];
   /** Every agent paused or draining after the action, not only these. */
   paused: Record<string, PauseInfo>;
-  /** The one audit event the action wrote: its id on the IAM page's sign-in and action trail; null when the trail could not be written. */
+  /** The audit event the action wrote; null when the answer named none. */
   audit_id: number | null;
 }
 
@@ -362,19 +395,21 @@ export interface FleetResult {
 export interface FleetState {
   paused: Record<string, PauseInfo>;
   lockdown: LockdownState;
-  /** Runs this backend drives in-process, per agent; a worker's runs are not counted here. */
+  /** Runs in flight per agent (running, or waiting at a gate); an agent with none is left out. */
   live: Record<string, number>;
 }
 
 export interface LockdownState {
   on: boolean;
-  /** Why it was set, or why it was lifted. */
+  /** While on: why it was set. While off: why it was last lifted ("" when there never was a lockdown). */
   reason: string;
+  /** While on: who set it. While off: who last lifted it. */
   by: string;
+  /** While on: when it was set. While off: when it was last lifted. */
   at: string | null;
-  /** The controls a lockdown exercises while it is on, in the backend's words; empty when off. */
+  /** What the lockdown holds while it is on, in the platform's words; empty when off. */
   controls: string[];
-  /** The audit event that set (or lifted) it, on the IAM page's trail; null before the first switch. */
+  /** The audit event that set it (or, while off, that last lifted it); null when there never was a lockdown. */
   audit_id: number | null;
 }
 
@@ -407,12 +442,6 @@ export interface Cleared {
  * answered, else `model` (`waiting_on`; "" when not running).
  */
 export type RunRowL5 = RunRow & { step?: string; step_ms?: number; step_p95_ms?: number | null; stuck?: boolean; waiting_on?: string | null };
-
-/** What `GET /api/models` offers for the next step. */
-export interface OfferedModel {
-  id: string;
-  label: string;
-}
 
 /** An operator's hand on a run, as its journal records it. */
 export interface OperatorAction {
@@ -612,10 +641,14 @@ export function gateFromSuspension(run: string, agent: string, s: Record<string,
   });
 }
 
-/** The backend's rank: severity × (1 + min(age in hours, 48) / 24), to two places. */
+/**
+ * The platform's rank: severity + min(age in hours, 48) / 49, to four places,
+ * so a higher severity always comes first and, within one, the older row.
+ * Used only for a row that carries no `rank` of its own.
+ */
 export function rankOf(severity: number, ageS: number): number {
   const hours = Math.max(0, ageS) / 3600;
-  return Math.round(severity * (1 + Math.min(hours, 48) / 24) * 100) / 100;
+  return Math.round((severity + Math.min(hours, 48) / 49) * 10000) / 10000;
 }
 
 /**
@@ -674,7 +707,7 @@ export function lifecycleHref(path: string, agent: string): string {
 /** L7 and L8 kinds: the console's page or lever for the backend's door. */
 function l7Action(kind: AttentionKind, method: string, path: string, agent: string, body: Record<string, unknown> | null, data: Record<string, unknown> | null): { kind: AttentionActionKind; href?: string } {
   if (method === "POST" && /\/api\/runs\/[^/]+\/kill$/.test(path)) return { kind: "kill" };
-  // A steer carrying guidance is the guardian's redirect a person may send; without, its hold at the next gate.
+  // A steer carrying guidance is the guardian's redirect a person may send; without, its hold on the next write.
   if (method === "POST" && /\/api\/runs\/[^/]+\/steer$/.test(path)) return { kind: typeof body?.guidance === "string" && body.guidance ? "redirect" : "hold" };
   if (kind === "breaker") return method === "DELETE" && /^\/api\/breakers\/./.test(path) ? { kind: "close" } : { kind: "open", href: "/breakers" };
   if (kind === "drift") {
@@ -704,9 +737,11 @@ export function attentionOf(v: unknown): AttentionItem {
   const body = a.body && typeof a.body === "object" && !Array.isArray(a.body) ? obj(a.body) : null;
   const data = o.data && typeof o.data === "object" && !Array.isArray(o.data) ? obj(o.data) : null;
   const l7 = L7_ATTENTION_KINDS.includes(kind) || L8_ATTENTION_KINDS.includes(kind) || L9_ATTENTION_KINDS.includes(kind) ? l7Action(kind, method, path, str(o.agent), body, data) : null;
+  // A held agent and the lockdown name the Control page; the queue is on it, so the row carries the lever (an agent's resume needs the agent).
+  const operator: AttentionActionKind | null = kind === "fleet" && str(o.agent) ? "resume" : kind === "lockdown" ? "lift" : null;
   const actionKind: AttentionActionKind = l7
     ? l7.kind
-    : kind === "gate" ? "answer" : !method || page ? "open" : kind === "dead_letter" && method === "POST" ? "replay" : method === "GET" ? "check" : "open";
+    : operator ?? (kind === "gate" ? "answer" : !method || page ? "open" : kind === "dead_letter" && method === "POST" ? "replay" : method === "GET" ? "check" : "open");
   const since = str(o.since);
   const age_s = typeof o.age_s === "number" ? o.age_s : since && !Number.isNaN(Date.parse(since)) ? Math.max(0, (Date.now() - Date.parse(since)) / 1000) : 0;
   const severity = num(o.severity, 1);
@@ -763,7 +798,12 @@ export function lockdownRefusalOf(status: number, body: unknown): LockdownState 
   return s.on ? s : null;
 }
 
-/** The refusal in a line a person reads where the run was started: why, who, when, and how it ends. */
+/**
+ * The refusal in a line a person reads where the run was started: why, who,
+ * when, and how it ends, built from the lockdown alone. lib/start-refusal.ts
+ * shows the platform's own sentence and uses this only when the answer
+ * carries none.
+ */
 export function lockdownRefusalText(s: LockdownState): string {
   const who = [s.by ? `by ${s.by}` : "", s.at && !Number.isNaN(Date.parse(s.at)) ? new Date(s.at).toLocaleString() : ""].filter(Boolean).join(", ");
   return `The estate is locked down${s.reason ? `: ${s.reason}` : ""}${who ? ` (${who})` : ""}. Nothing starts until the lockdown is lifted on the Control page${s.audit_id !== null ? `; audit event #${s.audit_id}` : ""}.`;
@@ -814,6 +854,15 @@ export function fleetStateOf(v: unknown): FleetState {
  */
 export function inFlight<T extends { live?: boolean; state?: string }>(rows: readonly T[]): T[] {
   return rows.filter((r) => r.live === true || r.state === "running");
+}
+
+/**
+ * What a stop reaches in a ledger read: every run in flight as the platform
+ * counts it for a kill, a fleet kill or a pause, running or waiting at a
+ * gate (`suspended`, which reads `live: false`).
+ */
+export function stoppable<T extends { live?: boolean; state?: string }>(rows: readonly T[]): T[] {
+  return rows.filter((r) => r.live === true || r.state === "running" || r.state === "suspended");
 }
 
 /**
@@ -909,7 +958,18 @@ export async function listGates(): Promise<Inbox> {
 
 function resultOf(v: unknown, run: string): AnswerResult {
   const r = obj(v);
-  return { run: str(r.run) || run, ok: r.ok === true, state: str(r.state), continuing: r.continuing === true, delivered: str(r.delivered), error: str(r.error) };
+  return { run: str(r.run) || run, ok: r.ok === true, skipped: r.skipped === true, state: str(r.state), continuing: r.continuing === true, delivered: str(r.delivered), error: str(r.error) };
+}
+
+/** A run whose answer was refused before anything was recorded, as a row of a result: the refusal's message is the reason. */
+export function refusedResult(run: string, e: unknown): AnswerResult {
+  return { run, ok: false, skipped: true, state: "", continuing: false, delivered: "", error: (e as Error).message };
+}
+
+/** What `delivered` says, in words: `queued` is a new job carrying the run on from the gate. */
+export function deliveredText(delivered: string): string {
+  if (delivered === "queued") return "The run is back on the queue: a worker carries it on from the gate.";
+  return delivered;
 }
 
 const isDecision = (answer: Answer): answer is DecisionAnswer => "approved" in answer && typeof answer.approved === "boolean";
@@ -925,33 +985,23 @@ export async function answerGate(run: string, answer: Answer, note: string): Pro
 }
 
 /**
- * One answer for several gates of the same agent and shape. The batch door
- * (`POST /api/approvals` with `{runs, approved, note}`) answers decisions
- * only and refuses anything else up front, so a form or a verdicts answer
- * goes to each gate's own door in turn, and every run's outcome is a row of
- * the result either way. The signer is the session; `by` is what the door
- * records beside a machine key's answer.
+ * One answer for several gates (`POST /api/approvals` with `{runs, answer,
+ * note}`), in any shape. The platform answers each run on its own, checked
+ * exactly as if it were answered alone (who may answer, that it still
+ * waits, that the answer fits its gate), and lists every run in the order
+ * sent: answered (`ok`), or skipped with the reason (`skipped`, `error`).
+ * The signer is the session. Answering every gate of an agent (`agent`,
+ * `all`) is not built (501), and the console never sends it.
  */
-export async function answerGates(runs: string[], answer: Answer, note: string, by: string): Promise<BatchResult> {
-  if (!isDecision(answer)) {
-    const results: AnswerResult[] = [];
-    for (const run of runs) {
-      try {
-        results.push(await answerGate(run, answer, note));
-      } catch (e) {
-        results.push({ run, ok: false, state: "", continuing: false, delivered: "", error: (e as Error).message });
-      }
-    }
-    return { answered: results.filter((r) => r.ok).length, of: runs.length, remaining: 0, by, results };
-  }
-  return call("POST", "/api/approvals", { runs, answer, note, by, approved: answer.approved }, (j) => {
+export async function answerGates(runs: string[], answer: Answer, note: string): Promise<BatchResult> {
+  return call("POST", "/api/approvals", { runs, answer, note }, (j) => {
     const o = obj(j);
     const results = (Array.isArray(o.results) ? o.results : []).map((r, i) => resultOf(r, runs[i] ?? ""));
     return {
       answered: typeof o.answered === "number" ? o.answered : results.filter((r) => r.ok).length,
       of: typeof o.of === "number" ? o.of : runs.length,
-      remaining: typeof o.remaining === "number" ? o.remaining : 0,
-      by: str(o.by, by),
+      remaining: typeof o.remaining === "number" ? o.remaining : results.filter((r) => !r.ok).length,
+      by: str(o.by),
       results,
     };
   });
@@ -963,9 +1013,18 @@ export function absoluteLink(url: string): string {
   return url.startsWith("/") ? `${PUBLIC_ORIGIN}${url}` : url;
 }
 
-/** `POST /api/approvals/{run}/links` with `{email, expires_s?}` → the signed URL, shown once, never sent from here. */
-export async function mintLink(run: string, email: string, expiresS?: number): Promise<MintedLink> {
-  return call("POST", `/api/approvals/${encodeURIComponent(run)}/links`, { email, ...(expiresS ? { expires_s: expiresS } : {}) }, (j) => {
+/**
+ * `POST /api/approvals/{run}/links` with `{email, expires_in_minutes?}` (the
+ * platform's default is 24 hours, its most 7 days): the link for one outside
+ * approver, single use, shown in this answer and never again, never sent
+ * from here. Refused unless the gate's definition allows an outside answer
+ * (`interface.external.allowed`), when the gate is one only platform admins
+ * may answer, when the person asking could not answer it themselves (the
+ * run's starter, the version's author), and for an address that started the
+ * run or wrote its version.
+ */
+export async function mintLink(run: string, email: string, expiresInMinutes?: number): Promise<MintedLink> {
+  return call("POST", `/api/approvals/${encodeURIComponent(run)}/links`, { email, ...(expiresInMinutes ? { expires_in_minutes: expiresInMinutes } : {}) }, (j) => {
     const o = obj(j);
     return { url: absoluteLink(str(o.url)), path: str(o.path), expires_at: str(o.expires_at) || null, deadline: str(o.deadline) || null, email: str(o.email, email) };
   });
@@ -973,10 +1032,12 @@ export async function mintLink(run: string, email: string, expiresS?: number): P
 
 /**
  * `GET /api/answer/{token}`: the gate's shape and evidence for an outside
- * participant, flat (run, agent, node, asks, shape, fields, items, verdicts,
+ * approver, flat (run, agent, node, asks, shape, fields, items, verdicts,
  * transitions, deadline, evidence, next) beside the link's `email` and
- * `expires_at`. A spent or expired link, or a gate no longer open, is a 410
- * DoorError; a token that is not one is a 404; a run running right now, 409.
+ * `expires_at`. The person is signed in by the identity proxy and holds no
+ * role; the link answers only for the address it names. Refusals, as a
+ * DoorError: 401 nobody signed in, 403 another person, 404 an unknown token,
+ * 409 a gate that has moved on, 410 a spent or expired link.
  */
 export async function readExternalGate(token: string): Promise<ExternalGate> {
   return call("GET", `/api/answer/${encodeURIComponent(token)}`, undefined, (j) => {
@@ -991,18 +1052,32 @@ export async function submitExternalAnswer(token: string, answer: Answer, note: 
   return call("POST", `/api/answer/${encodeURIComponent(token)}`, { answer, note }, (j) => resultOf(j, ""));
 }
 
+/** `GET /api/attention` in full: the rows, the kinds of row the platform names as not built, and whether it left out older ended runs. */
+export interface AttentionList {
+  items: AttentionItem[];
+  /** Kinds of row the platform cannot raise yet (`budget`, `drift`): an empty queue says nothing about them. */
+  not_built: string[];
+  /** More runs ended in the last 24 hours than the queue lists. */
+  truncated: boolean;
+}
+
 /**
  * `GET /api/attention`: ranked, each row with the action that clears it.
- * An id is one row: the backend instance that tripped an estate breaker
- * lists its opening twice (from the shared row and from its own memory),
- * so a repeated id keeps its first, highest-ranked, row.
+ * A repeated id keeps its first, highest-ranked, row.
  */
-export async function listAttention(): Promise<AttentionItem[]> {
+export async function readAttention(): Promise<AttentionList> {
   return call("GET", "/api/attention", undefined, (j) => {
     const o = obj(j);
     const seen = new Set<string>();
-    return (Array.isArray(o.items) ? o.items : []).map(attentionOf).filter((item) => !seen.has(item.id) && Boolean(seen.add(item.id)));
+    const items = (Array.isArray(o.items) ? o.items : []).map(attentionOf).filter((item) => !seen.has(item.id) && Boolean(seen.add(item.id)));
+    const not_built = Array.isArray(o.not_built) ? o.not_built.filter((x): x is string => typeof x === "string" && x !== "") : [];
+    return { items, not_built, truncated: o.truncated === true };
   });
+}
+
+/** The rows of `GET /api/attention` alone, for a reader that needs only them (the overview's counts). */
+export async function listAttention(): Promise<AttentionItem[]> {
+  return (await readAttention()).items;
 }
 
 /** Whether a path is a port's health door (`/api/ports/{name}/health`). */
@@ -1026,7 +1101,15 @@ export async function readPortHealth(name: string): Promise<PortHealth> {
   return call("GET", `/api/ports/${encodeURIComponent(name)}/health`, undefined, portHealthOf);
 }
 
-/** `POST /api/runs/{id}/steer`: guidance, a hold at the next gate, the next call's model; journalled with who and when. 409 unless the run is in flight. */
+/**
+ * `POST /api/runs/{id}/steer` with one lever: guidance for the run's next
+ * model call, a hold on its next tool call at or above write (a person
+ * answers it there), or the model its next model call goes to (one this
+ * deployment offers). Taken while the run is running or waiting at a gate;
+ * the run takes each lever at its next step and its journal notes who asked.
+ * A lever still pending when the run ends is never applied. 409 for a run
+ * that has ended, or a model the deployment does not offer.
+ */
 export async function steerRun(id: string, req: SteerRequest): Promise<SteerResult> {
   return call("POST", `/api/runs/${encodeURIComponent(id)}/steer`, req, (j): SteerResult => {
     const o = obj(j);
@@ -1050,13 +1133,14 @@ export async function fleet(action: FleetAction, agents: string[], reason: strin
       by: str(o.by),
       at: str(o.at),
       killed: strs(o.killed),
+      already: strs(o.already),
       paused: pausesOf(o.paused),
       audit_id: auditIdOf(o.audit_id),
     };
   });
 }
 
-/** `GET /api/fleet`: which agents are paused or draining, the lockdown, and what is in flight in-process. */
+/** `GET /api/fleet`: which agents are paused or draining, the lockdown, and the runs in flight per agent. */
 export async function getFleet(): Promise<FleetState> {
   return call("GET", "/api/fleet", undefined, fleetStateOf);
 }
@@ -1065,7 +1149,13 @@ export async function getLockdown(): Promise<LockdownState> {
   return call("GET", "/api/lockdown", undefined, lockdownOf);
 }
 
-/** `POST /api/lockdown` with `{on, reason}`: every call above read in a new or resumed run waits for a person, every sink is held; the doors keep accepting work. */
+/**
+ * `POST /api/lockdown` with `{on, reason}` (configure; a reason both ways).
+ * While on: every start is refused (423), no worker takes up a run that has
+ * not started, and runs already in flight go on with every tool call at or
+ * above write, and every call of a tool that acts outside, waiting for a
+ * person. Locking when on, or lifting when off, answers 409.
+ */
 export async function setLockdown(on: boolean, reason: string): Promise<LockdownState> {
   return call("POST", "/api/lockdown", { on, reason }, (j) => {
     const s = lockdownOf(j);
@@ -1076,15 +1166,4 @@ export async function setLockdown(on: boolean, reason: string): Promise<Lockdown
 /** `GET /api/runs/{id}/artefacts.zip`: a plain link; the proxy forwards it. */
 export function artefactsZipUrl(run: string): string {
   return `/api/runs/${encodeURIComponent(run)}/artefacts.zip`;
-}
-
-/** `GET /api/models`: the deployments the next step may run on. */
-export async function listOfferedModels(): Promise<OfferedModel[]> {
-  return call("GET", "/api/models", undefined, (j) => {
-    const o = obj(j);
-    return (Array.isArray(o.models) ? o.models : []).map((m) => {
-      const x = obj(m);
-      return { id: str(x.id), label: str(x.label) || str(x.id) };
-    }).filter((m) => m.id);
-  });
 }

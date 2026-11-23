@@ -298,7 +298,9 @@ export function killReceiptOf(v: unknown, run = ""): KillReceipt {
     state: str(o.state),
     kill: killInfoOf(o.kill),
     delivery: pick(o.delivery, KILL_DELIVERIES, "in-process"),
-    reached: reachedList(o.reached),
+    // The platform writes the kill request on every row it lists; on a row this kill reached, that request is this kill, so
+    // it is dropped there: only an `already` row stands on an earlier kill, and only it reads "still stopping".
+    reached: reachedList(o.reached).map((r) => ({ ...r, kill: null })),
     already: reachedList(o.already),
   };
 }

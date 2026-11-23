@@ -178,10 +178,16 @@ export function peerRegistryOf(v: unknown): PeerRegistry {
 
 /* ═══════════════════ the estate's breakers ═══════════════════ */
 
-/** calls: the estate's rate past `calls` in `window_s`; failures: that many failed in a row; probe: failed again once the cooldown let one through. */
+/** calls: more than `calls` calls of the tool across the estate within `window_s`; failures: that many failed in a row; probe: the first call after a cooldown that ran out on its own failed. */
 export type BreakerWhy = "calls" | "failures" | "probe";
 
-/** The thresholds every breaker is judged by (`AF_BREAKER_*`, or the `breakers` settings row over them); 0 turns `calls` or `failures` off. */
+/**
+ * The thresholds every breaker is judged by, from the deployment's settings
+ * `BREAKER_CALLS`, `BREAKER_WINDOW_SECONDS`, `BREAKER_FAILURES` and
+ * `BREAKER_COOLDOWN_SECONDS`: 0 turns `calls` or `failures` off, a window of
+ * 0 turns the calls rule off, and a cooldown of 0 turns breakers off.
+ * Changing them by policy is not built (a later phase).
+ */
 export interface BreakerThresholds {
   calls: number;
   window_s: number;
@@ -191,14 +197,14 @@ export interface BreakerThresholds {
 
 /** One time an estate breaker opened. */
 export interface BreakerOpening {
-  /** The sink tool, or `peer:<name>` for a peer. */
+  /** The tool that acts outside it opened on, by its name. */
   name: string;
   /** One of BreakerWhy, or whatever a newer backend names. */
   why: string;
   /** The calls in the window, or the failures in a row, that opened it. */
   count: number;
   opened_at: string;
-  /** When it closes on its own (half-open: the next failure opens it again at once). */
+  /** When it closes on its own; the first call after that is a probe, and a failure opens it again at once. */
   until: string;
   /** Open now: `until` has not passed and nobody closed it. */
   open: boolean;
@@ -217,11 +223,26 @@ export interface BreakerOpening {
 
 /** `GET /api/breakers` */
 export interface BreakersView {
-  /** What every worker is served on its claim and heartbeat: `{name: until}`. */
+  /** What is open now: `{name: until}`, the time each closes on its own. */
   open: Record<string, string>;
   thresholds: BreakerThresholds;
-  /** The last openings, newest first, each once. */
+  /** The newest openings (at most 100), newest first, each once. */
   openings: BreakerOpening[];
+}
+
+/** What this platform's answer adds to an opening beyond the generated `BreakerOpening` schema (lib/api/backend.d.ts). */
+export interface BreakerOpeningMore {
+  /** Who closed it by hand; "" otherwise. */
+  closed_by: string;
+  /** Why it opened, in the platform's own sentence (`why_words`); "" when the answer has none. */
+  why_words: string;
+}
+
+/** `GET /api/breakers` as this platform answers it: the view, each opening with what it adds, and whether older openings were left out. */
+export interface BreakersRead extends BreakersView {
+  openings: (BreakerOpening & BreakerOpeningMore)[];
+  /** There are older openings than the list holds. */
+  truncated: boolean;
 }
 
 export function thresholdsOf(v: unknown): BreakerThresholds {
@@ -229,7 +250,7 @@ export function thresholdsOf(v: unknown): BreakerThresholds {
   return { calls: num(t.calls), window_s: num(t.window_s), failures: num(t.failures), cooldown_s: num(t.cooldown_s) };
 }
 
-export function openingOf(v: unknown): BreakerOpening {
+export function openingOf(v: unknown): BreakerOpening & BreakerOpeningMore {
   const o = obj(v);
   return {
     name: str(o.name),
@@ -239,6 +260,8 @@ export function openingOf(v: unknown): BreakerOpening {
     until: str(o.until),
     open: o.open === true,
     closed_at: str(o.closed_at),
+    closed_by: str(o.closed_by),
+    why_words: str(o.why_words),
     run: str(o.run),
     agent: str(o.agent),
     source: str(o.source),
@@ -256,12 +279,12 @@ export function openingOf(v: unknown): BreakerOpening {
  * list is read by name and the second it opened, newest first, the first
  * copy kept.
  */
-export function breakersOf(v: unknown): BreakersView {
+export function breakersOf(v: unknown): BreakersRead {
   const o = obj(v);
   const open: Record<string, string> = {};
   for (const [k, x] of Object.entries(obj(o.open))) if (typeof x === "string" && k) open[k] = x;
   const seen = new Set<string>();
-  const openings: BreakerOpening[] = [];
+  const openings: (BreakerOpening & BreakerOpeningMore)[] = [];
   for (const raw of Array.isArray(o.openings) ? o.openings : []) {
     const x = openingOf(raw);
     if (!x.name) continue;
@@ -271,7 +294,7 @@ export function breakersOf(v: unknown): BreakersView {
     seen.add(key);
     openings.push(x);
   }
-  return { open, thresholds: thresholdsOf(o.thresholds), openings };
+  return { open, thresholds: thresholdsOf(o.thresholds), openings, truncated: o.truncated === true };
 }
 
 /* ═══════════════════ calls ═══════════════════ */
@@ -373,12 +396,12 @@ export function peerOfRefusal(e: unknown): Peer | null {
   return p.id ? p : null;
 }
 
-/** `GET /api/breakers` (view): what is open now, the thresholds, the last openings. */
-export async function getBreakers(): Promise<BreakersView> {
+/** `GET /api/breakers` (view): what is open now, the thresholds, the newest openings. */
+export async function getBreakers(): Promise<BreakersRead> {
   return call(BREAKERS.view(), breakersOf);
 }
 
-/** `DELETE /api/breakers/{name}` (configure): 204; every worker and every run here may call it again. 404 when none is open by that name. */
+/** `DELETE /api/breakers/{name}` (configure): the opening it closed, with its audit event; every run may call the tool again at once. 404 when none is open by that name (it may have closed on its own). */
 export async function closeBreaker(name: string): Promise<void> {
   await call(BREAKERS.close(name), () => undefined);
 }

@@ -10,12 +10,8 @@ import { AgentLink, Card, Facts, Note, TextLink } from "./workload-parts";
 import { InputFields, InputValueText } from "./workload-inputs";
 import { FirstRun } from "./workload-first-run";
 import { count } from "./finding-marks";
-import { api, errorText, type Schemas } from "@/lib/api/client";
-import { lockdownRefusalOf, lockdownRefusalText } from "@/lib/api/l5";
-import { rateLimitOf } from "@/lib/api/l7";
-import { retiredOf } from "@/lib/api/l8";
-import { pausedRefusalOf } from "@/lib/api/l8b";
-import { pausedLine, retiredLine } from "@/lib/lifecycle";
+import { api, type Schemas } from "@/lib/api/client";
+import { startRefusalOf } from "@/lib/start-refusal";
 import type { Dataset, DatasetList } from "@/lib/api/pending";
 import {
   SETUP_STEPS,
@@ -142,17 +138,10 @@ function inputFacts(inputs: WorkloadInput[], values: InputValues, datasets: Data
   return inputs.map((i) => ({ k: i.label, v: <InputValueText input={i} value={valueOf(i, values)} datasets={datasets} /> }));
 }
 
-/** What a refused start said, in the words the Runs page uses for the same refusals. */
+/** What a refused start said, in the platform's words, as the Runs page shows the same refusals (lib/start-refusal.ts). */
 function startRefusal(agent: string, status: number, error: unknown, retryAfter: string | null, response: Response): string {
-  const limited = rateLimitOf(status, error, retryAfter);
-  if (limited) return `${limited.error}. It can be tried again in ${count(limited.retry_after_s)} seconds.`;
-  const locked = lockdownRefusalOf(status, error);
-  if (locked) return lockdownRefusalText(locked);
-  const retired = status === 409 ? retiredOf((error as { retired?: unknown } | undefined)?.retired) : null;
-  if (retired) return `${agent} is retired. ${retiredLine(retired)}`;
-  const paused = pausedRefusalOf(status, error);
-  if (paused) return pausedLine(agent, paused);
-  return errorText(error, response);
+  const refusal = startRefusalOf(agent, status, error, retryAfter, response);
+  return refusal.kind === "rate_limit" ? `${refusal.text} It can be tried again in ${count(refusal.limit.retry_after_s)} seconds.` : refusal.text;
 }
 
 export function WorkloadSetup({

@@ -27,22 +27,23 @@ import { ControlMark, ControlRef, KILL_CONTROL } from "./control-ref";
 import { callOfEntry, callOutcomes, callStateLabel, type CallOutcome } from "@/lib/tool-calls";
 import { RunBoard, ViewSwitch, useRunView, type BoardEdge } from "./run-board";
 import { api, errorText, subscribeRunEvents, type RunEnd, type Schemas } from "@/lib/api/client";
-import { DoorError, artefactsZipUrl, gateFromSuspension, listGates, lockdownRefusalOf, lockdownRefusalText, operatorOf, type Gate } from "@/lib/api/l5";
+import { DoorError, artefactsZipUrl, gateFromSuspension, listGates, operatorOf, type Gate } from "@/lib/api/l5";
+import { startRefusalOf, type StartRefusal } from "@/lib/start-refusal";
 import { runSourceOf, type RunRowL6 } from "@/lib/api/l6";
 import { exitText, sandboxLine, sandboxOfEntry, sandboxRunOf, SANDBOX_TOOL } from "@/lib/sandbox";
 import { RunSourceTag } from "./run-source";
 import { SandboxOutput, SandboxSummary } from "./sandbox-result";
 import { KillDialog } from "./kill-dialog";
 import { RunFlagsBanner, RunMarkers } from "./run-flags";
-import { pausedLine, retiredLine, runFlagsOf, type RunFlags } from "@/lib/lifecycle";
+import { retiredLine, runFlagsOf, type RunFlags } from "@/lib/lifecycle";
 import { retiredOf, type Retired } from "@/lib/api/l8";
-import { deliverableFileUrl, downloadDeliverable, pausedRefusalOf } from "@/lib/api/l8b";
+import { deliverableFileUrl, downloadDeliverable } from "@/lib/api/l8b";
 import { fileRefusalText, sizeText } from "@/lib/deliverables";
 import { useDoorOff } from "@/lib/use-doors";
 import { wouldCallOf, wouldCallLine } from "@/lib/canary";
 import { KillAlreadyView, KillReceiptView, RunTreePanel } from "./run-tree";
 import { RateLimitNote, useRetryReady } from "./rate-limit";
-import { killRefusalOf, killRun, rateLimitOf, type KillReceipt, type KillRefusal, type RateLimit } from "@/lib/api/l7";
+import { killRefusalOf, killRun, type KillReceipt, type KillRefusal, type RateLimit } from "@/lib/api/l7";
 import { LineageDrawer } from "./lineage";
 import { ProvenanceDrawer, RunAssurance } from "./provenance";
 import { decisionsOf, type SignedDecision } from "@/lib/api/l9";
@@ -676,8 +677,10 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
   const [receipt, setReceipt] = useState<KillReceipt | null>(null);
   const [already, setAlready] = useState<KillRefusal | null>(null);
   /** A start refused for a rate limit (429): nothing started; the form stays, with the limit and a countdown. */
-  const [limited, setLimited] = useState<{ limit: RateLimit; at: number } | null>(null);
+  const [limited, setLimited] = useState<{ limit: RateLimit; at: number; said: string } | null>(null);
   const retry = useRetryReady(limited?.limit ?? null, limited?.at ?? 0);
+  /** A start refused for the lockdown (423), a held agent (409) or another reason: the form stays, with the platform's sentence. */
+  const [refused, setRefused] = useState<StartRefusal | null>(null);
   // Wall clock: the journal ticks only when entries land; a 40-second tool
   // call must not look like a hang.
   const startedAt = useRef(0);
@@ -812,33 +815,14 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
         signal: ctrl.signal,
       });
       if (!data) {
-        // A rate limit (429) started nothing: back to the form, saying whose
-        // limit, which, the figures and when to retry.
-        const rl = rateLimitOf(response.status, error, response.headers.get("retry-after"));
-        if (rl) {
-          setLimited({ limit: rl, at: Date.now() });
-          setPhase("setup");
-          return;
-        }
-        // A lockdown refuses every start (423): say why, who set it and how it ends, not the door's instructions.
-        const locked = lockdownRefusalOf(response.status, error);
-        // A retired agent takes no new runs (409 retired, L8): who retired it, why, and what replaces it.
-        const retired = response.status === 409 ? retiredOf((error as { retired?: unknown } | undefined)?.retired) : null;
-        // A paused (or draining) agent takes none either (409 `control: "paused"`, L8 second round): who paused it, why, and where it is resumed.
-        const paused = pausedRefusalOf(response.status, error);
         // A definition with parts the platform does not carry out is refused (409 `unsupported`): the parts are listed beside the form.
         if (response.status === 409 && unsupportedOf(error).length) setUnsupported(unsupportedOf(error));
-        setError(
-          locked
-            ? lockdownRefusalText(locked)
-            : retired
-              ? `${agentId || "This agent"} is retired. ${retiredLine(retired)}`
-              : paused
-                ? pausedLine(agentId || system?.id || "", paused)
-                : errorText(error, response),
-        );
-        setPhase("done");
-        setFinalState("failed");
+        // Nothing started. The lockdown (423), a held agent (409 `control: "paused"`) and a rate limit (429) are said in the
+        // platform's words, back at the form; a rate limit also holds Run until its wait is over.
+        const refusal = startRefusalOf(agentId || system?.id || "", response.status, error, response.headers.get("retry-after"), response);
+        setPhase("setup");
+        if (refusal.kind === "rate_limit") setLimited({ limit: refusal.limit, at: Date.now(), said: refusal.text });
+        else setRefused(refusal);
         return;
       }
       runId.current = data.run;
@@ -894,6 +878,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
     setKilling(false);
     setReceipt(null);
     setLimited(null);
+    setRefused(null);
     runId.current = "";
     setLiveRunId("");
     setShadowRun("");
@@ -941,7 +926,16 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
             setKilling(true);
             setAlready(null);
             killRun(id, reason)
-              .then((r) => setReceipt(r))
+              .then((r) => {
+                setReceipt(r);
+                // A run nobody was carrying (waiting at a gate) is stopped here and now: it has ended, and no stream frame will say so.
+                if (r.state === "killed") {
+                  setKilling(false);
+                  setSuspension(null);
+                  setFinalState("killed");
+                  setPhase("done");
+                }
+              })
               .catch((e: Error) => {
                 setKilling(false);
                 // Everything in flight is already stopping on an earlier kill: that, not an error.
@@ -984,7 +978,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
           </Banner>
         ) : null
       }
-      steer={liveRunId && phase === "live" && !suspension ? <SteerPanel runId={liveRunId} /> : null}
+      steer={liveRunId && phase === "live" ? <SteerPanel runId={liveRunId} atGate={Boolean(suspension)} /> : null}
       setup={
         phase === "setup" ? (
           <div className="flex flex-col gap-3 border-b border-line bg-raise/40 px-4 py-4">
@@ -1072,7 +1066,14 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
                 )}
                 {limited && (
                   <div className="pt-2">
-                    <RateLimitNote limit={limited.limit} readAt={limited.at} />
+                    <RateLimitNote limit={limited.limit} readAt={limited.at} said={limited.said} />
+                  </div>
+                )}
+                {refused && (
+                  <div className="pt-2">
+                    <Banner tone="err" title={refused.kind === "other" ? "The start failed" : "Nothing started: the platform refused the start"}>
+                      {refused.text}
+                    </Banner>
                   </div>
                 )}
               </div>
@@ -1131,6 +1132,12 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
             <span className="grow" />
 
             <Mono className="tnum text-[11px] text-faint">{clock(journalMs)}</Mono>
+            {suspension && liveRunId && (
+              // A run waiting at a gate is still in flight: the platform stops it at once.
+              <Button tone="err" variant="solid" size="sm" permission="run" loading={killing} onClick={() => runId.current && setKillAsk(runId.current)}>
+                {killing ? "Killing…" : "Kill run"}
+              </Button>
+            )}
             <Button
               tone="ink"
               variant="solid"
@@ -1516,9 +1523,8 @@ function FollowTheater({
   }, [entries, specNodes]);
   const journalMs = entries.length ? entries[entries.length - 1].t : 0;
   const running = state === "running" && !suspension;
-  const sdk = source === "sdk";
-  // An SDK run waiting at a gate still takes guidance and a model on its control poll; the hold is not offered there.
-  const offer = steerOffer({ state, atGate: Boolean(suspension), source });
+  // A run waiting at a gate is steered too: each lever waits for its next step after the gate.
+  const offer = steerOffer({ state, atGate: Boolean(suspension) });
 
   // Wall clock: the journal ticks only when entries land; a 40-second tool
   // call must not look like a hang.
@@ -1605,6 +1611,12 @@ function FollowTheater({
               .then((r) => {
                 setKilled(r.kill);
                 setReceipt(r);
+                // A run nobody was carrying (waiting at a gate) is stopped here and now: it has ended, and no stream frame will say so.
+                if (r.state === "killed") {
+                  setKilling(false);
+                  setSuspension(null);
+                  setState("killed");
+                }
               })
               .catch((e: Error) => {
                 setKilling(false);
@@ -1636,7 +1648,7 @@ function FollowTheater({
         limits={facts ? { facts, system, error } : undefined}
         locate={locate}
         notice={receipt ? <KillReceiptView receipt={receipt} onDismiss={() => setReceipt(null)} /> : already ? <KillAlreadyView refusal={already} onDismiss={() => setAlready(null)} /> : null}
-        steer={offer.show ? <SteerPanel runId={id} holdBlocked={offer.hold.allowed ? undefined : offer.hold.reason} /> : null}
+        steer={offer.show ? <SteerPanel runId={id} atGate={offer.atGate} /> : null}
         setup={
           <>
             {flags ? <RunFlagsBanner flags={flags} agent={system} /> : null}
@@ -1673,6 +1685,12 @@ function FollowTheater({
               {error && <span className="min-w-0 truncate text-[11.5px] text-err">{error}</span>}
               <span className="grow" />
               <Mono className="tnum text-[11px] text-faint">{clock(journalMs)}</Mono>
+              {suspension && (
+                // A run waiting at a gate is still in flight: the platform stops it at once.
+                <Button tone="err" variant="solid" size="sm" permission="run" loading={killing} onClick={() => setKillAsk(true)}>
+                  {killing ? "Killing…" : "Kill run"}
+                </Button>
+              )}
               {!suspension && (
                 <Button tone="ink" variant="solid" size="sm" onClick={onReplay}>
                   Replay the record

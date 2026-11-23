@@ -4,15 +4,17 @@ import { useEffect, useState } from "react";
 import { Tag } from "./ui";
 import { useNow } from "./gate-form";
 import type { RateLimit } from "@/lib/api/l7";
-import { rateLimitText, retryAt, secondsLeft } from "@/lib/rate-limit";
+import { rateLimitText, retryAt, secondsLeft, waitText } from "@/lib/rate-limit";
 
 /**
- * A start the backend refused for a rate limit (429, phase L7): whose limit
- * ruled (the agent's own, or the tree's: everything one trace set off in the
+ * A start the platform refused for a rate limit (429): whose limit ruled
+ * (the agent's own, or the tree's: everything one trace set off in the
  * minute), which limit, the figures, and a countdown to when the work may
- * be started again. Shown where the work was started.
+ * be started again. Shown where the work was started. `said` is the
+ * platform's own sentence, shown in place of the one built from the
+ * figures, with the countdown after it.
  */
-export function RateLimitNote({ limit, readAt }: { limit: RateLimit; readAt: number }) {
+export function RateLimitNote({ limit, readAt, said = "" }: { limit: RateLimit; readAt: number; said?: string }) {
   const now = useNow();
   const left = secondsLeft(retryAt(limit, readAt), now);
   return (
@@ -21,7 +23,7 @@ export function RateLimitNote({ limit, readAt }: { limit: RateLimit; readAt: num
       <Tag tone="warn" solid>
         {limit.scope === "tree" ? "tree limit" : "agent limit"}
       </Tag>
-      <span className="min-w-0 grow text-[12px] leading-[1.5] text-fg">{rateLimitText(limit, readAt, now)}</span>
+      <span className="min-w-0 grow text-[12px] leading-[1.5] text-fg">{said ? `${said} ${left > 0 ? `${waitText(left)} left.` : "It can be started again now."}` : rateLimitText(limit, readAt, now)}</span>
       {left === 0 && <span className="text-[11px] font-medium text-ok">ready</span>}
     </div>
   );

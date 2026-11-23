@@ -87,7 +87,7 @@ export interface SpineStage {
   stage: string;
   label: string;
   lit: boolean;
-  /** `by Ada <ada@ey.com> · 2026-10-21 13:50:29 UTC`, or "" for a dark stage. */
+  /** `by Ada <ada@example.com> · 2026-10-21 13:50:29 UTC`, or "" for a dark stage. */
   who: string;
   /** What the record says beyond who and when: the review's note, an override's reason, a rollback, that it no longer runs. */
   note: string;
@@ -445,14 +445,21 @@ export function runFlagLine(f: RunFlag): string {
 
 /** A retirement in one line, wherever the agent appears. */
 export function retiredLine(r: Pick<Retired, "reason" | "replacement" | "by" | "at">): string {
-  return `Retired${r.by ? ` by ${r.by}` : ""}${r.at ? ` ${whenText(r.at)}` : ""}: ${r.reason}.${r.replacement ? ` Replaced by ${r.replacement}.` : ""} It takes no new runs or triggers; its runs and versions stay readable.`;
+  return `Retired${r.by ? ` by ${r.by}` : ""}${r.at ? ` ${whenText(r.at)}` : ""}: ${r.reason}.${r.replacement ? ` Replaced by ${r.replacement}.` : ""} It takes no new runs; its runs and versions stay readable.`;
 }
 
-/** A paused agent's refusal (409 `control: "paused"`) where the run was started: why, who, when, and how it ends. */
+/**
+ * A paused or draining agent in one line (the agents list, and a start
+ * refused with 409 `control: "paused"` whose answer carries no sentence of
+ * its own): why, who, when, and what the hold does, as the platform holds it.
+ */
 export function pausedLine(agent: string, p: { mode: string; reason: string; by: string; at: string }): string {
-  const what = p.mode === "drain" ? "draining" : "paused";
+  const drain = p.mode === "drain";
   const who = [p.by ? `by ${p.by}` : "", whenText(p.at)].filter(Boolean).join(", ");
-  return `${agent || "This agent"} is ${what}${p.reason ? `: ${p.reason}` : ""}${who ? ` (${who})` : ""}. It takes no new runs or triggers until it is resumed on the Control page.`;
+  const does = drain
+    ? "Its runs in flight finish, with the sub-runs they start; it takes no new run, and no worker takes up one that has not started, until it is resumed on the Control page."
+    : "It takes no new run, and no worker takes up one that has not started, until it is resumed on the Control page; its runs in flight were stopped when it was paused.";
+  return `${agent || "This agent"} is ${drain ? "draining" : "paused"}${p.reason ? `: ${p.reason}` : ""}${who ? ` (${who})` : ""}. ${does}`;
 }
 
 /** What the backend would refuse before anything is sent: a reason (400), and a replacement that is another saved agent (400/404 `field: replacement`). */

@@ -497,6 +497,9 @@ export interface Need {
 
 const NEED_TONE: Record<AttentionItem["kind"], Tone> = {
   gate: "warn",
+  run: "err",
+  fleet: "warn",
+  lockdown: "err",
   refusal: "err",
   budget: "err",
   dead_letter: "queue",

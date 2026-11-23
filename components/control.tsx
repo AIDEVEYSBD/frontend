@@ -41,7 +41,7 @@ import { RunSourceTag } from "./run-source";
 import { JobsList } from "./jobs";
 import { runSourceOf } from "@/lib/api/l6";
 import { AttentionPanel } from "./attention";
-import { FleetBar, LockdownBanner, LockdownSwitch, useFleet, useLockdown } from "./operate";
+import { FleetBar, FleetPanel, LockdownBanner, LockdownSwitch, liveTotal, useAgentList, useFleet, useLockdown } from "./operate";
 import { VersionHistory } from "./versions";
 import { Deadline, ShapeTag, useNow } from "./gate-form";
 import { batchable, escalationPath, historyOf, lastMoved, stepLine } from "@/lib/gates";
@@ -399,9 +399,9 @@ export function Control() {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   /* Estate rows ticked for a fleet action, by agent id. */
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const { lockdown, setState: setLockdownState } = useLockdown();
-  /* Which agents stand paused or draining: the backend's flag, read back after every fleet action. */
-  const { fleet: fleetState, reload: reloadFleet } = useFleet();
+  const { lockdown, error: lockdownError, setState: setLockdownState, reload: reloadLockdown } = useLockdown();
+  /* Which agents stand paused or draining, and the runs in flight per agent: the platform's, read back after every fleet action. */
+  const { fleet: fleetState, error: fleetError, reload: reloadFleet } = useFleet();
   const { session } = useSession();
   // The inbox's deadlines tick on a slow clock: the page is large, and a second is finer than a countdown in hours needs.
   const clock = useNow(15_000);
@@ -479,6 +479,10 @@ export function Control() {
 
   const estate = useMemo(() => (raw ? withLive(raw, liveRows) : null), [raw, liveRows]);
   const data = useMemo(() => (estate ? rewindow(estate, now, win) : null), [estate, now, win]);
+  /* While the estate read is not drawn (GET /api/control is a later phase), the agents for the fleet controls come from GET /api/agents. */
+  const { agents: fleetAgents, error: fleetAgentsError, reload: reloadFleetAgents } = useAgentList(!data);
+  /* Runs in flight, running or waiting at a gate, from GET /api/fleet: what "Kill all runs" would reach. */
+  const inFlightCount = liveTotal(fleetState);
   // A card on its own window gets its own cut of the same ledger.
   const cut = useCallback((card: string): ControlData | null => (estate && cardWin[card] ? rewindow(estate, now, cardWin[card]!) : data), [estate, now, cardWin, data]);
   const wf = (card: string): Win => cardWin[card] ?? win;
@@ -641,7 +645,7 @@ export function Control() {
         </span>
         <LogExport />
         <LockdownSwitch state={lockdown} onChanged={(s) => { setLockdownState(s); load(); }} onNotice={notice} onLockDown={() => setStopAsk("lockdown")} />
-        {t && t.active > 0 && (
+        {((inFlightCount ?? 0) > 0 || (t && t.active > 0)) && (
           <Button tone="err" variant="solid" size="sm" permission="run" onClick={() => setStopAsk("all")}>
             <span className="size-1.5 rounded-[2px] bg-on-solid" />
             Kill all runs
@@ -656,6 +660,9 @@ export function Control() {
       )}
       {error && <Failure className="mt-4" what={raw ? "The estate stopped answering; the figures below are as it last answered" : "The estate could not be read"} message={error} />}
 
+      {lockdownError && <Failure className="mt-4" what={lockdown ? "The lockdown stopped answering; the switch shows it as it last answered" : "The lockdown could not be read; the switch cannot be used until it is"} message={lockdownError} />}
+      {data && fleetError && <Failure className="mt-4" what={fleetState ? "Which agents are held stopped answering; the marks below are as it last answered" : "Which agents are paused or draining could not be read; no mark is shown"} message={fleetError} />}
+
       {/* ── Lockdown: the banner stays while it is on ── */}
       {locked && (
         <div className="mt-4">
@@ -665,7 +672,15 @@ export function Control() {
 
       {/* ── What needs a person, ranked; each row with the one action that clears it ── */}
       <div className="mt-4">
-        <AttentionPanel onAnswer={answerRun} onOpenRun={(id) => open({ kind: "run", id })} onNotice={notice} />
+        <AttentionPanel
+          onAnswer={answerRun}
+          onOpenRun={(id) => open({ kind: "run", id })}
+          onNotice={notice}
+          onLockdown={() => {
+            reloadLockdown();
+            reloadFleet();
+          }}
+        />
       </div>
 
       {/* Every panel from here to the inbox is cut from the estate read: none is drawn until it has answered. */}
@@ -785,6 +800,25 @@ export function Control() {
       </>)}
 
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
+        {/* ── The fleet controls without the estate read: every agent, its hold, its runs in flight ── */}
+        {!data && (
+          <FleetPanel
+            agents={fleetAgents}
+            agentsError={fleetAgentsError}
+            fleet={fleetState}
+            fleetError={fleetError}
+            selected={selected}
+            onSelect={setSelected}
+            onStop={() => setStopAsk("agents")}
+            onDone={(r) => {
+              const verb = { pause: "Paused", resume: "Resumed", drain: "Draining", kill: "Stopped the runs of" }[r.action];
+              notice(`${verb} ${r.agents.length} agent${r.agents.length === 1 ? "" : "s"}${r.killed.length ? ` · ${r.killed.length} run${r.killed.length === 1 ? "" : "s"} stopped` : ""}${auditLine(r.audit_id)}`);
+              setSelected(new Set());
+              reloadFleet();
+              reloadFleetAgents();
+            }}
+          />
+        )}
         {data && (<>
         {/* ── The estate ── */}
         <section className="flex h-fit flex-col overflow-hidden rounded-md border border-line bg-surface">
@@ -799,8 +833,8 @@ export function Control() {
                   onClear={() => setSelected(new Set())}
                   onStop={() => setStopAsk("agents")}
                   onDone={(r) => {
-                    const verb = { pause: "Paused", resume: "Resumed", drain: "Draining", kill: "Killed runs on" }[r.action];
-                    notice(`${verb} ${r.agents.length} agent${r.agents.length === 1 ? "" : "s"}${r.killed.length ? ` · ${r.killed.length} run${r.killed.length === 1 ? "" : "s"} killed` : ""}${auditLine(r.audit_id)}`);
+                    const verb = { pause: "Paused", resume: "Resumed", drain: "Draining", kill: "Stopped the runs of" }[r.action];
+                    notice(`${verb} ${r.agents.length} agent${r.agents.length === 1 ? "" : "s"}${r.killed.length ? ` · ${r.killed.length} run${r.killed.length === 1 ? "" : "s"} stopped` : ""}${auditLine(r.audit_id)}`);
                     setSelected(new Set());
                     load();
                     reloadFleet();
@@ -1413,15 +1447,13 @@ export function Control() {
         <StopForm
           initial={stopAsk}
           agents={[...selected]}
-          names={(id) => data?.agents.find((a) => a.id === id)?.name ?? id}
+          names={(id) => data?.agents.find((a) => a.id === id)?.name ?? fleetAgents?.find((a) => a.id === id)?.name ?? id}
           lockdown={lockdown}
           onClose={() => setStopAsk(null)}
           onDone={(o) => {
             if (o.scope === "lockdown") setLockdownState(o.state);
-            if (o.scope === "agents") {
-              setSelected(new Set());
-              reloadFleet();
-            }
+            if (o.scope === "agents") setSelected(new Set());
+            reloadFleet();
             notice(stopNotice(o));
             load();
           }}
