@@ -63,6 +63,58 @@ export interface IamActions {
 
 const list = (v: unknown): string[] => (Array.isArray(v) ? (v as unknown[]).map(String) : []);
 
+/**
+ * A person's team: the one an administrator set here, else the one the
+ * deployment names for their address's domain (TEAM_DOMAINS), else none.
+ * Records they create carry it, and the Costs page groups spend by it.
+ * Setting it needs the iam permission (`PATCH /api/iam/users {sub, team}`).
+ */
+function TeamLine({ sub, team, from }: { sub: string; team: string | null; from: string | null }) {
+  const [shown, setShown] = useState<{ team: string | null; from: string | null }>({ team, from });
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(team && from === "set" ? team : "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const save = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const r = await fetch("/api/iam/users", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ sub, team: draft.trim() }) });
+      const d = (await r.json().catch(() => ({}))) as { user?: { team?: string | null; team_from?: string | null }; error?: string };
+      if (!r.ok || !d.user) throw new Error(d.error || `the platform answered ${r.status}`);
+      setShown({ team: d.user.team ?? null, from: d.user.team_from ?? null });
+      setEditing(false);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (editing)
+    return (
+      <span className="flex flex-wrap items-center gap-1.5">
+        <Input value={draft} onChange={setDraft} placeholder="Team name, or empty to clear" aria-label="Team" />
+        <Button size="sm" variant="solid" tone="ink" permission="iam" loading={busy} onClick={save}>
+          Save team
+        </Button>
+        <Button size="sm" variant="solid" tone="err" disabled={busy} onClick={() => setEditing(false)}>
+          Cancel
+        </Button>
+        {error && <span className="text-[11px] text-err">Not saved: {error}</span>}
+      </span>
+    );
+  return (
+    <span className="flex items-center gap-1.5">
+      <span>
+        Team: {shown.team ? <>{shown.team}<span className="text-faint">{shown.from === "domain" ? " (from the address's domain)" : " (set by an administrator)"}</span></> : <span className="text-faint">none</span>}
+      </span>
+      <Button size="sm" variant="solid" tone="neutral" permission="iam" onClick={() => setEditing(true)}>
+        Set team
+      </Button>
+    </span>
+  );
+}
+
 function Fact({ k, children }: { k: string; children: React.ReactNode }) {
   return (
     <div className="flex items-baseline gap-3 border-b border-line py-2 text-[12px] last:border-0">
@@ -171,6 +223,7 @@ export function IdentityPage({
               <>
                 {p.email && <span>{p.email}</span>}
                 <Mono className="text-[11px]">{p.sub}</Mono>
+                <TeamLine sub={p.sub} team={(p as { team?: string | null }).team ?? null} from={(p as { team_from?: string | null }).team_from ?? null} />
               </>
             ) : (
               <>
