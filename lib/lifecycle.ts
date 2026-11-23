@@ -517,7 +517,7 @@ export function draftBanner(d: { version?: number | null; deployed_version?: num
 /** The benchmark in one line: the score against the threshold, the model, and what it measured against what runs. */
 export function benchmarkLine(b: Benchmark): string {
   const score = b.score !== null ? ` (${b.score.toFixed(3)})` : "";
-  const th = b.threshold === null ? "no threshold" : b.passed_threshold === true ? `at or above the threshold ${b.threshold}` : b.passed_threshold === false ? `under the threshold ${b.threshold}` : `threshold ${b.threshold}`;
+  const th = b.threshold === null ? "no threshold" : b.incomplete ? `incomplete: not every case could run or be graded, so it is not judged against the threshold ${b.threshold}` : b.passed_threshold === true ? `at or above the threshold ${b.threshold}` : b.passed_threshold === false ? `under the threshold ${b.threshold}` : `threshold ${b.threshold}`;
   const what = b.version !== null ? `version ${b.version} (${shortDigest(b.digest)})` : shortDigest(b.digest);
   const vs = b.matches_deployed
     ? "what production runs"

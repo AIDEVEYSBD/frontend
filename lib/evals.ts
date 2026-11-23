@@ -70,16 +70,31 @@ export function settleOf(views: readonly EvalRunView[]): { comparison: CompareRe
   return { comparison: withCmp ? compareFromView(withCmp) : null, failed };
 }
 
-/** The threshold against the score, in words: met, not met, still measuring, or none applies (not the spec's own suite, or a forced model). */
-export function thresholdText(v: { threshold: number | null; passed_threshold: boolean | null; state?: string; forced?: boolean }): string {
+/**
+ * A finished evaluation's verdict against its threshold in a word: met, under, or incomplete (a case could not run or was not graded, so
+ * the backend does not judge its score against the threshold and answers `passed_threshold` null with `threshold_why`); null when there is
+ * none yet. Incomplete is read first: it is never shown as met or under.
+ */
+export function thresholdWord(v: { passed_threshold?: boolean | null; incomplete?: boolean | null; state?: string }): "met" | "under" | "incomplete" | null {
+  if (v.incomplete && (v.state === undefined || v.state === "done")) return "incomplete";
+  return v.passed_threshold === true ? "met" : v.passed_threshold === false ? "under" : null;
+}
+
+/** The threshold against the score, in words: met, not met, incomplete, still measuring, or none applies (not the spec's own suite, or a forced model). */
+export function thresholdText(v: { threshold: number | null; passed_threshold: boolean | null; incomplete?: boolean; state?: string; forced?: boolean }): string {
   if (v.threshold === null) return v.forced ? "no threshold: a forced model is a comparison, never the gate's eval" : "no threshold: not the spec's own suite";
-  if (v.passed_threshold === true) return `at or above the threshold ${v.threshold}`;
-  if (v.passed_threshold === false) return `under the threshold ${v.threshold}`;
+  const word = thresholdWord(v);
+  if (word === "incomplete") return `incomplete: not every case could run or be graded, so it is not judged against the threshold ${v.threshold}`;
+  if (word === "met") return `at or above the threshold ${v.threshold}`;
+  if (word === "under") return `under the threshold ${v.threshold}`;
   return v.state && v.state !== "done" ? `threshold ${v.threshold}, still measuring` : `threshold ${v.threshold}`;
 }
 
-export type ThresholdTone = "ok" | "err" | "neutral";
-export const thresholdTone = (v: { passed_threshold: boolean | null }): ThresholdTone => (v.passed_threshold === true ? "ok" : v.passed_threshold === false ? "err" : "neutral");
+export type ThresholdTone = "ok" | "err" | "warn" | "neutral";
+export const thresholdTone = (v: { passed_threshold?: boolean | null; incomplete?: boolean | null; state?: string }): ThresholdTone => {
+  const word = thresholdWord(v);
+  return word === "met" ? "ok" : word === "under" ? "err" : word === "incomplete" ? "warn" : "neutral";
+};
 
 /* ═══════════════════ the history, as the console's /api/evals reads it ═══════════════════ */
 
@@ -102,6 +117,10 @@ export interface HistorySummary {
   version_digest?: string;
   /** The backend's runner: the recommendation, on every candidate's row once all are done. */
   comparison?: unknown;
+  /** Cases whose start was refused, cases that ran but could not be graded, and whether either is above 0. */
+  refused?: number;
+  not_graded?: number;
+  incomplete?: boolean;
 }
 
 /** One row of `GET /api/evals?id=` history (the shared `eval_runs` table). */
@@ -118,7 +137,11 @@ export interface HistoryRow {
   /** queued, running, done or failed; `done` for a row the console's runner wrote before L8. */
   state: string;
   threshold: number | null;
+  /** null for an incomplete evaluation, with `threshold_why`: the backend does not judge such a score against the threshold. */
   passed_threshold: boolean | null;
+  /** A case could not run or was not graded. */
+  incomplete: boolean;
+  threshold_why: string | null;
   /** Who started it ("" for a row from before L8). */
   by: string;
   version: number | null;
@@ -163,6 +186,8 @@ export function historyRowOf(v: unknown): HistoryRow {
     state: s_(o.state) || "done",
     threshold: n_(o.threshold),
     passed_threshold: typeof o.passed_threshold === "boolean" ? o.passed_threshold : null,
+    incomplete: o.incomplete === true || o_(o.summary).incomplete === true,
+    threshold_why: s_(o.threshold_why) || null,
     by: s_(o.by),
     version: n_(o.version),
     finished_at: s_(o.finished_at) || null,
@@ -189,6 +214,8 @@ export function historyRowFromView(v: EvalRunView): HistoryRow {
     state: v.state,
     threshold: v.threshold,
     passed_threshold: v.passed_threshold,
+    incomplete: v.incomplete,
+    threshold_why: v.threshold_why,
     by: v.by,
     version: v.version,
     finished_at: v.finished_at,
@@ -284,7 +311,13 @@ export interface SetLatest {
   at: string;
   matrix?: Matrix | null;
   threshold?: number | null;
+  /** null for an incomplete evaluation, with `threshold_why`. */
   passed_threshold?: boolean | null;
+  threshold_why?: string | null;
+  /** Cases whose start was refused, cases not graded, and whether either is above 0. */
+  refused?: number;
+  not_graded?: number;
+  incomplete?: boolean;
   by?: string;
   version?: number | null;
 }

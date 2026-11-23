@@ -357,14 +357,16 @@ export function BlockView({ b, origin, onSend, onNavigate, busy }: { b: Block; o
 /* ═══════════════════ an answer ═══════════════════ */
 
 /**
- * The blocks of one answer, its refusals and its follow-up questions. The text
+ * The blocks of one answer, its refusals, what was withheld from the
+ * assistant's model for its clearance, and its follow-up questions. The text
  * is drawn by the chat itself, above this. `onSend` sends a choice or a
  * follow-up as the next message; `onNavigate` is called before a link opens a
  * page (the assistant steps its panel back to the small size).
  */
 export function AnswerBlocks({ answer, origin, onSend, onNavigate, busy = false, followups = true }: { answer: Answer; origin: Origin; onSend: (text: string) => void; onNavigate?: () => void; busy?: boolean; followups?: boolean }) {
   const fellBack = origin.kind === "chatbot" && answer.replyFormat && answer.replyFormat !== "json_schema";
-  if (!answer.blocks.length && !answer.refused.length && !(followups && answer.followups.length) && !fellBack) return null;
+  const withheld = answer.withheld ?? [];
+  if (!answer.blocks.length && !answer.refused.length && !withheld.length && !(followups && answer.followups.length) && !fellBack) return null;
   return (
     <div className="@container flex min-w-0 flex-col gap-2">
       {origin.kind === "chatbot" && answer.blocks.length > 0 && (
@@ -382,6 +384,18 @@ export function AnswerBlocks({ answer, origin, onSend, onNavigate, busy = false,
           <BlockView b={b} origin={origin} onSend={onSend} onNavigate={onNavigate} busy={busy} />
         </BlockBoundary>
       ))}
+      {withheld.length > 0 && (
+        <div data-withheld role="note" className="relative flex flex-col gap-1 overflow-hidden rounded-md border border-warn-line bg-surface py-1.5 pr-3 pl-4 text-[11.5px] leading-[1.5]">
+          <span className="absolute inset-y-0 left-0 w-[3px] bg-warn" aria-hidden />
+          <span className="font-semibold text-warn">Withheld from the assistant&rsquo;s model: it is not cleared for this class of data.</span>
+          {withheld.map((w, i) => (
+            <span key={i} className="text-dim">
+              <span className="font-mono text-[10.5px] text-faint">{w.read}</span> {w.note}
+            </span>
+          ))}
+          <span className="text-faint">The answer above does not draw on it; open the record&rsquo;s page to read it.</span>
+        </div>
+      )}
       {answer.refused.map((r, i) => (
         <div key={`refused-${i}`} role="alert" data-refused={r.block} className="relative overflow-hidden rounded-md border border-err-line bg-surface py-1.5 pr-3 pl-4 text-[11.5px] leading-[1.5]">
           <span className="absolute inset-y-0 left-0 w-[3px] bg-err" aria-hidden />

@@ -151,11 +151,14 @@ export function BenchmarkView({ benchmark, agent }: { benchmark: Benchmark | nul
         .
       </p>
     );
-  const tone = benchmark.passed_threshold === true ? "ok" : benchmark.passed_threshold === false ? "err" : "neutral";
+  // An incomplete evaluation (a case could not run or was not graded) is not judged against its threshold: never shown as met or under.
+  const tone = benchmark.incomplete ? "warn" : benchmark.passed_threshold === true ? "ok" : benchmark.passed_threshold === false ? "err" : "neutral";
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
       <span className="tnum text-[18px] font-semibold text-fg">{benchmark.score !== null ? benchmark.score.toFixed(3) : "—"}</span>
-      <Status tone={tone}>{benchmark.passed_threshold === true ? "at or above its threshold" : benchmark.passed_threshold === false ? "under its threshold" : "no threshold"}</Status>
+      <span title={benchmark.threshold_why ?? undefined}>
+        <Status tone={tone}>{benchmark.incomplete ? "incomplete: not judged against its threshold" : benchmark.passed_threshold === true ? "at or above its threshold" : benchmark.passed_threshold === false ? "under its threshold" : benchmark.threshold === null ? "no threshold" : "not judged"}</Status>
+      </span>
       {!benchmark.matches_deployed && <Tag tone="warn">not what production runs</Tag>}
       <span className="min-w-0 text-[11.5px] text-dim">{benchmarkLine(benchmark)}</span>
       <Mono className="text-[10px] text-faint">

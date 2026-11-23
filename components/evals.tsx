@@ -22,7 +22,7 @@ import { RateLimitNote } from "./rate-limit";
 import type { RateLimit } from "@/lib/api/l7";
 import { listAgents } from "@/lib/api/l2";
 import { editableDocument, evalRunViewOf, isEvalOver, retiredOf, retiredRefusalOf, saveAgent, startEval, type EvalCaseResult, type EvalRunView, type ModelSummary, type Retired } from "@/lib/api/l8";
-import { historyRowFromView, historyRowOf, lastComparison, liveOf, mergeHistory, mergeSetRows, rowStateText, settleOf, thresholdText, thresholdTone, throttleOf, unfinishedComparison, type CompareResult, type HistoryRow, type SetRow, type UnfinishedComparison } from "@/lib/evals";
+import { historyRowFromView, historyRowOf, lastComparison, liveOf, mergeHistory, mergeSetRows, rowStateText, settleOf, thresholdText, thresholdTone, thresholdWord, throttleOf, unfinishedComparison, type CompareResult, type HistoryRow, type SetRow, type UnfinishedComparison } from "@/lib/evals";
 import { getEvalSet, listEvalSets, type EvalSetDocument } from "@/lib/api/l8b";
 import { retiredLine, savedLine } from "@/lib/lifecycle";
 
@@ -65,6 +65,8 @@ interface Check {
 /** A graded case's verdict, as the backend writes it beside each case: passed, failed, refused (its start was), or not graded (a judge could not decide). */
 type Grade = "passed" | "failed" | "refused" | "not_graded";
 const GRADE_TEXT: Record<Grade, string> = { passed: "pass", failed: "fail", refused: "refused", not_graded: "not graded" };
+/** The colour of a threshold verdict's word (`thresholdWord`). */
+const WORD_TEXT: Record<string, string> = { met: "text-ok", under: "text-err", incomplete: "text-warn" };
 const gradeOf = (v: unknown): Grade | null => (v === "passed" || v === "failed" || v === "refused" || v === "not_graded" ? v : null);
 
 /** Each case's grade in an evaluation's raw answer (`results[].grade`), by case id: the typed view the lib reads leaves it out. */
@@ -1278,9 +1280,11 @@ function SetCard({
               {score.passed}/{score.total}
             </span>
             {score.threshold !== null && score.threshold !== undefined && (
-              <Tag tone={thresholdTone({ passed_threshold: score.passed_threshold ?? null })}>
-                {score.passed_threshold === true ? "met" : score.passed_threshold === false ? "under" : "threshold"} {score.threshold}
-              </Tag>
+              <span title={score.threshold_why ?? undefined}>
+                <Tag tone={thresholdTone(score)}>
+                  {thresholdWord(score) === "incomplete" ? `incomplete · threshold ${score.threshold}` : `${thresholdWord(score) ?? "threshold"} ${score.threshold}`}
+                </Tag>
+              </span>
             )}
             <span className="text-[10.5px] text-ghost">{ago(score.at)}</span>
           </span>
@@ -1450,8 +1454,8 @@ function SetCard({
                     </span>
                     {rowStateText(h) && <Tag tone={h.state === "failed" ? "err" : "run"}>{rowStateText(h)}</Tag>}
                     {h.threshold !== null && h.state === "done" && (
-                      <span className={`text-[10.5px] ${h.passed_threshold === true ? "text-ok" : h.passed_threshold === false ? "text-err" : "text-faint"}`}>
-                        {h.passed_threshold === true ? "met" : h.passed_threshold === false ? "under" : "threshold"} {h.threshold}
+                      <span title={h.threshold_why ?? undefined} className={`text-[10.5px] ${WORD_TEXT[thresholdWord(h) ?? ""] ?? "text-faint"}`}>
+                        {thresholdWord(h) === "incomplete" ? `incomplete: not judged against the threshold ${h.threshold}` : `${thresholdWord(h) ?? "threshold"} ${h.threshold}`}
                       </span>
                     )}
                     <Mono className="text-[10px] text-faint">{modelLabel(h.model === "default" ? "" : h.model)}</Mono>
@@ -1542,7 +1546,7 @@ function ScoreTrend({ runs, modelLabel }: { runs: HistoryRow[]; modelLabel: (id:
                   <span className="text-[10.5px] text-dim">
                     {new Date(r.at).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })} · {ago(r.at)}
                   </span>
-                  <span className="text-[10.5px] text-faint">{own === null ? "no threshold applied to this run" : `${r.passed_threshold === true ? "met" : r.passed_threshold === false ? "under" : "against"} its threshold of ${Math.round(own)}%`}</span>
+                  <span className="text-[10.5px] text-faint">{own === null ? "no threshold applied to this run" : thresholdWord(r) === "incomplete" ? `incomplete: not judged against its threshold of ${Math.round(own)}%` : `${thresholdWord(r) ?? "against"} its threshold of ${Math.round(own)}%`}</span>
                   <span className="font-mono text-[10px] text-faint">
                     {modelLabel(r.model)} · spec {r.digest.slice(0, 8)}
                   </span>
@@ -1827,6 +1831,7 @@ export function ComparePanel({
                 {m.state !== "done" && <Tag tone="warn">did not finish: {m.state}; left out of the recommendation</Tag>}
                 {(m.refused ?? 0) > 0 && <Tag tone="warn">{m.refused} refused</Tag>}
                 {(m.not_graded ?? 0) > 0 && <Tag tone="warn">{m.not_graded} not graded</Tag>}
+                {m.incomplete && m.state === "done" && <Tag tone="warn">incomplete: not judged against the threshold</Tag>}
                 <span className="grow" />
                 {!isInc && m.model !== currentModel && m.model !== "default" && (
                   <Button size="sm" variant="solid" onClick={() => onUse(m.model)}>

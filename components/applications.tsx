@@ -202,7 +202,7 @@ export function Applications() {
     <div className="min-h-full" data-hue="blue">
       <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7">
         <GroupHeader group="agents" tab="applications" actions={<Button size="sm" variant="solid" tone="ink" permission="configure" disabled={connectDoor.off} title={connectDoor.why} onClick={() => setConnecting(true)}>Register an application</Button>}>
-          The chatbots and RAG apps registered on this deployment, and the agents deployed on it. A registered application calls models through the gateway with the key minted here; the gateway holds every call to the application&rsquo;s policy (its models, data class, rate and budget), screens the prompt and the reply, and journals the call. Agents are listed here and governed on the Agents page.
+          The chatbots and RAG apps registered on this deployment, and the agents deployed on it. A registered application calls models through the gateway with the key minted here; the gateway holds every call to the application&rsquo;s policy (its models, data class, rate and budget) and to the deployment&rsquo;s period budget (applications serve no use case, so no use case&rsquo;s budget applies), screens the prompt and the reply, and journals the call. Agents are listed here and governed on the Agents page.
         </GroupHeader>
 
         {error && <Failure what="The applications register could not be read" message={error} />}

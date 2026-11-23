@@ -6,7 +6,9 @@
  * filled by the service from reads it made in the same turn and name them in
  * `source`; a registered chatbot's blocks hold the chatbot's own words and
  * carry no source. The service validates every block before it sends it; a
- * block it refused arrives in `refused` with the reason.
+ * block it refused arrives in `refused` with the reason. What the assistant's
+ * reads withheld from its model, because the model is not cleared for that
+ * class of data, arrives in `withheld`, each with the read and the reason.
  *
  * `answerOf` reads what arrived field by field. A block of a type this console
  * does not draw, or one whose shape is not the vocabulary's, is not dropped:
@@ -71,11 +73,19 @@ export interface RefusedBlock {
   reason: string;
 }
 
+/** What a read of the console assistant withheld from its model, or was refused, because the model is not cleared for that class of data. */
+export interface WithheldNote {
+  read: string;
+  note: string;
+}
+
 export interface Answer {
   text: string;
   blocks: Block[];
   followups: string[];
   refused: RefusedBlock[];
+  /** The console assistant only; empty for a chatbot's answer. Absent from a turn kept before this field existed. */
+  withheld?: WithheldNote[];
   /** A chatbot's answer: the reply format the model endpoint took ("json_schema"), or the form it was asked again in when it refused the schema. */
   replyFormat: string | null;
 }
@@ -180,7 +190,10 @@ export function answerOf(v: unknown): Answer | null {
       refused.push({ block: str(rec(raw).type) || `block ${i + 1}`, reason: `The console could not draw it: ${(e as Error).message}.` });
     }
   });
-  return { text: str(a.text), blocks, followups: arr(a.followups).map(str).filter(Boolean), refused, replyFormat: strOrNull(a.reply_format) };
+  const withheld: WithheldNote[] = arr(a.withheld)
+    .map((w) => ({ read: str(rec(w).read), note: str(rec(w).note) }))
+    .filter((w) => w.note);
+  return { text: str(a.text), blocks, followups: arr(a.followups).map(str).filter(Boolean), refused, withheld, replyFormat: strOrNull(a.reply_format) };
 }
 
 /** The read a source names, in words: its name and the arguments it was made with. */

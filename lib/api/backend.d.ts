@@ -3224,20 +3224,28 @@ export interface components {
             digest: string;
             /** Id */
             id: string;
+            /** Incomplete: a case could not run or was not graded */
+            incomplete?: boolean;
             /** Matches Deployed */
             matches_deployed: boolean;
             /** Model */
             model: string;
+            /** Not Graded */
+            not_graded?: number | null;
             /** Passed */
             passed: number;
             /** Passed Threshold */
             passed_threshold?: boolean | null;
+            /** Refused */
+            refused?: number | null;
             /** Score */
             score: number | null;
             /** Set */
             set: string;
             /** Threshold */
             threshold?: number | null;
+            /** Why passed_threshold is null for an incomplete evaluation */
+            threshold_why?: string | null;
             /** Total */
             total: number;
             /** Version */
@@ -5000,6 +5008,8 @@ export interface components {
             headline_f1?: number | null;
             /** Id */
             id: string;
+            /** Incomplete: a case could not run or was not graded */
+            incomplete?: boolean;
             /**
              * Invalid
              * @default 0
@@ -5048,6 +5058,8 @@ export interface components {
             };
             /** Threshold */
             threshold?: number | null;
+            /** Why passed_threshold is null for an incomplete evaluation */
+            threshold_why?: string | null;
             /** Total */
             total: number;
             /** Version */

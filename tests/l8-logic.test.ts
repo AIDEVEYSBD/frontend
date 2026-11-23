@@ -175,7 +175,7 @@ describe("drafts", () => {
   });
 
   it("the benchmark in a line: under its threshold, none, measured against another version", () => {
-    const b = { score: 0.5, passed: 1, total: 2, threshold: 0.6, passed_threshold: false, model: "gpt-4o", set: "s", digest: "abcdef0123", matches_deployed: false, at: "", id: "ev-1", version: 2, deployed: { version: 1, digest: "x" } };
+    const b = { score: 0.5, passed: 1, total: 2, threshold: 0.6, passed_threshold: false, incomplete: false, refused: 0, not_graded: 0, threshold_why: null, model: "gpt-4o", set: "s", digest: "abcdef0123", matches_deployed: false, at: "", id: "ev-1", version: 2, deployed: { version: 1, digest: "x" } };
     expect(benchmarkLine(b)).toBe("1/2 (0.500) on s, under the threshold 0.6 · model gpt-4o · measured version 2 (abcdef01), not what production runs (version 1)");
     expect(benchmarkLine({ ...b, threshold: null, passed_threshold: null, score: null })).toBe("1/2 on s, no threshold · model gpt-4o · measured version 2 (abcdef01), not what production runs (version 1)");
   });

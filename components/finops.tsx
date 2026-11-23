@@ -394,7 +394,7 @@ export function FinOps() {
             </Section>
 
             {/* ── budgets ── */}
-            <Section id="budgets" title="Budgets" caption="An amount in USD per rolling period (the last 24 hours, 7 days or 30 days). Once one is spent, a new run it applies to is refused, and a run already going pauses after the model call that reached it, until a person decides under Paused at budget on the Approvals page. Calls with no price set are not counted against it." folded={folds.budgets} onToggle={() => toggleFold("budgets")}>
+            <Section id="budgets" title="Budgets" caption="An amount in USD per rolling period (the last 24 hours, 7 days or 30 days). Once one is spent, a new run it applies to is refused (and, once the deployment's is spent, every application's gateway call), and a run already going pauses after the model call that reached it, until a person decides under Paused at budget on the Approvals page. Calls with no price set are not counted against it, so while one applies such a call is refused." folded={folds.budgets} onToggle={() => toggleFold("budgets")}>
               <Budgets state={d.budgetState} rows={d.budgets} onSaved={() => load(win)} />
             </Section>
 
@@ -694,10 +694,15 @@ function Budgets({ state, rows, onSaved }: { state: BudgetState | null; rows: Bu
           {state
             ? state.exceeded === null || state.spent === null || state.remaining === null
               ? // Unpriced calls in the period: what was spent, what is left and whether it is spent are not known; the service says why.
-                `${fmtUsd(state.budget_usd)} per ${state.period}, since ${when(state.since)}: ${state.exceeded === true ? "spent by the priced calls alone, so new runs are refused and running ones pause. " : "what remains is unknown. "}${state.unknown_why ? `${state.unknown_why[0].toUpperCase()}${state.unknown_why.slice(1)}.` : "The platform gives no reason."}`
-              : `${fmtUsd(state.budget_usd)} per ${state.period}: ${fmtUsd(state.spent)} spent since ${when(state.since)}, ${state.exceeded ? "nothing left, so new runs are refused and running ones pause" : `${fmtUsd(state.remaining)} left`}${state.unpriced ? `; ${plural(state.unpriced, "call")} with no price set are not counted` : ""}.`
+                `${fmtUsd(state.budget_usd)} per ${state.period}, since ${when(state.since)}: ${state.exceeded === true ? "spent by the priced calls alone, so new runs and applications' gateway calls are refused, and running runs pause. " : "what remains is unknown. "}${state.unknown_why ? `${state.unknown_why[0].toUpperCase()}${state.unknown_why.slice(1)}.` : "The platform gives no reason."}`
+              : `${fmtUsd(state.budget_usd)} per ${state.period}: ${fmtUsd(state.spent)} spent since ${when(state.since)}, ${state.exceeded ? "nothing left, so new runs and applications' gateway calls are refused, and running runs pause" : `${fmtUsd(state.remaining)} left`}${state.unpriced ? `; ${plural(state.unpriced, "call")} with no price set are not counted` : ""}.`
             : "No budget is set for the deployment: every recorded call still counts in the figures above, and nothing is refused or paused for spend."}
         </span>
+        {state && (
+          <span className="text-[11.5px] leading-[1.5] text-faint">
+            Every recorded call counts against it, applications&rsquo; gateway calls among them. While it is set, a call with no price is refused: a run&rsquo;s call to a model with no price set, and an application&rsquo;s gateway call to one, or for embeddings (the embedding interface reports no token counts).
+          </span>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           <label className="flex items-center gap-2 text-[11.5px] text-dim">
             USD
@@ -723,7 +728,7 @@ function Budgets({ state, rows, onSaved }: { state: BudgetState | null; rows: Bu
       {/* each use case's */}
       <div className="flex flex-col gap-2 px-4 py-3">
         <span className="text-[12px] font-semibold text-fg">Use cases</span>
-        <span className="text-[11.5px] leading-[1.5] text-faint">The calls of the runs that served a use case count against its budget, beside the deployment&rsquo;s.</span>
+        <span className="text-[11.5px] leading-[1.5] text-faint">The calls of the runs that served a use case count against its budget, beside the deployment&rsquo;s. Applications serve no use case: their gateway calls count against the deployment&rsquo;s budget only.</span>
         {useCaseRows.length > 0 && (
           <table className="w-full border-collapse text-[11.5px]">
             <thead>

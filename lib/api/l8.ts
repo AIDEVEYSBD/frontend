@@ -165,6 +165,10 @@ export type ModelSummary = {
   /** Cases whose start was refused, and cases that ran but could not be graded; null when the answer carries no count. */
   refused: number | null;
   not_graded: number | null;
+  /** A case could not run or was not graded: the candidate is not judged against the threshold. */
+  incomplete: boolean;
+  /** Whether it met the threshold; null when it did not finish or is incomplete. */
+  meets_threshold: boolean | null;
 };
 
 /** A comparison's recommendation, on every candidate's row once all are done. */
@@ -207,8 +211,11 @@ export interface EvalRunView {
   score: number | null;
   /** The spec's own threshold when this is its own suite and the model is not forced; null otherwise. */
   threshold: number | null;
-  /** score ≥ threshold, once done; null while running or with no threshold. */
+  /** score ≥ threshold, once done; null while running, with no threshold, or for an incomplete evaluation (`threshold_why` says why). */
   passed_threshold: boolean | null;
+  /** A case could not run or was not graded. */
+  incomplete: boolean;
+  threshold_why: string | null;
   dataset: boolean;
   /** The backend says so once the matrix is written, at the end; a labeled run reads false while it runs. */
   labeled: boolean;
@@ -230,7 +237,13 @@ export interface Benchmark {
   passed: number;
   total: number;
   threshold: number | null;
+  /** null for an incomplete evaluation, with `threshold_why`. */
   passed_threshold: boolean | null;
+  /** A case could not run (`refused`) or was not graded (`not_graded`). */
+  incomplete: boolean;
+  refused: number | null;
+  not_graded: number | null;
+  threshold_why: string | null;
   model: string;
   set: string;
   digest: string;
@@ -316,6 +329,8 @@ export function modelSummaryOf(v: unknown): ModelSummary {
     state: str(o.state) || "done",
     refused: numOrNull(o.refused),
     not_graded: numOrNull(o.not_graded),
+    incomplete: o.incomplete === true,
+    meets_threshold: boolOrNull(o.meets_threshold),
   };
 }
 
@@ -351,6 +366,8 @@ export function evalRunViewOf(v: unknown): EvalRunView {
     score: numOrNull(o.score),
     threshold: numOrNull(o.threshold),
     passed_threshold: boolOrNull(o.passed_threshold),
+    incomplete: o.incomplete === true || obj(o.summary).incomplete === true,
+    threshold_why: strOrNull(o.threshold_why),
     dataset: o.dataset === true,
     labeled: o.labeled === true,
     matrix: matrixOf(o.matrix),
@@ -394,6 +411,10 @@ export function benchmarkOf(v: unknown): Benchmark {
     total: num(o.total),
     threshold: numOrNull(o.threshold),
     passed_threshold: boolOrNull(o.passed_threshold),
+    incomplete: o.incomplete === true,
+    refused: numOrNull(o.refused),
+    not_graded: numOrNull(o.not_graded),
+    threshold_why: strOrNull(o.threshold_why),
     model: str(o.model) || "default",
     set: str(o.set),
     digest: str(o.digest),

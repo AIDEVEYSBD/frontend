@@ -454,7 +454,8 @@ function AssistantPanel({
             <div className="flex flex-col gap-3">
               <p className="text-[12px] leading-[1.6] text-dim">
                 Ask about what this console shows. Answers are read from this deployment&rsquo;s records with your
-                permissions, and the assistant changes nothing. Figures in an answer&rsquo;s blocks are filled by the
+                permissions, and the assistant changes nothing. Its model is sent only the classes of data it is cleared
+                for: what is above is withheld, and the answer says what. Figures in an answer&rsquo;s blocks are filled by the
                 service from the records it read, and each block says which. Every question and answer is kept with your name.
               </p>
               <div className="flex flex-col gap-1.5">
