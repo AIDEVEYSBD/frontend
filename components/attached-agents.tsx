@@ -636,7 +636,7 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
       </form>
 
       {/* ── the registry: it fits its panel at 1280 px and up, long text wrapping and each row's actions stacking ── */}
-      <div className="overflow-x-auto border-t border-line">
+      <div className="af-list overflow-x-auto border-t border-line">
         <table className="w-full border-collapse text-[11.5px]">
           <thead>
             <tr className="border-b border-line text-left align-bottom text-[10.5px] text-faint">

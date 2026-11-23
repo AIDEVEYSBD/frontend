@@ -24,9 +24,9 @@ export interface StatusMeta {
 
 export const STATUS_META: Record<ServerStatus, StatusMeta> = {
   approved: { label: "Approved", tone: "ok", alarming: false, means: "its pinned tool list attaches to runs" },
-  pending: { label: "Pending approval", tone: "warn", alarming: false, means: "admitted and pinned; nothing attaches until a platform admin approves the pin and sets its tools' risks" },
+  pending: { label: "Pending approval", tone: "warn", alarming: false, means: "nothing attaches until a platform admin approves its pinned list and sets its tools' risks; a server whose headers name a vault credential is first approved, by a second person, for its address and credentials, and only then is its list read and pinned" },
   changed: { label: "Tools changed", tone: "err", alarming: true, means: "the tool list moved from the approved one; detached until a platform admin approves the list again" },
-  refused: { label: "Refused", tone: "err", alarming: true, means: "the screener refused its tool list, at admission or on a rescan; it never attaches" },
+  refused: { label: "Refused", tone: "err", alarming: true, means: "the screener refused its tool list, at admission, when the list was first read on approving its credentials, or on a rescan; it never attaches" },
 };
 
 /** The pinned tool list: what an approval admits, and all a run gets once it is approved. For a `changed` server it is the new list, waiting for that approval. */
@@ -187,25 +187,41 @@ export interface Access {
   reason: string;
 }
 
+/** A server row with the registry's credentials flag, which the generated schema does not carry. */
+type WithCredentials = McpServer & { credentials_waiting?: boolean; credentials?: string[] };
+
+/** Whether nothing has been sent to the server yet because its vault credentials wait for a second person (`credentials_waiting`). */
+export const credentialsWaiting = (s: WithCredentials): boolean => s.credentials_waiting === true;
+
 /**
- * Whether this person may approve the server's pin now. Pending and changed
- * pins wait for an approval; an approved one has it, and a refused server
- * has no pin worth approving (rescan it once the server is fixed, or delete
- * it). With two-person approval on, the person who registered the server
- * may not approve it; an entry adopted from before the registry names
- * nobody, so anyone may (the backend compares the same). The configure
- * permission is the button's own check.
+ * Whether this person may approve the server now, and what the approval is.
+ *
+ * A server whose credentials wait is approved for its address and the
+ * headers it is sent, with no body: that is what sends them for the first
+ * time, so the person who registered it never may, whatever the setting
+ * (the backend answers 403 `two_person`). Otherwise pending and changed pins
+ * wait for an approval; an approved one has it, and a refused server has no
+ * pin worth approving (rescan it once the server is fixed, or delete it).
+ * With two-person approval on, the person who registered the server may not
+ * approve it; an entry adopted from before the registry names nobody, so
+ * anyone may (the backend compares the same). The configure permission is
+ * the button's own check.
  */
-export function approveAccess(server: McpServer, me: Me | null, twoPerson: boolean): Access {
-  if (server.status === "refused") return { ok: false, reason: `refused ${refusedWhen(server)}; rescan once the server is fixed, or delete it` };
-  if (!server.pin) return { ok: false, reason: "it has no tool list to approve; rescan it first" };
-  if (!me) return { ok: false, reason: "who you are is not known yet" };
-  if (!isPlatformAdmin(me.roles)) return { ok: false, reason: "only a platform admin approves a tool server and sets its tools' risks" };
-  if (twoPerson) {
-    if (!me) return { ok: false, reason: "who you are is not known yet" };
-    if (samePerson(server.added_by, me)) return { ok: false, reason: "a second person must approve" };
-  }
-  return { ok: true, reason: "" };
+export function approveAccess(server: WithCredentials, me: Me | null, twoPerson: boolean): Access & { credentials: boolean } {
+  const credentials = credentialsWaiting(server);
+  const no = (reason: string) => ({ ok: false, reason, credentials });
+  if (server.status === "refused") return no(`refused ${refusedWhen(server)}; rescan once the server is fixed, or delete it`);
+  if (!credentials && !server.pin) return no("it has no tool list to approve; rescan it first");
+  if (!me) return no("who you are is not known yet");
+  if (!isPlatformAdmin(me.roles)) return no(credentials ? "only a platform admin approves sending a server its credentials" : "only a platform admin approves a tool server and sets its tools' risks");
+  if (credentials && samePerson(server.added_by, me)) return no("you registered it: a second platform admin approves sending its credentials to its address");
+  if (twoPerson && samePerson(server.added_by, me)) return no("a second person must approve");
+  return { ok: true, reason: "", credentials };
+}
+
+/** Why a rescan cannot run now, or "" when it can: a server whose credentials wait is sent nothing, a rescan included (the backend answers 409). */
+export function rescanBlocked(server: WithCredentials): string {
+  return credentialsWaiting(server) ? "nothing is sent to it, a rescan included, until a second platform admin approves its address and credentials" : "";
 }
 
 /* ═══════════════════ the builder's tool rail ═══════════════════ */
@@ -217,7 +233,8 @@ export interface HeldServer {
 }
 
 /** Why the builder holds a server's tools back, in one line. */
-export function heldReason(s: McpServer): string {
+export function heldReason(s: WithCredentials): string {
+  if (credentialsWaiting(s)) return "its headers name vault credentials a second platform admin has not yet approved sending to its address; nothing has been sent to it and its tool list has not been read";
   if (s.status === "pending") return s.adopted && !s.last_scan ? "adopted from before the registry and never screened; its tools appear once someone approves the pin in Configuration" : "pending approval; its tools appear once the pin is approved in Configuration";
   if (s.status === "changed") {
     const c = pinChange(s);
@@ -238,8 +255,9 @@ export function heldReason(s: McpServer): string {
  * so the refused list is the one it was pinned on), or on a rescan (the
  * screener refused a list other than the one it was pinned on).
  */
-export function refusedWhen(s: McpServer): "at admission" | "when it was approved" | "on a rescan" {
-  if (!s.previous_pin) return "at admission";
+export function refusedWhen(s: WithCredentials & { credentials_approval?: unknown }): "at admission" | "when its credentials were approved" | "when it was approved" | "on a rescan" {
+  // A server whose headers name the vault is first read when its credentials are approved: a list refused then was never pinned.
+  if (!s.previous_pin) return s.credentials_approval ? "when its credentials were approved" : "at admission";
   return s.last_scan?.digest === s.previous_pin.digest ? "when it was approved" : "on a rescan";
 }
 

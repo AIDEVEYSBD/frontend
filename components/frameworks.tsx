@@ -115,7 +115,7 @@ export function FrameworkViewPanel({ view }: { view: RegulatoryView }) {
           .join(" ")}
       </p>
       {view.agents.length ? (
-        <div className="grid items-start gap-3 lg:grid-cols-2">
+        <div className="af-list af-list-tall grid items-start gap-3 lg:grid-cols-2">
           {view.agents.map((a) => (
             <AgentCard key={a.agent} a={a} />
           ))}

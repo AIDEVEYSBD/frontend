@@ -69,7 +69,12 @@ interface VaultKey {
   label: string;
   used_by: string[];
   set: boolean;
-  last_used: string;
+  /**
+   * When it was last used: "" when never, in a store that records each use;
+   * null in a store that records none (Secret Manager), where "never used"
+   * cannot be told and the vault names `last_used` in `not_built`.
+   */
+  last_used: string | null;
   /** When it was last set, and by whom, when the vault says. */
   updated_at: string;
   updated_by: string;
@@ -85,7 +90,7 @@ function vaultKeyOf(v: unknown): VaultKey | null {
     label: str(k.label),
     used_by: Array.isArray(k.used_by) ? k.used_by.filter((x): x is string => typeof x === "string") : [],
     set: k.set !== false,
-    last_used: str(k.last_used),
+    last_used: k.last_used === null ? null : str(k.last_used),
     updated_at: str(k.updated_at) || str(k.created),
     updated_by: str(k.updated_by),
   };
@@ -581,7 +586,7 @@ export function Keys({ onChanged }: { onChanged?: () => void }) {
                   k.label,
                   k.label.startsWith("from $") ? "supplied by the environment: manage it there" : "",
                   k.updated_at ? `set ${k.updated_at.slice(0, 10)}${k.updated_by ? ` by ${k.updated_by.replace(/\s*<[^>]*>\s*$/, "")}` : ""}` : "",
-                  k.last_used ? `last used ${k.last_used.slice(0, 10)}` : "never used",
+                  k.last_used === null ? "last use not recorded with this secret store" : k.last_used ? `last used ${k.last_used.slice(0, 10)}` : "never used",
                   k.used_by.length ? `referenced by ${k.used_by.join(", ")}` : "referenced by nothing",
                 ]
                   .filter(Boolean)

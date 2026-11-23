@@ -398,7 +398,7 @@ export interface DepNode {
   kind: DepKind;
   /** An agent's spec name (not unique), a server's registry label, else the name. */
   label: string;
-  /** ok, degraded, failing, idle; an agent paused, an application blocked; a server's pin pending, changed or refused. */
+  /** ok, degraded, failing, idle; an agent paused, an application blocked; a server's pin pending, changed or refused; a peer's registration. "not_measured" for a model: the service answers null, since a failed model call is recorded as its run's failure. */
   health: string;
   declared: boolean;
   observed: boolean;
@@ -416,8 +416,10 @@ export interface DepEdge {
   to: string;
   kind: EdgeKind;
   count: number;
-  /** null when a model call on it had no price set; a tool call carries no cost (0). */
+  /** A `uses_model` edge's cost; null when a call on it had no price set (`unpriced` names the model) or nothing was called. Every other edge keeps no cost figure and answers null. */
   cost: number | null;
+  /** The models whose calls on this edge had no price set; empty otherwise. */
+  unpriced: string[];
   failures: number;
   refusals: number;
   last_at: string | null;
@@ -445,7 +447,8 @@ export function depNodeOf(v: unknown): DepNode {
     id,
     kind,
     label: str(o.label) || id.slice(id.indexOf(":") + 1),
-    health: str(o.health, "idle") || "idle",
+    // A model's health is null, "not measured": never read as idle.
+    health: o.health === null ? "not_measured" : str(o.health, "idle") || "idle",
     declared: o.declared === true,
     observed: o.observed === true,
     count: num(o.count),
@@ -464,6 +467,7 @@ export function depEdgeOf(v: unknown): DepEdge {
     kind: pick(o.kind, EDGE_KINDS, "calls"),
     count: num(o.count),
     cost: numOrNull(o.cost),
+    unpriced: Array.isArray(o.unpriced) ? o.unpriced.filter((x): x is string => typeof x === "string") : [],
     failures: num(o.failures),
     refusals: num(o.refusals),
     last_at: strOrNull(o.last_at),

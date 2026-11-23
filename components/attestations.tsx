@@ -39,7 +39,7 @@ const standingHref = (agent: string) => `/attestations?agent=${encodeURIComponen
 export function StandingsTable({ rows, selected }: { rows: Standing[]; selected?: string | null }) {
   if (!rows.length) return <p className="text-[12px] text-faint">No agent is deployed, so nothing is due. An attestation is due from an agent&rsquo;s first production deploy.</p>;
   return (
-    <div className="overflow-x-auto rounded-md border border-line">
+    <div className="af-list af-list-tall overflow-x-auto rounded-md border border-line">
       <table className="w-full min-w-[760px] border-collapse text-[11.5px]">
         <thead>
           <tr className="border-b border-line bg-raise/40 text-left text-[10.5px] text-faint">

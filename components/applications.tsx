@@ -253,7 +253,7 @@ export function Applications() {
             <SearchBox value={q} onChange={setQ} placeholder="Name, id or owner" width="w-[220px]" />
             {cls && <Button size="sm" variant="quiet" onClick={() => setCls("")}>Every class</Button>}
           </div>
-          <div className="overflow-x-auto">
+          <div className="af-list af-list-tall overflow-x-auto">
             <table className="w-full min-w-[1080px] border-collapse text-[11.5px]">
               <thead className="sticky top-0 z-10 bg-surface">
                 <tr className="border-b border-line text-left text-[10.5px] text-faint">

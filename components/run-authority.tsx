@@ -185,12 +185,11 @@ export function RunAuthorityView({ a }: { a: RunAuthority }) {
             <span className="inline-flex">
               <Tag>up to {a.max_data_class}</Tag>
             </span>
-          ) : off("max_data_class") ? (
-            <span className="text-[11px] text-faint">
-              <NotBuiltValue field="max_data_class" />: this run has no data class of its own and no use case to take one from.
-            </span>
           ) : (
-            <span className="text-[11px] text-faint">None set.</span>
+            // No ceiling is a fact about the run, not a part that is not built: the service's own sentence when it gives one.
+            <span className="text-[11px] text-faint">
+              {a.max_data_class_note ? `${a.max_data_class_note[0].toUpperCase()}${a.max_data_class_note.slice(1)}.` : "No ceiling: the run has no data class of its own, no use-case ceiling and none handed down to it."}
+            </span>
           )}
         </div>
         <div className="flex min-w-0 flex-col gap-1">

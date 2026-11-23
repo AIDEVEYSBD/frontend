@@ -35,8 +35,7 @@ import { RunSourceTag } from "./run-source";
 import { SandboxOutput, SandboxSummary } from "./sandbox-result";
 import { KillDialog } from "./kill-dialog";
 import { RunFlagsBanner, RunMarkers } from "./run-flags";
-import { retiredLine, runFlagsOf, type RunFlags } from "@/lib/lifecycle";
-import { retiredOf, type Retired } from "@/lib/api/l8";
+import { runFlagsOf, type RunFlags } from "@/lib/lifecycle";
 import { deliverableFileUrl, downloadDeliverable } from "@/lib/api/l8b";
 import { fileRefusalText, sizeText } from "@/lib/deliverables";
 import { useDoorOff } from "@/lib/use-doors";
@@ -51,7 +50,7 @@ import { hasProvenance } from "@/lib/provenance";
 import { ApproveDialog } from "./approve";
 import { SteerPanel } from "./steer";
 import { followsLive, steerOffer } from "@/lib/steer";
-import { agentDocument, listAgents } from "@/lib/api/l2";
+import { agentDocument } from "@/lib/api/l2";
 import { Deadline, useNow } from "./gate-form";
 import { RunLimitsPanel, RunStrip, useRunSpec, type RunFacts } from "./run-limits";
 import { RunFindings } from "./run-findings";
@@ -258,7 +257,7 @@ function RunsInner() {
 
   if (agent || draft) return <LiveTheater agentId={agent} draft={draft} />;
   if (replay) return <ReplayTheater id={replay} />;
-  return <Launcher />;
+  return <RunHistory />;
 }
 
 /* ═══════════════════ The live stream's own state ═══════════════════ */
@@ -311,18 +310,7 @@ function StreamLine({ stream, following, onRetry }: { stream: StreamState; follo
   );
 }
 
-/* ═══════════════════ Launcher: pick something to run ═══════════════════ */
-
-interface SavedAgent {
-  id: string;
-  name: string;
-  description: string;
-  nodes: number;
-  /** L8: retired agents take no new runs; their card opens the lifecycle instead. */
-  retired: Retired | null;
-  /** Parts of its definition the platform does not carry out: such an agent cannot be run, and its card opens the agent instead. */
-  unsupported: UnsupportedPart[];
-}
+/* ═══════════════════ The run history ═══════════════════ */
 
 /** A row of the backend's run ledger, as the list shows it. `stuck` and `waiting_on` are L5's; `source` (an attached agent's SDK, or A2A) is L6's. */
 type RunSummary = Pick<RunRowL6, "id" | "system" | "state" | "at" | "ms" | "denials" | "live" | "stuck" | "waiting_on" | "source" | "shadow" | "review" | "taint" | "eval" | "canary"> & {
@@ -362,8 +350,8 @@ function StateBadge({ state }: { state: string }) {
   return <Status tone={s?.tone ?? "queue"}>{s?.label ?? (state || "Ready")}</Status>;
 }
 
-function Launcher() {
-  const [agents, setAgents] = useState<SavedAgent[] | null>(null);
+/** The runs page: every run on record, newest first, each opening its record. A run is started from its agent (Agents, the Control room), not here. */
+function RunHistory() {
   const [history, setHistory] = useState<RunSummary[] | null>(null);
   const [stateFilter, setStateFilter] = useState("");
   /** L8, second round: a canary's shadow runs are listed, marked; a person may set them aside. */
@@ -373,17 +361,10 @@ function Launcher() {
   /** Whose runs: sent as `scope` on the list call once chosen. Offered only when the ledger's rows carry owners. */
   const [scope, setScope] = useState<Scope | "">("");
   const [owned, setOwned] = useState(false);
-  /* Why each of the two reads failed, when it did. A failed read is shown as the failure, never as "no workflow yet" or "no runs yet". */
-  const [agentsError, setAgentsError] = useState("");
+  /* Why the read failed, when it did. A failed read is shown as the failure, never as "no runs yet". */
   const [historyError, setHistoryError] = useState("");
   /** The ledger's own `not_built` list, from the list's answer: a field it names is said to be not built above the list. */
   const [historyNotBuilt, setHistoryNotBuilt] = useState<string[]>([]);
-
-  useEffect(() => {
-    listAgents()
-      .then((rows) => setAgents(rows.map((a) => ({ id: a.id, name: a.name, description: a.description ?? "", nodes: a.nodes, retired: retiredOf(a.retired), unsupported: runBlockers(unsupportedOf(a), a.version, a.deployed_version) }))))
-      .catch((e) => setAgentsError((e as Error).message));
-  }, []);
 
   useEffect(() => {
     let live = true;
@@ -416,78 +397,24 @@ function Launcher() {
     <div className="min-h-full" data-hue="blue">
       <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-8 px-5 py-7">
         <header className="flex flex-col gap-1.5">
-          <h1 className="text-[24px] font-semibold tracking-[-0.02em]">Runs</h1>
-          <p className="max-w-[640px] text-[13.5px] leading-relaxed text-dim">
-            Launch a workflow and follow its execution as it happens. Review each model call, budget
-            decision, human approval and output in the resulting run record.
+          <div className="flex flex-wrap items-end gap-3">
+            <h1 className="text-[24px] font-semibold tracking-[-0.02em]">Runs</h1>
+            <span className="grow" />
+            <Button size="sm" variant="solid" tone="neutral" href="/agents" title="A run is started from its agent: open it on the Agents page and choose Run">
+              Start a run from an agent
+            </Button>
+          </div>
+          <p className="max-w-[720px] text-[13.5px] leading-relaxed text-dim">
+            Every run on this deployment, newest first: done, failed, waiting on a person or stopped. Open one for its
+            record: each model call, tool call, budget decision, approval and output, in order.
           </p>
         </header>
 
-        <section className="flex flex-col gap-3">
-          <h2>
-            <Label>Run a workflow</Label>
-          </h2>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {agentsError && <Failure className="col-span-full" what="The workflows could not be read" message={agentsError} />}
-            {agents === null && !agentsError &&
-              [0, 1, 2].map((i) => (
-                <div key={i} className="flex animate-pulse flex-col gap-3 rounded-lg border border-line bg-surface p-4">
-                  <div className="flex items-center gap-2.5">
-                    <span className="size-8 rounded-md bg-raise" />
-                    <span className="h-3.5 w-32 rounded-sm bg-raise" />
-                  </div>
-                  <span className="h-3 w-full rounded-sm bg-raise" />
-                  <span className="h-3 w-2/3 rounded-sm bg-raise" />
-                </div>
-              ))}
-            {agents?.length === 0 && (
-              <p className="col-span-full rounded-lg border border-dashed border-line-strong px-5 py-8 text-[12.5px] text-faint">
-                No workflow is on this deployment yet. Once one is deployed it can be run from here.
-              </p>
-            )}
-            {(agents ?? []).map((a) => (
-              <button
-                key={a.id}
-                onClick={() => router.push(a.retired ? `/lifecycle?agent=${encodeURIComponent(a.id)}` : a.unsupported.length ? `/agent?id=${encodeURIComponent(a.id)}` : `/runs?agent=${encodeURIComponent(a.id)}`)}
-                title={a.retired ? retiredLine(a.retired) : a.unsupported.length ? unsupportedReason(a.unsupported) : undefined}
-                className={`focusable group flex cursor-pointer flex-col gap-2.5 rounded-lg border border-line p-4 text-left elev-1 transition-[border-color,box-shadow,transform] duration-200 ease-[var(--ease-out)] hover:-translate-y-px hover:border-line-strong hover:elev-2 ${a.retired ? "bg-raise/60" : "bg-surface"}`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <span className="grid size-8 shrink-0 place-items-center rounded-md bg-raise text-dim">
-                    <Icon name="workflow" size={15} />
-                  </span>
-                  <span className={`min-w-0 truncate text-[13.5px] font-semibold ${a.retired ? "text-dim" : "text-fg"}`}>{a.name}</span>
-                  {a.retired && <Status tone="neutral">Retired</Status>}
-                </div>
-                {a.retired ? (
-                  <p className="text-[11.5px] leading-[1.55] text-faint">
-                    {a.retired.reason}
-                    {a.retired.replacement ? ` · replaced by ${a.retired.replacement}` : ""}
-                  </p>
-                ) : (
-                  a.description && <p className="text-[11.5px] leading-[1.55] text-dim">{a.description}</p>
-                )}
-                {!a.retired && <UnsupportedParts parts={a.unsupported} compact />}
-                <span className="mt-auto flex items-center gap-2 border-t border-line pt-2">
-                  <Mono className="text-[10px] text-faint">{a.nodes} nodes</Mono>
-                  {!a.retired && a.unsupported.length > 0 && <span className="text-[10.5px] font-medium text-warn">Cannot be run</span>}
-                  <span className="grow" />
-                  <span className={`flex items-center gap-1 text-[11px] font-medium opacity-0 transition-opacity group-hover:opacity-100 ${a.retired || a.unsupported.length ? "text-dim" : "text-run"}`}>
-                    {a.retired ? "Lifecycle" : a.unsupported.length ? "Agent" : "Run"}
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                      <path d="M5 12h14M13 6l6 6-6 6" />
-                    </svg>
-                  </span>
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
 
         <section className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <h2>
-              <Label>Previous runs</Label>
+              <Label>{history ? `${history.length} run${history.length === 1 ? "" : "s"} on record` : "Runs on record"}</Label>
             </h2>
             <span className="grow" />
             {/* Whose runs: only once the ledger says whose each is. */}
@@ -543,7 +470,7 @@ function Launcher() {
               )}
             </div>
           </div>
-          <div className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
+          <div className="af-list af-list-tall flex flex-col rounded-lg border border-line bg-surface elev-1">
             {historyError && <Failure className="m-3" what="The run ledger could not be read" message={historyError} />}
             {history === null && !historyError && (
               <div role="status" aria-label="Reading the record" className="px-4 py-5">

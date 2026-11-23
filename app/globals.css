@@ -354,6 +354,25 @@ body {
 }
 
 /* Numbers in data contexts must align in columns. */
+/* A list inside a card never grows with its rows: past this height it scrolls within the card, and its header row
+   (a table's thead, or an element marked data-sticky) stays in view. af-list-tall is for the list that is a page's
+   main content. */
+.af-list {
+  max-height: min(30rem, 62vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.af-list.af-list-tall {
+  max-height: min(46rem, 74vh);
+}
+.af-list thead th,
+.af-list [data-sticky] {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--color-surface);
+}
+
 .tnum {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;

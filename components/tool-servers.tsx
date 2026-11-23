@@ -24,7 +24,7 @@ import {
   type RegisteredServer,
   type ScreenHit,
 } from "@/lib/api/l6";
-import { adoptedLine, approveAccess, changeLine, formProblem, isolationLine, pinChange, pinnedTools, refusedWhen, RISKS, STATUS_META, toolHints, toolRisk, type Me } from "@/lib/mcp-registry";
+import { adoptedLine, approveAccess, changeLine, credentialsWaiting, formProblem, isolationLine, pinChange, pinnedTools, refusedWhen, rescanBlocked, RISKS, STATUS_META, toolHints, toolRisk, type Me } from "@/lib/mcp-registry";
 
 /**
  * The MCP registry: the tool servers this deployment connects, and whether
@@ -32,13 +32,19 @@ import { adoptedLine, approveAccess, changeLine, formProblem, isolationLine, pin
  * `/rescan`, `DELETE /api/mcp/{id}`).
  *
  * Registering is admission, not trust. A server is registered by its address
- * and the headers it is sent, each naming a vault credential; adding it asks
- * it for its tool list, screens every tool's name, description and schema,
- * and pins the list by digest. The server waits, pending, until a platform
- * admin approves the pin and sets each tool's risk (a tool left unset counts
- * as destructive), and only an approved pin attaches to a run. A rescan that
- * finds a different list marks the server changed and detaches it until it
- * is approved again.
+ * and the headers it is sent, each naming a vault credential. A server with
+ * no headers is asked for its tool list at once; every tool's name,
+ * description and schema is screened, and the list is pinned by digest. A
+ * server whose headers name a vault credential is sent nothing at
+ * registration: it waits, pending with no pin, until a platform admin other
+ * than the one who registered it approves its address with those headers
+ * (`POST /api/mcp/{id}/approve` with no body); only then is its list read
+ * with them, screened (a 422 with the hits stores it as refused) and pinned.
+ * Either way the server waits, pending, until a platform admin approves the
+ * pin and sets each tool's risk (a tool left unset counts as destructive),
+ * and only an approved pin attaches to a run. A rescan that finds a
+ * different list marks the server changed and detaches it until it is
+ * approved again.
  * Each row says which of those it is, the pin and the scan that stand behind
  * it (for a changed server, the approved list it moved away from and which
  * tools moved), who signed, whether it was adopted from before the registry
@@ -122,10 +128,10 @@ export function HitsTable({ hits }: { hits: ScreenHit[] }) {
 }
 
 /** A refusal from the registry: the message, and the control it names in the register's words. */
-function Refusal({ error }: { error: RegistryError | Error }) {
+function Refusal({ error, hideHits = false }: { error: RegistryError | Error; /** The row already lists the same hits under its refused status. */ hideHits?: boolean }) {
   if (notBuiltDoorOf(error.message)) return <Failure inline message={error.message} />;
   const control = error instanceof RegistryError ? error.control : "";
-  const hits = error instanceof RegistryError ? error.hits : [];
+  const hits = error instanceof RegistryError && !hideHits ? error.hits : [];
   return (
     <div className="flex flex-col gap-1.5">
       <span className="flex flex-wrap items-center gap-2 text-[11.5px] leading-[1.5] text-err">
@@ -204,7 +210,9 @@ export function AddServerForm({
     >
       <span className="flex flex-wrap items-center gap-2">
         <span className="text-[12px] font-semibold text-fg">Register a tool server</span>
-        <span className="text-[10.5px] text-faint">asked for its tool list, screened, then pinned; nothing attaches until a platform admin approves the pin</span>
+        <span className="text-[10.5px] text-faint">
+          with no headers it is asked for its tool list now, screened and pinned; with headers naming a vault credential nothing is sent to it until a second platform admin approves its address and credentials. Nothing attaches until a platform admin approves the pin
+        </span>
       </span>
       <div className={stacked ? "flex flex-col gap-2" : "flex flex-wrap items-end gap-2"}>
         <label className={cell}>
@@ -236,7 +244,7 @@ export function AddServerForm({
       {error && <Refusal error={error} />}
       <div className="flex flex-wrap items-center gap-2">
         <Button type="submit" size="sm" variant="solid" tone="ink" permission="configure" disabled={Boolean(problem) || addDoor.off} title={addDoor.why} loading={busy}>
-          {busy ? "Asking it for its tools…" : "Register and scan"}
+          {busy ? (form.headers.trim() ? "Registering…" : "Asking it for its tools…") : form.headers.trim() ? "Register" : "Register and scan"}
         </Button>
         <Button size="sm" variant="solid" tone="err" onClick={onCancel}>
           Cancel
@@ -352,15 +360,52 @@ function RiskApproval({ server: s, busy, onApprove, onCancel }: { server: Regist
   );
 }
 
+/**
+ * What a second platform admin approves for a server whose headers name the
+ * vault: sending those credentials to that address. Nothing has been sent to
+ * the server before this. The call carries no body; the list is read with
+ * the credentials straight after, screened and pinned, and its tools' risks
+ * are set later, when the pin is approved.
+ */
+function CredentialsApproval({ server: s, busy, onApprove, onCancel }: { server: RegisteredServer; busy: boolean; onApprove: () => void; onCancel: () => void }) {
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-line bg-canvas p-3">
+      <span className="text-[12px] font-semibold text-fg">Approve the address and its credentials</span>
+      <span className="text-[11.5px] leading-[1.55] text-dim">
+        {who(s.added_by)} registered this server. Approving sends{" "}
+        {s.credentials.length ? (
+          <>
+            the vault credential{s.credentials.length === 1 ? "" : "s"} <Names names={s.credentials} none="" />
+          </>
+        ) : (
+          "its headers"
+        )}{" "}
+        in the header{s.header_names.length === 1 ? "" : "s"} <Names names={s.header_names} none="none" /> to <Mono className="text-[11px] text-fg">{s.url ?? "its address"}</Mono>, for the first time. The service then asks it for its tool list with them, screens every tool and pins the list. The pin still waits for its own approval, where each tool&rsquo;s risk is set. The approval is bound to this address and these headers: a registration that changes either sends nothing.
+      </span>
+      <span className="flex flex-wrap items-center gap-2">
+        <span className="grow" />
+        <Button size="sm" variant="solid" tone="err" onClick={onCancel} disabled={busy}>
+          Cancel
+        </Button>
+        <Button size="sm" variant="solid" tone="ink" permission="configure" loading={busy} onClick={onApprove}>
+          {busy ? "Sending the credentials and reading its tools…" : "Approve and read its tools"}
+        </Button>
+      </span>
+    </div>
+  );
+}
+
 function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { server: RegisteredServer; twoPerson: boolean; me: Me | null; onChanged: () => void; /** Added a moment ago, in this window: marked, and scrolled to once. */ fresh?: boolean }) {
   const row = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (fresh) row.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [fresh]);
-  const [busy, setBusy] = useState<"approve" | "rescan" | "delete" | null>(null);
+  const [busy, setBusy] = useState<"approve" | "credentials" | "rescan" | "delete" | null>(null);
   const [confirming, setConfirming] = useState(false);
-  /** The risk table is open: approving, or changing the risks of an approved list. */
+  /** The risk table is open (approving, or changing the risks of an approved list), or the credentials approval for a server whose credentials wait. */
   const [deciding, setDeciding] = useState(false);
+  const waiting = credentialsWaiting(s);
+  const noRescan = rescanBlocked(s);
   const approveDoor = useDoorOff("POST", "/api/mcp/{id}/approve");
   const rescanDoor = useDoorOff("POST", "/api/mcp/{id}/rescan");
   const deleteDoor = useDoorOff("DELETE", "/api/mcp/{id}");
@@ -374,12 +419,21 @@ function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { ser
   const approval = s.approvals.at(-1);
   const isolated = isolationLine(s);
 
-  const act = async (what: "approve" | "rescan" | "delete", decided?: { risks: Record<string, string>; cls: string }) => {
+  const act = async (what: "approve" | "credentials" | "rescan" | "delete", decided?: { risks: Record<string, string>; cls: string }) => {
     setBusy(what);
     setError(null);
     setNotice(null);
     try {
-      if (what === "approve") {
+      if (what === "credentials") {
+        // No body: the approval is of the address with its headers; risks are set when the pin is approved.
+        const after = await approveServer(s.id);
+        const n = pinnedTools(after).length;
+        setDeciding(false);
+        setNotice({
+          tone: "ok",
+          text: `Sending ${s.credentials.length ? s.credentials.join(", ") : "its headers"} to ${s.url ?? "its address"} is approved. Its tool list was read with them, screened and pinned: ${n} tool${n === 1 ? "" : "s"}. Nothing attaches to a run until a platform admin${twoPerson ? " other than the one who registered it" : ""} approves the pin and sets each tool's risk.`,
+        });
+      } else if (what === "approve") {
         const set = Object.keys(decided?.risks ?? {}).length;
         const left = tools.length - set;
         await approveServer(s.id, decided ? { risks: decided.risks, max_data_class: decided.cls } : undefined);
@@ -402,13 +456,16 @@ function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { ser
       }
       onChanged();
     } catch (e) {
-      // The registry moved under the click: an adopted entry screened on
-      // approval and refused (422; the row shows the hits once it is read
-      // again), a server refused or approved elsewhere (409), one removed
-      // elsewhere (404). Read it again.
-      if (e instanceof RegistryError && e.status === 422 && e.server?.status === "refused") setNotice({ tone: "err", text: e.message });
-      else setError(e as Error);
-      if (e instanceof RegistryError && [404, 409, 422].includes(e.status)) onChanged();
+      // Each refusal is shown in the registry's own words, with the screener's
+      // hits when it names them. The registry moved under the click: a list
+      // refused by the screener when it was read on approval (422, stored as
+      // refused), a list that could not be read once the credentials were
+      // approved (502: the approval stands, a rescan reads it), a server
+      // refused or approved elsewhere (409), one removed elsewhere (404).
+      // Read it again.
+      setError(e as Error);
+      if (e instanceof RegistryError && (what === "credentials" || what === "approve") && [409, 422, 502].includes(e.status)) setDeciding(false);
+      if (e instanceof RegistryError && [404, 409, 422, 502].includes(e.status)) onChanged();
     } finally {
       setBusy(null);
     }
@@ -447,11 +504,11 @@ function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { ser
         ) : (
           <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
             {s.status !== "refused" && (
-              <Button size="sm" variant="solid" tone={s.status === "approved" ? "neutral" : "ink"} permission="configure" disabled={!access.ok || busy !== null || deciding || approveDoor.off} title={approveDoor.why} loading={busy === "approve"} onClick={() => setDeciding(true)}>
-                {s.status === "approved" ? "Change risks" : s.status === "changed" ? "Approve new list" : "Approve"}
+              <Button size="sm" variant="solid" tone={s.status === "approved" ? "neutral" : "ink"} permission="configure" disabled={!access.ok || busy !== null || deciding || approveDoor.off} title={approveDoor.why} loading={busy === "approve" || busy === "credentials"} onClick={() => setDeciding(true)}>
+                {waiting ? "Approve the address and its credentials" : s.status === "approved" ? "Change risks" : s.status === "changed" ? "Approve new list" : "Approve"}
               </Button>
             )}
-            <Button size="sm" variant="solid" tone="neutral" permission="configure" disabled={busy !== null || rescanDoor.off} title={rescanDoor.why} loading={busy === "rescan"} onClick={() => act("rescan")}>
+            <Button size="sm" variant="solid" tone="neutral" permission="configure" disabled={busy !== null || rescanDoor.off || Boolean(noRescan)} title={rescanDoor.why || noRescan || undefined} loading={busy === "rescan"} onClick={() => act("rescan")}>
               Rescan
             </Button>
             <Button size="sm" variant="solid" tone="err" permission="configure" disabled={busy !== null || deleteDoor.off} title={deleteDoor.why} onClick={() => setConfirming(true)}>
@@ -463,10 +520,17 @@ function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { ser
       {s.status !== "refused" && !access.ok && access.reason && (
         <span className="-mt-1 self-end text-[11px] text-warn">{access.reason}</span>
       )}
-      {deciding && access.ok && <RiskApproval server={s} busy={busy === "approve"} onCancel={() => setDeciding(false)} onApprove={(risks, cls) => void act("approve", { risks, cls })} />}
+      {deciding && access.ok && access.credentials && <CredentialsApproval server={s} busy={busy === "credentials"} onCancel={() => setDeciding(false)} onApprove={() => void act("credentials")} />}
+      {deciding && access.ok && !access.credentials && <RiskApproval server={s} busy={busy === "approve"} onCancel={() => setDeciding(false)} onApprove={(risks, cls) => void act("approve", { risks, cls })} />}
 
       {where && <Mono className="block truncate text-[10.5px] text-ghost">{where}</Mono>}
-      <span className="text-[11px] leading-[1.5] text-faint">{meta.means}.</span>
+      {waiting ? (
+        <span className="text-[11px] leading-[1.5] text-warn">
+          Nothing has been sent to this server: its headers name the vault credential{s.credentials.length === 1 ? "" : "s"} {s.credentials.join(", ") || "named in them"}, and no platform admin other than {who(s.added_by)} has approved sending {s.credentials.length === 1 ? "it" : "them"} to its address. Its tool list is read, screened and pinned once one does.
+        </span>
+      ) : (
+        <span className="text-[11px] leading-[1.5] text-faint">{meta.means}.</span>
+      )}
       {s.adopted && <span className="text-[11px] leading-[1.5] text-warn">This entry was {adoptedLine(s)}.</span>}
       {isolated && <span className="text-[11px] leading-[1.5] text-faint">Runs {isolated}, at discovery as at every run.</span>}
 
@@ -480,11 +544,14 @@ function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { ser
               </span>
             </>
           ) : (
-            <span className="text-ghost">no pin</span>
+            <span className="text-ghost">{waiting ? "none: its list has not been read" : "no pin"}</span>
           )}
         </Fact>
         <Fact k="Last scan">
-          {s.last_scan ? (
+          {s.last_scan && !s.last_scan.digest && s.last_scan.note ? (
+            // A registration whose credentials wait carries a scan that read nothing: its note says so, and no time is given as if a list had been read.
+            <span className="leading-[1.5]">{s.last_scan.note}</span>
+          ) : s.last_scan ? (
             <span title={`${s.last_scan.by}${s.last_scan.server ? `\nThe server reported itself as ${s.last_scan.server.name}${s.last_scan.server.version ? ` ${s.last_scan.server.version}` : ""}` : ""}`}>
               {ago(s.last_scan.at)} by {who(s.last_scan.by)}
             </span>
@@ -500,7 +567,12 @@ function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { ser
               by {who(approval.by)} · {ago(approval.at)}
             </span>
           ) : (
-            <span className="text-ghost">not yet</span>
+            <span className="text-ghost">{waiting ? "not yet: its credentials wait first" : "not yet"}</span>
+          )}
+          {s.credentials_approval && (
+            <span title={s.credentials_approval.by}>
+              · credentials approved by {who(s.credentials_approval.by)} {ago(s.credentials_approval.at)}
+            </span>
           )}
           {s.adopted ? (
             <span className="text-ghost" title={adoptedLine(s)}>
@@ -606,7 +678,7 @@ function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { ser
       )}
 
       {notice && <p className={`text-[11.5px] leading-[1.5] ${notice.tone === "ok" ? "text-ok" : "font-medium text-err"}`}>{notice.text}</p>}
-      {error && <Refusal error={error} />}
+      {error && <Refusal error={error} hideHits={s.status === "refused" && (s.last_scan?.hits.length ?? 0) > 0} />}
     </div>
   );
 }
@@ -657,7 +729,8 @@ export function ToolServers({
         {!unread && <span className="min-w-0 max-w-[70ch] text-[11px] leading-[1.5] text-faint">
           {twoPerson
             ? "A platform admin approves each pin and sets its tools' risks. Two-person approval is on: whoever registers a server cannot approve it."
-            : "A platform admin approves each pin and sets its tools' risks. Two-person approval is off on this deployment."}
+            : "A platform admin approves each pin and sets its tools' risks."}{" "}
+          A server whose headers name a vault credential is sent nothing until a platform admin other than the one who registered it approves its address and credentials.
         </span>}
         <span className="grow" />
         <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={addDoor.off} title={addDoor.why} onClick={() => setAdding(true)}>
@@ -677,7 +750,18 @@ export function ToolServers({
           renderRefusal={(e) => <Refusal error={e} />}
         />
       )}
-      {added && (
+      {added && credentialsWaiting(added) && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/40 px-4 py-2">
+          <Status tone="warn">{added.label} registered</Status>
+          <span className="min-w-0 grow text-[11px] leading-[1.5] text-faint">
+            Nothing has been sent to it. Its headers name {added.credentials.join(", ") || "vault credentials"}; a platform admin other than you approves sending them to {added.url ?? "its address"}, and only then is its tool list read, screened and pinned.
+          </span>
+          <Button size="sm" variant="solid" tone="neutral" onClick={() => setAdded(null)}>
+            Dismiss
+          </Button>
+        </div>
+      )}
+      {added && !credentialsWaiting(added) && (
         <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/40 px-4 py-2">
           <Status tone="warn">{added.label} admitted</Status>
           <span className="text-[11px] text-faint">

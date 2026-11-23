@@ -574,7 +574,7 @@ export function PeerList({ peers, twoPerson, me, error, refresh }: { peers: Peer
  * so, in the backend's words.
  */
 function OfferedSkills() {
-  const [read, setRead] = useState<{ skills: PeerSkill[]; accepted: boolean; notBuilt: string[] } | null>(null);
+  const [read, setRead] = useState<{ skills: PeerSkill[]; accepted: boolean; why: string[] } | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [agents, setAgents] = useState<AgentSummary[] | null>(null);
   const [agentsError, setAgentsError] = useState("");
@@ -584,8 +584,10 @@ function OfferedSkills() {
 
   const refresh = useCallback(async () => {
     try {
-      const r = (await door("GET", "/api/peers/skills")) as { skills: PeerSkill[]; tasks_accepted: boolean; not_built: string[] };
-      setRead({ skills: r.skills, accepted: r.tasks_accepted, notBuilt: r.not_built });
+      const r = (await door("GET", "/api/peers/skills")) as { skills: PeerSkill[]; tasks_accepted: boolean; not_accepted_why?: string[]; not_built?: string[] };
+      // Why the tasks door takes no task now (no signing key, no public address): `not_accepted_why`; `not_built` names parts not built, if any.
+      const why = [...(Array.isArray(r.not_accepted_why) ? r.not_accepted_why : []), ...(Array.isArray(r.not_built) ? r.not_built : [])].filter((x) => typeof x === "string" && x.trim());
+      setRead({ skills: r.skills, accepted: r.tasks_accepted === true, why });
       setError(null);
     } catch (e) {
       setError(e as Error);
@@ -629,7 +631,9 @@ function OfferedSkills() {
       </span>
       {error && <Refusal error={error} />}
       {read && !read.accepted && (
-        <p className="text-[11px] leading-[1.5] font-medium text-warn">The tasks door takes no task yet: {read.notBuilt.join("; ")}.</p>
+        <p className="text-[11px] leading-[1.5] font-medium text-warn">
+          The tasks door takes no task now{read.why.length ? `: ${read.why.join("; ")}` : ", and the platform gives no reason"}. Every peer that hands it one is refused until this is put right, and no offered agent takes a task meanwhile.
+        </p>
       )}
       {read && read.skills.length === 0 && <span className="text-[11.5px] text-dim">No agent is offered to peers.</span>}
       {read?.skills.map((s) => (

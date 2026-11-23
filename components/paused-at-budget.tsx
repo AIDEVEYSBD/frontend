@@ -147,7 +147,7 @@ export function PausedAtBudget({ answer, reload, now }: { answer: Answer<BudgetH
       {(waiting.length > 0 || decided.length > 0) && (
         <div className={`flex flex-col ${notice || waiting.length === 0 ? "-mx-4 -mb-4 border-t border-line" : "-m-4"}`}>
           {waiting.length > 0 && (
-            <div className="overflow-x-auto">
+            <div className="af-list overflow-x-auto">
               <table className="w-full min-w-[900px] border-collapse text-[12px]">
                 <thead>
                   <tr className="border-b border-line text-left text-[10.5px] text-faint">
@@ -202,7 +202,7 @@ export function PausedAtBudget({ answer, reload, now }: { answer: Answer<BudgetH
                 <span className="text-[12px] font-semibold text-fg">Decided</span>
                 <span className="tnum text-[11px] text-faint">{decided.length.toLocaleString("en-GB")}</span>
               </div>
-              <div className="overflow-x-auto">
+              <div className="af-list overflow-x-auto">
                 <table className="w-full min-w-[980px] border-collapse text-[12px]">
                   <thead>
                     <tr className="border-b border-line text-left text-[10.5px] text-faint">

@@ -296,7 +296,7 @@ function Explore() {
             {rows.length === 0 ? (
               <p className="px-4 py-6 text-[12px] text-faint">{first.total === 0 ? "Nothing recorded matches these filters." : "Reading…"}</p>
             ) : (
-              <div className="overflow-x-auto" title={first.basis}>
+              <div className="af-list af-list-tall overflow-x-auto" title={first.basis}>
                 <table className="w-full min-w-[920px] border-collapse text-[11.5px]">
                   <thead>
                     <tr className="border-b border-line text-left text-[10.5px] text-faint">

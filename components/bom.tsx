@@ -24,16 +24,21 @@ import type { VersionView } from "@/lib/versions";
  * serves it; its tools with their risk, data classes and the servers that
  * serve them (name, version, the MCP `serverInfo` from discovery, the pinned
  * tool-list digest); the knowledge stores it is granted; the datasets its
- * runs were handed; the agents its runs started; and the definition's digest.
- * Peers, a sub-agent a definition declares, templates and the CycloneDX export
- * are not built, and say so. The answer is read as the backend writes it: the
- * typed part through lib/api/l9.ts, the rest here.
+ * runs were handed; the agents its runs started; the A2A peers its runs
+ * handed tasks to (read from the runs, since which peer a call reaches is an
+ * argument decided at run time), with each one's registration and pinned
+ * card; the template it was cut from and the templates made from it; and the
+ * digests. What the answer names in `not_built` (a sub-agent a definition
+ * declares, the CycloneDX export) is said in its words. The answer is read as
+ * the backend writes it: the typed part through lib/api/l9.ts, the rest here.
  */
 
 interface BomExtra {
   knowledge: { store: string; rights: string[]; revoked: string[]; retrieval: string; data_classes: string[]; named_by: string[]; not_granted?: boolean }[];
   datasets: { id: string; name: string; data_class: string; runs: number; last_used: string | null }[];
   sub_agents: { agent: string; runs: number; last_at: string | null }[];
+  /** How often its runs called each peer, and when last, by peer id. */
+  peerCalls: Record<string, { calls: number; last_at: string | null }>;
   not_built: string[];
 }
 
@@ -44,7 +49,10 @@ async function readBom(agent: string, version?: number): Promise<{ bom: AiBom; e
   const res = await fetch(path, { cache: "no-store" });
   const d = (await res.json().catch(() => null)) as Record<string, unknown> | null;
   if (!res.ok || !d || d.error) throw new Error(errorText(d, res, "GET", "/api/agents/{agent}/bom"));
-  return { bom: bomOf(d), extra: { knowledge: list(d.knowledge), datasets: list(d.datasets), sub_agents: list(d.sub_agents), not_built: list<string>(d.not_built) } };
+  const peerCalls = Object.fromEntries(
+    list<Record<string, unknown>>(d.peers).map((p) => [String(p.id ?? ""), { calls: typeof p.calls === "number" ? p.calls : 0, last_at: typeof p.last_at === "string" ? p.last_at : null }]),
+  );
+  return { bom: bomOf(d), extra: { knowledge: list(d.knowledge), datasets: list(d.datasets), sub_agents: list(d.sub_agents), peerCalls, not_built: list<string>(d.not_built) } };
 }
 
 function ClassTag({ value, none }: { value: string; none: string }) {
@@ -187,6 +195,86 @@ export function BomView({ bom, extra }: { bom: AiBom; extra?: BomExtra }) {
         )}
       </Section>
 
+      <Section title="Peers" hue="mcp" meta="the A2A peers its runs handed tasks to">
+        {b.peers.length ? (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] border-collapse text-[11.5px]">
+              <thead>
+                <tr className="border-b border-line text-left text-[10.5px] text-faint">
+                  <th className="px-3 py-1.5 font-medium">Peer</th>
+                  <th className="px-3 py-1.5 font-medium">Registration</th>
+                  <th className="px-3 py-1.5 font-medium">Pinned card</th>
+                  <th className="px-3 py-1.5 font-medium">Most sensitive data it may be sent</th>
+                  <th className="px-3 py-1.5 font-medium">Calls</th>
+                </tr>
+              </thead>
+              <tbody>
+                {b.peers.map((p) => {
+                  const used = extra?.peerCalls[p.id];
+                  return (
+                    <tr key={p.id} className="border-b border-line align-top last:border-0">
+                      <td className="px-3 py-1.5">
+                        <span className="block text-fg">{p.name || p.id}</span>
+                        <Mono className="text-[10px] text-ghost">{p.id}</Mono>
+                      </td>
+                      <td className="px-3 py-1.5">
+                        <Status tone={p.status === "approved" ? "ok" : p.registered ? "warn" : "err"}>{p.registered ? p.status || "unknown" : "not registered: every call is refused"}</Status>
+                        {p.url && <Mono className="block truncate text-[10px] text-faint">{p.url}</Mono>}
+                      </td>
+                      <td className="px-3 py-1.5">
+                        {p.card ? <span className="text-dim">{[p.card.name, p.card.version].filter(Boolean).join(" ") || "unnamed"}</span> : <span className="text-[11px] text-ghost">none pinned</span>}
+                        {p.card_digest && <DigestChip digest={p.card_digest} label="Pinned card digest" />}
+                      </td>
+                      <td className="px-3 py-1.5"><ClassTag value={p.effective_max_data_class} none="not set" /></td>
+                      <td className="tnum px-3 py-1.5 text-dim">{used ? `${used.calls}, last ${whenText(used.last_at)}` : "not counted"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-[11.5px] text-faint">Its runs handed no task to a peer.</p>
+        )}
+      </Section>
+
+      <Section title="Templates" hue="ledger" meta="where it was cut from, and what was made from it">
+        {(() => {
+          const t = b.templates;
+          const cut = t.cut_from;
+          const text = (v: unknown) => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
+          return (
+            <div className="flex flex-col gap-1.5 text-[11.5px]">
+              {cut ? (
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="text-faint">Cut from</span>
+                  <span className="text-fg">{text(cut.name) || text(cut.template)}</span>
+                  <Mono className="text-[10.5px] text-faint">{text(cut.template)}</Mono>
+                  {cut.certified === true ? <Status tone="ok">certified</Status> : <Status tone="warn">not certified</Status>}
+                  {text(cut.template_digest) && <DigestChip digest={text(cut.template_digest)} label="Template digest" />}
+                  <span className="text-faint">as version {text(cut.version) || "not recorded"}, {whenText(text(cut.at) || null)}</span>
+                </span>
+              ) : (
+                <span className="text-faint">Made by hand: it was not cut from a template.</span>
+              )}
+              {t.made.length ? (
+                t.made.map((m, i) => (
+                  <span key={`${text(m.template)}-${i}`} className="flex flex-wrap items-center gap-2">
+                    <span className="text-faint">Made into the template</span>
+                    <span className="text-fg">{text(m.name) || text(m.template)}</span>
+                    <Mono className="text-[10.5px] text-faint">{text(m.template)}</Mono>
+                    {m.certified === true ? <Status tone="ok">certified</Status> : <Status tone="warn">not certified</Status>}
+                    <span className="text-faint">from version {text(m.version) || "not recorded"}, {whenText(text(m.at) || null)}</span>
+                  </span>
+                ))
+              ) : (
+                <span className="text-faint">No template was made from its versions.</span>
+              )}
+            </div>
+          );
+        })()}
+      </Section>
+
       {extra && (
         <Section title="Knowledge, datasets and agents its runs started" hue="ledger">
           {extra.knowledge.length ? (
@@ -232,7 +320,7 @@ export function BomView({ bom, extra }: { bom: AiBom; extra?: BomExtra }) {
           )}
           {extra.not_built.length > 0 && (
             <p className="text-[11px] text-faint">
-              Not built: {extra.not_built.map((n) => ({ peers: "peers", "sub_agents.declared": "a sub-agent a definition declares", templates: "the template it was cut from", cyclonedx: "the CycloneDX export" })[n] ?? n).join(", ")}.
+              Not built, as the platform answers: {extra.not_built.map((n) => ({ "sub_agents.declared": "a sub-agent a definition declares", cyclonedx: "the CycloneDX export" })[n] ?? n).join(", ")}.
             </p>
           )}
         </Section>

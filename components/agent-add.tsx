@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { UnreadFields } from "./unread-fields";
 import { useRouter } from "next/navigation";
 import { agentHref } from "@/lib/agent-link";
 import { DrillModal } from "./drill";
@@ -21,12 +22,15 @@ export function AddAgent({ onSaved }: { onSaved?: () => void }) {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [problems, setProblems] = useState<string[]>([]);
+  /** Saved, with fields the parser did not read: the dialog stays open to say so before the agent is opened. */
+  const [kept, setKept] = useState<{ id: string; version: number | null; unread: string[] } | null>(null);
 
   const close = () => {
     setOpen(false);
     setText("");
     setName("");
     setProblems([]);
+    setKept(null);
   };
 
   const read = async (f: File | undefined) => {
@@ -52,12 +56,18 @@ export function AddAgent({ onSaved }: { onSaved?: () => void }) {
     setProblems([]);
     try {
       const res = await fetch("/api/agents", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ spec: document }) });
-      const body = (await res.json().catch(() => ({}))) as { id?: string; error?: string; problems?: string[] };
+      const body = (await res.json().catch(() => ({}))) as { id?: string; version?: number | null; error?: string; problems?: string[]; unread?: unknown };
       if (!res.ok || !body.id) {
         setProblems(body.problems?.length ? body.problems : [body.error || `The platform answered ${res.status}.`]);
         return;
       }
       onSaved?.();
+      // Fields the parser does not read are saved as sent and never acted on: said here before the agent is opened.
+      const unread = Array.isArray(body.unread) ? body.unread.filter((x): x is string => typeof x === "string" && x.trim() !== "") : [];
+      if (unread.length) {
+        setKept({ id: body.id, version: typeof body.version === "number" ? body.version : null, unread });
+        return;
+      }
       close();
       router.push(agentHref(body.id));
     } catch {
@@ -78,16 +88,42 @@ export function AddAgent({ onSaved }: { onSaved?: () => void }) {
           subtitle="An agent arrives as a definition document: the JSON file its author hands over. It is checked before anything is saved; a part of it the platform does not carry out yet is listed on the agent's page, and stops a deploy and a run. A document that names an agent already here is saved as its next version."
           onClose={close}
           actions={
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="solid" tone="err" onClick={close} disabled={busy}>
-                Cancel
-              </Button>
-              <Button size="sm" variant="solid" tone="ink" onClick={save} loading={busy} disabled={!text.trim()} permission="deploy">
-                Check and save
-              </Button>
-            </div>
+            kept ? (
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="solid"
+                  tone="ink"
+                  onClick={() => {
+                    const id = kept.id;
+                    close();
+                    router.push(agentHref(id));
+                  }}
+                >
+                  Open the agent
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="solid" tone="err" onClick={close} disabled={busy}>
+                  Cancel
+                </Button>
+                <Button size="sm" variant="solid" tone="ink" onClick={save} loading={busy} disabled={!text.trim()} permission="deploy">
+                  Check and save
+                </Button>
+              </div>
+            )
           }
         >
+          {kept ? (
+            <div className="flex flex-col gap-3">
+              <p className="text-[12.5px] leading-[1.55] text-fg">
+                {kept.id} is saved{kept.version !== null ? ` as version ${kept.version}` : ""}.
+              </p>
+              <UnreadFields unread={kept.unread} />
+              <p className="text-[11.5px] leading-[1.5] text-faint">To have a field read, correct its name or its value in the document and save it again: it is saved as the next version.</p>
+            </div>
+          ) : (
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center gap-3">
               <input ref={file} type="file" accept="application/json,.json" className="hidden" onChange={(e) => void read(e.target.files?.[0])} />
@@ -118,6 +154,7 @@ export function AddAgent({ onSaved }: { onSaved?: () => void }) {
               </div>
             )}
           </div>
+          )}
         </DrillModal>
       )}
     </>

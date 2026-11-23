@@ -15,11 +15,13 @@
  *   registration free but behind an account: held only where the client's own
  *                licence covers it
  *   licensed     paid or restricted: cited by reference, never stored
+ *   unstated     nobody said: an upload, a connector's object, or a source
+ *                added without a licence is recorded so (never as open)
  */
 
 import type { DataClass } from "./api/pending";
 
-export type Licence = "open" | "registration" | "licensed";
+export type Licence = "open" | "registration" | "licensed" | "unstated";
 
 export interface Source {
   id: string;
@@ -110,6 +112,7 @@ export const LICENCE_NOTE: Record<Licence, string> = {
   open: "Redistributable. Held in the index and quoted in full.",
   registration: "Free but account-bound. Held only where your organisation's licence covers it.",
   licensed: "Paid or restricted. Cited by reference; no text is stored.",
+  unstated: "Licence not stated. Nobody said under what licence it is held: an upload, a connector's object, or a source added without one.",
 };
 
 export const SOURCE_BY_ID = new Map(SOURCES.map((s) => [s.id, s]));

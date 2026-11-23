@@ -520,6 +520,14 @@ export interface AgentSaved {
   deployed_at: string | null;
   /** A save once the agent is deployed: a version row and nothing else; production keeps running what it ran until a deploy. */
   draft: boolean;
+  /**
+   * One sentence per field the saved document holds that the parser does not
+   * read (an unknown field on a node, a step, an edge or a tool), or a text
+   * field given something that is not text and read as that value's text;
+   * each starts with where it is. Saved as sent, never acted on. Empty when
+   * there is none.
+   */
+  unread: string[];
 }
 
 /** The gate's 409: the unmet conditions with their detail and items, every condition, and the decision recorded. */
@@ -588,7 +596,17 @@ export function overrideRecordOf(v: unknown): OverrideRecord | null {
 
 export function agentSavedOf(v: unknown): AgentSaved {
   const o = obj(v);
-  return { saved: o.saved === true, id: str(o.id), digest: str(o.digest), version: numOrNull(o.version), store: str(o.store), deployed: o.deployed === true, deployed_at: strOrNull(o.deployed_at), draft: o.draft === true };
+  return {
+    saved: o.saved === true,
+    id: str(o.id),
+    digest: str(o.digest),
+    version: numOrNull(o.version),
+    store: str(o.store),
+    deployed: o.deployed === true,
+    deployed_at: strOrNull(o.deployed_at),
+    draft: o.draft === true,
+    unread: Array.isArray(o.unread) ? o.unread.filter((x): x is string => typeof x === "string" && x.trim() !== "") : [],
+  };
 }
 
 export function gateRefusalBodyOf(v: unknown): GateRefusal {

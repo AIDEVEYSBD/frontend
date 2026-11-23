@@ -201,6 +201,61 @@ export function EvidencePackView({ pack }: { pack: EvidencePack }) {
         )}
       </Section>
 
+      <Section title="Policy changes" hue="guardrail" meta="every change to the rules that moved in the period">
+        {p.policy.changes.length > 0 ? (
+          <Rows head={["Change", "Target", "State", "Proposed", "Approved", "Applied or ended"]} min={820}>
+            {p.policy.changes.map((c) => (
+              <tr key={c.id} className="border-b border-line align-top last:border-0">
+                <td className="px-3 py-1.5">
+                  <Mono className="text-[10.5px] text-fg">{c.id}</Mono>
+                  {c.emergency && <span className="ml-1 text-[10.5px] text-warn">emergency</span>}
+                  {c.rollback_of && <span className="block text-[10.5px] text-faint">rolls back {c.rollback_of}</span>}
+                  {c.reason && <span className="block max-w-[40ch] text-[10.5px] text-faint">{c.reason}</span>}
+                </td>
+                <td className="px-3 py-1.5 text-dim">{c.target.id === "estate" ? "every agent" : `${c.target.kind} ${c.target.id}`}</td>
+                <td className="px-3 py-1.5 text-dim">{c.state.replace(/_/g, " ")}</td>
+                <td className="px-3 py-1.5 text-faint">{whenText(c.proposed_at)}{c.proposed_by ? ` by ${c.proposed_by}` : ""}</td>
+                <td className="px-3 py-1.5 text-faint">{c.approved_at ? `${whenText(c.approved_at)}${c.approved_by ? ` by ${c.approved_by}` : ""}` : c.rejected_at ? `rejected ${whenText(c.rejected_at)}${c.rejected_by ? ` by ${c.rejected_by}` : ""}` : "not approved"}</td>
+                <td className="px-3 py-1.5 text-faint">{c.rolled_back_at ? `rolled back ${whenText(c.rolled_back_at)}` : c.applied_at ? `applied ${whenText(c.applied_at)}` : "not applied"}</td>
+              </tr>
+            ))}
+          </Rows>
+        ) : (
+          <p className="text-[12px] text-faint">No policy change moved in the period.</p>
+        )}
+      </Section>
+
+      <Section title="Deployments" hue="guardrail" meta="every deployment and rollback made in the period">
+        {p.policy.deployments.length > 0 ? (
+          <Rows head={["Agent", "Version", "Kind", "By", "Gate conditions"]} min={760}>
+            {p.policy.deployments.map((d) => (
+              <tr key={d.id} className="border-b border-line align-top last:border-0">
+                <td className="px-3 py-1.5 text-fg">
+                  {d.agent}
+                  <span className="block text-[10.5px] text-faint">{d.environment}</span>
+                </td>
+                <td className="px-3 py-1.5 text-dim">
+                  {d.version ?? "not recorded"} {d.digest && <DigestChip digest={d.digest} label="Definition digest" />}
+                </td>
+                <td className="px-3 py-1.5 text-dim">
+                  {d.kind}
+                  {d.reason && <span className="block max-w-[34ch] text-[10.5px] text-faint">{d.reason}</span>}
+                </td>
+                <td className="px-3 py-1.5 text-faint">{d.by || "not recorded"}, {whenText(d.at)}</td>
+                <td className="px-3 py-1.5 text-faint">
+                  {d.conditions.length
+                    ? d.conditions.map((c) => `${c.condition}: ${c.holds === true ? "held" : c.holds === false ? "did not hold" : "not judged"}`).join("; ")
+                    : "none recorded"}
+                </td>
+              </tr>
+            ))}
+          </Rows>
+        ) : (
+          <p className="text-[12px] text-faint">No deployment or rollback was made in the period.</p>
+        )}
+        {p.policy.truncated && <p className="text-[11px] text-warn">The period held more changes or deployments than the pack cites; the newest are listed.</p>}
+      </Section>
+
       <Section title="Identities" hue="identity" meta="who acted, as what">
         {p.identities.length ? (
           <ul className="flex flex-col gap-1">

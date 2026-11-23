@@ -480,7 +480,13 @@ export interface EvidencePack {
   controls: { id: string; title: string; statement: string; evidence: string }[];
   firings: EvidenceFiring[];
   decisions: PackDecision[];
-  policy: { versions: PackVersion[]; platform: { control: string; state: string | null; why: string }[]; platform_as_of: string };
+  /**
+   * `changes`: every policy change that moved in the period (proposed,
+   * approved, applied, rejected or rolled back), newest first. `deployments`:
+   * every deployment and rollback made in the period, with the deploy gate's
+   * conditions. `truncated` when the period held more than the pack cites.
+   */
+  policy: { versions: PackVersion[]; platform: { control: string; state: string | null; why: string }[]; platform_as_of: string; changes: PackPolicyChange[]; deployments: PackDeployment[]; truncated: boolean };
   identities: { identity: string; acted_as: string[]; count: number }[];
   runs: PackRun[];
   chain: { status: PackChainStatus; runs: number; broken: { run: string; broken_at: number | null; reason: string }[] };
@@ -490,6 +496,38 @@ export interface EvidencePack {
   truncated: boolean;
   /** What the pack cannot hold, and why. */
   not_built: Record<string, string>;
+}
+
+/** A policy change the pack cites: what it targets, where it stands, who moved it and when. */
+export interface PackPolicyChange {
+  id: string;
+  target: { kind: string; id: string };
+  state: string;
+  reason: string;
+  emergency: boolean;
+  proposed_by: string;
+  proposed_at: string;
+  approved_by: string | null;
+  approved_at: string;
+  applied_at: string;
+  rejected_by: string | null;
+  rejected_at: string;
+  rolled_back_at: string;
+  rollback_of: string | null;
+}
+
+/** A deployment or rollback the pack cites, with the gate's conditions as they held. */
+export interface PackDeployment {
+  id: string;
+  agent: string;
+  environment: string;
+  version: number | null;
+  digest: string;
+  kind: string;
+  reason: string;
+  by: string;
+  at: string;
+  conditions: { condition: string; holds: boolean | null }[];
 }
 
 export function evidencePackOf(v: unknown): EvidencePack {
@@ -542,6 +580,38 @@ export function evidencePackOf(v: unknown): EvidencePack {
       versions: objs(policy.versions).map((r) => ({ agent: str(r.agent), version: numOrNull(r.version), digest: str(r.digest), saved_at: str(r.saved_at), saved_by: str(r.saved_by), deployed: r.deployed === true, draft: r.draft === true })),
       platform: objs(policy.platform).map((x) => ({ control: str(x.control), state: strOrNull(x.state), why: str(x.why) })),
       platform_as_of: str(policy.platform_as_of),
+      changes: objs(policy.changes).map((r) => {
+        const t = obj(r.target);
+        return {
+          id: str(r.id),
+          target: { kind: str(t.kind), id: str(t.id) },
+          state: str(r.state),
+          reason: str(r.reason),
+          emergency: r.emergency === true,
+          proposed_by: str(r.proposed_by),
+          proposed_at: str(r.proposed_at),
+          approved_by: strOrNull(r.approved_by),
+          approved_at: str(r.approved_at),
+          applied_at: str(r.applied_at),
+          rejected_by: strOrNull(r.rejected_by),
+          rejected_at: str(r.rejected_at),
+          rolled_back_at: str(r.rolled_back_at),
+          rollback_of: strOrNull(r.rollback_of),
+        };
+      }),
+      deployments: objs(policy.deployments).map((r) => ({
+        id: str(r.id),
+        agent: str(r.agent),
+        environment: str(r.environment),
+        version: numOrNull(r.version),
+        digest: str(r.digest),
+        kind: str(r.kind),
+        reason: str(r.reason),
+        by: str(r.by),
+        at: str(r.at),
+        conditions: objs(r.conditions).map((c) => ({ condition: str(c.condition), holds: c.holds === true ? true : c.holds === false ? false : null })),
+      })),
+      truncated: policy.truncated === true,
     },
     identities: objs(o.identities).map((i) => ({ identity: str(i.identity), acted_as: strs(i.acted_as), count: num(i.count) })),
     runs: objs(o.runs).map((r) => ({ id: str(r.id), agent: str(r.agent), state: str(r.state), started_at: str(r.started_at), spec_digest: str(r.spec_digest), chain: chainOf(r.chain), broken_at: numOrNull(r.broken_at), anchor: str(r.anchor), reason: str(r.reason) })),

@@ -95,7 +95,7 @@ import { whenText } from "@/lib/lifecycle";
 function DiffTable({ diff }: { diff: PolicyDiff }) {
   if (!diff.changes.length) return <p className="text-[11.5px] text-faint">Nothing moves.</p>;
   return (
-    <div className="overflow-x-auto rounded-md border border-line">
+    <div className="af-list overflow-x-auto rounded-md border border-line">
       <table className="w-full min-w-[420px] border-collapse text-[11.5px]">
         <thead>
           <tr className="border-b border-line bg-raise/40 text-left text-[10.5px] text-faint">
@@ -547,7 +547,7 @@ export function SimulationView({ result }: { result: SimulationResult }) {
         {r.target.kind === "spec" ? `${r.target.id}'s policy` : targetLine(r.target)} · {whenText(r.window.from)} to {whenText(r.window.to)} · nothing was executed
       </p>
       {r.changed.length > 0 && (
-        <div className="overflow-x-auto rounded-md border border-line">
+        <div className="af-list overflow-x-auto rounded-md border border-line">
           <table className="w-full min-w-[860px] border-collapse text-[11.5px]">
             <thead>
               <tr className="border-b border-line bg-raise/40 text-left text-[10.5px] text-faint">
@@ -711,11 +711,15 @@ export function TargetRules({ target, onPropose }: { target: TargetKind; onPropo
         )}
       </span>
       <p className="text-[11px] leading-[1.5] text-faint">{target.what}</p>
-      {Object.entries(target.by_id).map(([id, rules]) => (
-        <p key={id} className="text-[11px] leading-[1.5] text-dim">
-          <Mono className="text-[10.5px] text-fg">{id}</Mono>: {byIdLine(target, rules)}
-        </p>
-      ))}
+      {Object.keys(target.by_id).length > 0 && (
+        <div className="af-list flex flex-col">
+          {Object.entries(target.by_id).map(([id, rules]) => (
+            <p key={id} className="text-[11px] leading-[1.5] text-dim">
+              <Mono className="text-[10.5px] text-fg">{id}</Mono>: {byIdLine(target, rules)}
+            </p>
+          ))}
+        </div>
+      )}
       {target.current ? (
         <dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-[11px]">
           {rows.map(([k, v]) => (

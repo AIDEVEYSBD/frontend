@@ -795,8 +795,9 @@ describe("the console's shapes and the generated client agree", () => {
     // `settled` (stopped at once, no worker held it) is ahead of the generated types.
     expectTypeOf<Agrees<Omit<l7.KillReceipt, "delivery">, Schemas["RunKilled"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l7.DepNode, Schemas["DepNode"]>>().toEqualTypeOf<true>();
-    expectTypeOf<Agrees<l7.DepEdge, Schemas["DepEdge"]>>().toEqualTypeOf<true>();
-    expectTypeOf<Agrees<l7.DepMap, Schemas["DependencyMap"]>>().toEqualTypeOf<true>();
+    // `unpriced` (the models a model edge's unpriced calls were on) is ahead of the generated types.
+    expectTypeOf<Agrees<Omit<l7.DepEdge, "unpriced">, Schemas["DepEdge"]>>().toEqualTypeOf<true>();
+    expectTypeOf<Agrees<Omit<l7.DepMap, "edges">, Omit<Schemas["DependencyMap"], "edges">>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l7.BlastAgent, Schemas["BlastAgent"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l7.BlastRun, Schemas["BlastRun"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l7.BlastApplication, Schemas["BlastApplication"]>>().toEqualTypeOf<true>();

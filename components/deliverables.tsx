@@ -173,7 +173,7 @@ export function DeliverablesListView({ list, selected, onSelect }: { list: Deliv
       <p className="text-[12px] text-faint">No deliverable matches.</p>
     );
   return (
-    <ul className="flex flex-col overflow-hidden rounded-md border border-line">
+    <ul className="af-list af-list-tall flex flex-col rounded-md border border-line">
       {list.deliverables.map((d) => (
         <li key={d.id} className={`border-b border-line last:border-b-0 ${selected === d.id ? "bg-raise/50" : ""}`}>
           <button type="button" onClick={() => onSelect?.(d.id)} className="focusable flex w-full cursor-pointer flex-col gap-0.5 px-3 py-2 text-left hover:bg-raise/40">

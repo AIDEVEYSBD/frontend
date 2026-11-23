@@ -1,18 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CONTROLS, STANDARDS, type Control } from "@/lib/guardrails";
-import { GROUPINGS, type Domain } from "@/lib/control-domains";
+import { CONTROLS, type Control } from "@/lib/guardrails";
+import type { ServedFramework } from "@/lib/controls-status";
 import { ask, type Answer, type Compliance, type ControlCustom, type IclControl } from "@/lib/api/pending";
 
 /**
  * What the Compliance view counts from, and nothing that holds a record.
  *
- * The standards are read from two places that already exist: the five the
- * catalogue cites (lib/guardrails.ts, `references` on each control) and the
- * three it is grouped under (lib/control-domains.ts, one domain per control).
- * No citation is written here. The ABB ICL is the client's list and comes
- * only from the `compliance` door.
+ * The standards are the service's (GET /api/controls `frameworks`, its one
+ * copy of the mapping): the ones whose entries the catalogue cites for a
+ * control, and the ones whose domains each control is placed in. No citation
+ * is written here and the console's own copy is not read for them. A
+ * citation says where a control comes from, never that it is enforced. The
+ * ABB ICL is the client's list and comes only from the `compliance` door.
  */
 
 /** The client's own control list, named as the client names it. */
@@ -37,37 +38,27 @@ export interface StandardCol {
   entries: (c: Control) => Entry[];
 }
 
-/** A domain's code as its own name writes it ("AC · Access Control", "A.8 · Technological controls"), or its id. */
-function domainEntry(d: Domain): Entry {
-  const at = d.name.indexOf(" · ");
-  if (at > 0) return { ref: d.name.slice(0, at), name: d.name.slice(at + 3) };
-  return { ref: d.id, name: d.note ? `${d.name}: ${d.note}` : d.name };
+/** A domain as an entry: its code as its own name writes it ("AC · Access Control", "A.8 · Technological controls"), or its ref with the note. */
+function domainEntry(o: ServedFramework["obligations"][number]): Entry {
+  const at = o.name.indexOf(" · ");
+  if (at > 0) return { ref: o.name.slice(0, at), name: o.name.slice(at + 3) };
+  return { ref: o.ref, name: o.note ? `${o.name}: ${o.note}` : o.name };
 }
 
-export const STANDARD_COLS: StandardCol[] = [
-  ...STANDARDS.map(
-    (s): StandardCol => ({
-      id: s.std,
-      short: s.std,
-      title: s.title,
-      note: s.note,
-      kind: "cited",
-      entries: (c) => c.references.filter((r) => r.std === s.std).map((r) => ({ ref: r.ref, name: r.name })),
-    }),
-  ),
-  ...GROUPINGS.map(
-    (g): StandardCol => ({
-      id: g.id,
-      short: g.short,
-      title: g.label,
-      kind: "grouped",
-      entries: (c) => {
-        const d = g.domains.find((x) => x.id === g.of[c.id]);
-        return d ? [domainEntry(d)] : [];
-      },
-    }),
-  ),
-];
+/** The standards' columns from the service's framework list: the cited ones first, then the ones each control is placed in. */
+export function standardColsOf(frameworks: ServedFramework[] | null): StandardCol[] {
+  const all = frameworks ?? [];
+  const col = (f: ServedFramework): StandardCol => ({
+    id: f.id,
+    short: f.short,
+    title: f.name,
+    note: f.why ?? f.scope,
+    kind: f.basis === "cited" ? "cited" : "grouped",
+    entries: (c) => f.obligations.filter((o) => o.controls.includes(c.id)).map((o) => (f.basis === "cited" ? { ref: o.ref, name: o.name } : domainEntry(o))),
+  });
+  // The client's own list (basis "client list") is its own column, read from the compliance door with its mapping; it is not a standard here.
+  return [...all.filter((f) => f.basis === "cited").map(col), ...all.filter((f) => f.basis === "placed").map(col)];
+}
 
 /* ═══════════════════ what a deployment changed ═══════════════════ */
 
@@ -104,22 +95,22 @@ export function readCompliance(data: Compliance | null | undefined): { icl: Comp
   return { icl, mapping, custom };
 }
 
-/* ═══════════════════ coverage ═══════════════════ */
+/* ═══════════════════ citations per standard ═══════════════════ */
 
 export interface Coverage {
   /** Controls of the catalogue that apply to this deployment. */
   applying: Control[];
   /** How many catalogue controls are marked as not applying. */
   left: number;
-  /** Per standard: how many of the applying controls have an entry in it. */
+  /** Per standard: how many of the applying controls cite an entry of it, or are placed in one of its domains. Not enforcement. */
   byStandard: Map<string, number>;
   /** The ICL figures, or null while no list is loaded. */
   icl: { mapped: number; total: number; gaps: IclControl[] } | null;
 }
 
-export function coverage(mappingOf: (id: string) => string[], customOf: (id: string) => ControlCustom | null, list: IclControl[] | null): Coverage {
+export function coverage(cols: StandardCol[], mappingOf: (id: string) => string[], customOf: (id: string) => ControlCustom | null, list: IclControl[] | null): Coverage {
   const applying = CONTROLS.filter((c) => customOf(c.id)?.applies !== false);
-  const byStandard = new Map(STANDARD_COLS.map((s) => [s.id, applying.filter((c) => s.entries(c).length > 0).length]));
+  const byStandard = new Map(cols.map((s) => [s.id, applying.filter((c) => s.entries(c).length > 0).length]));
   let icl: Coverage["icl"] = null;
   if (list) {
     const known = new Set(list.map((x) => x.id));

@@ -244,7 +244,7 @@ export function ApprovalsView() {
         {gates && all.length > 0 && shown.length === 0 && <p className="text-[12px] text-faint">No waiting gate matches these filters.</p>}
 
         {shown.length > 0 && (
-          <div className="-mx-4 -mb-4 overflow-x-auto border-t border-line">
+          <div className="-mx-4 -mb-4 af-list overflow-x-auto border-t border-line">
             <table className="w-full min-w-[980px] border-collapse text-[12px]">
               <thead>
                 <tr className="border-b border-line text-left text-[10.5px] text-faint">
@@ -356,7 +356,7 @@ export function ApprovalsView() {
         {answeredNow?.error && <Failure what="The answered gates could not be read" message={answeredNow.error} />}
         {answeredNow && !answeredNow.error && answeredNow.decisions.length === 0 && <p className="text-[12px] text-faint">No gate was answered in this window.</p>}
         {answeredNow && answeredNow.decisions.length > 0 && (
-          <div className="-m-4 overflow-x-auto">
+          <div className="-m-4 af-list overflow-x-auto">
             <table className="w-full min-w-[900px] border-collapse text-[12px]">
               <thead>
                 <tr className="border-b border-line text-left text-[10.5px] text-faint">

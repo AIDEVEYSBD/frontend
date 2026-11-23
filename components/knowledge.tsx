@@ -62,7 +62,7 @@ import {
 
 interface Source extends SourceClassFields {
   id: string;
-  /** `upload` for a document a person uploaded: the platform marks every upload's licence "open", which says nothing about the document, so it is shown as their own. */
+  /** `upload` for a document a person uploaded: nobody states its licence, so it is shown as their own and counted as unstated (an upload recorded before "unstated" existed carries "open", which said nothing). */
   kind?: string;
   name: string;
   publisher: string;
@@ -139,9 +139,14 @@ interface Data {
   };
 }
 
+/** The licences a person states when adding a source; "unstated" is what the platform records when nobody did, never a choice. */
 const LICENCES: Licence[] = ["open", "registration", "licensed"];
-const LICENCE_TONE: Record<Licence, "ok" | "warn" | "neutral"> = { open: "ok", registration: "warn", licensed: "neutral" };
-const LICENCE_COLOR: Record<Licence, string> = { open: "var(--t-ok)", registration: "var(--t-warn)", licensed: "var(--t-line-strong)" };
+/** Every licence a record may carry, as the register counts them. */
+const LICENCES_HELD: Licence[] = ["open", "registration", "licensed", "unstated"];
+const LICENCE_TONE: Record<Licence, "ok" | "warn" | "neutral"> = { open: "ok", registration: "warn", licensed: "neutral", unstated: "warn" };
+const LICENCE_COLOR: Record<Licence, string> = { open: "var(--t-ok)", registration: "var(--t-warn)", licensed: "var(--t-line-strong)", unstated: "var(--t-c3)" };
+/** The licence a source is counted under: an upload's is never stated by anyone, whatever an older record wrote. */
+const licenceHeld = (s: { kind?: string; licence: Licence }): Licence => (s.kind === "upload" ? "unstated" : (LICENCES_HELD as string[]).includes(s.licence) ? s.licence : "unstated");
 const FAMILY_COLOR: Record<string, string> = {
   ai: "var(--t-c2)", frameworks: "var(--t-c5)", threat: "var(--t-c1)",
   cloud: "var(--t-c7)", identity: "var(--t-c8)", regulation: "var(--t-c6)", market: "var(--t-c3)",
@@ -331,10 +336,10 @@ export function Knowledge() {
     return offered.filter((s) => inFamily(s, offerFamily) && hasTerm(s, term));
   }, [offered, offerFamily, offerQ]);
 
-  const byLicence = LICENCES.map((l) => ({
+  const byLicence = LICENCES_HELD.map((l) => ({
     label: LICENCE_NOTE[l].split(".")[0],
-    // Uploads are left out: the platform marks every upload "open", which says nothing of the document.
-    value: sources.filter((s) => s.licence === l && s.kind !== "upload").length,
+    // Every source counts, uploads among them: nobody states an upload's licence, so it is counted as unstated.
+    value: sources.filter((s) => licenceHeld(s) === l).length,
     color: LICENCE_COLOR[l],
   }));
   const indexed = sources.filter((s) => Number(s.chunks) > 0).length;
@@ -1038,7 +1043,14 @@ interface Doc {
   decided_by: string;
   note: string;
   text: string;
+  /** Whether the copy holds its whole text, as the store judges it from how long the text was as read. */
   fullTextHeld: boolean;
+  /** What is missing when it does not, in the store's words: the text was cut at the most the service keeps of one document. */
+  textNote?: string | null;
+  /** How long the text was as read; null when that was not recorded (a copy kept before it was). */
+  textChars?: number | null;
+  /** How much of it is held. */
+  keptChars?: number;
   sections: { ordinal: number; heading: string; bytes: number; chunks: string }[];
   references: Record<string, { distinct: number; top: string[] }>;
   kinds: Record<string, number>;
@@ -1226,9 +1238,10 @@ function DocumentModal({ id, namespace, locate, onClose, onDone }: { id: string;
                 ))}
               </nav>
               <div ref={body} className="min-h-0 overflow-y-auto px-5 py-4 text-[12.5px] leading-[1.65] text-fg">
-                {!doc.fullTextHeld && (
-                  <p className="mb-3 rounded-md border border-line bg-raise/40 px-3 py-2 text-[11px] text-faint">
-                    This document was fetched before full text was retained; the opening of it is shown. Fetch the source again to hold the whole document.
+                {(!doc.fullTextHeld || doc.textNote) && (
+                  // The store's own sentence: the text was cut at the most this service keeps of one document, and what follows cannot be retrieved.
+                  <p role="note" className="mb-3 rounded-md border border-warn/50 bg-raise/40 px-3 py-2 text-[11px] leading-[1.55] text-warn">
+                    {doc.textNote || "The store says it does not hold this document's whole text, and gives no reason."}
                   </p>
                 )}
                 <Markdown text={text} headingIds />

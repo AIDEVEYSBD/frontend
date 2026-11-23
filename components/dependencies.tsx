@@ -135,7 +135,7 @@ function DependenciesInner() {
         }
       >
         What every agent depends on, declared by its latest version and seen in its runs: the tools it calls and the servers that serve them, the models it uses, the agents its
-        runs started, and the applications (registered use cases) that depend on it. Peers are not built. Pick a node for its blast radius: everything that fails if it does.
+        runs started, the peers its runs handed tasks to, and the applications (registered use cases) that depend on it. Pick a node for its blast radius: everything that fails if it does.
       </GroupHeader>
 
 
@@ -270,7 +270,7 @@ export function MapView({ map, picked, lit, onPick, quiet = false }: { map: DepM
   });
 
   return (
-    <div className="overflow-x-auto rounded-md border border-line bg-surface">
+    <div className="af-list af-list-tall overflow-x-auto rounded-md border border-line bg-surface">
       <div ref={host} className="relative grid min-w-[880px] grid-cols-4 gap-x-16 px-10 py-4">
         <svg className="pointer-events-none absolute inset-0 z-0" width={geom.w} height={geom.h} viewBox={`0 0 ${Math.max(1, geom.w)} ${Math.max(1, geom.h)}`} aria-hidden>
           {paths.map((p) =>
@@ -508,7 +508,7 @@ function Blast({ id, window, byId, onPick, onLit }: { id: string; window: string
 /** A blast radius as the panel shows it: the counts, the agents with their paths, the runs in flight, the applications. Presentational, so tests render it from a captured answer. */
 export function BlastView({ blast: b, byId, onPick }: { blast: BlastRadius; byId: Map<string, DepNode>; onPick: (id: string) => void }) {
   return (
-    <div className="flex flex-col">
+    <div className="af-list af-list-tall flex flex-col">
       <p className={`border-b border-line px-4 py-2 text-[11.5px] ${b.counts.agents ? "text-err" : "text-faint"}`}>{blastCountsLine(b)}</p>
       <span className="px-4 pt-2 pb-1 text-[11px] font-semibold text-dim">Agents</span>
       {b.agents.length === 0 && <span className="px-4 pb-2 text-[11px] text-ghost">No agent depends on it.</span>}

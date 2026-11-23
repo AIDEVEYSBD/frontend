@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Button, Mono, Status, Tag } from "./ui";
-import { Field, Input } from "./forms";
+import { Checkbox, Field, Input } from "./forms";
 import { Figures } from "./section";
 import {
   Card,
@@ -56,8 +56,10 @@ export interface IamActions {
   /** Resolves true when the owner was saved. */
   saveOwner: (i: Identity, draft: OwnerDraft) => Promise<boolean>;
   runFinding: (f: Finding) => void;
-  signOut: (p: Person) => void;
-  setAccess: (p: Person, disabled: boolean) => void;
+  /** Hold out by signing out everywhere; `revokeKeys` revokes their API keys that still work in the same act. */
+  signOut: (p: Person, revokeKeys?: boolean) => void;
+  /** Hold out (`disabled` true) or let back; `revokeKeys`, only with a hold, revokes their API keys that still work in the same act. */
+  setAccess: (p: Person, disabled: boolean, revokeKeys?: boolean) => void;
 }
 
 const list = (v: unknown): string[] => (Array.isArray(v) ? (v as unknown[]).map(String) : []);
@@ -161,6 +163,8 @@ export function IdentityPage({
   keysOfPerson?: Identity[] | null;
 }) {
   const [confirming, setConfirming] = useState("");
+  /** The hold also revokes the person's API keys that still work, in the same act (`revoke_keys`). */
+  const [revokeWithHold, setRevokeWithHold] = useState(false);
   const st = statusOf(entry);
   const mine = events ? eventsFor(entry, events) : [];
   const i = entry.type === "identity" ? entry.identity : null;
@@ -194,7 +198,15 @@ export function IdentityPage({
       <Button size="sm" variant="solid" tone="err" permission="iam" loading={loading} onClick={onGo}>
         {go}
       </Button>
-      <Button size="sm" variant="solid" tone="neutral" onClick={() => setConfirming("")}>
+      <Button
+        size="sm"
+        variant="solid"
+        tone="neutral"
+        onClick={() => {
+          setConfirming("");
+          setRevokeWithHold(false);
+        }}
+      >
         Keep
       </Button>
     </>
@@ -247,16 +259,32 @@ export function IdentityPage({
                   {confirming === "signout"
                     ? `This service cannot end a Google session. Signing ${who} out everywhere holds them out instead: every request of theirs is refused until an administrator lets them back.`
                     : `Every request ${who} makes is refused until an administrator lets them back. Their Google sign-in is untouched.`}{" "}
-                  Their API keys keep working; the notice lists them, to revoke.
+                  A key acts with its own authority, so a hold alone leaves their API keys working{revokeWithHold ? "; these are revoked with it, and a revoked key cannot be restored." : "; the notice lists them, to revoke."}
+                </span>
+                <span className="flex flex-col items-end gap-0.5">
+                  <Checkbox
+                    label={
+                      keysOfPerson === null
+                        ? "Also revoke their API keys"
+                        : theirKeys.length
+                          ? `Also revoke their ${theirKeys.length === 1 ? "API key" : `${theirKeys.length} API keys`}: ${theirKeys.map((k) => k.name).join(", ")}`
+                          : "Also revoke their API keys (the register lists none that still work)"
+                    }
+                    checked={revokeWithHold}
+                    onChange={setRevokeWithHold}
+                  />
+                  {keysOfPerson === null && <span className="text-[10.5px] text-faint">The identity register was not read, so which keys answer to them is not known here; the platform revokes every one that still works.</span>}
                 </span>
                 <span className="flex gap-1.5">
                   {confirmPair(
-                    confirming === "signout" ? "Sign out everywhere" : "Hold out",
+                    confirming === "signout" ? (revokeWithHold ? "Sign out everywhere and revoke keys" : "Sign out everywhere") : revokeWithHold ? "Hold out and revoke keys" : "Hold out",
                     () => {
                       const how = confirming;
+                      const revoke = revokeWithHold;
                       setConfirming("");
-                      if (how === "signout") actions.signOut(p);
-                      else actions.setAccess(p, true);
+                      setRevokeWithHold(false);
+                      if (how === "signout") actions.signOut(p, revoke);
+                      else actions.setAccess(p, true, revoke);
                     },
                     busy === `user:${p.sub}` || busy === `signout:${p.sub}`,
                   )}
@@ -508,6 +536,8 @@ function IdentityAccess({ identity: i, now, busy, ownerStoreDown, editOwner, act
       { k: "Permissions", v: chips(f.permissions) },
       { k: "Minted by", v: text(minted.email) || text(minted.name) || text(minted.sub) || "not recorded" },
       { k: "Minted", v: when(i.created_at, "not recorded") },
+      // When it stops working: its own expiry, or its minting plus the longest lifetime the deployment allows now, whichever is first.
+      { k: i.status === "expired" ? "Expired" : "Expires", v: typeof f.expires_at === "string" && f.expires_at ? new Date(f.expires_at).toLocaleString("en-GB") : "not said by the register" },
       ...(f.revoked_at ? [{ k: "Revoked", v: when(f.revoked_at, "") }] : []),
       ...(f.owner_held_out ? [{ k: "Its owner", v: <span className="text-err">is held out of the console; this key still works until it is revoked</span> }] : []),
     );
@@ -524,10 +554,12 @@ function IdentityAccess({ identity: i, now, busy, ownerStoreDown, editOwner, act
         <div className="flex flex-col bg-surface px-4 py-1.5">
           <Fact k="May reach">
             <span className="flex flex-wrap items-baseline gap-2">
-              {i.risk && <Tag tone={RISK_TONE[i.risk] ?? "neutral"}>{riskLabel(i.risk)}</Tag>}
+              {i.risk ? <Tag tone={RISK_TONE[i.risk] ?? "neutral"}>{riskLabel(i.risk)}</Tag> : i.kind === "workflow" ? <Tag tone="warn">risk not known</Tag> : null}
               <span>{i.privileges}</span>
             </span>
           </Fact>
+          {/* Where an agent's risk was read from: which version, and its highest-risk grant (or why it could not be read). */}
+          {typeof f.risk_from === "string" && f.risk_from && <Fact k="Risk read from">{f.risk_from}</Fact>}
           <Fact k="Authenticates with">{i.credential}</Fact>
           {facts.map((x) => (
             <Fact key={x.k} k={x.k}>
@@ -595,8 +627,9 @@ function Usage({ identity: i, now }: { identity: Identity; now: number }) {
   if (typeof i.runs30d === "number") items.push({ k: "Runs · 30 days", v: i.runs30d.toLocaleString("en-GB") });
   if (typeof i.facts.calls30d === "number") items.push({ k: "Tool calls · 30 days", v: i.facts.calls30d.toLocaleString("en-GB") });
   if (typeof i.facts.denials30d === "number") items.push({ k: "Denials · 30 days", v: i.facts.denials30d.toLocaleString("en-GB") });
-  if (items.length === 0 && !i.last_used) return null;
-  items.push({ k: "Last used", v: i.last_used ? ago(i.last_used, now) : "none on record" });
+  const useKept = i.facts.last_use_recorded !== false;
+  if (items.length === 0 && !i.last_used && useKept) return null;
+  items.push({ k: "Last used", v: i.last_used ? ago(i.last_used, now) : useKept ? "none on record" : "not recorded with this secret store" });
   return (
     <Card id="usage" title="Usage" meta="as the identity register measured it on this read">
       <div className="p-4">

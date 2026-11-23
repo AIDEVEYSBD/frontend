@@ -100,14 +100,20 @@ export async function listKeys(): Promise<KeyList> {
   return data;
 }
 
+/** A key as the list shows it, with when it stops working: its own expiry, or the deployment's longest lifetime counted from its minting, whichever is first. Ahead of the generated type. */
+export type KeyRow = KeyList["keys"][number] & { expires_at?: string | null };
+
 /**
  * `POST /api/keys`: the key is in the answer once and never again. `permissions`
  * left out mints the platform's default (view and run); a permission no key may
  * hold is refused by the platform with its reason, which this rejects with.
+ * `expiresInDays` left out mints a key for the deployment's longest lifetime
+ * (API_KEY_MAX_LIFETIME_DAYS); a number above it, or below one, is refused
+ * with the allowed range in the platform's words.
  */
-export async function mintKey(name: string, agent: string | null, permissions?: string[]): Promise<MintedKey> {
-  // `permissions` is ahead of the generated request type (lib/api/backend.d.ts).
-  const body = (permissions ? { name, agent, permissions } : { name, agent }) as Schemas["MintKeyRequest"];
+export async function mintKey(name: string, agent: string | null, permissions?: string[], expiresInDays?: number): Promise<MintedKey & { expires_at?: string | null }> {
+  // `permissions` and `expires_in_days` are ahead of the generated request type (lib/api/backend.d.ts).
+  const body = { name, agent, ...(permissions ? { permissions } : {}), ...(expiresInDays !== undefined ? { expires_in_days: expiresInDays } : {}) } as Schemas["MintKeyRequest"];
   const { data, error, response } = await api.POST("/api/keys", { body });
   if (!data) throw doorError(error, response);
   return data;
@@ -215,16 +221,30 @@ export async function disconnectIdentity(kind: string, id: string): Promise<Sche
   return data;
 }
 
-/** `DELETE /api/iam/users?sub=`: a person signed out everywhere. */
-export async function signOutUser(sub: string): Promise<Schemas["SignedOut"]> {
-  const { data, error, response } = await api.DELETE("/api/iam/users", { params: { query: { sub } } });
+/**
+ * `DELETE /api/iam/users?sub=`: a person signed out everywhere, which this
+ * service does by holding them out. `revokeKeys` adds `revoke_keys=true`:
+ * their API keys that still work are revoked in the same act, and the answer
+ * lists them under `revoked_keys`.
+ */
+export async function signOutUser(sub: string, revokeKeys = false): Promise<Schemas["SignedOut"]> {
+  // `revoke_keys` is ahead of the generated query type (lib/api/backend.d.ts).
+  const query = (revokeKeys ? { sub, revoke_keys: true } : { sub }) as { sub: string };
+  const { data, error, response } = await api.DELETE("/api/iam/users", { params: { query } });
   if (!data) throw doorError(error, response);
   return data;
 }
 
-/** `PATCH /api/iam/users`: a person's access disabled or re-enabled (never one's own). */
-export async function setUserAccess(sub: string, disabled: boolean, by: string): Promise<Schemas["UserAccessChanged"]> {
-  const { data, error, response } = await api.PATCH("/api/iam/users", { body: { sub, disabled, by } });
+/**
+ * `PATCH /api/iam/users`: a person's access disabled or re-enabled (never
+ * one's own). `revokeKeys`, sent only when holding a person out, revokes
+ * their API keys that still work in the same act (`revoked_keys` in the
+ * answer); the platform refuses it with `disabled: false`.
+ */
+export async function setUserAccess(sub: string, disabled: boolean, by: string, revokeKeys = false): Promise<Schemas["UserAccessChanged"]> {
+  // `revoke_keys` is ahead of the generated request type (lib/api/backend.d.ts).
+  const body = (disabled && revokeKeys ? { sub, disabled, by, revoke_keys: true } : { sub, disabled, by }) as { sub: string; disabled: boolean; by: string };
+  const { data, error, response } = await api.PATCH("/api/iam/users", { body });
   if (!data) throw doorError(error, response);
   return data;
 }

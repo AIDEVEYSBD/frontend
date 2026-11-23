@@ -92,6 +92,12 @@ function WorkloadCard({ profile, reading }: { profile: WorkloadProfile; reading:
             <>
               Run by <AgentLink agent={reading.agent} />
             </>
+          ) : reading.offer ? (
+            // Listed and not available: the status is on the chip, and the platform's reason is said here.
+            <span>
+              {reading.why}
+              {linksError ? <span className="text-err"> The console addresses could not be read: {linksError}</span> : null}
+            </span>
           ) : linksError ? (
             <span className="text-err">The console addresses could not be read, so whether this workload&rsquo;s console is live is not known: {linksError}</span>
           ) : links && !url ? (

@@ -784,7 +784,7 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
 export function LifecycleIndexView({ agents }: { agents: AgentSummary[] }) {
   if (!agents.length) return <p className="text-[12px] text-faint">No agent is saved yet. Build one, save it, and its lifecycle starts here.</p>;
   return (
-    <ul className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">
+    <ul className="af-list af-list-tall flex flex-col rounded-md border border-line bg-surface">
       {agents.map((a) => {
         const retired = retiredOf(a.retired);
         const deployedV = a.deployed_version ?? null;

@@ -24,6 +24,12 @@ import type { RunRowL5 } from "./l5";
  * once, every tool is screened, the list is pinned by digest, and nothing
  * attaches to a run until a platform admin approves the pin and sets each
  * tool's risk (`POST /api/mcp/{id}/approve` with `{risks, max_data_class}`).
+ * A server whose headers name a vault credential is not asked for anything
+ * at registration: it is stored pending with no pin, and nothing is sent to
+ * it until a platform admin other than the one who registered it approves
+ * its address with those headers (`POST /api/mcp/{id}/approve`, no body).
+ * Only then is its list read, pinned and screened (a 422 with the hits when
+ * the screener refuses it), and its pin waits for its own approval.
  * A tool whose risk was not set, or was set for another pin, is destructive.
  * Only remote servers over HTTP are registered; header values reference the
  * vault (`${secret:<name>}`) and never come back, only their names.
@@ -82,6 +88,8 @@ export type Scan = {
   server?: ServerInfo;
   /** Tools the server listed that were left out of the pin, each with the reason. */
   excluded?: { tool: string; reason: string }[];
+  /** The registry's sentence when nothing was read: a server whose credentials wait for a second person is registered with a scan that read nothing. */
+  note?: string;
 };
 
 export type Approval = {
@@ -139,6 +147,16 @@ export type ServerExtras = {
   protocol: string;
   /** The vault names its headers reference. */
   credentials: string[];
+  /**
+   * Its headers name vault credentials that no platform admin other than the
+   * one who registered it has approved sending to its address: nothing has
+   * been sent to the server, its tool list has not been read, and it has no
+   * pin. The first approval (no body) approves the address with its headers,
+   * then reads, pins and screens the list.
+   */
+  credentials_waiting: boolean;
+  /** Who approved sending its credentials to its address, and when; null when it has no headers or they still wait. */
+  credentials_approval: { by: string; at: string } | null;
 };
 
 /** A server row as the console holds it: the registry's fields and the additions. */
@@ -219,7 +237,7 @@ export function scanOf(v: unknown): Scan | null {
   const info = obj(s.server);
   const server = str(info.name) || str(info.version) ? { server: { name: str(info.name), version: str(info.version) } } : {};
   const excluded = (Array.isArray(s.excluded) ? s.excluded : []).map(obj).map((x) => ({ tool: str(x.tool), reason: str(x.reason) })).filter((x) => x.tool || x.reason);
-  return { at: str(s.at), by: str(s.by), digest: str(s.digest), hits: (Array.isArray(s.hits) ? s.hits : []).map(hitOf), excluded, ...server };
+  return { at: str(s.at), by: str(s.by), digest: str(s.digest), hits: (Array.isArray(s.hits) ? s.hits : []).map(hitOf), excluded, ...server, ...(str(s.note) ? { note: str(s.note) } : {}) };
 }
 
 function approvalOf(v: unknown): Approval {
@@ -273,6 +291,8 @@ export function serverOf(v: unknown): RegisteredServer {
     max_data_class: str(s.max_data_class),
     protocol: str(s.protocol),
     credentials: strs(s.credentials),
+    credentials_waiting: s.credentials_waiting === true,
+    credentials_approval: isObj(s.credentials_approval) ? { by: str(obj(s.credentials_approval).by), at: str(obj(s.credentials_approval).at) } : null,
   };
 }
 
@@ -441,7 +461,7 @@ export async function listServers(): Promise<Registry> {
   return call(REGISTRY.list(), registryOf);
 }
 
-/** `POST /api/mcp`: 201 with the server, left `pending`; a 422 carries the screener's hits and the server stored as refused, a 502 the discovery error, a 503 a screener that could not judge. */
+/** `POST /api/mcp`: 201 with the server, left `pending` (not contacted at all when its headers name the vault); a 422 carries the screener's hits and the server stored as refused, a 502 the discovery error, a 503 a screener that could not judge. */
 export async function addServer(body: NewServer): Promise<RegisteredServer> {
   return call(REGISTRY.add(body), (j) => serverOf(obj(j).server ?? j));
 }
@@ -453,7 +473,10 @@ export type ApproveBody = { risks: Record<string, string>; max_data_class?: stri
  * `POST /api/mcp/{id}/approve`: the pin is approved with the risks the
  * platform admin set, and the server attaches to runs. A 403 names `role`
  * (not a platform admin) or `two_person` (the registrant); a 409 a refused
- * server or one with no pin.
+ * server or one with no pin. For a server whose credentials wait, the call
+ * carries no body: it approves sending the headers to the address, then the
+ * list is read with them (pending and pinned; a 422 with the hits, stored as
+ * refused; a 502 when the list cannot be read, the approval standing).
  */
 export async function approveServer(id: string, body?: ApproveBody): Promise<RegisteredServer> {
   return call(REGISTRY.approve(id, body), (j) => serverOf(obj(j).server ?? j));

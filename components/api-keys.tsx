@@ -7,7 +7,7 @@ import { Pick } from "./select";
 import { Dialog } from "./overlays";
 import { Failure } from "./pending";
 import { ago } from "./identity-shared";
-import { listAgents, listKeys, mintKey, readUsers, revokeKey, type KeyList, type MintedKey } from "@/lib/api/l2";
+import { listAgents, listKeys, mintKey, readUsers, revokeKey, type KeyList, type KeyRow, type MintedKey } from "@/lib/api/l2";
 
 /**
  * API keys: how an agent or a script calls the platform without a person at
@@ -19,6 +19,14 @@ import { listAgents, listKeys, mintKey, readUsers, revokeKey, type KeyList, type
  * hold is the platform's rule, not this page's: every permission is offered,
  * and one the platform refuses (approve, iam, configure) comes back with its
  * reason, shown as it was said. Minting and revoking need `iam`.
+ *
+ * A key expires. It is minted for the number of days asked, or, with none
+ * asked, for the deployment's longest lifetime (API_KEY_MAX_LIFETIME_DAYS);
+ * the platform refuses a number above that with the range it allows. The
+ * service does not publish that longest lifetime, so the form names no
+ * figure for it. Each key shows when it stops working, as the list answers
+ * it: its own expiry, or its minting plus the longest lifetime allowed now,
+ * whichever is first. An expired key is refused from that moment.
  */
 
 type Permission = { permission: string; means: string };
@@ -34,11 +42,13 @@ export function ApiKeys() {
   const [name, setName] = useState("");
   const [agent, setAgent] = useState("");
   const [picked, setPicked] = useState<string[]>(DEFAULT_PERMISSIONS);
+  /** Days the key is to live; blank asks for the deployment's longest lifetime. */
+  const [days, setDays] = useState("");
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState("");
-  const [minted, setMinted] = useState<MintedKey | null>(null);
+  const [minted, setMinted] = useState<(MintedKey & { expires_at?: string | null }) | null>(null);
   const [copied, setCopied] = useState(false);
-  const [revoking, setRevoking] = useState<KeyList["keys"][number] | null>(null);
+  const [revoking, setRevoking] = useState<KeyRow | null>(null);
   const [revokeBusy, setRevokeBusy] = useState(false);
   const [revokeNote, setRevokeNote] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   // One clock reading per mount: "3m ago" must not move while the panel is open.
@@ -63,17 +73,21 @@ export function ApiKeys() {
       .catch((e) => setPermissionsError((e as Error).message));
   }, [load]);
 
+  const lifetime = days.trim() ? Number(days.trim()) : undefined;
+  const lifetimeProblem = lifetime === undefined ? "" : !Number.isInteger(lifetime) || lifetime < 1 ? "A lifetime is a whole number of days, 1 or more; leave it blank for the longest this deployment allows." : "";
+
   const mint = async () => {
-    if (!name.trim() || busy) return;
+    if (!name.trim() || busy || lifetimeProblem) return;
     setBusy(true);
     setRefused("");
     try {
       // With the permission list unread, nothing is sent and the platform mints its default.
-      const m = await mintKey(name.trim(), agent || null, permissions ? picked : undefined);
+      const m = await mintKey(name.trim(), agent || null, permissions ? picked : undefined, lifetime);
       setMinted(m);
       setCopied(false);
       setName("");
       setAgent("");
+      setDays("");
       setPicked(DEFAULT_PERMISSIONS);
       load();
     } catch (e) {
@@ -99,7 +113,10 @@ export function ApiKeys() {
     }
   };
 
-  const keys = list?.keys ?? [];
+  const keys: KeyRow[] = list?.keys ?? [];
+  /** A key past its expiry is refused already, revoked or not. */
+  const expired = (k: KeyRow) => Boolean(k.expires_at) && Date.parse(k.expires_at!) <= now;
+  const until = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "");
   const toggle = (p: string, on: boolean) => setPicked((cur) => (on ? [...new Set([...cur, p])] : cur.filter((x) => x !== p)));
   const agentName = (id: string | null | undefined) => (id ? (agents?.find((a) => a.id === id)?.name ?? id) : "");
 
@@ -114,7 +131,7 @@ export function ApiKeys() {
         }}
       >
         <span className="text-[12px] font-semibold text-fg">Mint a key</span>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_220px]">
           <Field label="Name" hint="What it is for, as the register and Sessions will show it.">
             <Input value={name} onChange={setName} autoComplete="off" />
           </Field>
@@ -126,6 +143,9 @@ export function ApiKeys() {
               loading={agents === null && !agentsError}
               options={[{ value: "", label: "Any agent its permissions allow" }, ...(agents ?? []).map((a) => ({ value: a.id, label: a.name === a.id ? a.id : `${a.name} (${a.id})` }))]}
             />
+          </Field>
+          <Field label="Lifetime in days (optional)" hint={lifetimeProblem || "Blank mints it for the longest this deployment allows (its API_KEY_MAX_LIFETIME_DAYS setting). A number above that is refused with the range allowed."}>
+            <Input value={days} onChange={setDays} type="number" invalid={Boolean(lifetimeProblem)} aria-label="Lifetime in days" autoComplete="off" />
           </Field>
         </div>
         <div className="flex flex-col gap-1.5">
@@ -146,7 +166,7 @@ export function ApiKeys() {
           <span className="text-[11px] leading-[1.5] text-faint">What a key may hold is the platform&rsquo;s rule: a permission it refuses comes back with the reason, below.</span>
         </div>
         <span className="flex flex-wrap items-center gap-2">
-          <Button type="submit" size="sm" variant="solid" tone="ink" permission="iam" loading={busy} disabled={!name.trim() || (permissions !== null && picked.length === 0)}>
+          <Button type="submit" size="sm" variant="solid" tone="ink" permission="iam" loading={busy} disabled={!name.trim() || (permissions !== null && picked.length === 0) || Boolean(lifetimeProblem)}>
             Mint key
           </Button>
           {permissions !== null && picked.length === 0 && <span className="text-[11.5px] text-faint">Pick at least one permission.</span>}
@@ -186,7 +206,8 @@ export function ApiKeys() {
           </span>
           <span className="text-[11.5px] leading-[1.5] text-dim">
             {(minted.note ?? "").replace(/^This is the only time the key is shown\.\s*/, "") || "Send it as Authorization: Bearer <key>."} The platform keeps only its SHA-256 and the prefix <Mono className="text-[11px]">{minted.prefix}</Mono>
-            {minted.agent ? `; it acts only as the agent ${agentName(minted.agent)}` : ""}.
+            {minted.agent ? `; it acts only as the agent ${agentName(minted.agent)}` : ""}.{" "}
+            {minted.expires_at ? `It works until ${until(minted.expires_at)}, and is refused from then.` : "The answer did not say when it expires."}
           </span>
         </div>
       )}
@@ -211,13 +232,14 @@ export function ApiKeys() {
       {list && keys.length === 0 && <p className="px-4 py-3 text-[11.5px] text-faint">No key has been minted.</p>}
       {keys.length > 0 && (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] border-collapse text-left text-[12px]">
+          <table className="w-full min-w-[860px] border-collapse text-left text-[12px]">
             <thead>
               <tr className="border-b border-line text-[10.5px] text-faint">
                 <th className="py-2 pr-3 pl-4 font-medium">Name</th>
                 <th className="px-3 py-2 font-medium">Acts as</th>
                 <th className="px-3 py-2 font-medium">Minted</th>
                 <th className="px-3 py-2 font-medium">Last used</th>
+                <th className="px-3 py-2 font-medium">Expires</th>
                 <th className="px-3 py-2 font-medium">State</th>
                 <th className="py-2 pr-4 pl-3" />
               </tr>
@@ -240,9 +262,22 @@ export function ApiKeys() {
                   <td className="tnum px-3 py-2 whitespace-nowrap text-dim" title={k.last_used ? new Date(k.last_used).toLocaleString("en-GB") : undefined}>
                     {k.last_used ? ago(k.last_used, now) : <span className="text-faint">never</span>}
                   </td>
-                  <td className="px-3 py-2 whitespace-nowrap">{k.revoked_at ? <Status tone="neutral">revoked {ago(k.revoked_at, now)}</Status> : <Status tone="ok">active</Status>}</td>
+                  <td className="tnum px-3 py-2 whitespace-nowrap text-dim" title={k.expires_at ? "Its own expiry, or its minting plus the longest lifetime this deployment allows now, whichever is first" : undefined}>
+                    {k.expires_at ? until(k.expires_at) : <span className="text-faint">not said</span>}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    {k.revoked_at ? (
+                      <Status tone="neutral">revoked {ago(k.revoked_at, now)}</Status>
+                    ) : expired(k) ? (
+                      <span title="Past its expiry: every request presenting it is refused.">
+                        <Status tone="warn">expired</Status>
+                      </span>
+                    ) : (
+                      <Status tone="ok">active</Status>
+                    )}
+                  </td>
                   <td className="py-2 pr-4 pl-3 text-right">
-                    {!k.revoked_at && (
+                    {!k.revoked_at && !expired(k) && (
                       <Button size="sm" variant="solid" tone="err" permission="iam" onClick={() => setRevoking(k)}>
                         Revoke
                       </Button>

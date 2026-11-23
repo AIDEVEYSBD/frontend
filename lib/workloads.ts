@@ -184,9 +184,11 @@ export function readOffer(answer: Answer<WorkloadList> | null, id: string): Offe
     if (!agent) return { state: "not_deployed", label: "Deployed", tone: "ok", why: "The platform says this workload's agent is deployed and does not name the agent, so a run is not started from this page.", short: "Its agent is deployed; it is not named here.", offer, agent };
     return { state: "available", label: "Available", tone: "ok", why: "", short: "", offer, agent };
   }
+  // Not available: the status in words, and the platform's own reason (no deployed agent, no use case, a use case not yet approved).
+  const said = typeof offer.reason === "string" && offer.reason.trim() ? offer.reason.trim() : "";
   const known = offer.status === "not_deployed";
-  const why = known ? "No agent is deployed to run this workload yet." : `The control plane reports this workload as ${String(offer.status)}.`;
-  return { state: "not_deployed", label: known ? "Not deployed" : words(String(offer.status)) || "Not available", tone: "queue", why, short: why, offer, agent };
+  const why = said ? `${said[0].toUpperCase()}${said.slice(1)}.` : known ? "No agent is deployed to run this workload yet." : `The control plane reports this workload as ${words(String(offer.status)).toLowerCase() || "not available"}, and gives no reason.`;
+  return { state: "not_deployed", label: known ? "Not deployed" : words(String(offer.status).replace(/^use_case_/, "use case ")) || "Not available", tone: "queue", why, short: why, offer, agent };
 }
 
 /** The offers the door lists beyond the four the product knows. */

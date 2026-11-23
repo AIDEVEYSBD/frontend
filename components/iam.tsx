@@ -138,10 +138,24 @@ function IamPage() {
   const errs = findings.filter((f) => f.severity === "err").length;
   const warns = findings.filter((f) => f.severity === "warn").length;
   const sessionsOpen = persons.reduce((n, u) => n + u.sessions, 0);
-  const reachBy = ["read", "write", "risky"].map((r) => {
-    const n = live.filter((i) => (i.risk || "read") === r).length;
-    return { label: r === "risky" ? "Acts outside the system" : r === "write" ? "Writes records" : "Reads only", value: n, color: RISK_COLOR[r], meta: `${n}` };
-  });
+  // Each identity at the risk the register gives it: an agent's is the highest among the tools its definition grants (`facts.risk_from`
+  // says which). A blank risk is never counted as "reads only": an agent whose risk could not be read is counted as not known, and a
+  // tool server or a stored credential, which calls nothing itself, is left out of the chart.
+  const REACH: { risk: string; label: string }[] = [
+    { risk: "read", label: "Reads only" },
+    { risk: "write", label: "Writes records" },
+    { risk: "risky", label: "Acts outside the system" },
+    { risk: "destructive", label: "Destructive" },
+  ];
+  const actors = live.filter((i) => i.risk || i.kind === "workflow" || i.kind === "attached_agent" || i.kind === "api_key");
+  const reachBy = [
+    ...REACH.map(({ risk, label }) => {
+      const n = actors.filter((i) => i.risk === risk).length;
+      return { label, value: n, color: RISK_COLOR[risk], meta: `${n}` };
+    }),
+    ...(actors.some((i) => !i.risk) ? [{ label: "Risk not known", value: actors.filter((i) => !i.risk).length, color: "var(--t-line-strong)", meta: `${actors.filter((i) => !i.risk).length}` }] : []),
+  ];
+  const noReach = live.length - actors.length;
   const permList = people?.permissions.map((p) => p.permission) ?? [];
   const roleList = people?.roles ?? [];
   const holders = (role: string) => persons.filter((p) => p.last_app_roles.includes(role)).length;
@@ -215,16 +229,22 @@ function IamPage() {
   const liveKeysOf = (d: Record<string, unknown>): LiveKey[] =>
     Array.isArray(d.live_keys) ? (d.live_keys as LiveKey[]).filter((k) => k && typeof k.id === "string") : [];
   const HELD = "every request of theirs is refused until an administrator lets them back. Their Google sign-in itself is untouched";
-  const signOut = (p: Person) =>
-    act(`signout:${p.sub}`, () => signOutUser(p.sub), (d) => ({
+  /** The keys a hold revoked in the same act, when it was asked to, in a sentence; "" when it revoked none. */
+  const revokedLine = (d: Record<string, unknown>, asked: boolean): string => {
+    const revoked = Array.isArray(d.revoked_keys) ? (d.revoked_keys as LiveKey[]).filter((k) => k && typeof k.id === "string") : [];
+    if (revoked.length) return ` Revoked with the hold: ${revoked.map((k) => `${k.name} (${k.prefix}…)`).join(", ")}.`;
+    return asked ? " No API key of theirs still worked, so none was revoked." : "";
+  };
+  const signOut = (p: Person, revokeKeys = false) =>
+    act(`signout:${p.sub}`, () => signOutUser(p.sub, revokeKeys), (d) => ({
       tone: "warn",
-      text: `This service cannot end a Google session, so ${p.name || p.email} is held out instead: ${HELD}.${d.signedOut === 1 ? " Their live connection to the console is ended." : " They had no live connection to the console."}`,
+      text: `This service cannot end a Google session, so ${p.name || p.email} is held out instead: ${HELD}.${d.signedOut === 1 ? " Their live connection to the console is ended." : " They had no live connection to the console."}${revokedLine(d, revokeKeys)}`,
       keys: liveKeysOf(d),
     }));
-  const setAccess = (p: Person, disabled: boolean) =>
-    act(`user:${p.sub}`, () => setUserAccess(p.sub, disabled, byName), (d) =>
+  const setAccess = (p: Person, disabled: boolean, revokeKeys = false) =>
+    act(`user:${p.sub}`, () => setUserAccess(p.sub, disabled, byName, revokeKeys), (d) =>
       disabled
-        ? { tone: "warn", text: `${p.name || p.email} is held out: ${HELD}.`, keys: liveKeysOf(d) }
+        ? { tone: "warn", text: `${p.name || p.email} is held out: ${HELD}.${revokedLine(d, revokeKeys)}`, keys: liveKeysOf(d) }
         : { tone: "ok", text: `${p.name || p.email} is let back: their next request is let through.` },
     );
 
@@ -263,8 +283,8 @@ function IamPage() {
     removeSecret: (i) => void removeSecret(i),
     saveOwner,
     runFinding,
-    signOut: (p) => void signOut(p),
-    setAccess: (p, d) => void setAccess(p, d),
+    signOut: (p, revokeKeys) => void signOut(p, revokeKeys),
+    setAccess: (p, d, revokeKeys) => void setAccess(p, d, revokeKeys),
   };
 
   /** Narrow the roster to what a figure counts, and bring it into view. */
@@ -520,11 +540,18 @@ function IamPage() {
           {reg && live.length > 0 && (
             <RankBar
               data={reachBy}
-              onPick={(label) => show({ risks: [label.startsWith("Acts") ? "risky" : label.startsWith("Writes") ? "write" : "read"] })}
+              onPick={(label) => {
+                const risk = REACH.find((r) => r.label === label)?.risk;
+                // "Risk not known" counts agents, attached agents and keys with no risk, not the tool servers and credentials that call nothing.
+                show(risk ? { risks: [risk] } : { risks: ["none"], kinds: ["workflow", "attached_agent", "api_key"] });
+              }}
             />
           )}
           {!reg && <span className="text-[12px] text-faint">{regError ? notRead("Identities are ranked here by the risk of what they may call.") : "Reading…"}</span>}
-          <span className="mt-auto text-[10.5px] leading-[1.45] text-faint">Reach is the declared risk of what the identity may call.</span>
+          <span className="mt-auto text-[10.5px] leading-[1.45] text-faint">
+            Reach is the highest risk among what the identity may call; an agent&rsquo;s is read from the tools its deployed definition grants (its latest saved one while none is deployed).
+            {noReach > 0 ? ` ${noReach} tool server${noReach === 1 ? "" : "s"} and stored credential${noReach === 1 ? "" : "s"} call nothing themselves and are not ranked.` : ""}
+          </span>
         </section>
         <section className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4 elev-1">
           <span className="text-[11px] font-medium text-faint">Who may do what</span>
@@ -622,9 +649,13 @@ function IamPage() {
         {!people && <p className="px-4 py-3 text-[12px] text-faint">{peopleError ? notRead("Sign-ins, sign-outs, denials and privileged actions are listed here, newest first.") : "Reading…"}</p>}
         {people && auditDown && (<p className="px-4 py-3 text-[12px] text-err">The audit trail could not be read: {auditError}.</p>)}
         {people && !auditDown && people.events.length === 0 && <p className="px-4 py-3 text-[12px] text-dim">No sign-in or action has been recorded yet.</p>}
-        {(people?.events ?? []).map((e) => (
-          <EventLine key={e.id} event={e} now={now} />
-        ))}
+        {people && !auditDown && people.events.length > 0 && (
+          <div className="af-list af-list-tall">
+            {people.events.map((e) => (
+              <EventLine key={e.id} event={e} now={now} />
+            ))}
+          </div>
+        )}
       </FoldSection>
       </>
     </div>

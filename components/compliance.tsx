@@ -12,7 +12,8 @@ import { whenFull } from "./dataset-parts";
 import { usePageFacts } from "./assistant";
 import { IclLoad } from "./compliance-icl-load";
 import { ComplianceMatrix } from "./compliance-matrix";
-import { ICL, ICL_ID, STANDARD_COLS, coverage, plural, readCompliance, sameCustom, sameIds, tidyCustom, useFirings } from "./compliance-parts";
+import { ICL, ICL_ID, coverage, plural, readCompliance, sameCustom, sameIds, standardColsOf, tidyCustom, useFirings } from "./compliance-parts";
+import { useControls } from "@/lib/controls-status";
 import { CONTROLS, FAMILIES } from "@/lib/guardrails";
 import { useSession } from "@/lib/use-session";
 import { ask, type Compliance, type ComplianceSave, type ControlCustom, type Door, type IclControl } from "@/lib/api/pending";
@@ -21,9 +22,11 @@ import { ask, type Compliance, type ComplianceSave, type ControlCustom, type Doo
  * Compliance: the catalogue's controls against the standards they answer to
  * and against the ABB ICL, with firings by control family.
  *
- * The matrix against the eight standards is the catalogue itself
- * (lib/guardrails.ts, lib/control-domains.ts) and is the same with or without
- * a control plane. The ABB ICL, its mapping and what this deployment changed
+ * The standards and where each control is cited or placed in them are the
+ * service's framework mapping (GET /api/controls `frameworks`); while it is
+ * not read the columns are left out and the page says why, never filled
+ * from the console's own copy. A citation is not enforcement, so the card
+ * counts controls citing each standard and claims no coverage. The ABB ICL, its mapping and what this deployment changed
  * about a control come from the `compliance` door; the list is loaded through
  * `iclLoad` and the mapping and changes are saved together through
  * `complianceSave` (lib/api/pending.ts). Firings are read from the record
@@ -36,6 +39,16 @@ export function ComplianceView() {
   const { answer, reload } = useDoor<Compliance>("compliance");
   const { session, loaded, can } = useSession();
   const firings = useFirings();
+  // The standards' columns come from the service's mapping; none while it is not read.
+  const controlsRead = useControls();
+  const cols = useMemo(() => standardColsOf(controlsRead?.state === "ok" ? controlsRead.frameworks : null), [controlsRead]);
+  const colsWhy = !controlsRead
+    ? "Reading the standards from the platform…"
+    : controlsRead.state !== "ok"
+      ? `The standards are not shown: ${controlsRead.state === "pending" ? "the controls address is not built" : `the controls could not be read (${controlsRead.message})`}.`
+      : controlsRead.frameworks === null
+        ? "The standards are not shown: the platform's answer carries no framework list."
+        : "";
 
   // What was just saved stands in for the record until the door answers again.
   const [held, setHeld] = useState<{ over: unknown; data: ReturnType<typeof readCompliance> } | null>(null);
@@ -148,7 +161,7 @@ export function ComplianceView() {
   };
 
   /* ── counted from the catalogue and the door ── */
-  const cover = coverage(mappingOf, customOf, list);
+  const cover = coverage(cols, mappingOf, customOf, list);
   const known = useMemo(() => new Set((list ?? []).map((x) => x.id)), [list]);
   const answeredBy = new Map<string, string[]>();
   for (const c of cover.applying) for (const id of mappingOf(c.id)) answeredBy.set(id, [...(answeredBy.get(id) ?? []), c.id]);
@@ -158,7 +171,7 @@ export function ComplianceView() {
   const [family, setFamily] = useState("");
   const [std, setStd] = useState("");
   const [unmapped, setUnmapped] = useState(false);
-  const col = STANDARD_COLS.find((s) => s.id === std);
+  const col = cols.find((s) => s.id === std);
   const rows = CONTROLS.filter(
     (c) => (!family || c.family === family) && (!col || col.entries(c).length > 0) && (std !== ICL_ID || isMapped(c.id)) && (!unmapped || !isMapped(c.id)),
   );
@@ -196,7 +209,8 @@ export function ComplianceView() {
   usePageFacts({
     controls: CONTROLS.length,
     applyingHere: cover.applying.length,
-    coverageByStandard: Object.fromEntries(STANDARD_COLS.map((s) => [s.short, cover.byStandard.get(s.id) ?? 0])),
+    // How many controls cite each standard (or are placed in one of its domains); a citation is not enforcement.
+    controlsCitingEachStandard: cols.length ? Object.fromEntries(cols.map((s) => [s.short, cover.byStandard.get(s.id) ?? 0])) : colsWhy,
     abbIcl: !connected ? "not connected" : !list ? "no list loaded" : { controls: list.length, catalogueControlsMapped: cover.icl?.mapped ?? 0, notAnswered: cover.icl?.gaps.length ?? 0 },
     firingsByFamily: showFirings ? Object.fromEntries(FAMILIES.map((f) => [f.name, familyFired(f.id)])) : "no record",
     openControl: open,
@@ -223,13 +237,14 @@ export function ComplianceView() {
       </GroupHeader>
 
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
-        {/* ── coverage per standard ── */}
+        {/* ── controls citing each standard: where they come from, not what is enforced ── */}
         <Card
-          title="Coverage by standard"
+          title="Controls citing each standard"
           hue="controls"
           meta={cover.left ? `of the ${cover.applying.length} controls that apply here` : `of the ${CONTROLS.length} controls`}
           footer={
             <span className="text-[11px] leading-[1.5] text-faint">
+              A count says how many controls cite an entry of the standard, or are placed in one of its domains, as the platform maps them: where a control comes from, not that it is enforced. Whether each is enforced is on the Controls page.{" "}
               {cover.left > 0 && `${plural(cover.left, "control is", "controls are")} marked as not applying to this deployment and left out of every count. `}
               {unsaved && "The counts include the changes not saved yet. "}
               Pick a standard to see only its controls.
@@ -237,9 +252,10 @@ export function ComplianceView() {
           }
         >
           <div className="grid grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_auto] gap-x-3 px-4 py-1">
-            {(["cited", "grouped"] as const).map((kind) => (
+            {colsWhy && <p className="col-span-3 py-2 text-[11.5px] leading-[1.55] text-faint">{colsWhy}</p>}
+            {(["cited", "grouped"] as const).filter((kind) => cols.some((s) => s.kind === kind)).map((kind) => (
               <CoverageGroup key={kind} label={kind === "cited" ? "Entries the catalogue cites" : "Domains each control is placed under"}>
-                {STANDARD_COLS.filter((s) => s.kind === kind).map((s) => {
+                {cols.filter((s) => s.kind === kind).map((s) => {
                   const n = cover.byStandard.get(s.id) ?? 0;
                   return <CoverageRow key={s.id} name={s.short} title={[s.title, s.note].filter(Boolean).join(". ")} n={n} of={cover.applying.length} on={std === s.id} onPick={() => pickStandard(std === s.id ? "" : s.id)} />;
                 })}
@@ -399,7 +415,7 @@ export function ComplianceView() {
                   aria-label="Has an entry in"
                   value={std}
                   onChange={pickStandard}
-                  options={[{ value: "", label: "Any standard" }, ...STANDARD_COLS.map((s) => ({ value: s.id, label: s.short })), ...(list ? [{ value: ICL_ID, label: ICL }] : [])]}
+                  options={[{ value: "", label: "Any standard" }, ...cols.map((s) => ({ value: s.id, label: s.short })), ...(list ? [{ value: ICL_ID, label: ICL }] : [])]}
                 />
               </span>
             </label>
@@ -424,6 +440,7 @@ export function ComplianceView() {
         </div>
         <ComplianceMatrix
           rows={rows}
+          cols={cols}
           counts={cover.byStandard}
           applying={cover.applying.length}
           list={list}

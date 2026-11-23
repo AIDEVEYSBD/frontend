@@ -1910,7 +1910,10 @@ function Recommendation({
         return next;
       });
       const saved = await saveAgent(spec as Record<string, unknown>);
-      setApplied(savedLine(saved, edit.agent.deployed_version));
+      // Fields of the saved document the parser does not read are said with the save, never left out.
+      setApplied(
+        `${savedLine(saved, edit.agent.deployed_version)}${saved.unread.length ? ` ${saved.unread.length === 1 ? "One field" : `${saved.unread.length} fields`} of it ${saved.unread.length === 1 ? "is" : "are"} not read by the platform: ${saved.unread.join("; ")}.` : ""}`,
+      );
       onChanged();
     } catch (e) {
       const gone = retiredRefusalOf(e);

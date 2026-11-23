@@ -6,8 +6,8 @@ import { Field, Input, Textarea } from "./forms";
 import { Pick } from "./select";
 import { DigestChip } from "./digest-chip";
 import { listVault } from "@/lib/api/l2";
-import { addBody, addServer, EMPTY_FORM, RegistryError, type AddForm, type McpServer, type NewServer, type Transport } from "@/lib/api/l6";
-import { formProblem, pinnedTools, toolHints, toolRisk } from "@/lib/mcp-registry";
+import { addBody, addServer, EMPTY_FORM, RegistryError, type AddForm, type McpServer, type NewServer, type RegisteredServer, type Transport } from "@/lib/api/l6";
+import { credentialsWaiting, formProblem, pinnedTools, toolHints, toolRisk } from "@/lib/mcp-registry";
 import { useDoorOff } from "@/lib/use-doors";
 
 /**
@@ -30,9 +30,13 @@ import { useDoorOff } from "@/lib/use-doors";
  *   Manual: header lines typed here, each value naming a vault credential
  *   (the registry refuses a plain value).
  *
- * A 201 is admission, not trust: the server was asked for its tool list, its
- * tools screened and the list pinned, and it waits, pending, until a
- * platform admin approves the pin and sets each tool's risk.
+ * A 201 is admission, not trust. A server with no headers was asked for its
+ * tool list, its tools screened and the list pinned. A server whose headers
+ * name a vault credential was sent nothing: it waits, pending with no pin,
+ * until a platform admin other than the one who registered it approves its
+ * address with those headers; its list is read, screened and pinned then.
+ * Either way it waits, pending, until a platform admin approves the pin and
+ * sets each tool's risk.
  */
 
 type SignIn = "shared" | "personal" | "manual";
@@ -268,7 +272,7 @@ export function AddServerDialog({
   const [vaultError, setVaultError] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<RegistryError | Error | null>(null);
-  const [done, setDone] = useState<McpServer | null>(null);
+  const [done, setDone] = useState<RegisteredServer | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -370,6 +374,10 @@ export function AddServerDialog({
   const typing = !vault?.length || shared.picked === OTHER;
   const refused = error instanceof RegistryError && error.status === 422;
   const doneTools = done ? pinnedTools(done) : [];
+  /** The server added names vault credentials: nothing was sent to it, and its list waits for a second person. */
+  const doneWaiting = done ? credentialsWaiting(done) : false;
+  /** What is about to be sent names the vault: nothing is sent to the server on adding. */
+  const sendsCredentials = Boolean(body.headers && Object.keys(body.headers).length);
 
   return (
     <div
@@ -386,7 +394,11 @@ export function AddServerDialog({
               {done ? `${done.label} added` : "Add a tool server"}
             </span>
             <span className="max-w-[80ch] text-[11.5px] leading-[1.5] text-faint">
-              {done ? "Admitted and pinned. It is not in use yet." : "A remote MCP server whose tools agents may be given. Adding it is admission, not trust: nothing attaches to a run until a platform admin approves its tool list and sets each tool's risk."}
+              {done
+                ? doneWaiting
+                  ? "Registered. Nothing has been sent to it, and it is not in use."
+                  : "Admitted and pinned. It is not in use yet."
+                : "A remote MCP server whose tools agents may be given. Adding it is admission, not trust: nothing attaches to a run until a platform admin approves its tool list and sets each tool's risk."}
             </span>
           </span>
           {!done && <Steps step={step} canTwo={!serverProblem} onStep={setStep} />}
@@ -400,6 +412,30 @@ export function AddServerDialog({
               <Mono className="text-[10.5px] text-faint">{done.id}</Mono>
               <Tag>{done.transport === "http" ? "HTTP" : "stdio"}</Tag>
             </div>
+            {doneWaiting && (
+              <div className="flex flex-col gap-2">
+                <span className="text-[12.5px] font-semibold text-fg">What happens next</span>
+                <ol className="flex flex-col gap-2 text-[12.5px] leading-[1.55] text-dim">
+                  <li className="flex gap-2.5">
+                    <Status tone="warn">Waiting</Status>
+                    <span className="min-w-0">
+                      Its headers name the vault credential{done.credentials.length === 1 ? "" : "s"} {done.credentials.join(", ") || "given"}. Nothing has been sent to the server and its tool list has not been read: a platform admin other than you must first approve sending {done.credentials.length === 1 ? "that credential" : "those credentials"} to {done.url ?? "its address"}.
+                    </span>
+                  </li>
+                  <li className="flex gap-2.5">
+                    <Status tone="neutral">Then</Status>
+                    <span className="min-w-0">On that approval the server is asked for its tool list with the credentials; every tool&rsquo;s name, description and input schema goes through the screener, and the list is pinned by digest. A screener hit keeps the server as refused.</span>
+                  </li>
+                  <li className="flex gap-2.5">
+                    <Status tone="neutral">Last</Status>
+                    <span className="min-w-0">
+                      A platform admin approves the pin and sets each tool&rsquo;s risk before any agent can use it; a tool left unset counts as destructive.{twoPerson ? " Two-person approval is on, so that admin cannot be you." : ""}
+                    </span>
+                  </li>
+                </ol>
+              </div>
+            )}
+            {!doneWaiting && (
             <div className="flex flex-col gap-2">
               <span className="text-[12.5px] font-semibold text-fg">What happens next</span>
               <ol className="flex flex-col gap-2 text-[12.5px] leading-[1.55] text-dim">
@@ -427,6 +463,7 @@ export function AddServerDialog({
                 </li>
               </ol>
             </div>
+            )}
             {doneTools.length > 0 && (
               <div className="flex flex-wrap items-center gap-1">
                 <span className="mr-1 text-[10.5px] text-faint">Pinned tools</span>
@@ -602,10 +639,16 @@ export function AddServerDialog({
               </div>
               <div className="flex flex-col gap-1.5 border-t border-line pt-3">
                 <span className="text-[12px] font-semibold text-fg">On adding</span>
-                <p className="text-[11.5px] leading-[1.55] text-dim">
-                  The server is asked for its tool list. Each tool is screened and the list is pinned by digest. The server then waits, pending: a platform admin must approve the pin and set each tool&rsquo;s risk before any agent can use it
-                  {twoPerson ? ", and with two-person approval on that cannot be you" : ""}.
-                </p>
+                {sendsCredentials ? (
+                  <p className="text-[11.5px] leading-[1.55] text-dim">
+                    Its headers name a vault credential, so nothing is sent to the server on adding. It waits, pending, until a platform admin other than you approves sending the credential to this address; its tool list is then read with it, screened and pinned. A platform admin must then approve the pin and set each tool&rsquo;s risk before any agent can use it.
+                  </p>
+                ) : (
+                  <p className="text-[11.5px] leading-[1.55] text-dim">
+                    The server is asked for its tool list. Each tool is screened and the list is pinned by digest. The server then waits, pending: a platform admin must approve the pin and set each tool&rsquo;s risk before any agent can use it
+                    {twoPerson ? ", and with two-person approval on that cannot be you" : ""}.
+                  </p>
+                )}
               </div>
             </aside>
           </div>
@@ -625,7 +668,7 @@ export function AddServerDialog({
           ) : (
             <>
               <span className="min-w-0 grow text-[11.5px] leading-[1.5] text-faint">
-                {step === 1 ? (dirty ? serverProblem : "") : addDoor.off ? addDoor.why : problem && !error ? problem : busy ? "Asking it for its tool list. A slow server may take up to 30 seconds." : ""}
+                {step === 1 ? (dirty ? serverProblem : "") : addDoor.off ? addDoor.why : problem && !error ? problem : busy ? (sendsCredentials ? "Registering it. Nothing is sent to the server." : "Asking it for its tool list. A slow server may take up to 30 seconds.") : ""}
               </span>
               <Button size="sm" variant="solid" tone="err" onClick={onClose} disabled={busy}>
                 Cancel

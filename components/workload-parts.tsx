@@ -32,10 +32,13 @@ export function Card({ title, hue, meta, action, children, pad = true }: { title
 
 /** A workload's state, as the workloads door gave it. */
 export function OfferMark({ reading, chip = false }: { reading: OfferReading; chip?: boolean }) {
+  // Why it cannot be started, in the platform's words, on hover; the cards and the set-up step say it in full.
   return (
-    <Status tone={reading.tone} chip={chip}>
-      {reading.label}
-    </Status>
+    <span title={reading.why || undefined} className="inline-flex">
+      <Status tone={reading.tone} chip={chip}>
+        {reading.label}
+      </Status>
+    </span>
   );
 }
 

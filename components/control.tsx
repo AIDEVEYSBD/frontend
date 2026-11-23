@@ -89,6 +89,49 @@ interface RunRow {
   byModel: { model: string; in: number; out: number; cost: number | null; unpricedCalls: number }[];
   /** How the run was started: console, trigger, sub_run, api. */
   source?: string;
+  /** A canary's shadow run: listed and marked, counted in none of the page's figures (the platform keeps it out of them too). */
+  shadow?: boolean;
+}
+
+/**
+ * An agent's benchmark: the newest finished evaluation of what production
+ * runs, else of the agent. `incomplete` when a case could not run (`refused`)
+ * or was not graded (`not_graded`): its score is not a measure, and it is
+ * left out of a model's accuracy. `matches_deployed` is false when it scored
+ * a version other than the one deployed.
+ */
+interface Benchmark {
+  passed: number;
+  total: number;
+  at: string;
+  digest: string;
+  model: string;
+  score?: number | null;
+  threshold?: number | null;
+  matches_deployed?: boolean | null;
+  refused?: number;
+  not_graded?: number;
+  incomplete?: boolean;
+}
+
+/** A benchmark's caveats in a line: incomplete, or of another version; "" when it has none. */
+function benchmarkCaveat(e: Benchmark): string {
+  return [
+    e.incomplete ? `incomplete: ${[e.refused ? `${e.refused} case${e.refused === 1 ? "" : "s"} could not run` : "", e.not_graded ? `${e.not_graded} not graded` : ""].filter(Boolean).join(", ") || "not every case was graded"}` : "",
+    e.matches_deployed === false ? "of a version other than the one deployed" : "",
+  ]
+    .filter(Boolean)
+    .join("; ");
+}
+
+/** A shadow run's mark in a run list. */
+function ShadowMark({ run }: { run: { shadow?: boolean } }) {
+  if (!run.shadow) return null;
+  return (
+    <span title="A canary's shadow run: the candidate version on a production run's input. Listed here, counted in no figure." className="inline-flex shrink-0">
+      <Tag tone="neutral">shadow</Tag>
+    </span>
+  );
 }
 
 /** An agent's figures over one window, as the platform counted them. */
@@ -112,8 +155,8 @@ interface AgentRow {
   pending: number;
   runsTotal: number;
   ticks: { id: string; state: string; at: string }[];
-  /** Null: evaluations are not built on this platform, so no agent has a benchmark. */
-  evals: { passed: number; total: number; at: string; digest: string; model: string }[] | null;
+  /** The agent's benchmark (newest finished evaluation); an empty list when it has none. Null when the answer carries none, and `not_built.evals` then says why, in the platform's words. */
+  evals: Benchmark[] | null;
   byWindow: Record<Win, AgentWindow>;
   /* The window's figures, laid on by `rewindow` from `byWindow`. */
   runs7d: number;
@@ -168,14 +211,15 @@ interface WindowFigures {
 
 interface ControlData {
   posture: Posture;
-  /** Null: the A2A peer registry is not built (`not_built.peers` says so). */
+  /** The registry's peers. Null when the answer carries no list; `not_built.peers` then says why, in the platform's words. */
   peers: PartnerPeer[] | null;
   finops: {
     /** Null: reading a cloud bill is not built (`not_built.billing` says so). */
     billing: null;
     budget: number | null;
     period: "day" | "week" | "month" | null;
-    budgetState: { since: string; spent: number; unpriced: number; remaining: number | null; exceeded: boolean; used: number | null } | null;
+    /** `spent` null when calls were made and none was priced; `remaining`, `exceeded` and `used` null when unpriced calls leave them unknown, and `unknown_why` says why. */
+    budgetState: { since: string; spent: number | null; unpriced: number; remaining: number | null; exceeded: boolean | null; used: number | null; unknown_why?: string | null } | null;
     spend7d: number | null;
     unpriced7d: number;
   };
@@ -205,6 +249,8 @@ interface ControlData {
   runs: RunRow[];
   /** How many runs there are; `runs` holds the newest of them. */
   runsTotal: number;
+  /** A canary's shadow runs on record: listed among `runs`, marked, and counted in no figure. */
+  shadowTotal?: number;
   store: string;
   costBasis: string;
   /** What this platform does not have, each with why. */
@@ -762,9 +808,9 @@ export function Control() {
           title="Agent lifecycle"
           meta="the latest version of each agent, each stage lit only by its own record: a version, a review, a gate decision, a deployment, a retirement"
         />
-        <div className="overflow-x-auto">
+        <div className="af-list overflow-x-auto">
           <div className="min-w-[720px]">
-            <div className="grid grid-cols-[minmax(140px,1fr)_repeat(6,minmax(64px,80px))] items-center gap-1 border-b border-line px-4 py-1.5">
+            <div data-sticky className="grid grid-cols-[minmax(140px,1fr)_repeat(6,minmax(64px,80px))] items-center gap-1 border-b border-line px-4 py-1.5">
               <span className="text-[10.5px] font-semibold text-dim">Agent</span>
               {STAGE_NAMES.map((st) => (
                 <span key={st} className="flex flex-col items-center gap-0.5 text-center">
@@ -956,15 +1002,19 @@ export function Control() {
 
                   <span className="flex flex-col gap-1">
                     {a.evals === null ? (
-                      <span className="text-[11px] text-faint" title={data.not_built.evals}>Not built</span>
+                      // No benchmark in the answer: the platform's own reason, never one written here.
+                      <span className="text-[11px] text-faint" title={data.not_built.evals || "The platform's answer carries no benchmark for this agent and gives no reason."}>
+                        {data.not_built.evals ? "Not built" : "Not in the answer"}
+                      </span>
                     ) : a.evals.length ? (
                       <>
                         <span className="flex items-baseline gap-1">
-                          <span className={`tnum text-[13px] font-semibold ${a.evals[0].passed === a.evals[0].total ? "text-ok" : "text-warn"}`}>
+                          <span className={`tnum text-[13px] font-semibold ${a.evals[0].incomplete ? "text-warn" : a.evals[0].passed === a.evals[0].total ? "text-ok" : "text-warn"}`}>
                             {a.evals[0].passed}/{a.evals[0].total}
                           </span>
                           <span className="text-[10px] text-faint">{ago(a.evals[0].at)}</span>
                         </span>
+                        {benchmarkCaveat(a.evals[0]) && <span className="text-[10px] leading-[1.35] text-warn">{benchmarkCaveat(a.evals[0])}</span>}
                         <span className="h-1 w-full overflow-hidden rounded-full bg-raise">
                           <span
                             className={`block h-full rounded-full ${a.evals[0].passed === a.evals[0].total ? "bg-ok" : "bg-warn"}`}
@@ -1043,6 +1093,11 @@ export function Control() {
           <div className="border-t border-line">
             <div className="flex h-8 items-center gap-2 border-b border-line bg-raise/40 px-4">
               <span className="text-[11px] font-semibold text-dim">Recent runs</span>
+              {(data?.shadowTotal ?? 0) > 0 && (
+                <span className="text-[10.5px] text-faint" title="A canary's shadow runs: the candidate version on production runs' input. Marked in the list, counted in no figure on this page.">
+                  · {data!.shadowTotal} shadow run{data!.shadowTotal === 1 ? "" : "s"} on record, counted in no figure
+                </span>
+              )}
               <span className="grow" />
               <Button size="sm" variant="quiet" href="/runs">
                 All runs →
@@ -1063,6 +1118,7 @@ export function Control() {
                     <span className="flex min-w-0 items-center gap-1.5">
                       <span className="truncate text-[11.5px] font-medium text-fg">{r.system}</span>
                       <RunSourceTag run={r} />
+                      <ShadowMark run={r} />
                     </span>
                     <span className="truncate font-mono text-[9.5px] text-faint">
                       {r.state} · {fmtMs(r.ms)} · {runCost(r)}
@@ -1237,7 +1293,7 @@ export function Control() {
           </section>
 
           {/* FinOps — the gateway's own balance, and the budget beside the burn */}
-          <FinOpsPanel finops={data?.finops ?? null} window={win} onSaved={load} off={off} billingNote={data?.not_built.billing ?? "reading a cloud bill is not built"} />
+          <FinOpsPanel finops={data?.finops ?? null} window={win} onSaved={load} off={off} billingNote={data?.not_built.billing ?? "no billed figure: the platform's answer carries none and gives no reason"} />
           </>)}
         </div>
       </div>
@@ -1284,6 +1340,7 @@ export function Control() {
         <section className="mb-4 flex break-inside-avoid flex-col overflow-hidden rounded-md border border-line bg-surface">
           <TradeoffTriangle
             off={off}
+            evalsWhy={data?.not_built.evals ?? ""}
             models={data?.models ?? []}
             runs={data?.runs ?? []}
             agents={data?.agents ?? []}
@@ -1333,7 +1390,12 @@ export function Control() {
         {/* Partner agents — A2A peers, as the peer registry holds them */}
         <section className="mb-4 flex break-inside-avoid flex-col overflow-hidden rounded-md border border-line bg-surface">
           <PanelHead title="Partner agents" meta="A2A peers, from the registry" />
-          {data && data.peers === null && <p className="px-3 py-4 text-[12px] leading-[1.55] text-faint">Not built: {data.not_built.peers ?? "the A2A peer registry is not built"}.</p>}
+          {/* No peer list in the answer: the platform's own reason when it names one, else that the list is missing. */}
+          {data && data.peers === null && (
+            <p className="px-3 py-4 text-[12px] leading-[1.55] text-faint">
+              {data.not_built.peers ? `Not built, as the platform answers: ${data.not_built.peers}.` : "The platform's answer carries no peer list and gives no reason. The peers it holds are listed on Configuration, under Peers."}
+            </p>
+          )}
           {(data?.peers ?? []).map((p) => {
             const st = partnerStatus(p);
             return (
@@ -1594,10 +1656,10 @@ function FinOpsPanel({
       </div>
       {state && per && finops?.budget != null && (
         <div className={`flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-b border-line px-3 py-2 text-[10.5px] ${state.exceeded ? "text-err" : "text-faint"}`}>
-          <span className="font-medium">{state.exceeded ? "Budget exhausted · new runs are refused" : `This ${PERIOD_LABEL[per]} so far`}</span>
-          <span className="tnum">{fmtCost(state.spent)} of ${finops.budget.toFixed(2)}{usedPct !== null ? ` · ${usedPct}%` : ""}</span>
-          {state.remaining !== null && !state.exceeded && <span className="tnum">{fmtCost(Math.max(0, state.remaining))} left</span>}
-          {state.unpriced > 0 && <span>{unpricedLine(state.unpriced)}, not counted against it</span>}
+          <span className="font-medium">{state.exceeded === true ? "Budget exhausted · new runs are refused" : state.exceeded === null ? `This ${PERIOD_LABEL[per]} so far: whether it is spent is unknown` : `This ${PERIOD_LABEL[per]} so far`}</span>
+          <span className="tnum">{state.spent === null ? "spent: unknown" : `${state.exceeded === null ? "at least " : ""}${fmtCost(state.spent)}`} of ${finops.budget.toFixed(2)}{usedPct !== null ? ` · ${usedPct}%` : ""}</span>
+          {state.remaining !== null && state.exceeded === false && <span className="tnum">{fmtCost(Math.max(0, state.remaining))} left</span>}
+          {state.unknown_why ? <span className="text-warn">{state.unknown_why[0].toUpperCase() + state.unknown_why.slice(1)}.</span> : state.unpriced > 0 && <span>{unpricedLine(state.unpriced)}, not counted against it</span>}
         </div>
       )}
       {burnPct !== null && windowBudget !== null && (
@@ -1681,7 +1743,9 @@ function FinOpsPanel({
             </Button>
             <span className="grow" />
             <span className="truncate text-[10px] text-ghost" title={billingNote}>
-              Not built: {billingNote}.
+              {/* The platform's own sentence when it names billing as not built; otherwise that the answer lacks a billed figure. */}
+              {billingNote[0]?.toUpperCase()}
+              {billingNote.slice(1)}.
             </span>
             {saveError && <Failure inline message={saveError} />}
           </>
@@ -2061,6 +2125,7 @@ function RunList({
             <span className="flex min-w-0 items-center gap-1.5">
               <span className="truncate text-[12px] font-medium text-fg">{r.system}</span>
               <RunSourceTag run={r} />
+                      <ShadowMark run={r} />
             </span>
             <span className="truncate font-mono text-[9.5px] text-faint">
               {r.state} · {fmtMs(r.ms)} · {runCost(r)}
@@ -2076,10 +2141,11 @@ function RunList({
 
 /** Said above a drill list when the estate read carried only the newest runs (the figures still count every run). */
 function TruncatedNote({ data }: { data: ControlData }) {
-  if (data.runs.length >= data.runsTotal) return null;
+  const prod = productionRuns(data.runs).length;
+  if (prod >= data.runsTotal) return null;
   return (
     <p className="border-b border-line px-4 py-2 text-[10.5px] text-faint">
-      Listing from the newest {data.runs.length} of {data.runsTotal} runs; the figures count every run.
+      Listing from the newest {prod} of {data.runsTotal} runs; the figures count every run.
     </p>
   );
 }
@@ -2105,14 +2171,16 @@ function renderDrill(
   onAnswer: (runId: string) => void,
   traceFailure = "",
 ): { title: string; body: React.ReactNode } {
-  const runs = data.runs;
+  // The drills stand behind production's figures: a canary's shadow runs are in none of them.
+  const runs = productionRuns(data.runs);
 
   if (drill.kind === "span") {
     return { title: drill.span.name, body: <SpanDetail span={drill.span} /> };
   }
 
   if (drill.kind === "run") {
-    const r = runs.find((x) => x.id === drill.id);
+    // One run opened by id: a shadow run listed (and marked) under Recent runs opens too; only the lists behind figures leave shadows out.
+    const r = data.runs.find((x) => x.id === drill.id);
     const isLive = data.live.some((l) => l.id === drill.id);
     if (!r && isLive) {
       const l = data.live.find((x) => x.id === drill.id)!;
@@ -2272,7 +2340,8 @@ function renderDrill(
           <Fact k={`Spend · ${data.window}`} v={partialCost(a.cost7d, a.unpriced7d)} tone={a.unpriced7d ? "text-warn" : undefined} />
           {a.pending > 0 && <Fact k="Awaiting approval" v={String(a.pending)} tone="text-warn" />}
 
-          {a.evals === null && <Fact k="Benchmark" v="Not built" />}
+          {a.evals === null && <Fact k="Benchmark" v={data.not_built.evals ? `Not built: ${data.not_built.evals}` : "not in the platform's answer"} />}
+          {a.evals !== null && a.evals.length === 0 && <Fact k="Benchmark" v="none yet: no finished evaluation" />}
           {a.evals !== null && a.evals.length > 0 && (
             <div className="border-b border-line px-4 py-2.5">
               <span className="text-[11px] font-semibold text-dim">Benchmark history</span>
@@ -2283,6 +2352,7 @@ function renderDrill(
                   </span>
                   <Mono className="min-w-0 truncate text-[9.5px] text-faint">{e.model}</Mono>
                   <Mono className="text-[9.5px] text-ghost">spec {e.digest.slice(0, 8)}</Mono>
+                  {benchmarkCaveat(e) && <span className="min-w-0 truncate text-[9.5px] text-warn" title={benchmarkCaveat(e)}>{benchmarkCaveat(e)}</span>}
                   <span className="ml-auto shrink-0 text-[9.5px] text-ghost">{ago(e.at)}</span>
                 </div>
               ))}
@@ -2595,8 +2665,9 @@ interface Corner {
  */
 function cornersOf(models: ModelRow[], runs: RunRow[], agents: AgentRow[]): Corner[] {
   const raw = models.map((m) => {
-    const used = runs.filter((r) => r.models.includes(m.model) && r.ms > 0);
-    const evals = agents.flatMap((a) => (a.evals ?? []).filter((e) => e.model === m.model));
+    // Production's runs only (a shadow run is in no figure), and only benchmarks that measured every case.
+    const used = runs.filter((r) => !r.shadow && r.models.includes(m.model) && r.ms > 0);
+    const evals = agents.flatMap((a) => (a.evals ?? []).filter((e) => e.model === m.model && !e.incomplete));
     const total = evals.reduce((s, e) => s + e.total, 0);
     return {
       model: m.model,
@@ -2637,9 +2708,12 @@ function TradeoffTriangle({
   selected,
   onPick,
   off = false,
+  evalsWhy = "",
 }: {
   /** The estate was not read: the key stays, and nothing is said about model calls that were not read. */
   off?: boolean;
+  /** Why no agent has a benchmark, in the platform's words (`not_built.evals`); "" when it names none. */
+  evalsWhy?: string;
   models: ModelRow[];
   runs: RunRow[];
   agents: AgentRow[];
@@ -2648,9 +2722,9 @@ function TradeoffTriangle({
 }) {
   const [view, setView] = useState<"profiles" | "table">("profiles");
   const corners = cornersOf(models, runs, agents);
-  // Evaluations are not built: every agent's `evals` is null, and no model has an accuracy to show.
+  // Accuracy needs a benchmark: with none in the answer for any agent, the platform's own reason is said (`evalsWhy`), never one written here.
   const evalsBuilt = agents.some((a) => a.evals !== null);
-  const noEvals = evalsBuilt ? "no evals" : "not built";
+  const noEvals = evalsBuilt ? "no evals" : evalsWhy ? "not built" : "not in the answer";
   const colorOf = new Map(corners.map((c, i) => [c.model, CAT[i % CAT.length]]));
   const ranked = [...corners].sort((a, b) => b.overall - a.overall || b.known - a.known);
   const short = (id: string) => id.split("/").pop() ?? id;
@@ -2798,7 +2872,7 @@ function TradeoffTriangle({
           <p className="px-3 py-2 text-[10.5px] leading-[1.5] text-faint">
             Cost and Time bars are log-scaled against the best model in view: full is the best, half is ten
             times worse, empty is a hundred times worse. Accuracy is the eval pass rate measured on that model
-            {evalsBuilt ? "" : "; evaluations are not built, so no model has one"}. A model with calls that had no price has no cost per run.
+            {evalsBuilt ? "" : evalsWhy ? `; no model has one here, as the platform answers: ${evalsWhy}` : "; the platform's answer carries no benchmark for any agent, so no model has one"}. A model with calls that had no price has no cost per run.
             Click a model for the runs behind it.
           </p>
         </div>

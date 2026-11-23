@@ -315,7 +315,7 @@ function FindingPanel({ id, row, onClose, onChanged }: { id: string; row: Findin
 
 function FindingsTable({ rows, selected, hrefOf, onOpen }: { rows: Finding[]; selected: string | null; hrefOf: (id: string) => string; onOpen: (id: string) => void }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="af-list af-list-tall overflow-x-auto">
       <table className="w-full min-w-[920px] border-collapse text-[11.5px]">
         <thead>
           <tr className="border-b border-line bg-raise/55 text-left text-[10.5px] text-faint">

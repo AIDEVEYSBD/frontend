@@ -154,7 +154,7 @@ export function HealthView({ h }: { h: PlatformHealth }) {
         </Section>
         <Section title="Alerts" meta={`${h.alerts.count} waiting for a person`}>
           {h.alerts.items.length ? (
-            <ul className="flex flex-col gap-1 text-[11.5px]">
+            <ul className="af-list flex flex-col gap-1 text-[11.5px]">
               {h.alerts.items.slice(0, 12).map((a) => (
                 <li key={a.id} className="flex flex-wrap items-baseline gap-2">
                   <Tag tone={a.severity >= 8 ? "err" : a.severity >= 5 ? "warn" : "neutral"}>{a.kind}</Tag>

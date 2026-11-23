@@ -8,12 +8,11 @@ import { Mono, Status, Tag } from "./ui";
 import { DrillModal } from "./drill";
 import { usePageFacts } from "./assistant";
 import { CORE_PRINCIPLE, DOMAINS, EXECUTIVE_TAKEAWAY, GUARDRAILS, SCOPE } from "@/lib/data-guardrails";
-import { CLIENT_RESPONSIBILITIES, CONTROLS, FAMILIES, RESIDUAL_RISK, STANDARDS, type Control } from "@/lib/guardrails";
-import { GROUPINGS, GROUPING_BY_ID } from "@/lib/control-domains";
+import { CLIENT_RESPONSIBILITIES, CONTROLS, FAMILIES, RESIDUAL_RISK, type Control } from "@/lib/guardrails";
 import type { WatchEvent } from "@/lib/guardrails-watch";
 import { GuardrailsWatch } from "./guardrails-watch";
 import { GroupHeader } from "./page-tabs";
-import { enforcementOf, useControls } from "@/lib/controls-status";
+import { enforcementOf, servedReferences, useControls, type ServedFramework } from "@/lib/controls-status";
 import { notBuiltOf, unknownWhy } from "@/lib/not-built";
 import { ScreenerHealthLine } from "./screener-health";
 
@@ -73,6 +72,15 @@ export function Guardrails() {
   /** Whether this deployment enforces each control now, and its firings (GET /api/controls): the only source of either once it answers. */
   const status = useControls();
   const fromControls = status?.state === "ok";
+  // Where each control is cited or placed is the service's (GET /api/controls `references`, `frameworks`), never the console's own copy.
+  const served: ServedFramework[] | null = status?.state === "ok" ? status.frameworks : null;
+  const cited = (served ?? []).filter((f) => f.basis === "cited");
+  const placed = (served ?? []).filter((f) => f.basis === "placed");
+  /** Why the service's mapping is not on the page, when it is not: still reading, not built, failed, or an answer without it. */
+  const mapWhy = !status ? "Reading where each control is cited…" : status.state !== "ok" ? `Where each control is cited is not shown: ${status.state === "pending" ? "the controls address is not built" : `the controls could not be read (${status.message})`}.` : served === null ? "Where each control is cited is not shown: the platform's answer carries no framework list." : "";
+  const refsOf = (c: Control) => servedReferences(status, c.id);
+  /** The domain a framework places a control in, as the service serves it. */
+  const placedIn = (f: ServedFramework, id: string) => f.obligations.find((o) => o.controls.includes(id)) ?? null;
   const [data, setData] = useState<Data | null>(null);
   /** The firing record's own not-built list. */
   const unbuilt = notBuiltOf(data);
@@ -129,7 +137,10 @@ export function Guardrails() {
     });
   }, []);
 
-  const shown = useMemo(() => (std ? CONTROLS.filter((c) => c.references.some((r) => r.std === std)) : CONTROLS), [std]);
+  const shown = useMemo(
+    () => (std ? CONTROLS.filter((c) => { const r = servedReferences(status, c.id); return r.refs !== null && r.refs.some((x) => x.std === std); }) : CONTROLS),
+    [std, status],
+  );
   // A control is counted under its journal key (what the policy engine writes
   // on a refusal) and under its catalogue id (what the runtime stamps on a
   // kill or a marking); a reviewer sees one number.
@@ -161,9 +172,9 @@ export function Guardrails() {
   // The register can be read in the platform's own families or in another
   // framework's domains; the controls are the same, only the shelves move.
   const DOMAIN_PALETTE = ["var(--t-c1)", "var(--t-c2)", "var(--t-c5)", "var(--t-c7)", "var(--t-c8)", "var(--t-c3)", "var(--t-c6)", "var(--t-c9)", "var(--t-c4)"];
-  const grouping = groupBy === "family" ? null : GROUPING_BY_ID.get(groupBy) ?? null;
+  const grouping = groupBy === "family" ? null : placed.find((f) => f.id === groupBy) ?? null;
   const groups: { id: string; name: string; purpose: string; color: string; member: (c: Control) => boolean }[] = grouping
-    ? grouping.domains.map((d, i) => ({ id: d.id, name: d.name, purpose: d.note ?? "", color: DOMAIN_PALETTE[i % DOMAIN_PALETTE.length], member: (c) => grouping.of[c.id] === d.id }))
+    ? grouping.obligations.map((d, i) => ({ id: d.ref, name: d.name, purpose: d.note ?? "", color: DOMAIN_PALETTE[i % DOMAIN_PALETTE.length], member: (c) => d.controls.includes(c.id) }))
     : FAMILIES.map((f) => ({ id: f.id, name: f.name, purpose: f.purpose, color: FAMILY_COLOR[f.id], member: (c) => c.family === f.id }));
   const resp = (["platform", "shared"] as const).map((r) => ({
     label: RESP_LABEL[r], value: GUARDRAILS.filter((g) => g.responsibility === r).length, color: RESP_COLOR[r],
@@ -229,7 +240,7 @@ export function Guardrails() {
             <section className={`grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line elev-1 ${bare && !noRecord ? "" : "sm:grid-cols-3"}`}>
               {[
                 { label: "Controls", value: String(CONTROLS.length), sub: fromControls ? `${enforcedCount} enforced on this deployment now` : `${FAMILIES.length} families` },
-                { label: "Standards cited", value: String(STANDARDS.length), sub: "sources, not examiners" },
+                { label: "Standards cited", value: served ? String(cited.length) : "—", sub: served ? "sources, not examiners" : "not read" },
                 { label: "Workflows on record", value: noRecord ? "" : data ? figure(data.posture, "agents") : "—", sub: data && data.posture.agents === null ? unknownWhy(data.posture, "agents", unbuilt) : "deployed" },
                 { label: "Tools in definitions", value: noRecord ? "" : data ? figure(data.posture, "tools") : "—", sub: data && !noRecord ? (data.posture.tools === null ? unknownWhy(data.posture, "tools", unbuilt) : data.posture.sinks === null ? `act outside: unknown (${unknownWhy(data.posture, "sinks", unbuilt)})` : `${data.posture.sinks} act outside`) : "" },
                 { label: "Runs on record", value: noRecord ? "" : data ? figure(data, "runs") : "—", sub: data && data.runs === null ? unknownWhy(data, "runs", unbuilt) : "the evidence base" },
@@ -282,26 +293,28 @@ export function Guardrails() {
               {std && <button type="button" onClick={() => setStd("")} className="focusable text-[11px] text-faint hover:text-fg">clear</button>}
             </div>
             <div className="grid gap-px bg-line sm:grid-cols-2 lg:grid-cols-5">
-              {STANDARDS.map((s) => {
-                const n = CONTROLS.filter((c) => c.references.some((r) => r.std === s.std)).length;
-                const active = std === s.std;
+              {mapWhy && <p className="col-span-full bg-surface px-4 py-3 text-[11.5px] leading-[1.55] text-faint">{mapWhy}</p>}
+              {cited.map((s) => {
+                // Controls the catalogue cites an entry of this standard for, as the service serves them.
+                const n = new Set(s.obligations.flatMap((o) => o.controls)).size;
+                const active = std === s.short;
                 return (
-                  <button key={s.std} type="button" onClick={() => setStd(active ? "" : s.std)} className={`focusable flex flex-col gap-1.5 px-4 py-3 text-left transition-colors ${active ? "bg-raise" : "bg-surface hover:bg-raise/50"}`}>
-                    <span className="h-[3px] w-8 rounded-full" style={{ background: STD_TONE[s.std] }} />
-                    <span className="flex items-baseline gap-2"><span className="text-[12px] font-semibold text-fg">{s.std}</span><span className="tnum text-[11px] text-faint">{n}</span></span>
-                    <span className="text-[10.5px] leading-[1.45] text-faint">{s.title}</span>
+                  <button key={s.id} type="button" onClick={() => setStd(active ? "" : s.short)} className={`focusable flex flex-col gap-1.5 px-4 py-3 text-left transition-colors ${active ? "bg-raise" : "bg-surface hover:bg-raise/50"}`}>
+                    <span className="h-[3px] w-8 rounded-full" style={{ background: STD_TONE[s.short] ?? "var(--t-fg-4)" }} />
+                    <span className="flex items-baseline gap-2"><span className="text-[12px] font-semibold text-fg">{s.short}</span><span className="tnum text-[11px] text-faint" title="Controls citing it">{n}</span></span>
+                    <span className="text-[10.5px] leading-[1.45] text-faint">{s.name}</span>
                   </button>
                 );
               })}
             </div>
-            {std && <p className="border-t border-line px-4 py-2.5 text-[11.5px] leading-[1.55] text-faint">{STANDARDS.find((s) => s.std === std)?.note}</p>}
+            {std && <p className="border-t border-line px-4 py-2.5 text-[11.5px] leading-[1.55] text-faint">{cited.find((s) => s.short === std)?.scope}. A citation says where a control comes from, not that it is enforced.</p>}
           </section>
 
           {/* ── group by: the platform's families, or a framework's domains ── */}
           <div className="flex flex-wrap items-center gap-2 px-1">
             <span className="text-[11px] font-medium tracking-[0.06em] text-faint uppercase">Group by</span>
             <span className="flex items-center rounded-md border border-line bg-canvas p-0.5">
-              {[{ id: "family", short: "Platform family" }, ...GROUPINGS].map((g) => (
+              {[{ id: "family", short: "Platform family" }, ...placed].map((g) => (
                 <button
                   key={g.id}
                   type="button"
@@ -312,7 +325,7 @@ export function Guardrails() {
                 </button>
               ))}
             </span>
-            {grouping && <span className="text-[11px] text-faint">{grouping.label}: each control shelved under the domain whose intent it serves.</span>}
+            {grouping && <span className="text-[11px] text-faint">{grouping.name}: {grouping.scope || "each control shelved under the domain whose intent it serves"}.</span>}
           </div>
 
           {/* ── the register, as a card grid per group ── */}
@@ -362,11 +375,14 @@ export function Guardrails() {
                           <span className="text-[13px] font-semibold tracking-[-0.005em] text-fg">{c.title}</span>
                           <span className="line-clamp-3 text-[11.5px] leading-[1.55] text-faint">{c.statement}</span>
                           <span className="flex flex-wrap gap-1 pt-1">
-                            {c.references.map((r) => <Chip key={`${r.std}${r.ref}`} std={r.std} ref_={r.ref} name={r.name} />)}
+                            {(() => {
+                              const r = refsOf(c);
+                              if (r.refs === null) return <span className="text-[9.5px] text-ghost">references: {r.why}</span>;
+                              if (!r.refs.length) return <span className="text-[9.5px] text-ghost">no standard cited</span>;
+                              return r.refs.map((x) => <Chip key={`${x.std}${x.ref}`} std={x.std} ref_={x.ref} name={x.name} />);
+                            })()}
                           </span>
-                          <span className="text-[9.5px] text-ghost">
-                            {GROUPINGS.map((g) => `${g.short} ${g.domains.find((d) => d.id === g.of[c.id])?.id ?? "—"}`).join(" · ")}
-                          </span>
+                          {placed.length > 0 && <span className="text-[9.5px] text-ghost">{placed.map((g) => `${g.short} ${placedIn(g, c.id)?.ref ?? "—"}`).join(" · ")}</span>}
                         </button>
                       </article>
                     );
@@ -509,7 +525,12 @@ export function Guardrails() {
           }
         >
           <div className="flex flex-wrap gap-1 border-b border-line px-4 py-3">
-            {openControl.references.map((r) => <Chip key={`${r.std}${r.ref}`} std={r.std} ref_={r.ref} name={r.name} />)}
+            {(() => {
+              const r = refsOf(openControl);
+              if (r.refs === null) return <span className="text-[11px] text-faint">References: {r.why}.</span>;
+              if (!r.refs.length) return <span className="text-[11px] text-faint">No standard is cited for it.</span>;
+              return r.refs.map((x) => <Chip key={`${x.std}${x.ref}`} std={x.std} ref_={x.ref} name={x.name} />);
+            })()}
           </div>
           <div className="grid gap-px bg-line md:grid-cols-2">
             <Cell
@@ -555,8 +576,8 @@ export function Guardrails() {
             <Cell k="Evidence" v={openControl.evidence} />
             {openControl.journal !== "—" && <Cell k="Journalled as" v={<Mono className="text-[11px]">{openControl.journal}</Mono>} />}
             <Cell k="Platform family" v={FAMILIES.find((f) => f.id === openControl.family)?.name ?? openControl.family} />
-            <Cell k="Framework domains" v={GROUPINGS.map((g) => `${g.short}: ${g.domains.find((d) => d.id === g.of[openControl.id])?.name ?? "—"}`).join(" · ")} />
-            <Cell k="Derives from" v={openControl.references.map((r) => `${r.std} ${r.ref}: ${r.name}`).join(" · ")} />
+            <Cell k="Framework domains" v={placed.length ? placed.map((g) => `${g.short}: ${placedIn(g, openControl.id)?.name ?? "—"}`).join(" · ") : mapWhy || "No framework places it in a domain."} />
+            <Cell k="Derives from" v={(() => { const r = refsOf(openControl); return r.refs === null ? `Not shown: ${r.why}.` : r.refs.length ? r.refs.map((x) => `${x.std} ${x.ref}: ${x.name}`).join(" · ") : "No standard is cited for it."; })()} />
             {data && openFired !== null && openFired > 0 && Object.entries(data.byAgent ?? {}).some(([, m]) => sumOf(m, openControl) > 0) && (
               <Cell k="Fired in" v={Object.entries(data.byAgent ?? {}).map(([a, m]) => [a, sumOf(m, openControl)] as const).filter(([, n]) => n > 0).map(([a, n]) => `${a} (${n})`).join(", ")} />
             )}

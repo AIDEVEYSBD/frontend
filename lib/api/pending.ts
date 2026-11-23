@@ -156,7 +156,10 @@ export interface RunAuthority {
   grants: { tool: string; scope?: Record<string, string[]>; from: "spec" | "caller" }[];
   /** What its spec asked for and the caller did not hold. */
   narrowed: { tool: string; reason: string }[];
-  max_data_class?: DataClass;
+  /** The most sensitive class the run may read; absent or null when the run has no ceiling. */
+  max_data_class?: DataClass | null;
+  /** Why the run has no ceiling, in the service's words, when it has none. */
+  max_data_class_note?: string;
   gates: { name: string; approvers: string[] }[];
   /**
    * The approved use case the run started under, as copied onto the run when it started; null when there is
@@ -465,7 +468,16 @@ export interface WorkloadOffer {
   name: string;
   /** The deployed agent that runs it; absent while none is deployed. */
   agent?: string;
-  status: "available" | "not_deployed";
+  /**
+   * Whether a request to it would start a run now, by the rule a start is
+   * refused by: `available` only when its agent is deployed and not retired
+   * and its use case is registered and approved; otherwise `not_deployed`,
+   * `no_use_case`, `use_case_<state>` (`use_case_draft`,
+   * `use_case_awaiting_approval`) or `not_readable`, with `reason`.
+   */
+  status: "available" | "not_deployed" | "no_use_case" | "not_readable" | `use_case_${string}`;
+  /** Why it is not available, in a sentence; null when it is. */
+  reason?: string | null;
   /**
    * How each kind is sent in the run's input: `dataset` as a DatasetRef, `date_range` as
    * `{from, to}` in UTC ISO time, `list` as an array of strings, `choice` and `text` as a

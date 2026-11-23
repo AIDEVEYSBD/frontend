@@ -3,15 +3,22 @@
 import { useState, type ReactNode } from "react";
 import { Button, Mono, Status, Tag } from "./ui";
 import { SafeLink } from "./safe-link";
+import { ClearanceHint, NOT_CLEARED } from "./clearance-hint";
 
 /**
  * A retrieval call, as a reviewer reads one: which sources were consulted
- * (each one that answered, with its hits, and each that failed, with why),
- * and the passages that came back, each with its score and where it came
- * from. The shape is the retrieval tool's own result
- * (`runtime/agentfactory/retrieval.py`: `{query, results, consulted}`).
- * A screening verdict is shown beside a passage only when the entry carries
- * one; nothing is inferred from its absence.
+ * (each one searched, with its hits and how it was searched; each left out,
+ * with why), how the passages were ranked and anything the search noted, and
+ * the passages that came back, each with its score and where it came from.
+ * The shape is the retrieval tool's own result (agentfactory
+ * tools/builtins/retrieval.py: `{query, searched_at_class, consulted,
+ * results, ranking, rerank_model, notes, note?}`). `consulted[].searched` is
+ * "by meaning and by wording", "by wording only" (the query could not be
+ * embedded; `note` says what that misses) or "not searched" (the store was
+ * left out; `error` says why). An entry written before the tool said these
+ * carries none of them, and none is shown. A screening verdict is shown
+ * beside a passage only when the entry carries one; nothing is inferred from
+ * its absence.
  */
 
 type Rec = Record<string, unknown>;
@@ -25,6 +32,10 @@ export interface Consulted {
   ok: boolean;
   hits: number | null;
   error: string;
+  /** How it was searched, in the tool's words; "" when the entry does not say. */
+  searched: string;
+  /** What that way of searching misses, when the tool says. */
+  note: string;
 }
 
 export interface Verdict {
@@ -50,6 +61,16 @@ export interface Retrieval {
   consulted: Consulted[];
   passages: Passage[];
   images: number;
+  /** How the passages were ordered, in the search's words; "" when the entry does not say. */
+  ranking: string;
+  /** The chat model that re-ranked them; "" when none did or the entry does not say. */
+  rerankModel: string;
+  /** What the search noted: a query it could not embed, a re-ranking that failed or had no cleared model, a store left out. */
+  notes: string[];
+  /** The class of data the search was made at, when the entry says. */
+  atClass: string;
+  /** The tool's own note on the whole call (a run with no data class searched public sources only). */
+  note: string;
 }
 
 function verdictOf(v: unknown): Verdict | null {
@@ -91,7 +112,7 @@ export function retrievalOf(tool: string, value: unknown): Retrieval | null {
     query: str(o.query),
     consulted: (Array.isArray(o.consulted) ? o.consulted : []).map((c) => {
       const x = obj(c);
-      return { source: str(x.source), kind: str(x.kind), ok: x.ok === true, hits: num(x.hits), error: str(x.error) };
+      return { source: str(x.source), kind: str(x.kind), ok: x.ok === true, hits: num(x.hits), error: str(x.error), searched: str(x.searched), note: str(x.note) };
     }),
     passages: (Array.isArray(o.results) ? o.results : []).map((r) => {
       const x = obj(r);
@@ -107,12 +128,22 @@ export function retrievalOf(tool: string, value: unknown): Retrieval | null {
       };
     }),
     images: Array.isArray(o.images) ? o.images.length : 0,
+    ranking: str(o.ranking),
+    rerankModel: str(o.rerank_model),
+    notes: Array.isArray(o.notes) ? o.notes.filter((n): n is string => typeof n === "string" && n.trim() !== "") : [],
+    atClass: str(o.searched_at_class),
+    note: str(o.note),
   };
 }
 
+/** A store left out of the search (`searched` "not searched") is not a failure of the search, and is not read as one. */
+const leftOut = (c: Consulted) => !c.ok && c.searched === "not searched";
+
 /** One line over a retrieval, for a collapsed row: `9 passages · news ok (9)`. */
 export function retrievalLine(r: Retrieval): string {
-  const sources = r.consulted.map((c) => (c.ok ? `${c.source} ok${c.hits !== null ? ` (${c.hits})` : ""}` : `${c.source} failed`));
+  const sources = r.consulted.map((c) =>
+    c.ok ? `${c.source} ok${c.hits !== null ? ` (${c.hits})` : ""}${c.searched === "by wording only" ? ", by wording only" : ""}` : `${c.source} ${leftOut(c) ? "not searched" : "failed"}${c.hits !== null ? ` (${c.hits})` : ""}`,
+  );
   return [`${r.passages.length} passage${r.passages.length === 1 ? "" : "s"}`, ...sources].join(" · ");
 }
 
@@ -136,19 +167,38 @@ export function RetrievalBody({ r, initial = 3 }: { r: Retrieval; initial?: numb
           <ul className="flex flex-col gap-0.5">
             {r.consulted.map((c, i) => (
               <li key={`${c.source}-${i}`} className="flex flex-wrap items-baseline gap-x-2 text-[11.5px]">
-                <Status tone={c.ok ? "ok" : "err"}>{c.ok ? "ok" : "failed"}</Status>
+                <Status tone={c.ok ? (c.searched === "by wording only" ? "warn" : "ok") : leftOut(c) ? "warn" : "err"}>{c.ok ? "ok" : leftOut(c) ? "not searched" : "failed"}</Status>
                 <span className="font-mono text-[11px] text-fg">{c.source || "unnamed source"}</span>
                 {c.kind && <span className="text-[10.5px] text-faint">{c.kind}</span>}
-                {c.ok ? (
-                  <span className="tnum text-dim">{c.hits === null ? "hits not recorded" : `${c.hits} hit${c.hits === 1 ? "" : "s"}`}</span>
-                ) : (
-                  <span className="min-w-0 break-words text-err">{c.error || "no reason recorded"}</span>
-                )}
+                {/* Hits are shown whenever the entry counts them, beside an error too: a store can fail part-way and still have answered. */}
+                {(c.ok || c.hits !== null) && <span className="tnum text-dim">{c.hits === null ? "hits not recorded" : `${c.hits} hit${c.hits === 1 ? "" : "s"}`}</span>}
+                {c.ok && c.searched && <span className={c.searched === "by wording only" ? "text-warn" : "text-faint"}>searched {c.searched}</span>}
+                {!c.ok && <span className={`min-w-0 break-words ${leftOut(c) ? "text-warn" : "text-err"}`}>{c.error || "no reason recorded"}</span>}
+                {c.note && <span className="basis-full pl-1 text-[10.5px] leading-[1.5] text-faint">{c.note}</span>}
               </li>
             ))}
           </ul>
         )}
       </div>
+      {(r.ranking || r.notes.length > 0 || r.note || r.atClass) && (
+        <div className="flex flex-col gap-0.5 text-[11px] leading-[1.5]">
+          {r.ranking && (
+            <span className="text-dim">
+              <span className="text-faint">Ranked </span>
+              {r.ranking}
+              {r.rerankModel && !r.ranking.includes(r.rerankModel) ? ` (re-ranked by ${r.rerankModel})` : ""}.
+            </span>
+          )}
+          {r.atClass && <span className="text-faint">Searched at {r.atClass}: no passage above that class is handed over.</span>}
+          {r.note && <span className="text-warn">{r.note[0].toUpperCase() + r.note.slice(1)}.</span>}
+          {r.notes.map((n, i) => (
+            <span key={i} className="text-warn">
+              {n}
+            </span>
+          ))}
+          {[r.ranking, ...r.notes].some((t) => NOT_CLEARED.test(t)) && <ClearanceHint />}
+        </div>
+      )}
       <div className="flex flex-col gap-1">
         <span className="text-[10.5px] font-medium text-faint">
           Passages returned <span className="tnum">({r.passages.length})</span>
@@ -218,7 +268,9 @@ export function RetrievalCard({
   startOpen?: boolean;
 }) {
   const [showRaw, setShowRaw] = useState(startOpen);
-  const failed = r.consulted.filter((c) => !c.ok).length;
+  const failed = r.consulted.filter((c) => !c.ok && !leftOut(c)).length;
+  const skipped = r.consulted.filter(leftOut).length;
+  const wordsOnly = r.consulted.some((c) => c.ok && c.searched === "by wording only");
   return (
     <div className="min-w-0 grow rounded-md border border-line bg-raise">
       <div className="flex flex-col gap-0.5 border-b border-line px-3 py-2">
@@ -228,6 +280,8 @@ export function RetrievalCard({
           {tainted && <Tag tone="warn">untrusted content</Tag>}
           <span className="grow" />
           {failed > 0 && <Status tone="err">{failed} source{failed === 1 ? "" : "s"} failed</Status>}
+          {skipped > 0 && <Status tone="warn">{skipped} not searched</Status>}
+          {wordsOnly && <Status tone="warn">by wording only</Status>}
           <Mono className="text-[10.5px] text-ok">returned</Mono>
         </span>
         {r.query && (

@@ -71,7 +71,8 @@ export function hasFlag(e: Entry, flag: string, now: number, findingsOf: Map<str
     case "unowned":
       return live && !i.owner;
     case "unused":
-      return live && !i.last_used && i.kind !== "workflow";
+      // A credential kept in a store that records no time of use (Secret Manager) has no last use to read: never counted as unused.
+      return live && !i.last_used && i.kind !== "workflow" && i.facts.last_use_recorded !== false;
     case "stale":
       return live && Boolean(i.last_used) && now - new Date(i.last_used!).getTime() > 30 * DAY;
     case "risky":
@@ -180,12 +181,12 @@ export function IdentityRoster({
     const tone = STATUS_TONE[s] ?? (s === "disabled" ? "err" : "neutral");
     return { value: s, label: s, count: unread ? undefined : entries.filter((e) => statusOf(e).label === s && matches(e, "status")).length, active: filter.statuses.includes(s), tone: tone === "err" ? "err" : tone === "warn" ? "warn" : undefined };
   });
-  const riskChips: Chip[] = ["read", "write", "risky"].map((r) => ({
+  const riskChips: Chip[] = ["read", "write", "risky", "destructive"].map((r) => ({
     value: r,
     label: riskLabel(r),
     count: unread ? undefined : entries.filter((e) => e.type === "identity" && (e.identity.risk || "none") === r && matches(e, "risk")).length,
     active: filter.risks.includes(r),
-    tone: r === "risky" ? "err" : r === "write" ? "warn" : "ok",
+    tone: r === "risky" || r === "destructive" ? "err" : r === "write" ? "warn" : "ok",
   }));
   const flagChips: Chip[] = ROSTER_FLAGS.map((f) => ({ value: f.value, label: f.label, count: unread ? undefined : entries.filter((e) => hasFlag(e, f.value, now, findingsOf) && matches(e, "flag")).length, active: filter.flags.includes(f.value), tone: f.tone }));
 
@@ -234,7 +235,7 @@ export function IdentityRoster({
         </MoreFilters>
         <ActiveFilters items={active} onClear={clearOne} />
       </div>
-      <div className="overflow-x-auto">
+      <div className="af-list af-list-tall overflow-x-auto">
         <table className="w-full min-w-[820px] border-collapse text-[12px]">
           <thead>
             <tr className="border-b border-line text-left text-[10.5px] text-faint">

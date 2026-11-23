@@ -970,7 +970,8 @@ describe("the console's shapes and the generated client agree", () => {
     expectTypeOf<Agrees<l8.RetireRequest, Schemas["RetireRequest"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l8.Retirement, Schemas["RetirementView"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l8.VersionDocument, Schemas["VersionDocument"]>>().toEqualTypeOf<true>();
-    expectTypeOf<Agrees<l8.AgentSaved, Schemas["AgentSaved"]>>().toEqualTypeOf<true>();
+    // `unread` (the fields the parser did not read) is ahead of the generated types.
+    expectTypeOf<Agrees<Omit<l8.AgentSaved, "unread">, Schemas["AgentSaved"]>>().toEqualTypeOf<true>();
     // `unsupported` (the parts of the definition the platform does not carry out) is ahead of the generated types.
     expectTypeOf<Agrees<Omit<l8.AgentLifecycleDetail, "unsupported">, Schemas["AgentDetail"]>>().toEqualTypeOf<true>();
     expectTypeOf<Agrees<l7.Reached, Schemas["ReachedRun"]>>().toEqualTypeOf<true>();

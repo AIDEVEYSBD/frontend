@@ -71,7 +71,8 @@ export interface EstateFigures {
     models: { model: string; calls: number; tokens: number; cost_usd: number | null; unpriced_calls: number }[];
   };
   now: EstateNow;
-  budget: { budget_usd: number; period: "day" | "week" | "month"; since: string; spent: number; unpriced: number; remaining: number; exceeded: boolean; used: number } | null;
+  /** `spent` null when calls were made and none was priced; `remaining`, `exceeded` and `used` null when unpriced calls leave them unknown, with `unknown_why`. */
+  budget: { budget_usd: number; period: "day" | "week" | "month"; since: string; spent: number | null; unpriced: number; remaining: number | null; exceeded: boolean | null; used: number | null; unknown_why?: string | null } | null;
   basis: string;
   not_included: { what: string; why: string }[];
 }

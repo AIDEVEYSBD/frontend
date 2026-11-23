@@ -17,7 +17,6 @@ import { useDoorBuilt } from "@/lib/use-doors";
 import { productionRuns } from "@/lib/production";
 import { HARNESS } from "@/lib/spec";
 import { useSession } from "@/lib/use-session";
-import { AddAgent } from "./agent-add";
 import { usePageFacts } from "./assistant";
 import { Icon } from "./builder/icons";
 import { DrillModal } from "./drill";
@@ -146,7 +145,7 @@ function Position({ h, harness }: { h: RosterStep["hierarchy"]; harness: string 
 function Steps({ group }: { group: RosterGroup }) {
   if (!group.agents.length) return <p className="text-[12px] text-faint">This agent has no steps.</p>;
   return (
-    <div className="overflow-x-auto rounded-md border border-line bg-surface">
+    <div className="af-list af-list-tall overflow-x-auto rounded-md border border-line bg-surface">
       <table className="w-full min-w-[900px] border-collapse text-[11.5px]">
         <thead>
           <tr className="border-b border-line text-left text-[10.5px] text-faint">
@@ -509,7 +508,7 @@ function AgentsPage() {
   return (
     <div className="min-h-full" data-hue="blue">
       <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7">
-        <GroupHeader group="agents" tab="agents" actions={<AddAgent onSaved={refresh} />}>
+        <GroupHeader group="agents" tab="agents">
           Every agent saved on this deployment: what it does, who owns it, whether production runs it and when it last ran. Open an agent for its configuration, versions and bill of materials{rosterOff ? "." : ", or open its row for the steps inside it."}
         </GroupHeader>
 
@@ -554,7 +553,7 @@ function AgentsPage() {
                 <SearchBox value={q} onChange={setQ} placeholder="Name, id, owner or step" width="w-[240px]" />
               </div>
               {/* Positioned, so the visually hidden column names stay inside the scrolling area and never widen the page. */}
-              <div className="relative overflow-x-auto">
+              <div className="relative af-list af-list-tall overflow-x-auto">
                 <table className="w-full min-w-[920px] border-collapse text-[11.5px]">
                   <thead>
                     <tr className="border-b border-line text-left text-[10.5px] text-faint">

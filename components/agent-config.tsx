@@ -16,6 +16,7 @@ import { HARNESS, RISK, RISK_ORDER, type HarnessKind, type Risk } from "@/lib/sp
 import { DATA_CLASS_TONE } from "@/lib/bom";
 import { retiredLine } from "@/lib/lifecycle";
 import { editableDocument, retiredRefusalOf, saveAgent, type AgentSaved, type EditableDocument } from "@/lib/api/l8";
+import { UnreadFields } from "./unread-fields";
 import { runBlockers, unsupportedHeading, unsupportedReason } from "@/lib/unsupported";
 import { UnsupportedParts } from "./unsupported";
 import { notBuilt, readConfiguration } from "@/lib/not-built";
@@ -774,6 +775,7 @@ function AgentForm({ edit, saved, onSaved }: { edit: EditableDocument; saved: Ag
               </Button>
             </div>
           )}
+          {!dirty && saved && !refusal && <UnreadFields unread={saved.unread} />}
           {dirty && (
             <div className="flex flex-wrap items-center gap-3">
               <span className="flex min-w-0 flex-col gap-0.5">

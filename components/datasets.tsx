@@ -168,7 +168,7 @@ function DatasetsPage() {
             {answer === null ? "reading…" : connected ? (filters ? `${shown.length} of ${all.length}` : all.length.toLocaleString("en-GB")) : ""}
           </span>
         </div>
-        <div className="overflow-x-auto">
+        <div className="af-list af-list-tall overflow-x-auto">
           <table className="w-full min-w-[1040px] border-collapse text-left">
             <thead>
               <tr className="border-b border-line">

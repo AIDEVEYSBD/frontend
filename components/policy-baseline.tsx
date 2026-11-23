@@ -98,7 +98,7 @@ export function PolicyBaseline({ rules = null, rulesError = "" }: { rules?: Rule
         </span>
       </div>
 
-      <div className="flex flex-col gap-4">
+      <div className="af-list af-list-tall flex flex-col gap-4">
         {BASELINE_AREAS.map(({ area, purpose }) => {
           const rows = shown.filter((p) => p.area === area);
           if (!rows.length) return null;

@@ -390,7 +390,9 @@ function CostBoard({ win, setWin }: BoardProps) {
   const latest = f?.now.last_run_at ?? null;
   const budget = f?.budget ?? null;
   const used = budget?.used ?? null;
-  const budgetTone = budget?.exceeded ? "err" : used !== null && used > 0.8 ? "warn" : undefined;
+  const budgetTone = budget?.exceeded === true ? "err" : budget && (budget.exceeded === null || (used !== null && used > 0.8)) ? "warn" : undefined;
+  /** Unpriced calls leave the budget's standing unknown: the service's reason. */
+  const budgetUnknown = budget !== null && (budget.exceeded === null || budget.used === null || budget.remaining === null || budget.spent === null);
   const scaled = f ? windowBudget(f) : null;
   const priced = spend?.cost_usd ?? null;
 
@@ -455,10 +457,10 @@ function CostBoard({ win, setWin }: BoardProps) {
         <FigureTile
           label="Budget used"
           href="/finops"
-          value={f ? (budget === null ? "Not set" : percent(budget.used, 1)) : null}
+          value={f ? (budget === null ? "Not set" : budget.used === null ? "Unknown" : percent(budget.used, 1)) : null}
           off={off}
           tone={budgetTone}
-          sub={sub(budget === null ? "spend is not capped" : budget.exceeded ? "spent, new runs are refused" : `${fmtMoney(budget.spent)} of ${fmtMoney(budget.budget_usd)} this ${budget.period}`)}
+          sub={sub(budget === null ? "spend is not capped" : budget.exceeded === true ? "spent, new runs are refused" : budgetUnknown ? budget.unknown_why || "what was spent is not known" : `${fmtMoney(budget.spent ?? 0)} of ${fmtMoney(budget.budget_usd)} this ${budget.period}`)}
         />
       </FigureBand>
 
@@ -552,15 +554,18 @@ function CostBoard({ win, setWin }: BoardProps) {
           ) : (
             <div className="flex flex-col gap-3 px-4 pt-4 pb-4">
               <div className="grid grid-cols-2 gap-4">
-                <CardFigure label="Used" value={percent(budget.used, 1)} tone={budget.exceeded ? "err" : undefined} />
-                <CardFigure label="Left" value={fmtMoney(Math.max(0, budget.remaining))} />
+                <CardFigure label="Used" value={budget.used === null ? "Unknown" : percent(budget.used, 1)} tone={budget.exceeded === true ? "err" : undefined} />
+                <CardFigure label="Left" value={budget.remaining === null ? "Unknown" : fmtMoney(Math.max(0, budget.remaining))} />
               </div>
-              <Meter value={budget.used} tone={budgetTone ?? "run"} />
+              {budget.used !== null && <Meter value={budget.used} tone={budgetTone ?? "run"} />}
               <p className="text-[12px] leading-[1.55] text-faint">
-                {budget.exceeded
-                  ? `${fmtMoney(budget.spent)} of ${fmtMoney(budget.budget_usd)} is spent in the last ${PERIOD_WORDS[budget.period]}. New runs are refused until spend falls back under the budget or the budget is raised.`
-                  : `${fmtMoney(budget.spent)} of ${fmtMoney(budget.budget_usd)} spent in the last ${PERIOD_WORDS[budget.period]}.`}
-                {budget.unpriced ? ` ${plural(budget.unpriced, "call")} with no price set are not counted against it.` : ""}
+                {budgetUnknown
+                  ? // Unpriced calls in the period: spend, what is left and whether it is spent are not known; the service's reason.
+                    `${budget.exceeded === true ? `Spent by the priced calls alone in the last ${PERIOD_WORDS[budget.period]}: new runs are refused. ` : ""}${budget.unknown_why ? `${budget.unknown_why[0].toUpperCase()}${budget.unknown_why.slice(1)}.` : "What was spent is not known, and the platform gives no reason."}`
+                  : budget.exceeded
+                    ? `${fmtMoney(budget.spent ?? 0)} of ${fmtMoney(budget.budget_usd)} is spent in the last ${PERIOD_WORDS[budget.period]}. New runs are refused until spend falls back under the budget or the budget is raised.`
+                    : `${fmtMoney(budget.spent ?? 0)} of ${fmtMoney(budget.budget_usd)} spent in the last ${PERIOD_WORDS[budget.period]}.`}
+                {!budgetUnknown && budget.unpriced ? ` ${plural(budget.unpriced, "call")} with no price set are not counted against it.` : ""}
                 {scaled !== null && win !== "all" && priced !== null && ` Over ${windowWords(win)} the same rate allows ${fmtMoney(scaled)}, and ${fmtMoney(priced)} was spent.`}
               </p>
             </div>

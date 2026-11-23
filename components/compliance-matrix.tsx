@@ -6,7 +6,7 @@ import { Field, Input, Switch, Textarea } from "./forms";
 import { SearchBox } from "./filters";
 import { CONTROLS, FAMILIES, type Control } from "@/lib/guardrails";
 import type { ControlCustom, IclControl } from "@/lib/api/pending";
-import { EntryChip, ICL, STANDARD_COLS, plural, tidyCustom } from "./compliance-parts";
+import { EntryChip, ICL, plural, tidyCustom, type StandardCol } from "./compliance-parts";
 
 /**
  * The matrix: one row per catalogue control, one column per standard, the
@@ -20,6 +20,8 @@ import { EntryChip, ICL, STANDARD_COLS, plural, tidyCustom } from "./compliance-
 
 export interface MatrixProps {
   rows: Control[];
+  /** The standards' columns, from the service's framework mapping (GET /api/controls); empty while it is not read. */
+  cols: StandardCol[];
   /** Controls per standard, of the ones that apply here, for the header row. */
   counts: Map<string, number>;
   /** How many controls the counts are out of. */
@@ -67,15 +69,15 @@ export function ComplianceMatrix(p: MatrixProps) {
     return () => measure.disconnect();
   }, []);
   const byId = useMemo(() => new Map((list ?? []).map((x) => [x.id, x])), [list]);
-  const firstGrouped = STANDARD_COLS.findIndex((s) => s.kind === "grouped");
-  const span = STANDARD_COLS.length + 2;
+  const firstGrouped = p.cols.findIndex((s) => s.kind === "grouped");
+  const span = p.cols.length + 2;
 
   return (
     <div ref={frame} className="max-h-[max(420px,calc(100vh-200px))] overflow-auto" role="region" aria-label="Controls against standards" tabIndex={0}>
       <table className="w-full min-w-[1064px] table-fixed border-separate border-spacing-0 text-left">
         <colgroup>
           <col className="w-[208px] lg:w-[272px]" />
-          {STANDARD_COLS.map((s) => (
+          {p.cols.map((s) => (
             <col key={s.id} />
           ))}
           <col className="w-[168px]" />
@@ -85,7 +87,7 @@ export function ComplianceMatrix(p: MatrixProps) {
             <th scope="col" className={`${HEAD} left-0 z-30 border-r border-r-line pl-4`}>
               Control
             </th>
-            {STANDARD_COLS.map((s, i) => (
+            {p.cols.map((s, i) => (
               <th key={s.id} scope="col" title={s.title} className={`${HEAD} ${i === firstGrouped ? "border-l border-l-line" : ""}`}>
                 <span className="flex flex-col gap-0.5">
                   <span className="text-[11px] leading-[14px] font-semibold text-fg">{s.short}</span>
@@ -161,7 +163,7 @@ function ControlRow({ c, p, byId, isOpen, firstGrouped, span, width }: { c: Cont
             </span>
           </button>
         </th>
-        {STANDARD_COLS.map((s, i) => (
+        {p.cols.map((s, i) => (
           <td key={s.id} className={`${CELL} ${tint} ${i === firstGrouped ? "border-l border-l-line" : ""}`}>
             <span className={`flex flex-wrap gap-1 ${off ? "opacity-45" : ""}`}>
               {s.entries(c).map((e) => (
@@ -215,7 +217,7 @@ function Opened({ c, p, byId }: { c: Control; p: MatrixProps; byId: Map<string, 
         <div className="flex flex-col gap-1.5">
           <span className={LABEL}>References</span>
           <span className="flex flex-col">
-            {STANDARD_COLS.flatMap((s) =>
+            {p.cols.flatMap((s) =>
               s.entries(c).map((e) => (
                 <span key={`${s.id}-${e.ref}`} className="grid grid-cols-[112px_64px_minmax(0,1fr)] items-baseline gap-x-2 border-b border-line py-1 text-[12px] last:border-b-0">
                   <span className="text-dim">{s.short}</span>

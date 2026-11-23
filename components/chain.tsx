@@ -80,7 +80,7 @@ export function RunChain({ run, tick = 0 }: { run: string; tick?: number }) {
 export function LedgerWalk({ ledger }: { ledger: LedgerVerification }) {
   if (!ledger.walk.length) return <p className="text-[12px] text-faint">No run was created in this view.</p>;
   return (
-    <div className="overflow-x-auto rounded-md border border-line">
+    <div className="af-list af-list-tall overflow-x-auto rounded-md border border-line">
       <table className="w-full min-w-[860px] border-collapse text-[11.5px]">
         <thead>
           <tr className="border-b border-line bg-raise/40 text-left text-[10.5px] text-faint">
@@ -180,7 +180,7 @@ function Limits({ items }: { items: string[] }) {
 export function RetentionPanel({ view }: { view: RetentionView }) {
   return (
     <div className="flex flex-col gap-3">
-      <div className="overflow-x-auto rounded-md border border-line">
+      <div className="af-list af-list-tall overflow-x-auto rounded-md border border-line">
         <table className="w-full min-w-[720px] border-collapse text-[11.5px]">
           <thead>
             <tr className="border-b border-line bg-raise/40 text-left text-[10.5px] text-faint">
@@ -218,7 +218,7 @@ export function RetentionPanel({ view }: { view: RetentionView }) {
         <p className="text-[11px] leading-[1.5] text-faint">No sweep is on record: it runs once an hour in a process that runs workers.</p>
       )}
       {view.tombstones.length > 0 ? (
-        <div className="overflow-x-auto rounded-md border border-line">
+        <div className="af-list af-list-tall overflow-x-auto rounded-md border border-line">
           <table className="w-full min-w-[720px] border-collapse text-[11.5px]">
             <thead>
               <tr className="border-b border-line bg-raise/40 text-left text-[10.5px] text-faint">

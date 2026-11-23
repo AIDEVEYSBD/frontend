@@ -142,16 +142,23 @@ export const noFiringLine = (p: EvidencePack): string =>
 /* ═══════════════════ frameworks ═══════════════════ */
 
 export const OBLIGATION_META: Record<ObligationStatus, { label: string; tone: Tone; means: string }> = {
-  evidenced: { label: "Evidenced", tone: "ok", means: "a control answering it is enforced now and fired in the period" },
-  configured: { label: "Configured", tone: "run", means: "a control answering it is enforced now; none fired in the period" },
-  not_evidenced: { label: "Not evidenced", tone: "err", means: "no control answering it is enforced now, or none answers it" },
+  evidenced: { label: "Evidenced", tone: "ok", means: "a control answering it is enforced now for this agent and fired in the period" },
+  configured: { label: "Configured", tone: "run", means: "a control answering it is enforced now for this agent; none fired in the period" },
+  not_evidenced: { label: "Not evidenced", tone: "err", means: "no control answering it is enforced for this agent now, every one is recorded as not applying here, or none answers it" },
 };
 
-/** A control's enforcement, as the platform read it when the view was asked for. */
+/**
+ * A control's enforcement for one agent, as the platform read it when the
+ * view was asked for. `not_enforced` covers a control the platform carries
+ * out that this agent's definition does not call for (no gate, no budget):
+ * the line's detail says why, for this agent. `not_applicable` is a control
+ * the deployment recorded as not applying here, with its note.
+ */
 export const CONFIGURATION_META: Record<string, { label: string; tone: Tone }> = {
   enforced: { label: "enforced", tone: "ok" },
   partly: { label: "partly enforced", tone: "warn" },
   not_enforced: { label: "not enforced", tone: "err" },
+  not_applicable: { label: "does not apply here", tone: "neutral" },
   unknown: { label: "enforcement unknown", tone: "neutral" },
 };
 

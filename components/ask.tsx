@@ -6,6 +6,7 @@ import { Button, Status } from "./ui";
 import { Markdown } from "./markdown";
 import { AssistantChart, ChartDrawing, ChartRefused, parseChart } from "./assistant-charts";
 import { SafeLink } from "./safe-link";
+import { ClearanceHint, NOT_CLEARED } from "./clearance-hint";
 
 /**
  * Ask the corpus.
@@ -40,7 +41,7 @@ export interface Hit {
   body: string;
 }
 
-interface Stages { stages: Record<string, number>; timings: Record<string, number>; rerankModel: string | null; /** Which ranking was used, in the service's words. */ ranking: string }
+interface Stages { stages: Record<string, number>; timings: Record<string, number>; rerankModel: string | null; /** Which ranking was used, in the service's words. */ ranking: string; /** What the search noted (a store left out, a query it could not embed, a re-ranking not made); "" when nothing. */ note: string }
 
 export interface Citation {
   n: number;
@@ -73,7 +74,7 @@ export interface Answer {
   note?: string;
   /** Which ranking the retrieval used, in the service's words. */
   ranking?: string;
-  /** Why no answer was given, when none was: no_model, no_passages, not_covered or not_grounded. */
+  /** Why no answer was given, when none was: no_model, no_passages, not_covered, not_grounded, or not_cleared (no offered model is cleared for the passages' data; `note` names the class and the models). */
   declined?: string;
 }
 
@@ -130,7 +131,7 @@ export function AskCorpus({
       if (d.error) setNotice(d.error, true);
       else {
         setHits(d.hits ?? []);
-        setStages({ stages: d.stages, timings: d.timings, rerankModel: d.rerankModel, ranking: d.ranking ?? "" });
+        setStages({ stages: d.stages, timings: d.timings, rerankModel: d.rerankModel, ranking: d.ranking ?? "", note: typeof d.note === "string" ? d.note : "" });
         if (!(d.hits ?? []).length) setNotice(d.note ?? `Nothing in the "${namespace}" corpus answers that.`);
         onResult?.({ mode: "search", namespace, query: probe, stages: d.stages, hits: (d.hits ?? []).map((h: Hit) => h.source) });
       }
@@ -234,6 +235,12 @@ export function AskCorpus({
       </div>
 
       {notice && (fault ? <div className="border-t border-line px-4 py-2.5"><Failure inline message={notice} /></div> : <p className="border-t border-line px-4 py-2.5 text-[11.5px] text-faint">{notice}</p>)}
+      {/* An answer declined because no offered model is cleared for the passages' data: the note names the class and the models; this says where to clear one. */}
+      {mode === "answer" && answer && (answer.declined === "not_cleared" || NOT_CLEARED.test(`${answer.note ?? ""} ${answer.ranking ?? ""}`)) && (
+        <div className="border-t border-line px-4 py-2">
+          <ClearanceHint />
+        </div>
+      )}
 
       {/* ── the loop, as it turns ── */}
       {mode === "answer" && (live.length > 0 || answer) && (
@@ -365,7 +372,14 @@ export function AskCorpus({
           ))}
         </div>
       )}
-      {mode === "search" && stages?.ranking && <p className="border-t border-line px-4 py-2 text-[10.5px] leading-[1.5] text-faint">Ranked {stages.ranking}.</p>}
+      {mode === "search" && stages && (stages.ranking || (stages.note && (hits ?? []).length > 0)) && (
+        <div className="flex flex-col gap-1 border-t border-line px-4 py-2 text-[10.5px] leading-[1.5]">
+          {stages.ranking && <span className="text-faint">Ranked {stages.ranking}.</span>}
+          {/* With no hit the note is the notice above; with hits it is said here, so a store left out or a re-ranking not made is never dropped. */}
+          {stages.note && (hits ?? []).length > 0 && <span className="text-warn">{stages.note}</span>}
+          {NOT_CLEARED.test(`${stages.ranking} ${stages.note}`) && <ClearanceHint />}
+        </div>
+      )}
       {((mode === "search" ? hits ?? [] : showEvidence && answer ? answer.citations : []) as (Hit | Citation)[]).map((h, i) => {
         const c = h as Partial<Citation> & Partial<Hit> & { id: string; documentId: string; source: string; heading: string; url: string; body: string; relevance: number | null };
         return (

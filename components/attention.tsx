@@ -39,12 +39,13 @@ import { useNow } from "./gate-form";
  * What needs a person, ranked.
  *
  * The platform's attention queue (`GET /api/attention`) is worked out on
- * each read from what it holds, and raises five kinds of row today: a gate
- * waiting for a person, a run that failed or was stopped in the last 24
- * hours, a breaker open on a tool that acts outside, an agent paused or
- * draining, and the lockdown. The kinds it cannot raise yet are named in
- * the answer's `not_built` (budget breaches, drift), and the panel says so
- * rather than reading an empty queue as "nothing". Each row carries the
+ * each read from what it holds: a gate waiting for a person, a run that
+ * failed or was stopped in the last 24 hours, a breaker open on a tool that
+ * acts outside, an agent paused or draining, the lockdown, a run paused at
+ * its budget (its row opens Approvals, where Paused at budget is decided)
+ * and a drifted agent. A kind the answer names in `not_built` is said under
+ * the list in the platform's words, so an empty queue is never read as
+ * "nothing" for a kind it cannot raise; today it names none. Each row carries the
  * action that clears it, `{method, path, body, says}`, and that is the only
  * button on the row: answer the gate, open the run, close the breaker,
  * resume the agent or lift the lockdown (both with a reason; the panel sits
@@ -169,7 +170,7 @@ export function AttentionLinks({ item }: { item: AttentionItem }) {
 
 const HOLDS_TONE: Record<string, "err" | "warn"> = { sink: "err", destructive: "err", risky: "warn", write: "warn" };
 
-/** The kinds the platform names in `not_built`, in words. */
+/** The words for a kind, when the platform names it in `not_built`; any other key is said as written. */
 const NOT_BUILT_KIND: Record<string, string> = { budget: "budget breaches", drift: "drift" };
 
 const ago = (s: number) => (s < 60 ? `${Math.round(s)}s` : s < 3600 ? `${Math.round(s / 60)}m` : s < 86400 ? `${Math.round(s / 3600)}h` : `${Math.round(s / 86400)}d`);
