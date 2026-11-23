@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+import Link from "next/link";
+import { errorText } from "@/lib/api/client";
 import { Meter, Status, Tag, type Tone } from "./ui";
 import { api } from "@/lib/api/client";
 import { fmtUsd } from "@/lib/run-tree";
@@ -17,6 +19,12 @@ import { notBuilt, readRunRowsNotBuilt } from "@/lib/not-built";
  * it came from. The spec is the record's own copy when the record holds one;
  * otherwise the agent's spec as it is today, with the two digests compared,
  * because a limit shown for a run it did not govern is worse than none.
+ *
+ * A run that reaches a cost budget (its own, the deployment's period budget
+ * or its use case's) pauses until a person decides on the Approvals page.
+ * The journal says so ("Paused at its budget", "Budget decision", both with
+ * `data.control: "budget"`), and while a hold for the run is waiting the
+ * strip says the run waits on a decision on its budget.
  */
 
 type Rec = Record<string, unknown>;
@@ -274,7 +282,15 @@ export interface SpendRow {
 }
 
 /** The run's spend beside the spec's budget. `cost` is the ledger's price for the run's own entries; null while it is not known. */
-export function spendRows(spec: Rec | null, facts: RunFacts, entries: LimitEntry[], cost: number | null, stopped: Stopped | null, /** False when the platform names tool calls as not built: the row is left out and the panel says why. */ toolCalls = true): SpendRow[] {
+export function spendRows(
+  spec: Rec | null,
+  facts: RunFacts,
+  entries: LimitEntry[],
+  cost: number | null,
+  stopped: Stopped | null,
+  /** False when the platform names tool calls as not built: the row is left out and the panel says why. */ toolCalls = true,
+  /** The run's cost budget as a person raised it on a budget decision; null when it was not raised. */ raisedCost: number | null = null,
+): SpendRow[] {
   const budget = obj(obj(spec?.policy).budget);
   const metered = (k: string) => num(facts.spent[k]);
   let tokens = 0;
@@ -324,8 +340,8 @@ export function spendRows(spec: Rec | null, facts: RunFacts, entries: LimitEntry
       label: "Cost",
       used: usd,
       usedText: usd === null || unpriced.length ? (unpriced.length ? `not priced: ${unpriced.join(", ")} ${unpriced.length === 1 ? "has" : "have"} no price set` : "not priced") : fmtUsd(usd),
-      ceiling: ceiling("cost_usd"),
-      ceilingText: ceiling("cost_usd") === null ? none : fmtUsd(ceiling("cost_usd") as number),
+      ceiling: raisedCost ?? ceiling("cost_usd"),
+      ceilingText: raisedCost !== null ? `${fmtUsd(raisedCost)}, raised on a budget decision` : ceiling("cost_usd") === null ? none : fmtUsd(ceiling("cost_usd") as number),
       basis: unpriced.length ? "a model call used a model with no price set on the Models tab, so the platform keeps no cost figure for this run" : metered("cost_usd") !== null ? "counted by the runtime at the prices set on the Models tab" : cost !== null ? "priced as the ledger prices it" : "the platform keeps no cost figure for this run",
       stopped: stopped?.kind === "cost_usd",
     },
@@ -341,6 +357,100 @@ export function spendRows(spec: Rec | null, facts: RunFacts, entries: LimitEntry
     },
     ...(toolCalls ? [callRow] : []),
   ];
+}
+
+/* ═══════════════════ budget pauses ═══════════════════ */
+
+/** One pause at a budget, from the journal, and the decision that ended it when the journal holds one. */
+export interface BudgetPause {
+  hold: string;
+  scope: string;
+  key: string;
+  amount: number | null;
+  spent: number | null;
+  detail: string;
+  /** A "continue" decision (a stop is recorded as the run's stop, not as a note). */
+  decided: { raise_to: number | null; by: string; note: string } | null;
+}
+
+/** An amount to the millionth of a dollar the service records, so a budget of $0.000001 is not shown as $0. */
+const usd = (n: number) => (Math.abs(n) < 0.01 ? `$${n.toFixed(6).replace(/0+$/, "").replace(/\.$/, ".00")}` : fmtUsd(n));
+
+/** The run's pauses at a budget: each "Paused at its budget" note, with the "Budget decision" note for the same hold. */
+export function budgetPauses(entries: LimitEntry[]): BudgetPause[] {
+  const out: BudgetPause[] = [];
+  for (const e of entries) {
+    const d = e.data ?? {};
+    if (e.kind !== "note" || d.control !== "budget" || !str(d.hold)) continue;
+    if (d.decision === "continue") {
+      const p = out.find((x) => x.hold === str(d.hold));
+      if (p) p.decided = { raise_to: num(d.raise_to_usd), by: str(d.by), note: str(d.note) };
+      continue;
+    }
+    out.push({ hold: str(d.hold), scope: str(d.scope), key: str(d.key), amount: num(d.amount_usd), spent: num(d.spent_usd), detail: e.detail ?? "", decided: null });
+  }
+  return out;
+}
+
+const budgetWords = (p: BudgetPause) => (p.scope === "run" ? "its own budget" : p.scope === "deployment" ? "the deployment's period budget" : p.scope === "use_case" ? `the period budget of the use case ${p.key}` : "a budget");
+
+/**
+ * Whether the run's latest pause still waits on a person: the waiting holds
+ * (`GET /api/budget/holds?state=waiting`) are read when the journal holds a
+ * pause with no decision after it, and again as the journal grows.
+ */
+function useWaitingHold(runId: string | undefined, pauses: BudgetPause[]): { waiting: Rec | null; error: string } {
+  const open = pauses.length > 0 && !pauses[pauses.length - 1].decided ? pauses[pauses.length - 1].hold : "";
+  const [found, setFound] = useState<{ hold: string; waiting: Rec | null; error: string } | null>(null);
+  useEffect(() => {
+    if (!open || !runId) return;
+    let live = true;
+    fetch("/api/budget/holds?state=waiting")
+      .then(async (r) => {
+        const d = (await r.json().catch(() => null)) as Rec | null;
+        if (!r.ok || !d || !Array.isArray(d.holds)) throw new Error(errorText(d, r, "GET", "/api/budget/holds"));
+        return (d.holds as Rec[]).find((h) => h.run === runId && h.id === open) ?? null;
+      })
+      .then((h) => live && setFound({ hold: open, waiting: h, error: "" }))
+      .catch((e: Error) => live && setFound({ hold: open, waiting: null, error: e.message }));
+    return () => {
+      live = false;
+    };
+  }, [open, runId]);
+  return found && found.hold === open ? { waiting: found.waiting, error: found.error } : { waiting: null, error: "" };
+}
+
+function BudgetPauses({ pauses, hold, stoppedText }: { pauses: BudgetPause[]; hold: { waiting: Rec | null; error: string }; stoppedText: string }) {
+  return (
+    <div className="flex flex-col gap-1 border-b border-line px-4 py-2 text-[11.5px] leading-[1.5]">
+      {pauses.map((p, i) => {
+        const last = i === pauses.length - 1;
+        return (
+          <p key={p.hold} className="text-dim">
+            <span className="font-medium text-fg">Paused at {budgetWords(p)}</span>
+            {p.amount !== null && p.spent !== null ? ` (${usd(p.spent)} spent of ${usd(p.amount)})` : ""}.{" "}
+            {p.decided ? (
+              <span>
+                {p.decided.by || "A person"} let it go on: {p.scope === "run" ? `its budget raised to ${p.decided.raise_to !== null ? usd(p.decided.raise_to) : "an amount not recorded"}` : `until the period's spend reaches ${p.decided.raise_to !== null ? usd(p.decided.raise_to) : "an amount not recorded"}`}
+                {p.decided.note ? `. ${p.decided.note}` : ""}.
+              </span>
+            ) : last && hold.waiting ? (
+              <span className="text-warn">
+                It waits on a decision on its budget: a person other than the one who started it continues or stops it under{" "}
+                <Link href="/approvals" className="underline">Paused at budget</Link> on the Approvals page.
+              </span>
+            ) : last && stoppedText ? (
+              <span className="text-err">{stoppedText[0].toUpperCase() + stoppedText.slice(1)}.</span>
+            ) : last && hold.error ? (
+              <span className="text-err">Whether it still waits could not be read: {hold.error}</span>
+            ) : (
+              <span className="text-faint">{p.detail}</span>
+            )}
+          </p>
+        );
+      })}
+    </div>
+  );
 }
 
 /* ═══════════════════ the strip the panels sit in ═══════════════════ */
@@ -577,8 +687,6 @@ export function RunLimitsPanel({
 }) {
   const stopped = stoppedBy(error, entries);
   const [chosen, setChosen] = useState<boolean | null>(null);
-  // Left to itself, the strip opens when a limit ended the run.
-  const open = asked ?? chosen ?? Boolean(stopped);
   // The ledger's price for this run's own entries: the run tree's node for it.
   const { tree } = useRunTree(runId, live);
   const own = tree?.nodes.find((n) => n.run === tree.asked);
@@ -595,7 +703,16 @@ export function RunLimitsPanel({
   // Left out only while the ledger names a run's tool calls as not built and this run shows none: a run that made a call,
   // or was stopped by its tool-call ceiling, always shows the row.
   const toolCallsUnbuilt = notBuilt(ledgerNotBuilt, "toolCalls") && !entries.some((e) => e.kind === "tool.call") && stopped?.kind !== "tool_calls";
-  const rows = spendRows(spec.body, facts, entries, cost, stopped, !toolCallsUnbuilt);
+  const pauses = budgetPauses(entries);
+  const hold = useWaitingHold(runId, pauses);
+  const waitingOnBudget = Boolean(hold.waiting);
+  // A stop decided on a budget hold ends the run as a kill does: "killed by operator: stopped at its budget by <who>: <reason>".
+  const budgetStop = error.match(/stopped at its budget by .+$/)?.[0] ?? "";
+  const stoppedAtBudget = Boolean(budgetStop);
+  const raised = [...pauses].reverse().find((p) => p.scope === "run" && p.decided?.raise_to != null)?.decided?.raise_to ?? null;
+  const rows = spendRows(spec.body, facts, entries, cost, stopped, !toolCallsUnbuilt, raised);
+  // Left to itself, the strip opens when a limit ended the run, or while it waits on a decision on its budget.
+  const open = asked ?? chosen ?? (Boolean(stopped) || waitingOnBudget);
   const steps = stepBounds(spec.body, entries, facts.visits);
   const tokRow = rows[0];
   const usd = rows[1];
@@ -616,10 +733,11 @@ export function RunLimitsPanel({
           {live ? " · so far" : ""}
         </>
       }
-      mark={stopped ? <Status tone="err">stopped by its {STOP_WORD[stopped.kind]}</Status> : undefined}
+      mark={stopped ? <Status tone="err">stopped by its {STOP_WORD[stopped.kind]}</Status> : waitingOnBudget ? <Status tone="warn">waiting on a decision on its budget</Status> : stoppedAtBudget ? <Status tone="err">stopped on a budget decision</Status> : undefined}
     >
       <div className="max-h-[320px] overflow-y-auto border-t border-line">
         <p className={`border-b border-line px-4 py-1.5 text-[11px] leading-[1.5] ${from.tone === "warn" ? "text-warn" : "text-faint"}`}>{from.text}</p>
+        {pauses.length > 0 && <BudgetPauses pauses={pauses} hold={hold} stoppedText={budgetStop} />}
         {stopped && (
           <p className="border-b border-line bg-err-bg/60 px-4 py-1.5 text-[11.5px] leading-[1.5] text-err">
             This run was stopped by its {STOP_WORD[stopped.kind]}
@@ -637,7 +755,7 @@ export function RunLimitsPanel({
             </h3>
             <SpendView rows={rows} />
             <p className="px-4 py-2 text-[10px] leading-[1.45] text-faint">
-              The ceiling is the run&rsquo;s whole budget (the spec&rsquo;s <span className="font-mono">policy.budget</span>).
+              The ceiling is the run&rsquo;s whole budget (the spec&rsquo;s <span className="font-mono">policy.budget</span>), as a person raised it when the run paused at it. A run that reaches its cost budget, the deployment&rsquo;s or its use case&rsquo;s pauses until a person decides.
               {toolCallsUnbuilt && " Tool calls are not shown: the platform names a run's tool calls as not built (runs[].toolCalls)."}
             </p>
           </section>

@@ -16,12 +16,12 @@ import { useSession } from "@/lib/use-session";
 /**
  * Chat (feature 2.3): two things a person can talk to.
  *
- * The chatbots registered as applications on this deployment, read from the
- * applications door as the Applications page reads it. The chat door admits
- * a signed-in session with `run` as well as the application's own key, so a
- * chatbot is tried here as it is governed (components/chat-pane.tsx): its
- * registered prompt, its model, its screening, its limits, every turn
- * journalled under the person's name.
+ * The chatbots registered on this deployment, read from the applications
+ * register as the Applications page reads it. A person with `run` talks to
+ * one through `POST /api/apps/{id}/chat`, which takes exactly the gateway's
+ * path (components/chat-pane.tsx): its registered prompt, its first model,
+ * its data class, rate and budget, its screening, every turn journalled
+ * under the person's name.
  *
  * And a security workload, asked to do something in plain words
  * (components/chat-workload.tsx), which is ahead of its door.
@@ -51,7 +51,7 @@ function ChatBody() {
   }, []);
   useEffect(load, [load]);
 
-  // The chat door serves registered chatbots only; a RAG application answers through the retrieval door.
+  // Chat talks to registered chatbots only; a RAG app calls the gateway with its own key.
   const chatbots = (apps ?? []).filter((a) => a.class === "chatbot" && a.source === "application");
   const rag = (apps ?? []).filter((a) => a.class === "rag").length;
   const selected = chatbots.find((a) => a.id === wanted) ?? chatbots[0] ?? null;
@@ -100,7 +100,7 @@ function ChatBody() {
             <div className="flex max-h-[240px] flex-col overflow-y-auto xl:max-h-[560px]">
               {chatbots.map((a) => {
                 const on = a.id === selected.id;
-                const model = a.policy.model || a.policy.models[0] || "";
+                const model = a.policy.models[0] ?? "";
                 return (
                   <button
                     key={a.id}
@@ -116,7 +116,7 @@ function ChatBody() {
                     </span>
                     <span className="truncate font-mono text-[10.5px] text-faint">{a.id}</span>
                     <span className="truncate text-[10.5px] text-faint">
-                      {model || "default model"}
+                      {model} · {a.policy.data_class}
                       {a.owner ? ` · ${a.owner}` : ""}
                     </span>
                   </button>
@@ -124,7 +124,7 @@ function ChatBody() {
               })}
             </div>
             <p className="border-t border-line px-4 py-2 text-[10.5px] leading-[1.5] text-ghost">
-              Chatbots on the applications register.{rag > 0 ? ` The ${rag} RAG application${rag === 1 ? "" : "s"} there answer${rag === 1 ? "s" : ""} through the retrieval door, not here.` : ""}
+              Chatbots on the applications register.{rag > 0 ? ` The ${rag} RAG app${rag === 1 ? "" : "s"} there call${rag === 1 ? "s" : ""} the gateway with ${rag === 1 ? "its" : "their"} own key and ${rag === 1 ? "is" : "are"} not talked to here.` : ""}
             </p>
           </section>
 

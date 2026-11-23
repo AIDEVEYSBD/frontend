@@ -8,15 +8,15 @@ import { Skeleton } from "./loaders";
 import { leakWindowLine, setSystemPrompt, systemPrompts, type Application, type PromptHistory } from "@/lib/api/l4";
 
 /**
- * A registered application's system prompt, version by version.
+ * A chatbot's system prompt, version by version.
  *
- * The gateway injects the registered prompt, and every change to it is a new
- * version signed by whoever made it (`GET /api/applications/{id}/system-prompts`).
- * A version retired recently is still checked for leaks: a response that
- * echoes yesterday's instructions is refused like one that echoes today's,
- * for the window the backend states. Changing the prompt here is
- * `PATCH /api/applications` with the prompt alone, and the answer names the
- * version it recorded.
+ * The gateway puts the registered prompt first on every call, and every
+ * change to it is a new version signed by whoever made it
+ * (`GET /api/applications/{id}/system-prompts`). The leak check compares each
+ * reply with the prompt in force only, since the model is never sent an
+ * earlier one; a reply that repeats it is withheld. Changing the prompt here
+ * is `PATCH /api/applications` with the prompt alone, and the answer names
+ * the version it recorded. A RAG app has no registered prompt.
  */
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" }) : "");
@@ -69,10 +69,10 @@ export function SystemPromptPanel({ app, onApplication }: { app: Application; on
       <div className="flex w-full flex-wrap items-start gap-3 border-b border-line bg-raise/55 px-4 py-2.5">
         <span className="text-[12.5px] font-semibold tracking-[-0.005em]">System prompt</span>
         <span className="text-[11px] leading-[1.55] text-faint">
-          {history ? `${history.count} version${history.count === 1 ? "" : "s"} · every change is a new version, signed by whoever made it` : "the prompt the gateway injects, version by version"}
+          {history?.says ? history.says : history ? `${history.count} version${history.count === 1 ? "" : "s"} · every change is a new version, signed by whoever made it` : "the prompt the gateway puts first, version by version"}
         </span>
         <span className="grow" />
-        {history && !editing && (
+        {history && !history.says && !editing && (
           <Button
             size="sm"
             variant="solid"
@@ -96,20 +96,20 @@ export function SystemPromptPanel({ app, onApplication }: { app: Application; on
       )}
       {history === null && (
         <p className="px-4 py-3 text-[11.5px] leading-[1.55] text-faint">
-          {error || "Only a registered chatbot or RAG application has a system prompt the gateway injects."}
+          {error || "Only a registered chatbot has a system prompt the gateway puts first."}
         </p>
       )}
 
-      {history && (
+      {history && !history.says && (
         <>
           <p className="border-b border-line px-4 py-2.5 text-[11.5px] leading-[1.55] text-dim" title={history.leak_check.says}>
             <span className="font-medium text-fg">Leak check · </span>
-            {leakWindowLine(history.leak_check)} A hit is refused under block and flagged under flag; a cleared prompt guards nothing.
+            {leakWindowLine(history.leak_check)} A reply that repeats the prompt in force is withheld, and the call is refused; an empty prompt guards nothing.
           </p>
 
           {editing && (
             <div className="flex flex-col gap-3 border-b border-line px-4 py-3">
-              <Field label="New system prompt" hint="Recorded as the next version under your name. Leave it empty to clear the prompt; the version it retires stays under the leak check for the window above.">
+              <Field label="New system prompt" hint="Recorded as the next version under your name. Leave it empty to clear the prompt: the chatbot then has none, and may send a system message of its own.">
                 <Textarea rows={5} value={draft} onChange={setDraft} disabled={busy} />
               </Field>
               <span className="flex items-center gap-2">
@@ -150,11 +150,11 @@ export function SystemPromptPanel({ app, onApplication }: { app: Application; on
                           {v.adopted && <Tag>adopted</Tag>}
                         </span>
                       </td>
-                      <td className="px-4 py-2 text-dim">{v.set_by || <span className="text-ghost">not recorded (registered before versions were kept)</span>}</td>
+                      <td className="px-4 py-2 text-dim">{v.set_by || <span className="text-ghost">not recorded</span>}</td>
                       <td className="px-4 py-2 whitespace-nowrap text-dim">{when(v.set_at)}</td>
                       <td className="px-4 py-2 whitespace-nowrap text-dim">{v.retired_at ? when(v.retired_at) : <span className="text-ghost">—</span>}</td>
                       <td className="tnum px-4 py-2 text-right text-dim">{v.chars ? v.chars.toLocaleString("en-GB") : <span className="text-ghost">empty</span>}</td>
-                      <td className="px-4 py-2 whitespace-nowrap">{v.guarded ? <span className="text-ok">checked</span> : <span className="text-ghost">{v.chars ? "past the window" : "guards nothing"}</span>}</td>
+                      <td className="px-4 py-2 whitespace-nowrap">{v.guarded ? <span className="text-ok">checked</span> : <span className="text-ghost">{!v.chars ? "guards nothing" : v.current ? "not checked" : "retired: not sent, not checked"}</span>}</td>
                       <td className="px-4 py-2">
                         <DigestChip digest={v.digest} label={`Version ${v.version} digest`} />
                       </td>

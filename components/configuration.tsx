@@ -23,6 +23,7 @@ import type { AttachedAgent } from "@/lib/attached";
 import { JOB_STATUS_META, queueTotals } from "@/lib/queue";
 import { Providers, useConfigChanges } from "./providers";
 import { Keys, OfferedModels } from "./settings";
+import { ModelClearance } from "./model-clearance";
 import { ApiKeys } from "./api-keys";
 import { PeerList, meOf, usePeers } from "./peers";
 import { useSession } from "@/lib/use-session";
@@ -467,6 +468,8 @@ function ConfigurationTabs() {
   // The Providers, Models and Credentials panels write through their own doors; the page facts and the
   // figures on the other panels are this record's, so it is read again shortly after the last change.
   const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Bumped when the Models panel's clearances and fallbacks are saved: the offered list is mounted again and reads the settings afresh. */
+  const [modelsRead, setModelsRead] = useState(0);
   const changed = useCallback(() => {
     if (pending.current) clearTimeout(pending.current);
     pending.current = setTimeout(() => read(true), 700);
@@ -667,12 +670,19 @@ function ConfigurationTabs() {
               id="models"
               {...fold("models")}
               title={TITLES.models}
-              caption="What teams may pick from, the tier each sits in, and the price cost figures are computed against. Every model choice in the console shows exactly this list."
-              how="Tick what this deployment offers, from what its catalogue lists and what was offered from a provider under Providers. A workflow names a model, never a provider. Record the price per million tokens beside each offered model; a run's cost is counted at the prices recorded here."
+              caption="What teams may pick from, the tier each sits in, the price cost figures are computed against, the classes of data each may be sent and what its calls fall back to. Every model choice in the console shows exactly this list."
+              how="Tick what this deployment offers, from what its catalogue lists and what was offered from a provider under Providers. A workflow names a model, never a provider. Record the price per million tokens beside each offered model; a call's cost is counted at the price set when it is made, and a call on a model with no price set has no cost. Under the list, clear each model for the classes of data it may be sent and name its fallbacks in order."
             >
-              {off("models") && <Holds>Offered models are listed here, each with its provider, its tier and its price per million tokens.</Holds>}
+              {off("models") && <Holds>Offered models are listed here, each with its provider, its tier, its price per million tokens, its clearance and its fallbacks.</Holds>}
               <Kept off={off("models")}>
-                <OfferedModels bare={bare} onChanged={changed} onQuiet={says.models} />
+                {/* Read again after a clearance or fallback is saved below, so its own copy of the list never posts the old ones back. */}
+                <OfferedModels key={modelsRead} bare={bare} onChanged={changed} onQuiet={says.models} />
+                <ModelClearance
+                  onSaved={() => {
+                    setModelsRead((n) => n + 1);
+                    changed();
+                  }}
+                />
               </Kept>
             </Panel>
           </>,

@@ -5,26 +5,29 @@ import { Failure } from "./pending";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  AUTONOMIES,
   AUTONOMY_LABEL,
   CLASS_LABEL,
   GATEWAY_URL,
-  RETRIEVAL_URL,
   SNIPPETS,
   activityOf,
-  applicationOf,
-  listApplications,
+  autonomyLabel,
+  createApplication,
   patchApplication,
-  policyToWire,
-  promptVersionOf,
+  readRegister,
   type Activity,
   type Application,
   type ApplicationClass,
+  type Autonomy,
+  type BudgetPeriod,
   type Minted,
-  type NewApplication,
   type Policy,
+  type PolicyWire,
 } from "@/lib/api/l4";
-import { api, errorText } from "@/lib/api/client";
+import { DATA_CLASSES, type DataClass } from "@/lib/api/pending";
+import { errorText } from "@/lib/api/client";
 import { agentHref } from "@/lib/agent-link";
+import { useSession } from "@/lib/use-session";
 import { GroupHeader } from "./page-tabs";
 import { Button, Mono, Status, Tag } from "./ui";
 import { Pick } from "./select";
@@ -33,24 +36,24 @@ import { DrillModal } from "./drill";
 import { Checkbox, Field, Input, Textarea } from "./forms";
 import { SearchBox } from "./filters";
 import { usePageFacts } from "./assistant";
-import { useModels } from "@/lib/use-models";
 
 /**
- * The applications register: every chatbot, RAG app, agent and multi-agent
- * system this control plane governs, in one list, with the class, autonomy,
- * owner, identity, activity, cost and the controls that fired on each.
+ * The applications register: the chatbots and RAG apps registered here, and
+ * the agents deployed here beside them, in one list.
  *
- * Chatbots and RAG apps connect here: a row is created, a scoped key is
- * minted once, and the snippet on screen is the one to paste, pointing an
- * OpenAI SDK at the gateway. Agents and multi-agent systems arrive from
- * the Agents list (/agents) and the attached-agents panel on Configuration;
- * this page lists them and sends a reader there to change them. The
- * activity beside a row (last seen, cost, controls fired over 30 days) is
- * read from the row's own metrics and conversations doors.
+ * A chatbot or RAG app is registered with its policy (the models it may
+ * call, its data class, a rate per minute and a budget per period, a
+ * chatbot's system prompt, a RAG app's knowledge stores) and gets a key,
+ * shown once. It calls models through the gateway with that key, and the
+ * gateway holds every call to the policy and journals it. A deployed agent
+ * is listed here and governed on the Agents page; its calls are runs.
+ *
+ * The figures beside a registered application (last seen, cost, controls
+ * fired over 30 days) are read from its own metrics and conversations
+ * addresses. A cost is null when its calls had no price set, and says so.
  */
 
 const CLASS_TONE: Record<ApplicationClass, "queue" | "ok" | "run" | "warn"> = { chatbot: "queue", rag: "ok", agent: "run", multi_agent: "warn" };
-const SOURCE_LABEL: Record<Application["source"], string> = { application: "application key", attached: "attached-agent key", workflow: "workflow" };
 
 function ago(iso: string | null, now: number): string {
   if (!iso) return "never";
@@ -62,9 +65,22 @@ function ago(iso: string | null, now: number): string {
   return `${Math.round(h / 24)}d ago`;
 }
 
-const money = (c: number | null) => (c === null ? "unknown" : c === 0 ? "$0.00" : c < 0.005 ? "<$0.01" : c < 100 ? `$${c.toFixed(2)}` : `$${Math.round(c).toLocaleString("en-GB")}`);
+export const money = (c: number) => (c === 0 ? "$0.00" : c < 0.01 ? `$${c.toFixed(6).replace(/0+$/, "")}` : c < 100 ? `$${c.toFixed(2)}` : `$${Math.round(c).toLocaleString("en-GB")}`);
 
-/** Read every row's activity, a few doors at a time, so a long register does not open fifty connections at once. */
+/** A cost the service answered: a sum, or "no price set" when every call in it was unpriced. Unpriced calls beside a sum are named. */
+export function costLine(cost: number | null, unpriced: number): string {
+  if (cost === null) return unpriced ? "no price set" : "unknown";
+  return unpriced ? `${money(cost)} + ${unpriced} unpriced` : money(cost);
+}
+
+/** A policy in one line: data class, models, rate, budget. */
+export function policyLine(p: Policy): string {
+  const rate = p.rate_per_minute === null ? "no rate limit" : `${p.rate_per_minute}/min`;
+  const budget = p.budget ? `${money(p.budget.amount_usd)} a ${p.budget.period}` : "no budget";
+  return `${p.data_class} · ${rate} · ${budget}`;
+}
+
+/** Read every registered application's activity, a few addresses at a time. */
 async function activities(ids: string[], onOne: (id: string, a: Activity) => void): Promise<void> {
   const queue = [...ids];
   const worker = async () => {
@@ -79,6 +95,7 @@ async function activities(ids: string[], onOne: (id: string, a: Activity) => voi
 export function Applications() {
   const [now] = useState(() => Date.now());
   const [apps, setApps] = useState<Application[] | null>(null);
+  const [notBuilt, setNotBuilt] = useState<Record<string, string>>({});
   const [activity, setActivity] = useState<Record<string, Activity>>({});
   const [error, setError] = useState("");
   const [cls, setCls] = useState<ApplicationClass | "">("");
@@ -89,12 +106,14 @@ export function Applications() {
   const [busy, setBusy] = useState("");
 
   const load = useCallback(() => {
-    listApplications()
-      .then((rows) => {
+    readRegister()
+      .then(({ rows, notBuilt: nb }) => {
         setApps(rows);
+        setNotBuilt(nb);
         setError("");
+        // Only a registered application has metrics and conversations; a deployed agent's calls are runs.
         void activities(
-          rows.map((r) => r.id),
+          rows.filter((r) => r.source === "application").map((r) => r.id),
           (id, a) => setActivity((prev) => ({ ...prev, [id]: a })),
         );
       })
@@ -112,22 +131,25 @@ export function Applications() {
     return (apps ?? []).filter((a) => (!cls || a.class === cls) && (!term || a.name.toLowerCase().includes(term) || a.id.toLowerCase().includes(term) || a.owner.toLowerCase().includes(term)));
   }, [apps, cls, q]);
 
+  const registered = (apps ?? []).filter((a) => a.source === "application");
   const count = (c: ApplicationClass) => (apps ?? []).filter((a) => a.class === c).length;
-  const blocked = (apps ?? []).filter((a) => a.blocked).length;
-  const known = Object.values(activity).filter((a) => !a.unknown);
+  const blocked = registered.filter((a) => a.blocked).length;
+  const known = registered.map((a) => activity[a.id]).filter((a): a is Activity => Boolean(a) && !a.unknown);
+  const unread = registered.length - known.length - registered.filter((a) => !activity[a.id]).length;
+  const pending = registered.filter((a) => !activity[a.id]).length;
   const fired = known.reduce((s, a) => s + a.controls_fired, 0);
   const priced = known.filter((a) => a.cost !== null);
-  const cost = priced.length ? priced.reduce((s, a) => s + (a.cost ?? 0), 0) : null;
-  const pending = apps ? apps.filter((a) => !activity[a.id]).length : 0;
-  // A quiet console (lib/quiet.ts): the register could not be read, so the page says it is not connected and counts nothing.
-  const unread = Boolean(error) && (apps?.length ?? 0) === 0;
+  const cost = priced.reduce((s, a) => s + (a.cost ?? 0), 0);
+  const unpriced = known.reduce((s, a) => s + a.unpriced, 0);
+  // The register could not be read: the page says so and counts nothing.
+  const off = Boolean(error) && (apps?.length ?? 0) === 0;
 
   usePageFacts({
-    applications: unread ? "not read" : apps ? apps.length : "loading",
+    applications: off ? "not read" : apps ? apps.length : "loading",
     byClass: apps ? Object.fromEntries((["chatbot", "rag", "agent", "multi_agent"] as ApplicationClass[]).map((c) => [c, count(c)])) : null,
     blocked,
-    controlsFired30d: fired,
-    spend30d: cost,
+    controlsFired30d: pending ? "reading" : fired,
+    spend30d: pending ? "reading" : { priced_usd: cost, unpriced_calls: unpriced, unreadable_applications: unread },
     filter: cls || null,
   });
 
@@ -144,20 +166,25 @@ export function Applications() {
   };
 
   const tiles: { id: ApplicationClass | "blocked" | "fired" | "cost"; label: string; value: string; sub: string; tone?: "warn" | "err" }[] = [
-    { id: "chatbot", label: "Chatbots", value: apps ? String(count("chatbot")) : "…", sub: "through the gateway" },
-    { id: "rag", label: "RAG apps", value: apps ? String(count("rag")) : "…", sub: "gateway and retrieval door" },
-    { id: "agent", label: "Agents", value: apps ? String(count("agent")) : "…", sub: "workflows and attached agents" },
-    { id: "multi_agent", label: "Multi-agent systems", value: apps ? String(count("multi_agent")) : "…", sub: "workflows with sub-runs or peers" },
-    { id: "blocked", label: "Blocked", value: apps ? String(blocked) : "…", sub: "every door refuses", tone: blocked ? "err" : undefined },
-    { id: "fired", label: "Controls fired", value: apps && !pending ? fired.toLocaleString("en-GB") : "…", sub: "last 30 days, from the journals", tone: fired ? "warn" : undefined },
-    { id: "cost", label: "Spend", value: apps && !pending ? money(cost) : "…", sub: known.length - priced.length > 0 ? `${known.length - priced.length} unpriced` : "last 30 days" },
+    { id: "chatbot", label: "Chatbots", value: apps ? String(count("chatbot")) : "…", sub: "registered, through the gateway" },
+    { id: "rag", label: "RAG apps", value: apps ? String(count("rag")) : "…", sub: "registered, through the gateway" },
+    { id: "agent", label: "Agents", value: apps ? String(count("agent")) : "…", sub: "deployed on the Agents page" },
+    { id: "multi_agent", label: "Multi-agent systems", value: apps ? String(count("multi_agent")) : "…", sub: "deployed agents that start sub-runs" },
+    { id: "blocked", label: "Blocked", value: apps ? String(blocked) : "…", sub: "the gateway refuses every call", tone: blocked ? "err" : undefined },
+    { id: "fired", label: "Controls fired", value: apps && !pending ? fired.toLocaleString("en-GB") : "…", sub: unread ? `last 30 days · ${unread} not read` : "last 30 days, refusals and screening hits", tone: fired ? "warn" : undefined },
+    {
+      id: "cost",
+      label: "Spend",
+      value: apps && !pending ? (priced.length || !unpriced ? money(cost) : "no price set") : "…",
+      sub: unpriced ? `last 30 days · ${unpriced} call${unpriced === 1 ? "" : "s"} with no price set, not in it` : "last 30 days, registered applications",
+    },
   ];
 
   return (
     <div className="min-h-full" data-hue="blue">
       <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7">
-        <GroupHeader group="agents" tab="applications" actions={<Button size="sm" variant="solid" tone="ink" permission="configure" disabled={connectDoor.off} title={connectDoor.why} onClick={() => setConnecting(true)}>Connect an application</Button>}>
-          Every AI application this control plane governs, across the four classes. A chatbot or RAG app connects by pointing its OpenAI SDK at the gateway with the key minted here; the gateway screens every prompt and response, records every completion and enforces the policy on the row. Agents and multi-agent systems are listed from the Agents tab and the attached agents.
+        <GroupHeader group="agents" tab="applications" actions={<Button size="sm" variant="solid" tone="ink" permission="configure" disabled={connectDoor.off} title={connectDoor.why} onClick={() => setConnecting(true)}>Register an application</Button>}>
+          The chatbots and RAG apps registered on this deployment, and the agents deployed on it. A registered application calls models through the gateway with the key minted here; the gateway holds every call to the application&rsquo;s policy (its models, data class, rate and budget), screens the prompt and the reply, and journals the call. Agents are listed here and governed on the Agents page.
         </GroupHeader>
 
         {error && <Failure what="The applications register could not be read" message={error} />}
@@ -175,7 +202,6 @@ export function Applications() {
                 onClick={() => {
                   if (t.id === "chatbot" || t.id === "rag" || t.id === "agent" || t.id === "multi_agent") setCls(cls === t.id ? "" : t.id);
                   else setCls("");
-                  if (t.id === "blocked") setQ("");
                 }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
@@ -187,7 +213,7 @@ export function Applications() {
                 className={`focusable -mr-px -mb-px flex cursor-pointer flex-col gap-1 border-r border-b border-line px-3 py-2.5 text-left transition-colors ${active ? "bg-raise/80" : "hover:bg-raise/50"}`}
               >
                 <span className="truncate text-[10.5px] text-faint">{t.label}</span>
-                {unread ? (
+                {off ? (
                   <span className="flex h-[22px] items-center text-[12px] text-faint">Not read</span>
                 ) : (
                   <span className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]" style={t.tone ? { color: `var(--color-${t.tone})` } : undefined}>{t.value}</span>
@@ -203,7 +229,7 @@ export function Applications() {
           <div className="flex w-full flex-wrap items-center gap-3 border-b border-line bg-raise/55 px-4 py-2.5">
             <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Register</span>
             <span className="max-w-[110ch] text-[11px] leading-[1.55] text-faint">
-              {unread ? "" : apps ? `${shown.length} of ${apps.length} · ` : "reading the register… · "}last seen, cost and firings are read from each row&rsquo;s journalled completions over the last 30 days
+              {off ? "" : apps ? `${shown.length} of ${apps.length} · ` : "reading the register… · "}last seen, cost and controls fired are read from each registered application&rsquo;s journalled calls over the last 30 days
             </span>
             <span className="grow" />
             <SearchBox value={q} onChange={setQ} placeholder="Name, id or owner" width="w-[220px]" />
@@ -233,47 +259,51 @@ export function Applications() {
                   return (
                     <tr key={a.id} className="border-b border-line last:border-0 hover:bg-raise/50">
                       <td className="px-4 py-2 align-top">
-                        <Link href={`/applications/${encodeURIComponent(a.id)}`} className="focusable flex flex-col">
+                        <Link href={own ? `/applications/${encodeURIComponent(a.id)}` : agentHref(a.id)} className="focusable flex flex-col">
                           <span className="text-[12px] font-medium text-fg">{a.name}</span>
                           <span className="font-mono text-[10.5px] text-faint">{a.id}</span>
                         </Link>
                       </td>
                       <td className="px-3 py-2 align-top"><Tag tone={CLASS_TONE[a.class]}>{CLASS_LABEL[a.class]}</Tag></td>
-                      <td className="px-3 py-2 align-top text-dim">{AUTONOMY_LABEL[a.autonomy]}</td>
-                      <td className="px-3 py-2 align-top text-dim">{a.owner || <span className="text-ghost">unassigned</span>}</td>
+                      <td className="px-3 py-2 align-top text-dim">{autonomyLabel(a.autonomy)}</td>
+                      <td className="px-3 py-2 align-top text-dim">{a.owner || <span className="text-ghost">not recorded</span>}</td>
                       <td className="px-3 py-2 align-top">
                         <span className="flex flex-col">
                           <Mono className="text-[10.5px]">{a.key_prefix ? `${a.key_prefix}…` : "—"}</Mono>
-                          <span className="text-[10px] text-ghost">{SOURCE_LABEL[a.source]}</span>
+                          <span className="text-[10px] text-ghost">{own ? "application key" : "deployed agent"}</span>
                         </span>
                       </td>
                       <td className="px-3 py-2 align-top">
-                        <span className="flex flex-col">
-                          <span className="text-dim">screen: {a.policy.screen}{a.policy.principal_required ? " · principal required" : ""}</span>
-                          <span className="text-[10px] text-ghost">
-                            {a.policy.namespaces.length ? `${a.policy.namespaces.length} namespace${a.policy.namespaces.length === 1 ? "" : "s"}` : "no retrieval"}
-                            {a.policy.models.length ? ` · ${a.policy.models.length} model${a.policy.models.length === 1 ? "" : "s"}` : a.policy.model ? ` · ${a.policy.model}` : " · default model"}
-                            {a.policy.system_prompt ? " · registered prompt" : ""}
+                        {own ? (
+                          <span className="flex flex-col">
+                            <span className="text-dim">{policyLine(a.policy)}</span>
+                            <span className="text-[10px] text-ghost">
+                              {a.policy.models.join(", ")}
+                              {a.policy.knowledge_stores.length ? ` · stores ${a.policy.knowledge_stores.join(", ")}` : ""}
+                              {a.class === "chatbot" ? (a.policy.system_prompt ? " · registered prompt" : " · no registered prompt") : ""}
+                            </span>
                           </span>
-                        </span>
+                        ) : (
+                          <span className="text-ghost">its definition&rsquo;s policy</span>
+                        )}
                       </td>
-                      <td className="px-3 py-2 align-top whitespace-nowrap text-dim">{act ? (act.unknown ? "unknown" : ago(act.last_seen, now)) : "…"}</td>
-                      <td className="tnum px-3 py-2 text-right align-top">{act ? (act.unknown ? "unknown" : money(act.cost)) : "…"}</td>
+                      <td className="px-3 py-2 align-top whitespace-nowrap text-dim">{!own ? <span className="text-ghost">runs</span> : act ? (act.unknown ? "not read" : ago(act.last_seen, now)) : "…"}</td>
+                      <td className="tnum px-3 py-2 text-right align-top">{!own ? <span className="text-ghost">on Costs</span> : act ? (act.unknown ? "not read" : costLine(act.cost, act.unpriced)) : "…"}</td>
                       <td className="tnum px-3 py-2 text-right align-top">
-                        {act ? act.unknown ? <span className="text-ghost">unknown</span> : <span className={act.controls_fired ? "text-warn" : "text-ghost"}>{act.controls_fired.toLocaleString("en-GB")}</span> : "…"}
+                        {!own ? <span className="text-ghost">—</span> : act ? act.unknown ? <span className="text-ghost">not read</span> : <span className={act.controls_fired ? "text-warn" : "text-ghost"}>{act.controls_fired.toLocaleString("en-GB")}</span> : "…"}
                       </td>
-                      <td className="px-3 py-2 align-top">{a.blocked ? <Status tone="err">blocked</Status> : <Status tone="ok">admitted</Status>}</td>
+                      <td className="px-3 py-2 align-top">{!own ? <Status tone="ok">deployed</Status> : a.blocked ? <Status tone="err">blocked</Status> : <Status tone="ok">admitted</Status>}</td>
                       <td className="px-3 py-2 align-top">
                         <span className="flex items-center justify-end gap-1.5">
-                          <Button size="sm" variant="quiet" href={`/applications/${encodeURIComponent(a.id)}`}>Open</Button>
                           {own ? (
-                            <Button size="sm" variant="solid" tone={a.blocked ? "ok" : "err"} permission="configure" loading={busy === a.id} onClick={() => toggleBlock(a)}>
-                              {a.blocked ? "Unblock" : "Block"}
-                            </Button>
+                            <>
+                              <Button size="sm" variant="quiet" href={`/applications/${encodeURIComponent(a.id)}`}>Open</Button>
+                              <Button size="sm" variant="solid" tone={a.blocked ? "ok" : "err"} permission="configure" loading={busy === a.id} onClick={() => toggleBlock(a)}>
+                                {a.blocked ? "Unblock" : "Block"}
+                              </Button>
+                            </>
                           ) : (
-                            <Button size="sm" variant="quiet" href={a.source === "attached" ? "/configuration#agents" : agentHref(a.id)}>
-                              {a.source === "attached" ? "Attached agents" : "Agent"}
-                            </Button>
+                            <Button size="sm" variant="quiet" href={agentHref(a.id)}>Agent</Button>
                           )}
                         </span>
                       </td>
@@ -283,7 +313,7 @@ export function Applications() {
                 {apps && shown.length === 0 && (
                   <tr>
                     <td colSpan={11} className="px-4 py-8 text-center text-[11.5px] text-faint">
-                      {unread ? "The register was not read, so nothing is listed." : apps.length ? "Nothing matches." : "Nothing is registered yet. Connect a chatbot or RAG app above; agents appear from the Agents tab once deployed."}
+                      {off ? "The register was not read, so nothing is listed." : apps.length ? "Nothing matches." : "Nothing is registered and no agent is deployed. Register a chatbot or RAG app above; an agent joins the register when it is deployed on the Agents page."}
                     </td>
                   </tr>
                 )}
@@ -292,30 +322,23 @@ export function Applications() {
           </div>
         </section>
 
-        {/* ── the agent classes come from elsewhere ── */}
-        <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
-          <div className="flex w-full items-start gap-3 border-b border-line bg-raise/55 px-4 py-2.5">
-            <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Agents and multi-agent systems</span>
-            <span className="max-w-[110ch] text-[11px] leading-[1.55] text-faint">listed here, governed where they are built</span>
-          </div>
-          <div className="flex flex-wrap items-center gap-3 px-4 py-3 text-[11.5px] leading-[1.55] text-faint">
-            <span className="max-w-[80ch]">
-              A workflow saved on this deployment is an agent (or a multi-agent system, when it runs sub-runs or peers) the moment it is deployed. A third-party agent is
-              attached on the Configuration page, where its grants, gate risk and injection mode are set; the SDK and A2A doors keep serving it.
-            </span>
-            <span className="grow" />
-            <Button size="sm" variant="quiet" href="/agents">Agents</Button>
-            <Button size="sm" variant="quiet" href="/configuration#agents">Attached agents</Button>
-          </div>
-        </section>
+        {Object.keys(notBuilt).length > 0 && (
+          <section className="flex flex-col gap-1 rounded-md border border-line bg-surface px-4 py-3 text-[11.5px] leading-[1.55] text-faint">
+            <span className="font-medium text-dim">Recorded, and not carried out by this deployment</span>
+            {Object.entries(notBuilt).map(([k, v]) => (
+              <span key={k}>
+                <Mono className="text-[10.5px]">{k}</Mono>: {v}.
+              </span>
+            ))}
+          </section>
+        )}
 
-        <p className="pb-2 text-[10.5px] text-ghost">
-          The gateway is {GATEWAY_URL}; the retrieval door is {RETRIEVAL_URL}. A key is shown once, when the application is connected.
-        </p>
+        <p className="pb-2 text-[10.5px] text-ghost">The gateway is {GATEWAY_URL}. An application&rsquo;s key is shown once, when it is registered.</p>
       </div>
 
       {connecting && (
         <ConnectDialog
+          notBuilt={notBuilt}
           onClose={() => setConnecting(false)}
           onMinted={(m) => {
             setMinted(m);
@@ -329,81 +352,93 @@ export function Applications() {
   );
 }
 
-/* ═══════════════════ connect ═══════════════════ */
+/* ═══════════════════ register ═══════════════════ */
 
-/**
- * `POST /api/applications`, with the policy's fallback models (5.5).
- *
- * The register's policy carries `fallbacks`: a list of model names the
- * gateway tries, in order, when the chosen model's upstream fails
- * (backend/app/applications.py `PolicyView.fallbacks`, gateway.py `_chain`).
- * The console's own policy shape (lib/api/l4.ts `Policy`, `policyToWire`)
- * does not carry the field yet, so the registration is sent from here with
- * it beside the rest; it is sent only when the form names one.
- */
-async function registerApplication(body: NewApplication, fallbacks: string[]): Promise<Minted> {
-  const { data, error, response } = await api.POST("/api/applications", {
-    body: { name: body.name, class: body.class, owner: body.owner, autonomy: body.autonomy ?? null, policy: { ...policyToWire(body.policy), ...(fallbacks.length ? { fallbacks } : {}) } },
-  });
-  if (!data) throw new Error(errorText(error, response));
-  return { application: applicationOf(data.application), key: data.key, note: data.note, system_prompt: data.system_prompt ? promptVersionOf(data.system_prompt) : null };
+interface ConfigModel {
+  id: string;
+  label: string;
+  cleared_for: DataClass[];
+  price_in: number | null;
+  price_out: number | null;
 }
 
-const csv = (s: string) => s.split(/[,\s]+/).map((x) => x.trim()).filter(Boolean);
-const numOrNull = (s: string): number | null => (s.trim() === "" ? null : Number.isFinite(Number(s)) ? Number(s) : null);
-
-function LimitFields({ value, onChange, idPrefix }: { value: { rpm: string; tpd: string; cpd: string }; onChange: (v: { rpm: string; tpd: string; cpd: string }) => void; idPrefix: string }) {
-  return (
-    <div className="grid grid-cols-3 gap-2">
-      <Field label="Requests / min" htmlFor={`${idPrefix}-rpm`}>
-        <Input id={`${idPrefix}-rpm`} value={value.rpm} onChange={(v) => onChange({ ...value, rpm: v })} placeholder="no limit" mono />
-      </Field>
-      <Field label="Tokens / day" htmlFor={`${idPrefix}-tpd`}>
-        <Input id={`${idPrefix}-tpd`} value={value.tpd} onChange={(v) => onChange({ ...value, tpd: v })} placeholder="no limit" mono />
-      </Field>
-      <Field label="Cost / day (USD)" htmlFor={`${idPrefix}-cpd`}>
-        <Input id={`${idPrefix}-cpd`} value={value.cpd} onChange={(v) => onChange({ ...value, cpd: v })} placeholder="no limit" mono />
-      </Field>
-    </div>
-  );
+/** The offered models with their clearance and prices (`GET /api/config`), and the knowledge stores (`GET /api/retrieval/access`). */
+function useChoices(): { models: ConfigModel[] | null; stores: string[] | null; error: string } {
+  const [models, setModels] = useState<ConfigModel[] | null>(null);
+  const [stores, setStores] = useState<string[] | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let live = true;
+    const read = async (path: string) => {
+      const r = await fetch(path);
+      const d = await r.json().catch(() => null);
+      if (!r.ok || !d || d.error) throw new Error(errorText(d, r, "GET", path));
+      return d as Record<string, unknown>;
+    };
+    read("/api/config")
+      .then((d) => {
+        if (!live) return;
+        const list = Array.isArray(d.models) ? (d.models as Record<string, unknown>[]) : [];
+        setModels(
+          list.map((m) => ({
+            id: String(m.id),
+            label: String(m.label || m.id),
+            cleared_for: Array.isArray(m.cleared_for) ? (m.cleared_for as DataClass[]) : [],
+            price_in: typeof m.price_in === "number" ? m.price_in : null,
+            price_out: typeof m.price_out === "number" ? m.price_out : null,
+          })),
+        );
+      })
+      .catch((e: Error) => live && (setModels([]), setError(e.message)));
+    read("/api/retrieval/access")
+      .then((d) => live && setStores((Array.isArray(d.stores) ? (d.stores as Record<string, unknown>[]) : []).map((s) => String(s.id))))
+      .catch((e: Error) => live && (setStores([]), setError((x) => x || e.message)));
+    return () => {
+      live = false;
+    };
+  }, []);
+  return { models, stores, error };
 }
 
-function ConnectDialog({ onClose, onMinted }: { onClose: () => void; onMinted: (m: Minted) => void }) {
-  const { models, defaultModel } = useModels();
+/** A number typed in a field: the number when it is one, else the text as typed, so the service refuses it in its own words. Empty is null. */
+const typed = (s: string): number | string | null => (s.trim() === "" ? null : Number.isFinite(Number(s.trim())) ? Number(s.trim()) : s.trim());
+
+function ConnectDialog({ notBuilt, onClose, onMinted }: { notBuilt: Record<string, string>; onClose: () => void; onMinted: (m: Minted) => void }) {
+  const { session } = useSession();
+  const { models: offered, stores, error: choicesError } = useChoices();
   const [cls, setCls] = useState<"chatbot" | "rag">("chatbot");
   const [name, setName] = useState("");
-  const [owner, setOwner] = useState("");
-  const [screen, setScreen] = useState<"block" | "flag">("block");
-  const [header, setHeader] = useState("x-principal");
-  const [requirePrincipal, setRequirePrincipal] = useState(true);
-  const [limits, setLimits] = useState({ rpm: "", tpd: "", cpd: "" });
-  const [perPrincipal, setPerPrincipal] = useState({ rpm: "", tpd: "", cpd: "" });
-  const [namespaces, setNamespaces] = useState("default");
-  const [allowed, setAllowed] = useState<string>("");
-  const [fallbacks, setFallbacks] = useState("");
+  const [owner, setOwner] = useState<string | null>(null);
+  const [autonomy, setAutonomy] = useState<Autonomy | "">("");
+  const [dataClass, setDataClass] = useState<DataClass>("internal");
+  const [models, setModels] = useState<string[]>([]);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [rate, setRate] = useState("");
+  const [amount, setAmount] = useState("");
+  const [period, setPeriod] = useState<BudgetPeriod>("month");
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const allowedModels = csv(allowed);
-  const policy: Partial<Policy> = {
-    screen,
-    principal_header: header.trim() || "x-principal",
-    principal_required: requirePrincipal,
-    limits: { requests_per_minute: numOrNull(limits.rpm), tokens_per_day: numOrNull(limits.tpd), cost_per_day_usd: numOrNull(limits.cpd) },
-    principal_limits: { requests_per_minute: numOrNull(perPrincipal.rpm), tokens_per_day: numOrNull(perPrincipal.tpd), cost_per_day_usd: numOrNull(perPrincipal.cpd) },
-    namespaces: cls === "rag" ? csv(namespaces) : [],
-    model: allowedModels[0] ?? "",
-    models: allowedModels,
-    system_prompt: prompt.trim(),
-  };
+  // The accountable person starts as whoever registers it; they may name a team or someone else.
+  const ownerValue = owner ?? session?.email ?? "";
+  const toggleModel = (id: string) => setModels((m) => (m.includes(id) ? m.filter((x) => x !== id) : [...m, id]));
+  const first = (id: string) => setModels((m) => [id, ...m.filter((x) => x !== id)]);
+  const toggleStore = (id: string) => setPicked((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
   const submit = async () => {
     setBusy(true);
     setError("");
+    const policy: Record<string, unknown> = {
+      models,
+      data_class: dataClass,
+      rate_per_minute: typed(rate),
+      budget: amount.trim() === "" ? null : { amount_usd: typed(amount), period },
+    };
+    if (cls === "chatbot") policy.system_prompt = prompt.trim();
+    else policy.knowledge_stores = picked;
     try {
-      const m = await registerApplication({ name: name.trim(), class: cls, owner: owner.trim(), autonomy: cls === "rag" ? "L1" : "L0", policy }, csv(fallbacks));
-      onMinted(m);
+      onMinted(await createApplication({ name: name.trim(), class: cls, owner: ownerValue.trim(), autonomy: autonomy || null, policy: policy as PolicyWire }));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -411,15 +446,18 @@ function ConnectDialog({ onClose, onMinted }: { onClose: () => void; onMinted: (
     }
   };
 
-  const modelOptions = useMemo(() => (models ?? []).map((m) => m.id), [models]);
+  const unpricedPicked = models.filter((id) => {
+    const m = offered?.find((x) => x.id === id);
+    return m && (m.price_in === null || m.price_out === null);
+  });
 
   return (
     <DrillModal
-      title="Connect an application"
-      subtitle="A chatbot or a RAG app. The row carries its policy; the key is minted once and shown with the snippet to paste."
+      title="Register an application"
+      subtitle="A chatbot or a RAG app, with the policy the gateway holds each of its calls to. Its key is minted once and shown with the code to paste."
       onClose={onClose}
       actions={
-        <Button variant="solid" tone="ink" size="sm" permission="configure" loading={busy} disabled={!name.trim()} onClick={submit}>Connect and mint the key</Button>
+        <Button variant="solid" tone="ink" size="sm" permission="configure" loading={busy} disabled={!name.trim()} onClick={submit}>Register and mint the key</Button>
       }
     >
       <form
@@ -429,57 +467,104 @@ function ConnectDialog({ onClose, onMinted }: { onClose: () => void; onMinted: (
           if (name.trim() && !busy) submit();
         }}
       >
-        <Field label="Class" hint="A RAG app may also call the retrieval door; a chatbot only the gateway.">
+        <Field label="Class" hint="A chatbot has a registered system prompt; a RAG app names its knowledge stores and sends its own instructions.">
           <Pick value={cls} onChange={setCls} options={[{ value: "chatbot", label: "Chatbot" }, { value: "rag", label: "RAG app" }]} size="md" aria-label="Class" />
         </Field>
         <Field label="Name" htmlFor="app-name">
           <Input id="app-name" value={name} onChange={setName} />
         </Field>
-        <Field label="Owner" htmlFor="app-owner" hint="The team accountable for what it answers.">
-          <Input id="app-owner" value={owner} onChange={setOwner} />
+        <Field label="Owner" htmlFor="app-owner" hint="The person or team accountable for what it answers.">
+          <Input id="app-owner" value={ownerValue} onChange={setOwner} />
         </Field>
-        <Field label="Screening" hint="Block refuses a screened prompt or response with HTTP 400 naming the control; flag journals it and lets it through.">
-          <Pick value={screen} onChange={setScreen} options={[{ value: "block", label: "Block" }, { value: "flag", label: "Flag" }]} size="md" aria-label="Screening" />
+        <Field label="Autonomy" hint={notBuilt.autonomy ? `Declared, and ${notBuilt.autonomy.replace(/^an application's autonomy tier is recorded as declared; /, "")}.` : "The tier declared for it."}>
+          <Pick value={autonomy} onChange={setAutonomy} options={[{ value: "" as Autonomy | "", label: "not declared" }, ...AUTONOMIES.map((a) => ({ value: a as Autonomy | "", label: AUTONOMY_LABEL[a] }))]} size="md" aria-label="Autonomy" />
         </Field>
-        <Field label="Principal header" htmlFor="app-header" hint="The header the end user's identity arrives in; limits and entitlements are per principal.">
-          <Input id="app-header" value={header} onChange={setHeader} placeholder="x-principal" mono />
+        <Field label="Data class" hint="The most sensitive class of data it handles. Every call is sent only to a model cleared for it (Configuration, Models).">
+          <Pick value={dataClass} onChange={setDataClass} options={DATA_CLASSES.map((c) => ({ value: c, label: c }))} size="md" aria-label="Data class" />
         </Field>
-        <div className="flex items-end pb-2">
-          <Checkbox label="Refuse a request that carries no principal" checked={requirePrincipal} onChange={setRequirePrincipal} />
+        <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
+          <Field label="Rate per minute" htmlFor="app-rate">
+            <Input id="app-rate" value={rate} onChange={setRate} placeholder="no limit" mono />
+          </Field>
+          <Field label="Budget (USD)" htmlFor="app-budget">
+            <Input id="app-budget" value={amount} onChange={setAmount} placeholder="none" mono />
+          </Field>
+          <div className="w-24 pb-px">
+            <Pick value={period} onChange={setPeriod} options={[{ value: "day", label: "a day" }, { value: "week", label: "a week" }, { value: "month", label: "a month" }]} size="md" aria-label="Budget period" />
+          </div>
         </div>
         <div className="flex flex-col gap-2 md:col-span-2">
-          <span className="text-[12.5px] font-medium text-mist">Limits, per application</span>
-          <LimitFields value={limits} onChange={setLimits} idPrefix="app-lim" />
-          <span className="text-[12.5px] font-medium text-mist">Limits, per principal</span>
-          <LimitFields value={perPrincipal} onChange={setPerPrincipal} idPrefix="app-plim" />
-          <span className="text-[11.5px] text-faint">Empty means no limit. A rate limit answers 429; a spent budget 402.</span>
+          <span className="text-[12.5px] font-medium text-mist">Models it may call</span>
+          <span className="text-[11.5px] leading-[1.5] text-faint">
+            In order; chat uses the first. Only models this deployment offers can be listed. A model not cleared for {dataClass} data is refused unless its first cleared fallback is listed too.
+          </span>
+          {offered === null && <span className="text-[11.5px] text-faint">Reading the offered models…</span>}
+          {offered?.length === 0 && !choicesError && <span className="text-[11.5px] text-warn">This deployment offers no model yet: offer one under Configuration, Models.</span>}
+          <div className="flex flex-col divide-y divide-line rounded-md border border-line">
+            {(offered ?? []).map((m) => {
+              const at = models.indexOf(m.id);
+              const cleared = m.cleared_for.includes(dataClass);
+              return (
+                <div key={m.id} className="flex flex-wrap items-center gap-3 px-3 py-1.5">
+                  <Checkbox checked={at >= 0} onChange={() => toggleModel(m.id)} aria-label={`Allow ${m.label}`} />
+                  <span className="flex min-w-0 grow flex-col">
+                    <span className="text-[12px] text-fg">
+                      {m.label}
+                      {at === 0 && <span className="ml-2 text-[10.5px] text-ok">chat uses this one</span>}
+                      {at > 0 && <span className="ml-2 text-[10.5px] text-faint">{at + 1}</span>}
+                    </span>
+                    <span className="text-[10.5px] text-faint">
+                      cleared for {m.cleared_for.join(", ")}
+                      {!cleared && <span className="text-warn"> · not cleared for {dataClass}</span>}
+                      {m.price_in === null || m.price_out === null ? <span className="text-warn"> · no price set</span> : ` · $${m.price_in} in · $${m.price_out} out per million tokens`}
+                    </span>
+                  </span>
+                  {at > 0 && (
+                    <Button size="sm" variant="quiet" onClick={() => first(m.id)}>
+                      Make first
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {amount.trim() !== "" && unpricedPicked.length > 0 && (
+            <span className="text-[11.5px] leading-[1.5] text-warn">
+              With a budget, a call on a model with no price set is refused, because its spend cannot be counted: {unpricedPicked.join(", ")}.
+            </span>
+          )}
+          <span className="text-[11.5px] leading-[1.5] text-faint">
+            A budget is a calendar period in UTC (a week starts on Monday). A rate limit answers 429, a spent budget 402.
+          </span>
         </div>
-        {cls === "rag" && (
-          <Field label="Allowed namespaces" htmlFor="app-ns" hint="Knowledge namespaces this app may retrieve from, comma separated. A principal may be entitled to fewer on the row later.">
-            <Input id="app-ns" value={namespaces} onChange={setNamespaces} placeholder="default" mono />
-          </Field>
+        {cls === "rag" ? (
+          <div className="flex flex-col gap-2 md:col-span-2">
+            <span className="text-[12.5px] font-medium text-mist">Knowledge stores</span>
+            <span className="text-[11.5px] leading-[1.5] text-faint">At least one. {notBuilt.retrieval ? `${notBuilt.retrieval[0].toUpperCase()}${notBuilt.retrieval.slice(1)}.` : ""}</span>
+            {stores === null && <span className="text-[11.5px] text-faint">Reading the knowledge stores…</span>}
+            {stores?.length === 0 && !choicesError && <span className="text-[11.5px] text-warn">There is no knowledge store on this deployment yet.</span>}
+            <div className="flex flex-wrap gap-x-5 gap-y-1.5">
+              {(stores ?? []).map((s) => (
+                <Checkbox key={s} label={s} checked={picked.includes(s)} onChange={() => toggleStore(s)} />
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="md:col-span-2">
+            <Field label="System prompt (optional)" htmlFor="app-prompt" hint="Registered here and put first on every call by the gateway; the chatbot then sends no system message of its own. A reply that repeats it is withheld.">
+              <Textarea id="app-prompt" value={prompt} onChange={setPrompt} rows={4} />
+            </Field>
+          </div>
         )}
-        <Field
-          label="Allowed models"
-          htmlFor="app-models"
-          hint={`Comma separated; the first is the model a caller that names none gets. Empty means the deployment default${defaultModel ? ` (${defaultModel})` : ""}.${modelOptions.length ? ` Configured: ${modelOptions.slice(0, 6).join(", ")}${modelOptions.length > 6 ? ", …" : ""}.` : ""}`}
-        >
-          <Input id="app-models" value={allowed} onChange={setAllowed} placeholder={modelOptions[0] ?? ""} mono />
-        </Field>
-        <Field
-          label="Fallback models"
-          htmlFor="app-fallbacks"
-          hint="Model ids or tiers, comma separated, tried in order when the chosen model's upstream fails. Empty means no fallback: the failure goes back to the caller."
-        >
-          <Input id="app-fallbacks" value={fallbacks} onChange={setFallbacks} placeholder={modelOptions[1] ?? ""} mono />
-        </Field>
-        <Field label="System prompt (optional)" htmlFor="app-prompt" hint="Registered here and injected by the gateway; the app sends none. A response that echoes it is a screened hit.">
-          <Textarea id="app-prompt" value={prompt} onChange={setPrompt} rows={4} />
-        </Field>
-        {error && (<p className="text-[11.5px] text-err md:col-span-2" role="alert">{error}</p>)}
+        {choicesError && <p className="text-[11.5px] text-err md:col-span-2" role="alert">{choicesError}</p>}
+        {error && (
+          <p className="text-[11.5px] text-err md:col-span-2" role="alert">
+            <span className="font-medium">Not registered.</span> {error}
+          </p>
+        )}
         <div className="flex justify-end gap-2 md:col-span-2">
           <Button variant="solid" tone="err" size="sm" onClick={onClose}>Cancel</Button>
-          <Button variant="solid" tone="ink" size="sm" type="submit" permission="configure" loading={busy} disabled={!name.trim()}>Connect and mint the key</Button>
+          <Button variant="solid" tone="ink" size="sm" type="submit" permission="configure" loading={busy} disabled={!name.trim()}>Register and mint the key</Button>
         </div>
       </form>
     </DrillModal>
@@ -491,11 +576,11 @@ function ConnectDialog({ onClose, onMinted }: { onClose: () => void; onMinted: (
 function MintedDialog({ minted, onClose }: { minted: Minted; onClose: () => void }) {
   const a = minted.application;
   const [lang, setLang] = useState<"python" | "typescript">("python");
-  const ctx = { key: minted.key, principalHeader: a.policy.principal_header, model: a.policy.models[0] ?? a.policy.model, namespace: a.policy.namespaces[0] ?? "default" };
+  const ctx = { key: minted.key, model: a.policy.models[0] ?? "" };
   return (
     <DrillModal
-      title={`${a.name} connected`}
-      subtitle={minted.note || "This is the only time the key is shown. The snippets below already carry it; copy one into the application and the key never needs to be seen again."}
+      title={`${a.name} registered`}
+      subtitle={minted.note || "This is the only time the key is shown."}
       onClose={onClose}
       actions={<Button size="sm" variant="quiet" href={`/applications/${encodeURIComponent(a.id)}`}>Open the dashboard</Button>}
     >
@@ -504,13 +589,13 @@ function MintedDialog({ minted, onClose }: { minted: Minted; onClose: () => void
           <Status tone="ok">key minted</Status>
           <Mono className="break-all text-[11px] text-fg">{minted.key}</Mono>
           <CopyButton text={minted.key} />
-          <span className="text-[10.5px] text-faint">Scoped to {a.id}. Block the application to close every door; remove it to revoke the key.</span>
+          <span className="text-[10.5px] text-faint">Scoped to {a.id}. Blocking the application refuses every call; removing it revokes the key.</span>
         </div>
         {minted.system_prompt && (
           <p className="text-[11px] leading-[1.55] text-faint">
             System prompt recorded as version {minted.system_prompt.version}
             {minted.system_prompt.set_by ? `, signed ${minted.system_prompt.set_by}` : ""} ({minted.system_prompt.chars.toLocaleString("en-GB")} characters). Every later change is a new version on the
-            application&rsquo;s page, and a response that echoes this one is caught for as long as the leak check keeps it.
+            application&rsquo;s page.
           </p>
         )}
 
@@ -531,22 +616,12 @@ function MintedDialog({ minted, onClose }: { minted: Minted; onClose: () => void
           <Code text={SNIPPETS[lang](ctx)} lang={lang} className="bg-raise/40" />
         </section>
 
-        {a.class === "rag" && (
-          <section className="flex flex-col overflow-hidden rounded-md border border-line">
-            <div className="flex items-center gap-2 border-b border-line bg-raise/55 px-3 py-2">
-              <span className="text-[12px] font-semibold">Retrieval door</span>
-              <Mono className="text-[10.5px] text-faint">POST {RETRIEVAL_URL}/search</Mono>
-              <span className="grow" />
-              <CopyButton text={lang === "python" ? SNIPPETS.retrievalPython(ctx) : SNIPPETS.retrieval(ctx)} />
-            </div>
-            <Code text={lang === "python" ? SNIPPETS.retrievalPython(ctx) : SNIPPETS.retrieval(ctx)} lang={lang === "python" ? "python" : "bash"} className="bg-raise/40" />
-          </section>
-        )}
-
+        <p className="text-[11px] leading-[1.55] text-warn">
+          The gateway refuses a call that carries a console sign-in, so {GATEWAY_URL} answers an application only where the console&rsquo;s sign-in is not in front of it; elsewhere the application calls the service&rsquo;s own address with the same path.
+        </p>
         <p className="text-[11px] leading-[1.55] text-faint">
-          The gateway screens every user and tool turn and the full response ({a.policy.screen === "block" ? "a hit is refused with the control named" : "a hit is journalled and let through"}),
-          enforces the limits on the row, and records every completion with its tokens, cost, latency, model and principal. Set the principal header on every request; without it
-          {a.policy.principal_required ? " the request is refused." : " the request is accepted and recorded without one."}
+          The gateway takes this key and nothing else. It holds every call to the policy ({policyLine(a.policy)}; models {a.policy.models.join(", ")}), screens the prompt and the reply (a block is
+          refused naming the control, a flag is recorded and let through), and journals the call with its tokens, its cost (none when its model has no price set), its latency and its model.
         </p>
       </div>
     </DrillModal>

@@ -4,1086 +4,401 @@ import { Failure } from "./pending";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, Mono, Status, Tag } from "./ui";
-import { CAT, RankBar, StackedBar } from "./charts";
-import { ActiveFilters, Chips, FilterBar, SearchBox, type Chip } from "./filters";
+import { Button, Mono, Status } from "./ui";
+import { CAT } from "./charts";
 import { usePageFacts } from "./assistant";
 import { DrillModal, DrillTable } from "./drill";
 import { Pick } from "./select";
 import { hueFor } from "@/lib/hue";
-import { kindOf, type Provider } from "@/lib/providers";
-import { WindowPick, winMs, type Win } from "./window-pick";
-import { shadowBesideLine, shadowSpentLine, shadowSummary } from "@/lib/production";
+import { WindowPick, type Win } from "./window-pick";
 
 /**
- * FinOps: where the money goes, step by step, and where it could go instead.
+ * Costs: what model calls cost, from the cost recorded with every call.
  *
- * Every figure is computed in the browser from the primary records the route
- * returns — each model call with its node, tokens, latency and the price it
- * was costed at — so a window, a filter or a what-if never asks the server
- * for a different number, it re-cuts the same records. Nothing here is a
- * stored verdict: the hand-off candidates are derived from each step's own
- * call profile plus the eval evidence on record, and the calculator replays
- * the journalled workload at another model's price.
+ * Every figure is the service's (`GET /api/finops?window=`, agentfactory/
+ * budgets/): the recorded model calls of runs and of the model gateway, cut
+ * by model, agent, step, application, person and team over the page window,
+ * as a series, and checked run by run against the runs' own costs. A call
+ * on a model with no price set has a cost of null; it is counted apart as
+ * "no price set" and never added as $0. The records themselves (`calls`,
+ * `runs`) are only listed here, behind a figure, never summed again.
+ *
+ * Cost planning (`GET /api/finops/planning`) prices each step's recorded
+ * tokens on every other offered, priced model; whether a smaller model could
+ * do a step's work is not built, and the page says so in the service's words.
+ * Budgets are the deployment's per rolling period (`POST /api/finops`) and
+ * each use case's (`PUT/DELETE /api/budgets/use-cases/{workload}`). Step
+ * routes are model settings (`POST /api/config`).
  */
 
 /* ═══════════════════ shapes (mirror /api/finops) ═══════════════════ */
 
-type ModelClass = "small" | "medium" | "large";
-interface Offered { id: string; label: string; class?: ModelClass; price_in?: number; price_out?: number; provider?: string; served_as?: string }
-interface Config { models: Offered[]; default_model: string; class_defaults: Partial<Record<ModelClass, string>>; providers: Provider[]; node_routes: Record<string, string> }
-interface NodeSpec { id: string; harness: string; model: string; model_class: string; purpose: string; tools: number; risk: string; sinks: number; structured: boolean }
-interface AgentSpec { id: string; name: string; deployed: boolean; gated: boolean; nodes: NodeSpec[] }
-/** Who started a run and their team, when the record names them (`Owner`, lib/api/pending.ts). */
-interface RunOwner { sub: string; name: string; email?: string; team?: string }
-interface Run { id: string; system: string; state: string; at: string; ms: number; cost: number | null; tokens: { in: number; out: number }; denials: number; modelCalls: number; owner?: RunOwner | null }
-interface Call { run: string; system: string; at: string; state: string; node: string; model: string; in: number; out: number; ms: number; cost: number | null; estimated?: boolean; tools: number }
-interface Eval { id: string; agent: string; model: string; passed: number; total: number; at: string; batch_id: string; compare: boolean; forced: boolean; incumbent: string | null; cost_per_case: number | null; cost_total: number | null; avg_ms: number | null }
-interface Azure { configured: boolean; currency: string | null; mtd: number | null; last7d: number | null; error: string | null }
 type Period = "day" | "week" | "month";
-const PERIOD_DAYS: Record<Period, number> = { day: 1, week: 7, month: 30 };
-/** `shadow_spent` (L8, second round): what a canary's shadow runs spent in the period, beside the budget, never in `spent`. */
-interface BudgetState { since: string; spent: number; unpriced: number; remaining: number | null; exceeded: boolean; used: number | null; shadow_spent?: number }
-/** A canary's shadow run, with its cost: shown beside the spend for a window, counted in none of it (lib/production.ts). */
-interface ShadowRun { id: string; system: string; at: string; state: string; cost: number; estimated: number }
-interface Data { now: string; config: Config; agents: AgentSpec[]; runs: Run[]; calls: Call[]; evals: Eval[]; azure: Azure; estimate?: { in: number; out: number }; budget: number | null; period: Period; budgetState: BudgetState; costBasis: string; shadow?: ShadowRun[] }
+type Rec = Record<string, unknown>;
+
+interface Offered { id: string; label: string; class?: string; price_in: number | null; price_out: number | null; provider?: string; cleared_for?: string[]; fallbacks?: string[] }
+interface Config { models: Offered[]; default_model: string; class_defaults: Partial<Record<"small" | "medium" | "large", string>>; node_routes: Record<string, string> }
+/** The model a step's calls go to now, the endpoint and the rule; or why none could be chosen. */
+interface Effective { model?: string; endpoint?: string; rule?: string; error?: string }
+interface NodeSpec { id: string; harness: string; model: string; model_class: string; purpose: string; effective: Effective | null }
+interface AgentSpec { id: string; name: string; deployed: boolean; nodes: NodeSpec[] }
+interface RunOwner { sub: string; name: string; email?: string; team?: string }
+interface Run { id: string; system: string; state: string; at: string; ms: number; cost: number | null; tokens: { in: number; out: number }; modelCalls: number; use_case: string; owner: RunOwner | null }
+/** One recorded call: a run's journal entry (`source: run`) or a gateway completion (`source: gateway`, no run or step). */
+interface Call { source: "run" | "gateway"; ref: string; run: string; system: string; application: string; at: string; node: string; model: string; in: number; out: number; ms: number; cost: number | null; unpriced: boolean }
+/** What a group of calls cost (budgets/spend.py `figures`): `cost_usd` null when it has calls and none was priced. */
+interface Figures { calls: number; tokens_in: number; tokens_out: number; cost_usd: number | null; priced_calls: number; unpriced_calls: number; unpriced_models: string[]; runs: number }
+interface Point { at: string; calls: number; cost_usd: number | null; unpriced_calls: number }
+interface Reconciled { runs: number; agree: number; cost_unknown: number; differ: { run: string; recorded_usd: number | null; calls_usd: number | null; unpriced_calls: number }[] }
+interface NotIncluded { what: string; why: string }
+interface Spend {
+  window: Win;
+  since: string | null;
+  until: string;
+  totals: Figures;
+  by_source: (Figures & { source: "run" | "gateway" })[];
+  by_model: (Figures & { model: string; label: string; offered: boolean })[];
+  by_agent: (Figures & { agent: string })[];
+  by_step: (Figures & { agent: string; node: string })[];
+  by_application: (Figures & { application: string })[];
+  by_person: (Figures & { sub: string; name: string; email: string })[];
+  by_team: (Figures & { team: string; label: string })[];
+  series: { bucket: "hour" | "day"; points: Point[] };
+  runs: Reconciled;
+}
+interface BudgetState { budget_usd: number; period: Period; since: string; spent: number; unpriced: number; remaining: number; exceeded: boolean; used: number }
+interface BudgetRow { scope: "deployment" | "use_case"; key: string; amount_usd: number; period: Period; spent_usd: number; remaining_usd: number; since: string; unpriced_calls: number; set_by: { name?: string; email?: string; sub?: string } | null; set_at: string }
+interface Data { now: string; config: Config; agents: AgentSpec[]; agentsBasis: string; runs: Run[]; calls: Call[]; budgetState: BudgetState | null; budgets: BudgetRow[]; spend: Spend; costBasis: string; not_built: string[]; not_included: NotIncluded[] }
+interface PlanStep extends Figures { agent: string; node: string; models: string[]; elsewhere: { model: string; label: string; cost_usd: number; difference_usd: number | null }[] }
+interface Planning { steps: PlanStep[]; unpriced_models: string[]; could_take_it: { built: boolean; why: string }; basis: string }
+interface UseCase { name: string; workload: string }
 
 /* ═══════════════════ formatting ═══════════════════ */
 
-const fmtCost = (c: number | null, precise = false) =>
-  c === null ? "—" : c === 0 ? "$0.00" : c < 0.01 && precise ? `$${c.toFixed(4)}` : c < 0.005 ? "<$0.01" : c < 100 ? `$${c.toFixed(2)}` : `$${Math.round(c).toLocaleString("en-GB")}`;
+const fmtUsd = (c: number) => (c === 0 ? "$0.00" : Math.abs(c) < 0.01 ? `$${c.toFixed(6).replace(/0+$/, "")}` : Math.abs(c) < 100 ? `$${c.toFixed(2)}` : `$${Math.round(c).toLocaleString("en-GB")}`);
+/** A group's cost: its priced sum, or "no price set" when it has calls and none was priced. */
+const groupCost = (f: Pick<Figures, "cost_usd" | "calls">) => (f.cost_usd === null ? (f.calls ? "no price set" : "$0.00") : fmtUsd(f.cost_usd));
 const fmtTokens = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k` : String(Math.round(n)));
-const fmtMs = (ms: number | null) => (ms === null ? "—" : ms < 1000 ? `${Math.round(ms)}ms` : ms < 60_000 ? `${(ms / 1000).toFixed(1)}s` : `${(ms / 60_000).toFixed(1)}m`);
-const pct = (x: number) => `${Math.round(x * 100)}%`;
-const ago = (iso: string | null) => {
-  if (!iso) return "never";
-  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+const fmtMs = (ms: number) => (ms < 1000 ? `${Math.round(ms)}ms` : ms < 60_000 ? `${(ms / 1000).toFixed(1)}s` : `${(ms / 60_000).toFixed(1)}m`);
+const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString("en-GB")} ${n === 1 ? one : many}`;
+const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "");
+const ago = (iso: string, now: number) => {
+  const s = Math.max(0, (now - new Date(iso).getTime()) / 1000);
   if (s < 60) return `${Math.round(s)}s ago`;
   if (s < 3600) return `${Math.round(s / 60)}m ago`;
   if (s < 86_400) return `${Math.round(s / 3600)}h ago`;
   return `${Math.round(s / 86_400)}d ago`;
 };
+const unpricedNote = (f: Figures) => (f.unpriced_calls ? `${plural(f.unpriced_calls, "call")} with no price set` : "");
 
-/* ═══════════════════ model economics ═══════════════════ */
-
-interface ModelInfo { id: string; label: string; price_in: number | null; price_out: number | null; provider: Provider | null; local: boolean; hourly: number | null; tier: ModelClass | null; estimated: boolean }
-
-function modelBook(cfg: Config, estimate?: { in: number; out: number }): Map<string, ModelInfo> {
-  const providers = new Map(cfg.providers.map((p) => [p.id, p]));
-  const book = new Map<string, ModelInfo>();
-  for (const m of cfg.models) {
-    const provider = providers.get(m.provider ?? "") ?? null;
-    const local = Boolean(provider?.local);
-    const priced = typeof m.price_in === "number" || typeof m.price_out === "number";
-    // An unpriced cloud model is costed at the estimate rate, and says so.
-    book.set(m.id, {
-      id: m.id,
-      label: m.label,
-      price_in: local ? 0 : priced ? Number(m.price_in ?? 0) : (estimate?.in ?? null),
-      price_out: local ? 0 : priced ? Number(m.price_out ?? 0) : (estimate?.out ?? null),
-      provider,
-      local,
-      hourly: provider?.hourly_usd ?? null,
-      tier: m.class ?? null,
-      estimated: !local && !priced,
-    });
-  }
-  book.set("scripted", { id: "scripted", label: "scripted (no model)", price_in: 0, price_out: 0, provider: null, local: true, hourly: 0, tier: null, estimated: false });
-  return book;
+/** Whether a set of groups adds up to the window's totals: calls, unpriced calls and priced spend (to the millionth of a dollar per call). */
+function addsUp(rows: Figures[], totals: Figures): { ok: boolean; cost: number; calls: number; unpriced: number } {
+  const cost = rows.reduce((s, r) => s + (r.cost_usd ?? 0), 0);
+  const calls = rows.reduce((s, r) => s + r.calls, 0);
+  const unpriced = rows.reduce((s, r) => s + r.unpriced_calls, 0);
+  const ok = calls === totals.calls && unpriced === totals.unpriced_calls && Math.abs(cost - (totals.cost_usd ?? 0)) <= 1e-6 * Math.max(1, totals.calls);
+  return { ok, cost, calls, unpriced };
 }
 
-/** What one journalled call would cost on a given model — replaying its tokens and time. */
-function replay(call: { in: number; out: number; ms: number }, m: { price_in: number | null; price_out: number | null; local: boolean; hourly: number | null }, speed = 1): number | null {
-  if (m.local) {
-    // Tokens are free on hardware already paid for; the hour is the cost.
-    if (m.hourly === null) return null;
-    return ((call.ms * speed) / 3_600_000) * m.hourly;
-  }
-  if (m.price_in === null && m.price_out === null) return null;
-  return (call.in * (m.price_in ?? 0) + call.out * (m.price_out ?? 0)) / 1_000_000;
+async function read<T>(path: string): Promise<T> {
+  const r = await fetch(path);
+  const d = (await r.json().catch(() => null)) as T | null;
+  // A refusal, a 501, an empty body or a page (a proxy's 502) is a failed read, never an answer to draw.
+  if (!r.ok || !d || (d as Rec).error) throw new Error(errorText(d, r, "GET", path));
+  return d;
 }
 
-const sumCost = (xs: (number | null)[]): number | null =>
-  xs.length === 0 || xs.every((x) => x === null) ? (xs.length ? null : 0) : xs.reduce((a: number, b) => a + (b ?? 0), 0);
+/** A write's answer: the body on success, else the service's own reason. */
+async function write(method: "POST" | "PUT" | "DELETE", path: string, body?: unknown): Promise<Rec> {
+  const r = await fetch(path, { method, headers: body === undefined ? undefined : { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const d = (await r.json().catch(() => null)) as Rec | null;
+  if (!r.ok || !d) throw new Error(errorText(d, r, method, path));
+  return d;
+}
 
 /* ═══════════════════ the page ═══════════════════ */
 
-type Drill =
-  | { kind: "calls"; title: string; subtitle?: string; rows: Call[] }
-  | { kind: "runs"; title: string; subtitle?: string; rows: Run[] }
-  | { kind: "node"; agent: string; node: string }
-  | { kind: "model"; id: string };
+type Drill = { kind: "calls"; title: string; subtitle?: string; rows: Call[] } | { kind: "runs"; title: string; subtitle?: string; rows: Run[] };
 
 export function FinOps() {
-  const [data, setData] = useState<Data | null>(null);
-  const [error, setError] = useState("");
   const [win, setWin] = useState<Win>("30d");
-  const [overrides, setOverrides] = useState<Partial<Record<string, Win>>>({});
-  const [agentF, setAgentF] = useState<Set<string>>(new Set());
-  const [modelF, setModelF] = useState<Set<string>>(new Set());
-  const [placeF, setPlaceF] = useState<"local" | "cloud" | null>(null);
-  const [search, setSearch] = useState("");
+  const [data, setData] = useState<{ win: Win; d: Data } | null>(null);
+  const [error, setError] = useState("");
+  const [plan, setPlan] = useState<{ win: Win; p: Planning } | null>(null);
+  const [planError, setPlanError] = useState("");
   const [drill, setDrill] = useState<Drill | null>(null);
   const [folds, setFolds] = useState<Record<string, boolean>>({});
-  const [routes, setRoutes] = useState<Record<string, string>>({});
-  const [routesDirty, setRoutesDirty] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState("");
 
-  const load = useCallback(() => {
-    fetch("/api/finops")
-      .then(async (r) => {
-        // A page (a proxy's 502, Next's own 404) is no ledger and no message: the status alone is the reason.
-        const d = (await r.json().catch(() => null)) as Data | null;
-        // A refusal, a 501, an empty body or an answer without the ledger's shape is a failed read, never a ledger to draw.
-        if (!r.ok || !d || (d as unknown as { error?: string }).error || !d.config) throw new Error(errorText(d, r, "GET", "/api/finops"));
-        return d;
+  const load = useCallback((w: Win) => {
+    read<Data>(`/api/finops?window=${w}`)
+      .then((d) => {
+        if (!d.spend || !d.config) throw new Error("the answer of GET /api/finops carries no spend or model settings");
+        setData({ win: w, d });
+        setError("");
       })
-      .then((d: Data) => {
-        setData(d);
-        setRoutes(d.config.node_routes ?? {});
-        setRoutesDirty(false);
+      .catch((e: Error) => setError(e.message));
+    read<Planning>(`/api/finops/planning?window=${w}`)
+      .then((p) => {
+        setPlan({ win: w, p });
+        setPlanError("");
       })
-      .catch((e) => setError((e as Error).message));
+      .catch((e: Error) => setPlanError(e.message));
   }, []);
-  useEffect(load, [load]);
+  useEffect(() => load(win), [load, win]);
 
-  const winFor = (card: string): Win => overrides[card] ?? win;
-  const setCardWin = (card: string, w: Win) => setOverrides((o) => ({ ...o, [card]: w }));
-  const setGlobal = (w: Win) => {
-    setWin(w);
-    setOverrides({});
-  };
-
-  const book = useMemo(() => (data ? modelBook(data.config, data.estimate) : new Map<string, ModelInfo>()), [data]);
-  const [loadedAt] = useState(() => Date.now());
-  const now = data ? new Date(data.now).getTime() : loadedAt;
-  const inWin = useCallback((at: string, w: Win) => now - new Date(at).getTime() <= winMs(w), [now]);
-
-  // The filters cut every card the same way; the window is the one axis a card may override.
-  const passes = useCallback(
-    (c: Call) => {
-      if (agentF.size && !agentF.has(c.system)) return false;
-      if (modelF.size && !modelF.has(c.model)) return false;
-      if (placeF) {
-        const local = book.get(c.model)?.local ?? false;
-        if ((placeF === "local") !== local) return false;
-      }
-      if (search) {
-        const q = search.toLowerCase();
-        if (!`${c.system} ${c.node} ${c.model} ${c.run}`.toLowerCase().includes(q)) return false;
-      }
-      return true;
-    },
-    [agentF, modelF, placeF, search, book],
-  );
-  const callsIn = useCallback((w: Win) => (data?.calls ?? []).filter((c) => inWin(c.at, w) && passes(c)), [data, inWin, passes]);
-  const runsIn = useCallback(
-    (w: Win) => (data?.runs ?? []).filter((r) => inWin(r.at, w) && (!agentF.size || agentF.has(r.system)) && (!search || `${r.system} ${r.id}`.toLowerCase().includes(search.toLowerCase()))),
-    [data, inWin, agentF, search],
-  );
-
-  const spanDays = (w: Win, calls: Call[]) => {
-    if (w !== "all") return winMs(w) / 86_400_000;
-    if (!calls.length) return 1;
-    const first = Math.min(...calls.map((c) => new Date(c.at).getTime()));
-    return Math.max(1, (now - first) / 86_400_000);
-  };
-
-  /* ── per-card figures ── */
-  const kpiCalls = callsIn(winFor("kpi"));
-  const kpiRuns = runsIn(winFor("kpi"));
-  const totals = useMemo(() => {
-    const cost = sumCost(kpiCalls.map((c) => c.cost));
-    const tokens = kpiCalls.reduce((s, c) => s + c.in + c.out, 0);
-    const localTokens = kpiCalls.filter((c) => book.get(c.model)?.local).reduce((s, c) => s + c.in + c.out, 0);
-    const unpriced = kpiCalls.filter((c) => c.estimated).length;
-    const days = spanDays(winFor("kpi"), kpiCalls);
-    return {
-      cost,
-      tokens,
-      calls: kpiCalls.length,
-      runs: kpiRuns.length,
-      perRun: cost === null || !kpiRuns.length ? null : cost / kpiRuns.length,
-      perCall: cost === null || !kpiCalls.length ? null : cost / kpiCalls.length,
-      localShare: tokens ? localTokens / tokens : 0,
-      monthly: cost === null ? null : (cost / days) * 30,
-      unpriced,
-      avgMs: kpiCalls.length ? kpiCalls.reduce((s, c) => s + c.ms, 0) / kpiCalls.length : null,
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kpiCalls, kpiRuns, book]);
+  const d = data?.d ?? null;
+  const current = data?.win === win;
+  const s = d?.spend ?? null;
+  const now = d ? new Date(d.now).getTime() : 0;
+  const since = s?.since ? new Date(s.since).getTime() : 0;
+  /** The records in the window the figures were cut over: for the lists behind a figure. */
+  const callsIn = useMemo(() => (d ? d.calls.filter((c) => new Date(c.at).getTime() >= since) : []), [d, since]);
+  const runsIn = useMemo(() => (d ? d.runs.filter((r) => new Date(r.at).getTime() >= since) : []), [d, since]);
+  const agentsById = useMemo(() => new Map((d?.agents ?? []).map((a) => [a.id, a])), [d]);
+  const name = (agent: string) => agentsById.get(agent)?.name ?? agent;
+  const toggleFold = (id: string) => setFolds((f) => ({ ...f, [id]: !f[id] }));
 
   usePageFacts(
-    data
+    s && d
       ? {
-          window: winFor("kpi"),
-          spendUSD: totals.cost,
-          tokens: totals.tokens,
-          modelCalls: totals.calls,
-          localShareOfTokens: totals.localShare,
-          projectedMonthlyUSD: totals.monthly,
-          providers: data.config.providers.map((p) => ({ id: p.id, kind: p.kind, local: Boolean(p.local) })),
-          nodeRoutes: routes,
+          window: s.window,
+          spendUSD: s.totals.cost_usd,
+          modelCalls: s.totals.calls,
+          callsWithNoPriceSet: s.totals.unpriced_calls,
+          runsChecked: s.runs,
+          deploymentBudget: d.budgetState,
+          notBuilt: d.not_built,
         }
       : null,
   );
 
-  const agentsById = useMemo(() => new Map((data?.agents ?? []).map((a) => [a.id, a])), [data]);
-  const resolve = useCallback(
-    (agent: string, node: NodeSpec | undefined, withRoutes = routes) => {
-      if (!data) return "";
-      const key = `${agent}/${node?.id ?? ""}`;
-      return withRoutes[key] || node?.model || (node?.model_class ? data.config.class_defaults[node.model_class as ModelClass] ?? "" : "") || data.config.default_model;
-    },
-    [data, routes],
-  );
-
-  /* ── spend over time ── */
-  const timeWin = winFor("time");
-  const timeCalls = callsIn(timeWin);
-  const series = useMemo(() => {
-    const days = Math.min(90, Math.max(7, Math.ceil(spanDays(timeWin, timeCalls))));
-    const byModel = new Map<string, number>();
-    for (const c of timeCalls) byModel.set(c.model, (byModel.get(c.model) ?? 0) + (c.cost ?? 0));
-    const keys = [...byModel.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k).slice(0, 6);
-    if ([...byModel.keys()].length > keys.length) keys.push("other");
-    const rows: { label: string; values: number[]; day: string }[] = [];
-    for (let d = days - 1; d >= 0; d--) {
-      const day = new Date(now - d * 86_400_000).toISOString().slice(0, 10);
-      const values = keys.map(() => 0);
-      for (const c of timeCalls) {
-        if (c.at.slice(0, 10) !== day) continue;
-        const i = keys.indexOf(c.model);
-        values[i === -1 ? keys.length - 1 : i] += c.cost ?? 0;
-      }
-      rows.push({ label: days > 30 ? (d % 7 === 0 ? day.slice(5) : "") : day.slice(5), values, day });
-    }
-    return { keys, rows };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeCalls, timeWin, now]);
-
-  /* ── by model ── */
-  const modelWin = winFor("models");
-  const modelCalls = callsIn(modelWin);
-  const byModel = useMemo(() => {
-    const agg = new Map<string, { calls: number; in: number; out: number; ms: number; cost: number | null; runs: Set<string> }>();
-    for (const c of modelCalls) {
-      const a = agg.get(c.model) ?? { calls: 0, in: 0, out: 0, ms: 0, cost: 0, runs: new Set<string>() };
-      a.calls += 1;
-      a.in += c.in;
-      a.out += c.out;
-      a.ms += c.ms;
-      a.cost = a.cost === null || c.cost === null ? null : a.cost + c.cost;
-      a.runs.add(c.run);
-      agg.set(c.model, a);
-    }
-    const total = sumCost([...agg.values()].map((a) => a.cost)) ?? 0;
-    return [...agg.entries()]
-      .map(([model, a]) => ({ model, ...a, runs: a.runs.size, share: total ? (a.cost ?? 0) / total : 0, info: book.get(model) ?? null }))
-      .sort((x, y) => (y.cost ?? 0) - (x.cost ?? 0) || y.calls - x.calls);
-  }, [modelCalls, book]);
-
-  /* ── by person and by team ──
-     Split from the run records, only as far as they say: a run counts for the
-     person its record names as owner and for that person's team. A run that
-     names nobody is counted beside the list, never guessed at. */
-  const whoWin = winFor("people");
-  const teamWin = winFor("teams");
-  const splitBy = useCallback(
-    (w: Win, keyOf: (o: RunOwner) => { key: string; label: string } | null) => {
-      const rows = runsIn(w);
-      const agg = new Map<string, { label: string; cost: number | null; runs: number }>();
-      let unnamed = 0;
-      let unnamedCost = 0;
-      for (const r of rows) {
-        const k = r.owner ? keyOf(r.owner) : null;
-        if (!k) {
-          unnamed += 1;
-          unnamedCost += r.cost ?? 0;
-          continue;
-        }
-        const a = agg.get(k.key) ?? { label: k.label, cost: 0, runs: 0 };
-        a.runs += 1;
-        a.cost = a.cost === null || r.cost === null ? null : a.cost + r.cost;
-        agg.set(k.key, a);
-      }
-      const list = [...agg.entries()]
-        .map(([key, a]) => ({ key, label: a.label, cost: a.cost, runs: a.runs, perRun: a.cost === null ? null : a.cost / Math.max(1, a.runs) }))
-        .sort((x, y) => (y.cost ?? 0) - (x.cost ?? 0) || y.runs - x.runs);
-      return { list, unnamed, unnamedCost, total: rows.length };
-    },
-    [runsIn],
-  );
-  const byPerson = useMemo(() => splitBy(whoWin, (o) => ({ key: o.sub, label: o.name || o.email || o.sub })), [splitBy, whoWin]);
-  const byTeam = useMemo(() => splitBy(teamWin, (o) => (o.team ? { key: o.team, label: o.team } : null)), [splitBy, teamWin]);
-  /** Whether any run on record names its owner, or a team: what decides between "nothing in this window" and "the records do not say". */
-  const recordsNameOwner = useMemo(() => (data?.runs ?? []).some((r) => r.owner), [data]);
-  const recordsNameTeam = useMemo(() => (data?.runs ?? []).some((r) => r.owner?.team), [data]);
-
-  /* ── by workflow ── */
-  const wfWin = winFor("workflows");
-  const wfCalls = callsIn(wfWin);
-  const byWorkflow = useMemo(() => {
-    const agg = new Map<string, { calls: number; cost: number | null; runs: Set<string>; tokens: number }>();
-    for (const c of wfCalls) {
-      const a = agg.get(c.system) ?? { calls: 0, cost: 0, runs: new Set<string>(), tokens: 0 };
-      a.calls += 1;
-      a.tokens += c.in + c.out;
-      a.cost = a.cost === null || c.cost === null ? null : a.cost + c.cost;
-      a.runs.add(c.run);
-      agg.set(c.system, a);
-    }
-    return [...agg.entries()]
-      .map(([id, a]) => ({ id, name: agentsById.get(id)?.name ?? id, calls: a.calls, cost: a.cost, runs: a.runs.size, tokens: a.tokens, perRun: a.cost === null ? null : a.cost / Math.max(1, a.runs.size) }))
-      .sort((x, y) => (y.cost ?? 0) - (x.cost ?? 0));
-  }, [wfCalls, agentsById]);
-
-  /* ── by step: the profile every recommendation is made from ── */
-  interface Profile {
-    agent: string; node: string; spec: NodeSpec | undefined; calls: number; runs: number; avgIn: number; avgOut: number; avgMs: number; toolRate: number;
-    cost: number | null; share: number; models: string[]; effective: string; rows: Call[];
-  }
-  const stepWin = winFor("steps");
-  const stepCalls = callsIn(stepWin);
-  const profiles = useMemo<Profile[]>(() => {
-    const agg = new Map<string, { rows: Call[]; runs: Set<string>; models: Set<string> }>();
-    for (const c of stepCalls) {
-      const key = `${c.system}/${c.node}`;
-      const a = agg.get(key) ?? { rows: [], runs: new Set<string>(), models: new Set<string>() };
-      a.rows.push(c);
-      a.runs.add(c.run);
-      a.models.add(c.model);
-      agg.set(key, a);
-    }
-    const total = sumCost(stepCalls.map((c) => c.cost)) ?? 0;
-    return [...agg.entries()]
-      .map(([key, a]) => {
-        const [agent, node] = key.split("/");
-        const spec = agentsById.get(agent)?.nodes.find((n) => n.id === node);
-        const cost = sumCost(a.rows.map((r) => r.cost));
-        const n = a.rows.length;
-        return {
-          agent, node, spec, calls: n, runs: a.runs.size,
-          avgIn: a.rows.reduce((s, r) => s + r.in, 0) / n,
-          avgOut: a.rows.reduce((s, r) => s + r.out, 0) / n,
-          avgMs: a.rows.reduce((s, r) => s + r.ms, 0) / n,
-          toolRate: a.rows.filter((r) => r.tools > 0).length / n,
-          cost, share: total ? (cost ?? 0) / total : 0,
-          models: [...a.models], effective: resolve(agent, spec), rows: a.rows,
-        };
-      })
-      .sort((x, y) => (y.cost ?? 0) - (x.cost ?? 0) || y.calls - x.calls);
-  }, [stepCalls, agentsById, resolve]);
-
-  /* ── eval evidence: per workflow, the latest comparison ── */
-  const evidence = useMemo(() => {
-    const out = new Map<string, { batch: string; at: string; incumbent: string; rows: (Eval & { rate: number; clears: boolean })[]; best: string | null }>();
-    for (const e of data?.evals ?? []) {
-      if (!e.compare) continue;
-      const have = out.get(e.agent);
-      if (have && have.batch !== e.batch_id) continue; // evals arrive newest first — keep the newest batch
-      const cur = have ?? { batch: e.batch_id, at: e.at, incumbent: e.incumbent ?? "", rows: [], best: null };
-      cur.rows.push({ ...e, rate: e.passed / Math.max(1, e.total), clears: false });
-      out.set(e.agent, cur);
-    }
-    for (const v of out.values()) {
-      const inc = v.rows.find((r) => r.model === v.incumbent) ?? v.rows[0];
-      const floor = (inc?.rate ?? 0) - 0.02;
-      for (const r of v.rows) r.clears = r.rate >= floor;
-      const eligible = v.rows.filter((r) => r.clears && r.cost_per_case !== null).sort((a, b) => (a.cost_per_case as number) - (b.cost_per_case as number));
-      v.best = eligible[0]?.model ?? null;
-      v.rows.sort((a, b) => b.rate - a.rate || (a.cost_per_case ?? 1e9) - (b.cost_per_case ?? 1e9));
-    }
-    return out;
-  }, [data]);
-
-  /* ── hand-off candidates ── */
-  const localModels = useMemo(() => [...book.values()].filter((m) => m.local && m.id !== "scripted"), [book]);
-  const smallest = useMemo(() => {
-    const priced = [...book.values()].filter((m) => !m.local && m.price_out !== null).sort((a, b) => (a.price_in ?? 0) + (a.price_out ?? 0) - ((b.price_in ?? 0) + (b.price_out ?? 0)));
-    return priced[0] ?? null;
-  }, [book]);
-  interface Verdict { p: Profile; action: "handoff" | "trial" | "keep"; target: ModelInfo | null; reasons: string[]; saving: number | null; projected: number | null }
-  const verdicts = useMemo<Verdict[]>(() => {
-    return profiles
-      .map((p): Verdict => {
-        const reasons: string[] = [];
-        const s = p.spec;
-        const current = book.get(p.effective) ?? null;
-        const ev = evidence.get(p.agent);
-        let action: Verdict["action"] = "trial";
-        let target: ModelInfo | null = null;
-        if (current?.local) {
-          return { p, action: "keep", target: current, reasons: ["already on a local provider"], saving: 0, projected: p.cost };
-        }
-        if (s && s.risk === "destructive" && !agentsById.get(p.agent)?.gated) {
-          action = "keep";
-          reasons.push("may call destructive tools with no approval gate on the workflow");
-        } else if (p.avgOut > 1500) {
-          action = "keep";
-          reasons.push(`long generations — ${fmtTokens(p.avgOut)} tokens out per call on average`);
-        } else if (p.avgIn > 40_000) {
-          action = "keep";
-          reasons.push(`very long prompts — ${fmtTokens(p.avgIn)} tokens in per call; needs a large context window`);
-        } else {
-          reasons.push(`short output (${fmtTokens(p.avgOut)} tokens out) on ${fmtTokens(p.avgIn)} in — a bounded task`);
-          if (s?.structured) reasons.push("emits a typed contract, so a wrong answer is caught by the schema");
-          if (p.toolRate > 0.5) reasons.push(`drives tools on ${pct(p.toolRate)} of calls — needs reliable function calling`);
-          if (s?.risk === "read" || s?.risk === "none") reasons.push("read-only tool grants");
-          if (ev?.best && ev.best !== ev.incumbent && book.get(ev.best)) {
-            target = book.get(ev.best)!;
-            action = "handoff";
-            const row = ev.rows.find((r) => r.model === ev.best)!;
-            const inc = ev.rows.find((r) => r.model === ev.incumbent);
-            reasons.push(`eval evidence: ${ev.best} scored ${row.passed}/${row.total} against ${inc ? `${inc.passed}/${inc.total}` : "the incumbent"} at ${fmtCost(row.cost_per_case, true)} per case`);
-          } else if (localModels[0]) {
-            target = localModels[0];
-            action = "trial";
-            reasons.push(ev ? "no candidate cleared the incumbent's quality in the latest comparison — trial locally with a fresh eval" : "no eval comparison on record yet — run Compare models before switching");
-          } else if (smallest && smallest.id !== p.effective) {
-            target = smallest;
-            action = "trial";
-            reasons.push("no local provider configured — the cheapest offered model is the next best hand-off");
-          } else {
-            action = "keep";
-            reasons.push("already on the cheapest offered model and no local provider is configured");
-          }
-        }
-        const projected = target ? sumCost(p.rows.map((r) => replay(r, target!, target!.local ? 1.5 : 1))) : p.cost;
-        const saving = p.cost === null || projected === null ? null : p.cost - projected;
-        return { p, action, target, reasons, saving, projected };
-      })
-      .sort((a, b) => (b.saving ?? -1) - (a.saving ?? -1));
-  }, [profiles, book, evidence, agentsById, localModels, smallest]);
-
-  /* ── calculator ── */
-  const [calcModel, setCalcModel] = useState<string>("");
-  const [customIn, setCustomIn] = useState("0.15");
-  const [customOut, setCustomOut] = useState("0.60");
-  const [customHourly, setCustomHourly] = useState("2.50");
-  const [customLocal, setCustomLocal] = useState(false);
-  const [speed, setSpeed] = useState("1.5");
-  const calcWin = winFor("calc");
-  const calcCalls = callsIn(calcWin);
-  const calcTarget: ModelInfo | null = useMemo(() => {
-    if (calcModel === "custom") {
-      return { id: "custom", label: "Custom model", price_in: Number(customIn) || 0, price_out: Number(customOut) || 0, provider: null, local: customLocal, hourly: Number(customHourly) || 0, tier: null, estimated: false };
-    }
-    return book.get(calcModel) ?? null;
-  }, [calcModel, customIn, customOut, customHourly, customLocal, book]);
-  const calc = useMemo(() => {
-    const actual = sumCost(calcCalls.map((c) => c.cost));
-    const sp = Number(speed) || 1;
-    const projected = calcTarget ? sumCost(calcCalls.map((c) => replay(c, calcTarget, calcTarget.local ? sp : 1))) : null;
-    const days = spanDays(calcWin, calcCalls);
-    const perModel = [...book.values()]
-      .filter((m) => m.id !== "scripted")
-      .map((m) => ({ m, cost: sumCost(calcCalls.map((c) => replay(c, m, m.local ? sp : 1))) }))
-      .sort((a, b) => (a.cost ?? Infinity) - (b.cost ?? Infinity));
-    return { actual, projected, days, perModel, runs: new Set(calcCalls.map((c) => c.run)).size, ms: calcCalls.reduce((s, c) => s + c.ms, 0) };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [calcCalls, calcTarget, speed, book, calcWin]);
-
-  /* ── routing table ── */
-  const routeRows = useMemo(
-    () =>
-      (data?.agents ?? []).flatMap((a) =>
-        a.nodes
-          .filter((n) => n.harness !== "await")
-          .map((n) => {
-            const key = `${a.id}/${n.id}`;
-            const p = profiles.find((x) => x.agent === a.id && x.node === n.id);
-            return { key, agent: a, node: n, route: routes[key] ?? "", effective: resolve(a.id, n), specSays: n.model ? `spec: ${n.model}` : n.model_class ? `tier: ${n.model_class}` : "deployment default", calls: p?.calls ?? 0, cost: p?.cost ?? null };
-          }),
-      ),
-    [data, profiles, routes, resolve],
-  );
-  const setRoute = (key: string, model: string) => {
-    setRoutes((r) => {
-      const next = { ...r };
-      if (model) next[key] = model;
-      else delete next[key];
-      return next;
-    });
-    setRoutesDirty(true);
-  };
-  const saveRoutes = async () => {
-    setSaving(true);
-    try {
-      const res = await fetch("/api/config", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ node_routes: routes }) });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
-      setRoutesDirty(false);
-      setSaved("routes saved — the next run of each workflow uses them");
-      setTimeout(() => setSaved(""), 4000);
-    } catch (e) {
-      setSaved(`could not save: ${(e as Error).message}`);
-    } finally {
-      setSaving(false);
-    }
-  };
-  const applyAll = () => {
-    for (const v of verdicts) if (v.action === "handoff" && v.target) setRoute(`${v.p.agent}/${v.p.node}`, v.target.id);
-    document.getElementById("routing")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
-  /* ── filter chips ── */
-  const chipsAgents: Chip[] = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const c of data?.calls ?? []) if (inWin(c.at, win)) counts.set(c.system, (counts.get(c.system) ?? 0) + 1);
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([id, n]) => ({ value: id, label: agentsById.get(id)?.name ?? id, count: n, active: agentF.has(id) }));
-  }, [data, inWin, win, agentF, agentsById]);
-  const chipsModels: Chip[] = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const c of data?.calls ?? []) if (inWin(c.at, win)) counts.set(c.model, (counts.get(c.model) ?? 0) + 1);
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([id, n]) => ({ value: id, label: id, count: n, active: modelF.has(id), tone: book.get(id)?.local ? "ok" : undefined }));
-  }, [data, inWin, win, modelF, book]);
-  const toggleIn = (set: Set<string>, v: string) => {
-    const n = new Set(set);
-    if (n.has(v)) n.delete(v);
-    else n.add(v);
-    return n;
-  };
-  const filterCount = agentF.size + modelF.size + (placeF ? 1 : 0) + (search ? 1 : 0);
-  const clearFilters = () => {
-    setAgentF(new Set());
-    setModelF(new Set());
-    setPlaceF(null);
-    setSearch("");
-  };
-
-  const toggleFold = (id: string) => setFolds((f) => ({ ...f, [id]: !f[id] }));
-  const offeredOptions = useMemo(
-    () => [{ value: "", label: "no override" }, ...(data?.config.models ?? []).map((m) => ({ value: m.id, label: `${m.label}${book.get(m.id)?.local ? " · local" : ""}` }))],
-    [data, book],
-  );
-
-  // The budget is per period; the KPI shows the current rolling period, which is
-  // the figure runs are refused against. The window's own comparison is below.
-  const budgetUse = data?.budgetState?.used ?? null;
-  const windowDays = winFor("kpi") === "all" ? Math.max(1, spanDays("all", kpiCalls)) : winMs(winFor("kpi")) / 86_400_000;
-  const windowBudget = data?.budget != null ? (data.budget * windowDays) / PERIOD_DAYS[data.period] : null;
-
-  // Every card here is cut from the one read. When it was not read, the failure is shown and no card is drawn: no figure stands in for spend that was not read.
-  const off = Boolean(error) && !data;
-  const kpi = (v: string) => (data ? v : off ? null : "…");
+  const gatewayCalls = s?.by_source.find((x) => x.source === "gateway")?.calls ?? 0;
+  const runCalls = s?.by_source.find((x) => x.source === "run")?.calls ?? 0;
 
   return (
     <div className="min-h-full" data-hue="green">
       <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7">
-        {/* ── Header ── */}
         <header className="flex flex-wrap items-end gap-4">
           <div className="flex flex-col gap-1.5">
             <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">Costs</h1>
-            <p className="max-w-[72ch] text-[12.5px] leading-[1.55] text-dim">
-              Model spend by provider, workflow and step, computed from every journalled model call at the configured price. Replay the same workload on
-              another model, see which steps are candidates for a smaller or local model, and route them without touching a spec.
+            <p className="max-w-[80ch] text-[12.5px] leading-[1.55] text-dim">
+              What model calls cost, from the cost recorded with each call: by model, agent, step, application, person and team, for runs and for calls through the model gateway. A call on a model with no price set has no cost: it is counted apart, never as $0. Budgets per period, what the same work would cost on another model, and where each step&rsquo;s calls go.
             </p>
           </div>
           <span className="grow" />
           <div className="flex flex-col items-end gap-1">
-            <span className="text-[10.5px] text-faint">Page window</span>
-            <WindowPick value={win} onChange={setGlobal} />
+            <span className="text-[10.5px] text-faint">{d && !current ? "Reading this window…" : "Window"}</span>
+            <WindowPick value={win} onChange={setWin} />
           </div>
         </header>
 
-        {error && <Failure what="The cost ledger could not be read" message={error} />}
-        {!off && (<>
-
-        {/* ── Filters ── */}
-        <div className="flex flex-col gap-2 rounded-lg border border-line bg-surface px-4 py-3 elev-1">
-          <FilterBar count={filterCount} onClear={clearFilters}>
-            <Chips label="Workflow" items={chipsAgents} onToggle={(v) => setAgentF((s) => toggleIn(s, v))} />
-            <Chips label="Model" items={chipsModels.slice(0, 8)} onToggle={(v) => setModelF((s) => toggleIn(s, v))} />
-            <Chips
-              label="Served"
-              items={[
-                { value: "cloud", label: "Cloud", active: placeF === "cloud" },
-                { value: "local", label: "Local", active: placeF === "local", tone: "ok" },
-              ]}
-              onToggle={(v) => setPlaceF((p) => (p === v ? null : (v as "local" | "cloud")))}
-            />
-            <SearchBox value={search} onChange={setSearch} placeholder="Search step, model or run" width="w-[240px]" />
-          </FilterBar>
-          <ActiveFilters
-            items={[
-              ...[...agentF].map((a) => ({ key: `a:${a}`, label: `Workflow: ${agentsById.get(a)?.name ?? a}` })),
-              ...[...modelF].map((m) => ({ key: `m:${m}`, label: `Model: ${m}` })),
-              ...(placeF ? [{ key: "p", label: `Served: ${placeF}` }] : []),
-              ...(search ? [{ key: "q", label: `“${search}”` }] : []),
-            ]}
-            onClear={(k) => {
-              if (k.startsWith("a:")) setAgentF((s) => toggleIn(s, k.slice(2)));
-              else if (k.startsWith("m:")) setModelF((s) => toggleIn(s, k.slice(2)));
-              else if (k === "p") setPlaceF(null);
-              else setSearch("");
-            }}
-          />
-        </div>
-
-        {/* ── KPI band ── */}
-        <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
-          <div data-hue="green" className="flex h-9 items-center gap-2 border-b border-line bg-raise/55 px-3">
-            <span className="text-[12px] font-semibold">Spend</span>
-            <span className="truncate text-[11px] text-faint">{data ? data.costBasis : off ? "Every journalled model call at the configured price" : "reading the ledger…"}</span>
-            <span className="grow" />
-            <WindowPick value={winFor("kpi")} onChange={(w) => setCardWin("kpi", w)} inherited={!overrides.kpi} />
+        {error && <Failure what="The costs could not be read" message={error} />}
+        {d && d.not_included.length > 0 && (
+          <div className="rounded-md border border-warn/40 bg-surface px-4 py-2.5 text-[12px] leading-[1.55] text-warn">
+            {d.not_included.map((n) => (
+              <p key={n.what}>
+                <span className="font-medium">Not in any figure: {n.what}.</span> {n.why}.
+              </p>
+            ))}
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8">
-            <Kpi label={`Spend · ${winFor("kpi")}`} value={kpi(fmtCost(totals.cost))} sub={off ? "model calls in the window" : totals.unpriced ? `${totals.calls} calls · ${totals.unpriced} estimated` : `${totals.calls} model calls`} tone="ok"
-              onOpen={() => setDrill({ kind: "calls", title: `Model calls · ${winFor("kpi")}`, subtitle: "Every call in the window, newest first, with the price it was costed at.", rows: kpiCalls })} />
-            <Kpi label="Tokens" value={kpi(fmtTokens(totals.tokens))} sub={off ? "tokens in and out" : `${fmtTokens(kpiCalls.reduce((s, c) => s + c.in, 0))} in · ${fmtTokens(kpiCalls.reduce((s, c) => s + c.out, 0))} out`}
-              onOpen={() => setDrill({ kind: "calls", title: "Tokens by call", rows: [...kpiCalls].sort((a, b) => b.in + b.out - (a.in + a.out)) })} />
-            <Kpi label="Runs" value={kpi(String(totals.runs))} sub={off ? "calls per run" : `${totals.calls} calls · ${totals.runs ? (totals.calls / totals.runs).toFixed(1) : "0"} per run`}
-              onOpen={() => setDrill({ kind: "runs", title: `Runs · ${winFor("kpi")}`, rows: kpiRuns })} />
-            <Kpi label="Cost per run" value={kpi(fmtCost(totals.perRun, true))} sub="spend ÷ runs in window"
-              onOpen={() => setDrill({ kind: "runs", title: "Runs by cost", subtitle: "Most expensive first.", rows: [...kpiRuns].sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0)) })} />
-            <Kpi label="Cost per call" value={kpi(fmtCost(totals.perCall, true))} sub={off ? "with the average latency" : `avg latency ${fmtMs(totals.avgMs)}`}
-              onOpen={() => setDrill({ kind: "calls", title: "Calls by cost", subtitle: "Most expensive first.", rows: [...kpiCalls].sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0)) })} />
-            <Kpi label="Local share" value={kpi(pct(totals.localShare))} sub="tokens served on local providers" tone={totals.localShare > 0 ? "ok" : undefined}
-              onOpen={() => setDrill({ kind: "calls", title: "Calls on local providers", rows: kpiCalls.filter((c) => book.get(c.model)?.local) })} />
-            <Kpi label="Run rate · month" value={kpi(fmtCost(totals.monthly))} sub={`from ${winFor("kpi") === "all" ? "the whole record" : `the last ${winFor("kpi")}`}`}
-              onOpen={() => document.getElementById("calc")?.scrollIntoView({ behavior: "smooth" })} />
-            <Kpi label={data?.budget ? `Budget · this ${data.period}` : "Budget"} value={data ? (data.budget ? pct(budgetUse ?? 0) : "not set") : kpi("")} sub={data?.budget ? (data.budgetState.exceeded ? "exhausted · new runs are refused" : `${fmtCost(data.budgetState.spent)} of ${fmtCost(data.budget)} per ${data.period}`) : "set one below"} tone={data?.budgetState?.exceeded ? "err" : budgetUse !== null && budgetUse > 0.8 ? "warn" : undefined}
-              onOpen={() => document.getElementById("billing")?.scrollIntoView({ behavior: "smooth" })} />
-          </div>
-        </section>
+        )}
 
-        {/* ── Row: time series + by model ── */}
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.3fr_1fr]">
-          <Section id="time" title="Spend over time" caption="Daily spend stacked by model. Click a bar for the calls behind it." folded={folds.time} onToggle={() => toggleFold("time")}
-            meta={<WindowPick value={timeWin} onChange={(w) => setCardWin("time", w)} inherited={!overrides.time} />}>
-            <div className="p-3">
-              {series.rows.some((r) => r.values.some((v) => v > 0)) ? (
-                <StackedBar
-                  data={series.rows}
-                  keys={series.keys}
-                  colors={series.keys.map((k, i) => (book.get(k)?.local ? "var(--color-ok)" : CAT[i % CAT.length]))}
-                  height={190}
-                  onPick={(label, key) => {
-                    const row = series.rows.find((r) => r.label === label) ?? series.rows[series.rows.findIndex((r) => r.label === label)];
-                    const day = row?.day;
-                    if (!day) return;
-                    setDrill({ kind: "calls", title: `${day}${key ? ` · ${key}` : ""}`, rows: timeCalls.filter((c) => c.at.slice(0, 10) === day && (!key || key === "other" ? true : c.model === key)) });
-                  }}
-                />
-              ) : (
-                <p className="px-1 py-6 text-center text-[12px] text-faint">{off ? "Daily spend is charted here, stacked by model." : "No priced model calls in this window."}</p>
-              )}
-            </div>
-          </Section>
-
-          <Section id="models" title="Spend by model" caption="Where the tokens went and what each model cost per call. Local providers show $0 per token." folded={folds.models} onToggle={() => toggleFold("models")}
-            meta={<WindowPick value={modelWin} onChange={(w) => setCardWin("models", w)} inherited={!overrides.models} />}>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-[11.5px]">
-                <thead>
-                  <tr className="border-b border-line text-left text-[10.5px] text-faint">
-                    {["Model", "Served", "Calls", "Tokens", "Avg latency", "$/call", "Cost", "Share"].map((h, i) => (
-                      <th key={h} className={`px-3 py-2 font-medium whitespace-nowrap ${i >= 2 ? "text-right" : ""}`}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {byModel.map((m) => (
-                    <tr key={m.model} onClick={() => setDrill({ kind: "model", id: m.model })} className="cursor-pointer border-b border-line last:border-0 hover:bg-raise/40">
-                      <td className="px-3 py-2 font-mono text-[11px]">{m.model}</td>
-                      <td className="px-3 py-2"><Place info={m.info} /></td>
-                      <td className="tnum px-3 py-2 text-right">{m.calls}</td>
-                      <td className="tnum px-3 py-2 text-right text-dim">{fmtTokens(m.in)} / {fmtTokens(m.out)}</td>
-                      <td className="tnum px-3 py-2 text-right">{fmtMs(m.ms / m.calls)}</td>
-                      <td className="tnum px-3 py-2 text-right">{fmtCost(m.cost === null ? null : m.cost / m.calls, true)}</td>
-                      <td className="tnum px-3 py-2 text-right font-medium">{fmtCost(m.cost)}</td>
-                      <td className="px-3 py-2 text-right">
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className="h-1.5 w-14 overflow-hidden rounded-full bg-raise"><span className={`block h-full ${m.info?.local ? "bg-ok" : "bg-run"}`} style={{ width: `${Math.round(m.share * 100)}%` }} /></span>
-                          <span className="tnum w-8 text-right text-[10.5px] text-dim">{pct(m.share)}</span>
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                  {!byModel.length && <tr><td colSpan={8} className="px-3 py-5 text-center text-faint">{off ? "Models are listed here with their calls, tokens and cost." : "No model calls in this window."}</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          </Section>
-        </div>
-
-        {/* ── Row: by person + by team ── */}
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-          <Section id="people" title="Spend by person" caption="What each person's runs cost: a run counts for the person its record names as the one who started it. Click for their runs." folded={folds.people} onToggle={() => toggleFold("people")}
-            meta={<WindowPick value={whoWin} onChange={(w) => setCardWin("people", w)} inherited={!overrides.people} />}>
-            <div className="p-3">
-              {byPerson.list.length ? (
-                <>
-                  <RankBar
-                    data={byPerson.list.map((w, i) => ({ label: w.label, value: w.cost ?? 0, color: CAT[i % CAT.length], meta: `${fmtCost(w.cost)} · ${w.runs} run${w.runs === 1 ? "" : "s"}` }))}
-                    onPick={(label) => {
-                      const w = byPerson.list.find((x) => x.label === label);
-                      if (w) setDrill({ kind: "runs", title: w.label, subtitle: `${w.runs} run${w.runs === 1 ? "" : "s"} started in the window.`, rows: runsIn(whoWin).filter((r) => r.owner?.sub === w.key) });
-                    }}
-                  />
-                  {byPerson.unnamed > 0 && (
-                    <p className="px-1 pt-2 text-[11.5px] text-faint">
-                      {byPerson.unnamed} run{byPerson.unnamed === 1 ? "" : "s"} ({fmtCost(byPerson.unnamedCost)}) name no person, so they are in no row above.
-                    </p>
-                  )}
-                </>
-              ) : (
-                <p className="mx-auto max-w-[56ch] py-6 text-center text-[12px] leading-[1.55] text-faint">
-                  {off
-                    ? "Spend is split here by the person who started each run."
-                    : !recordsNameOwner
-                    ? "Run records do not say who started a run yet. Once they do, spend is split by person here."
-                    : byPerson.total
-                      ? "No run in this window names the person who started it."
-                      : "No spend in this window."}
-                </p>
-              )}
-            </div>
-          </Section>
-
-          <Section id="teams" title="Spend by team" caption="The same spend by the team each person belongs to, as the run record states it. Click for the team's runs." folded={folds.teams} onToggle={() => toggleFold("teams")}
-            meta={<WindowPick value={teamWin} onChange={(w) => setCardWin("teams", w)} inherited={!overrides.teams} />}>
-            <div className="p-3">
-              {byTeam.list.length ? (
-                <>
-                  <RankBar
-                    data={byTeam.list.map((w, i) => ({ label: w.label, value: w.cost ?? 0, color: CAT[i % CAT.length], meta: `${fmtCost(w.cost)} · ${w.runs} run${w.runs === 1 ? "" : "s"}` }))}
-                    onPick={(label) => {
-                      const w = byTeam.list.find((x) => x.label === label);
-                      if (w) setDrill({ kind: "runs", title: w.label, subtitle: `${w.runs} run${w.runs === 1 ? "" : "s"} started by this team in the window.`, rows: runsIn(teamWin).filter((r) => r.owner?.team === w.key) });
-                    }}
-                  />
-                  {byTeam.unnamed > 0 && (
-                    <p className="px-1 pt-2 text-[11.5px] text-faint">
-                      {byTeam.unnamed} run{byTeam.unnamed === 1 ? "" : "s"} ({fmtCost(byTeam.unnamedCost)}) name no team, so they are in no row above.
-                    </p>
-                  )}
-                </>
-              ) : (
-                <p className="mx-auto max-w-[56ch] py-6 text-center text-[12px] leading-[1.55] text-faint">
-                  {off
-                    ? "Spend is split here by the team each run belongs to."
-                    : !recordsNameTeam
-                    ? "Run records do not say which team a run belongs to yet. Once they do, spend is split by team here."
-                    : byTeam.total
-                      ? "No run in this window names a team."
-                      : "No spend in this window."}
-                </p>
-              )}
-            </div>
-          </Section>
-        </div>
-
-        {/* ── Row: by workflow + by step ── */}
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_1.6fr]">
-          <Section id="workflows" title="Spend by workflow" caption="Each workflow's share and its cost per run. Click for its runs." folded={folds.workflows} onToggle={() => toggleFold("workflows")}
-            meta={<WindowPick value={wfWin} onChange={(w) => setCardWin("workflows", w)} inherited={!overrides.workflows} />}>
-            <div className="p-3">
-              {byWorkflow.length ? (
-                <RankBar
-                  data={byWorkflow.map((w, i) => ({ label: w.name, value: w.cost ?? 0, color: CAT[i % CAT.length], meta: `${fmtCost(w.cost)} · ${w.runs} runs · ${fmtCost(w.perRun, true)}/run` }))}
-                  onPick={(label) => {
-                    const w = byWorkflow.find((x) => x.name === label);
-                    if (w) setDrill({ kind: "runs", title: w.name, subtitle: `${w.runs} runs in the window, ${w.calls} model calls.`, rows: runsIn(wfWin).filter((r) => r.system === w.id) });
-                  }}
-                />
-              ) : (
-                <p className="py-6 text-center text-[12px] text-faint">{off ? "Workflows rank here by spend, each with its cost per run." : "No workflow spend in this window."}</p>
-              )}
-            </div>
-          </Section>
-
-          <Section id="steps" title="Spend by step" caption="Every node that made a model call: its call profile, latency and cost. The profile is what decides whether a step can move to a smaller model." folded={folds.steps} onToggle={() => toggleFold("steps")}
-            meta={<WindowPick value={stepWin} onChange={(w) => setCardWin("steps", w)} inherited={!overrides.steps} />}>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-[11.5px]">
-                <thead>
-                  <tr className="border-b border-line text-left text-[10.5px] text-faint">
-                    {["Workflow › step", "Pattern", "Calls", "Avg in / out", "Avg latency", "Tools", "Model", "Cost", "Share"].map((h, i) => (
-                      <th key={h} className={`px-3 py-2 font-medium whitespace-nowrap ${i >= 2 && i !== 6 ? "text-right" : ""}`}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {profiles.map((p) => (
-                    <tr key={`${p.agent}/${p.node}`} onClick={() => setDrill({ kind: "node", agent: p.agent, node: p.node })} className="cursor-pointer border-b border-line last:border-0 hover:bg-raise/40">
-                      <td className="px-3 py-2"><span className="text-dim">{agentsById.get(p.agent)?.name ?? p.agent}</span> <span className="text-faint">›</span> <span className="font-mono text-[11px] text-fg">{p.node}</span></td>
-                      <td className="px-3 py-2 text-dim">{p.spec?.harness ?? "—"}</td>
-                      <td className="tnum px-3 py-2 text-right">{p.calls}</td>
-                      <td className="tnum px-3 py-2 text-right text-dim">{fmtTokens(p.avgIn)} / {fmtTokens(p.avgOut)}</td>
-                      <td className="tnum px-3 py-2 text-right">{fmtMs(p.avgMs)}</td>
-                      <td className="tnum px-3 py-2 text-right text-dim">{pct(p.toolRate)}</td>
-                      <td className="px-3 py-2 font-mono text-[10.5px]">{p.models.join(", ")}</td>
-                      <td className="tnum px-3 py-2 text-right font-medium">{fmtCost(p.cost)}</td>
-                      <td className="tnum px-3 py-2 text-right text-dim">{pct(p.share)}</td>
-                    </tr>
-                  ))}
-                  {!profiles.length && <tr><td colSpan={9} className="px-3 py-5 text-center text-faint">{off ? "Steps that make model calls are listed here with their call profile and cost." : "No steps made model calls in this window."}</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          </Section>
-        </div>
-
-        {/* ── Hand-off candidates ── */}
-        <Section id="handoff" title="Hand-off candidates" caption="Which steps a smaller or local model could take. Derived from each step's own call profile, its tool grants and the eval evidence on record — a bounded, short-output, read-only step is the natural hand-off; a long-reasoning or destructive step is not." folded={folds.handoff} onToggle={() => toggleFold("handoff")}
-          meta={
-            <span className="flex items-center gap-2">
-              {verdicts.some((v) => v.action === "handoff") && (
-                <Button size="sm" variant="solid" permission="configure" onClick={applyAll}>
-                  Route all evidence-backed
-                </Button>
-              )}
-            </span>
-          }>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[11.5px]">
-              <thead>
-                <tr className="border-b border-line text-left text-[10.5px] text-faint">
-                  {["Step", "Verdict", "Now", "Hand off to", "Cost now", "Projected", "Saving", "Why", ""].map((h, i) => (
-                    <th key={h} className={`px-3 py-2 font-medium whitespace-nowrap ${i >= 4 && i <= 6 ? "text-right" : ""}`}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {verdicts.map((v) => (
-                  <tr key={`${v.p.agent}/${v.p.node}`} className="border-b border-line align-top last:border-0">
-                    <td className="px-3 py-2 whitespace-nowrap"><span className="text-dim">{agentsById.get(v.p.agent)?.name ?? v.p.agent}</span> <span className="text-faint">›</span> <span className="font-mono text-[11px]">{v.p.node}</span></td>
-                    <td className="px-3 py-2">
-                      <Status tone={v.action === "handoff" ? "ok" : v.action === "trial" ? "warn" : "neutral"}>
-                        {v.action === "handoff" ? "Hand off" : v.action === "trial" ? "Trial" : "Keep"}
-                      </Status>
-                    </td>
-                    <td className="px-3 py-2 font-mono text-[10.5px]">{v.p.effective || "—"}</td>
-                    <td className="px-3 py-2">{v.target && v.action !== "keep" ? <span className="flex items-center gap-1.5 font-mono text-[10.5px]">{v.target.id}<Place info={v.target} /></span> : <span className="text-faint">—</span>}</td>
-                    <td className="tnum px-3 py-2 text-right">{fmtCost(v.p.cost)}</td>
-                    <td className="tnum px-3 py-2 text-right">{v.action === "keep" ? <span className="text-faint">—</span> : fmtCost(v.projected)}</td>
-                    <td className={`tnum px-3 py-2 text-right font-medium ${v.saving && v.saving > 0 ? "text-ok" : ""}`}>{v.action === "keep" || v.saving === null ? <span className="text-faint">—</span> : fmtCost(v.saving)}</td>
-                    <td className="max-w-[46ch] px-3 py-2 text-[11px] leading-[1.45] text-dim">{v.reasons.join("; ")}.</td>
-                    <td className="px-3 py-2 text-right whitespace-nowrap">
-                      {v.action !== "keep" && v.target && (
-                        <Button size="sm" variant="solid" permission="configure" onClick={() => { setRoute(`${v.p.agent}/${v.p.node}`, v.target!.id); document.getElementById("routing")?.scrollIntoView({ behavior: "smooth" }); }}>
-                          Route
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-                {!verdicts.length && <tr><td colSpan={9} className="px-3 py-5 text-center text-faint">{off ? "Steps a smaller or local model could take are listed here, each with the reason." : "No steps to assess in this window."}</td></tr>}
-              </tbody>
-            </table>
-          </div>
-          <p className="border-t border-line px-3 py-2 text-[10.5px] leading-[1.5] text-faint">
-            Projected figures replay this window&rsquo;s journalled tokens at the target&rsquo;s price; on a local provider they price the hardware hour at the provider&rsquo;s rate with a 1.5× latency allowance. Evidence comes from the latest Compare models batch for the workflow, which measures the whole workflow, not one step.
-          </p>
-        </Section>
-
-        {/* ── Calculator + eval evidence ── */}
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.4fr_1fr]">
-          <Section id="calc" title="Cost calculator" caption="Replay the filtered workload on any model — offered, or one you describe — and compare every offered model on the same work." folded={folds.calc} onToggle={() => toggleFold("calc")}
-            meta={<WindowPick value={calcWin} onChange={(w) => setCardWin("calc", w)} inherited={!overrides.calc} />}>
-            <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-[280px_1fr]">
-              <div className="flex flex-col gap-3">
-                <label className="flex flex-col gap-1 text-[11px] text-faint">
-                  Target model
-                  <Pick
-                    value={calcModel}
-                    onChange={setCalcModel}
-                    options={[{ value: "", label: "choose a model" }, ...(data?.config.models ?? []).map((m) => ({ value: m.id, label: `${m.label}${book.get(m.id)?.local ? " · local" : ""}` })), { value: "custom", label: "Custom (describe it)" }]}
-                  />
-                </label>
-                {calcModel === "custom" && (
-                  <div className="flex flex-col gap-2 rounded-md border border-line bg-canvas p-2.5">
-                    <label className="flex items-center justify-between gap-2 text-[11px] text-dim">
-                      Served locally
-                      <input type="checkbox" checked={customLocal} onChange={(e) => setCustomLocal(e.target.checked)} />
-                    </label>
-                    {customLocal ? (
-                      <Num label="Hardware $/hour" value={customHourly} onChange={setCustomHourly} />
-                    ) : (
-                      <>
-                        <Num label="$/M tokens in" value={customIn} onChange={setCustomIn} />
-                        <Num label="$/M tokens out" value={customOut} onChange={setCustomOut} />
-                      </>
-                    )}
-                  </div>
-                )}
-                {(calcTarget?.local || (calcModel === "custom" && customLocal)) && <Num label="Local latency × (vs. recorded)" value={speed} onChange={setSpeed} />}
-                {off ? (
-                  <p className="rounded-md border border-line bg-canvas p-2.5 text-[11px] leading-[1.5] text-faint">The workload in the window is summed here: calls, runs, tokens and model time.</p>
-                ) : (
-                  <div className="flex flex-col gap-1 rounded-md border border-line bg-canvas p-2.5 text-[11px] text-dim">
-                    <span>Workload: <b className="text-fg">{calcCalls.length}</b> calls in <b className="text-fg">{calc.runs}</b> runs</span>
-                    <span>{fmtTokens(calcCalls.reduce((s, c) => s + c.in, 0))} in · {fmtTokens(calcCalls.reduce((s, c) => s + c.out, 0))} out · {fmtMs(calc.ms)} of model time</span>
-                  </div>
-                )}
+        {d && s && (
+          <>
+            {/* ── KPI band ── */}
+            <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
+              <div data-hue="green" className="flex min-h-9 flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-3 py-1.5">
+                <span className="text-[12px] font-semibold">Spend · {s.window}</span>
+                <span className="text-[11px] text-faint">{d.costBasis}</span>
               </div>
-              <div className="flex flex-col gap-4">
-                <div className="grid grid-cols-3 gap-3">
-                  <Big label="Actual" value={off ? null : fmtCost(calc.actual)} sub={`${calcWin} as journalled`} />
-                  <Big label={calcTarget ? `On ${calcTarget.label}` : "Projected"} value={off ? null : calcTarget ? fmtCost(calc.projected) : "—"} sub={calcTarget?.local ? (calcTarget.hourly === null ? "hardware hour not priced" : `${fmtCost(calcTarget.hourly)}/h hardware`) : calcTarget ? `$${calcTarget.price_in ?? "?"} in · $${calcTarget.price_out ?? "?"} out /M` : "pick a target"} />
-                  <Big
-                    label="Difference"
-                    value={off ? null : calc.actual !== null && calc.projected !== null ? `${calc.projected <= calc.actual ? "−" : "+"}${fmtCost(Math.abs(calc.actual - calc.projected))}` : "—"}
-                    sub={calc.actual && calc.projected !== null ? `${pct(Math.abs(1 - calc.projected / calc.actual))} ${calc.projected <= calc.actual ? "less" : "more"} · ${fmtCost(((calc.projected - calc.actual) / calc.days) * 30)} / month` : ""}
-                    tone={calc.actual !== null && calc.projected !== null ? (calc.projected <= calc.actual ? "ok" : "err") : undefined}
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10.5px] font-medium text-faint">Every offered model on this workload</span>
-                  {off && <p className="py-3 text-[12px] text-faint">Each offered model is ranked here by what the same work would cost on it.</p>}
-                  <RankBar
-                    data={calc.perModel.map(({ m, cost }, i) => ({ label: m.id, value: cost ?? 0, color: m.local ? "var(--color-ok)" : CAT[i % CAT.length], meta: cost === null ? "hardware hour not priced" : `${fmtCost(cost)}${m.local ? ` · local at ${fmtCost(m.hourly)}/h` : m.estimated ? " · estimated rate" : ""}` }))}
-                    onPick={(label) => setCalcModel(label)}
-                  />
-                </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
+                <Kpi label="Spend" value={groupCost(s.totals)} sub={`${plural(s.totals.priced_calls, "priced call")}${s.since ? ` since ${when(s.since)}` : ""}`} tone={s.totals.cost_usd === null ? undefined : "ok"}
+                  onOpen={() => setDrill({ kind: "calls", title: `Model calls · ${s.window}`, subtitle: "Every recorded call in the window, newest first, with the cost recorded with it.", rows: [...callsIn].reverse() })} />
+                <Kpi label="No price set" value={s.totals.unpriced_calls.toLocaleString("en-GB")} sub={s.totals.unpriced_calls ? `calls on ${s.totals.unpriced_models.join(", ")}, in no sum` : "every call was priced"} tone={s.totals.unpriced_calls ? "warn" : undefined}
+                  onOpen={() => setDrill({ kind: "calls", title: "Calls with no price set", subtitle: "Their model had no price set when they were made, so they have no cost. Setting a price later does not price them.", rows: callsIn.filter((c) => c.unpriced).reverse() })} />
+                <Kpi label="Model calls" value={s.totals.calls.toLocaleString("en-GB")} sub={`${plural(runCalls, "run call")} · ${plural(gatewayCalls, "gateway call")}`}
+                  onOpen={() => setDrill({ kind: "calls", title: `Model calls · ${s.window}`, rows: [...callsIn].reverse() })} />
+                <Kpi label="Tokens" value={fmtTokens(s.totals.tokens_in + s.totals.tokens_out)} sub={`${fmtTokens(s.totals.tokens_in)} in · ${fmtTokens(s.totals.tokens_out)} out`}
+                  onOpen={() => setDrill({ kind: "calls", title: "Calls by tokens", rows: [...callsIn].sort((a, b) => b.in + b.out - (a.in + a.out)) })} />
+                <Kpi label="Runs checked" value={`${s.runs.agree} of ${s.runs.runs}`} sub={s.runs.differ.length ? `${plural(s.runs.differ.length, "run")} whose calls do not add up` : "each run's calls add up to its cost"} tone={s.runs.differ.length ? "err" : undefined}
+                  onOpen={() => document.getElementById("check")?.scrollIntoView({ behavior: "smooth" })} />
+                <Kpi
+                  label={d.budgetState ? `Budget · last ${d.budgetState.period}` : "Budget"}
+                  value={d.budgetState ? `${Math.round(d.budgetState.used * 100)}%` : "not set"}
+                  sub={d.budgetState ? (d.budgetState.exceeded ? "spent: new runs refused, running ones pause" : `${fmtUsd(d.budgetState.spent)} of ${fmtUsd(d.budgetState.budget_usd)}`) : "for the deployment, set below"}
+                  tone={d.budgetState?.exceeded ? "err" : d.budgetState && d.budgetState.used > 0.8 ? "warn" : undefined}
+                  onOpen={() => document.getElementById("budgets")?.scrollIntoView({ behavior: "smooth" })}
+                />
               </div>
-            </div>
-          </Section>
+            </section>
 
-          <Section id="evidence" title="Eval evidence" caption="The latest Compare models batch per workflow: quality, cost per case and latency for each candidate. A candidate clears the bar when it scores within 0.02 of the incumbent." folded={folds.evidence} onToggle={() => toggleFold("evidence")}>
-            <div className="flex flex-col">
-              {[...evidence.entries()].map(([agent, ev]) => (
-                <div key={agent} className="flex flex-col border-b border-line last:border-0">
-                  <div className="flex items-center gap-2 px-3 pt-2.5 pb-1">
-                    <span className="text-[12px] font-medium">{agentsById.get(agent)?.name ?? agent}</span>
-                    <span className="text-[10.5px] text-faint">{ago(ev.at)} · incumbent {ev.incumbent}</span>
-                    <span className="grow" />
-                    {ev.best && <Tag tone={ev.best === ev.incumbent ? "neutral" : "ok"}>{ev.best === ev.incumbent ? "keep incumbent" : `cheapest that clears: ${ev.best}`}</Tag>}
-                  </div>
+            {/* ── over time + by model ── */}
+            <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.2fr_1fr]">
+              <Section id="time" title="Spend over time" caption={`Priced spend ${s.series.bucket === "hour" ? "each hour" : "each day"}. A call with no price set is in no bar; the buckets that hold one are named below. Click a bar for its calls.`} folded={folds.time} onToggle={() => toggleFold("time")}>
+                <Series spend={s} calls={callsIn} onDrill={setDrill} />
+              </Section>
+
+              <Section id="models" title="Spend by model" caption="Every call by the model that answered it, with the price set for it now. A model no longer offered keeps its recorded costs." folded={folds.models} onToggle={() => toggleFold("models")}>
+                <div className="overflow-x-auto">
                   <table className="w-full border-collapse text-[11.5px]">
+                    <thead>
+                      <tr className="border-b border-line text-left text-[10.5px] text-faint">
+                        {["Model", "Price now ($/M in · out)", "Calls", "Tokens", "No price set", "Cost"].map((h, i) => (
+                          <th key={h} className={`px-3 py-2 font-medium whitespace-nowrap ${i >= 2 ? "text-right" : ""}`}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
                     <tbody>
-                      {ev.rows.map((r) => (
-                        <tr key={r.id} className="border-t border-line/60">
-                          <td className="px-3 py-1.5 font-mono text-[10.5px]">{r.model}{r.model === ev.incumbent && <span className="ml-1 text-[9px] text-faint">INCUMBENT</span>}</td>
-                          <td className="tnum px-3 py-1.5 text-right"><span className={r.clears ? "text-ok" : "text-err"}>{r.passed}/{r.total}</span> <span className="text-faint">{pct(r.rate)}</span></td>
-                          <td className="tnum px-3 py-1.5 text-right">{fmtCost(r.cost_per_case, true)}<span className="text-faint">/case</span></td>
-                          <td className="tnum px-3 py-1.5 text-right text-dim">{fmtMs(r.avg_ms)}</td>
+                      {s.by_model.map((m) => {
+                        const o = d.config.models.find((x) => x.id === m.model);
+                        return (
+                          <tr key={m.model} onClick={() => setDrill({ kind: "calls", title: m.model, subtitle: `Calls answered by ${m.model} in the window.`, rows: callsIn.filter((c) => c.model === m.model).reverse() })} className="cursor-pointer border-b border-line last:border-0 hover:bg-raise/40">
+                            <td className="px-3 py-2 font-mono text-[11px]">{m.model}</td>
+                            <td className="px-3 py-2 text-dim">{!m.offered ? "not offered now" : o && o.price_in !== null && o.price_out !== null ? `$${o.price_in} · $${o.price_out}` : <span className="text-warn">no price set</span>}</td>
+                            <td className="tnum px-3 py-2 text-right">{m.calls}</td>
+                            <td className="tnum px-3 py-2 text-right text-dim">{fmtTokens(m.tokens_in)} / {fmtTokens(m.tokens_out)}</td>
+                            <td className={`tnum px-3 py-2 text-right ${m.unpriced_calls ? "text-warn" : "text-ghost"}`}>{m.unpriced_calls}</td>
+                            <td className="tnum px-3 py-2 text-right font-medium">{groupCost(m)}</td>
+                          </tr>
+                        );
+                      })}
+                      {!s.by_model.length && <tr><td colSpan={6} className="px-3 py-5 text-center text-faint">No model call was recorded in this window.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+                <AddsUp rows={s.by_model} totals={s.totals} />
+              </Section>
+            </div>
+
+            {/* ── by person + by team ── */}
+            <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+              <Section id="people" title="Spend by person" caption="A run's calls count for the person who started it; a gateway call for the person who chatted from the console, else for the application's owner. Click for the runs they started." folded={folds.people} onToggle={() => toggleFold("people")}>
+                <Groups
+                  rows={s.by_person.map((p) => ({ key: p.sub, label: p.name, f: p }))}
+                  totals={s.totals}
+                  empty="No model call was recorded in this window."
+                  onPick={(key, label) => setDrill({ kind: "runs", title: label, subtitle: "Runs this person started in the window. Calls they made through the gateway are counted in the row, and listed on each application's page.", rows: runsIn.filter((r) => (key ? r.owner?.sub === key : !r.owner)) })}
+                />
+              </Section>
+              <Section id="teams" title="Spend by team" caption="The same calls by the team the run or the application records. Click for the team's runs." folded={folds.teams} onToggle={() => toggleFold("teams")}>
+                <Groups
+                  rows={s.by_team.map((t) => ({ key: t.team, label: t.label, f: t }))}
+                  totals={s.totals}
+                  empty="No model call was recorded in this window."
+                  onPick={(key, label) => setDrill({ kind: "runs", title: label, subtitle: "Runs of this team in the window. Gateway calls are counted in the row and listed on each application's page.", rows: runsIn.filter((r) => (r.owner?.team ?? "") === key) })}
+                />
+              </Section>
+            </div>
+
+            {/* ── by agent + by application ── */}
+            <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+              <Section id="agents" title="Spend by agent" caption="The calls of runs, by the agent they carried out. Click for its runs." folded={folds.agents} onToggle={() => toggleFold("agents")}>
+                <Groups
+                  rows={s.by_agent.map((a) => ({ key: a.agent, label: name(a.agent), f: a }))}
+                  empty="No run made a model call in this window."
+                  onPick={(key, label) => setDrill({ kind: "runs", title: label, subtitle: "Runs of this agent in the window.", rows: runsIn.filter((r) => r.system === key) })}
+                />
+              </Section>
+              <Section id="applications" title="Spend by application" caption="Calls registered applications made through the model gateway; they belong to no run or step. Click for the application." folded={folds.applications} onToggle={() => toggleFold("applications")}>
+                <Groups
+                  rows={s.by_application.map((a) => ({ key: a.application, label: a.application, f: a }))}
+                  empty="No registered application made a call through the gateway in this window."
+                  href={(key) => `/applications/${encodeURIComponent(key)}`}
+                />
+              </Section>
+            </div>
+            <AddsUpLine label="Agents and applications together" rows={[...s.by_agent, ...s.by_application]} totals={s.totals} />
+
+            {/* ── by step ── */}
+            <Section id="steps" title="Spend by step" caption="Every step of an agent that made model calls in the window. Click for its calls." folded={folds.steps} onToggle={() => toggleFold("steps")}>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-[11.5px]">
+                  <thead>
+                    <tr className="border-b border-line text-left text-[10.5px] text-faint">
+                      {["Agent › step", "Calls", "Runs", "Tokens in / out", "No price set", "Cost"].map((h, i) => (
+                        <th key={h} className={`px-3 py-2 font-medium whitespace-nowrap ${i >= 1 ? "text-right" : ""}`}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {s.by_step.map((p) => (
+                      <tr key={`${p.agent}/${p.node}`} onClick={() => setDrill({ kind: "calls", title: `${name(p.agent)} › ${p.node}`, rows: callsIn.filter((c) => c.source === "run" && c.system === p.agent && c.node === p.node).reverse() })} className="cursor-pointer border-b border-line last:border-0 hover:bg-raise/40">
+                        <td className="px-3 py-2"><span className="text-dim">{name(p.agent)}</span> <span className="text-faint">›</span> <span className="font-mono text-[11px] text-fg">{p.node}</span></td>
+                        <td className="tnum px-3 py-2 text-right">{p.calls}</td>
+                        <td className="tnum px-3 py-2 text-right text-dim">{p.runs}</td>
+                        <td className="tnum px-3 py-2 text-right text-dim">{fmtTokens(p.tokens_in)} / {fmtTokens(p.tokens_out)}</td>
+                        <td className={`tnum px-3 py-2 text-right ${p.unpriced_calls ? "text-warn" : "text-ghost"}`}>{p.unpriced_calls}</td>
+                        <td className="tnum px-3 py-2 text-right font-medium">{groupCost(p)}</td>
+                      </tr>
+                    ))}
+                    {!s.by_step.length && <tr><td colSpan={6} className="px-3 py-5 text-center text-faint">No step made a model call in this window.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </Section>
+
+            {/* ── cost planning ── */}
+            <Section id="planning" title="Cost planning" caption="What each step's recorded tokens in the window would cost on every other offered, priced model. A price comparison, not a measured cost: another model counts tokens its own way and may answer at another length." folded={folds.planning} onToggle={() => toggleFold("planning")}>
+              <PlanningView plan={plan?.win === win ? plan.p : null} error={planError} name={name} />
+            </Section>
+
+            {/* ── runs checked ── */}
+            <Section id="check" title="Runs checked against their calls" caption="For every run with a call in the window: whether its recorded calls add up to the cost the run records. A run with a call on a model with no price set records no cost, and agrees when its calls show the same." folded={folds.check} onToggle={() => toggleFold("check")}>
+              <div className="flex flex-col gap-2 px-4 py-3 text-[12px] leading-[1.55]">
+                <p className="text-dim">
+                  {plural(s.runs.runs, "run")} with calls in this window: <span className="text-ok">{s.runs.agree} agree</span>
+                  {s.runs.cost_unknown ? `, ${s.runs.cost_unknown} of them with no cost because a call had no price set` : ""}
+                  {s.runs.differ.length ? <span className="text-err">; {plural(s.runs.differ.length, "run does", "runs do")} not add up</span> : ""}.
+                </p>
+                {s.runs.differ.length > 0 && (
+                  <table className="w-full border-collapse text-[11.5px]">
+                    <thead>
+                      <tr className="border-b border-line text-left text-[10.5px] text-faint">
+                        <th className="py-1.5 pr-3 font-medium">Run</th>
+                        <th className="px-3 py-1.5 text-right font-medium">Recorded on the run</th>
+                        <th className="px-3 py-1.5 text-right font-medium">Its calls add up to</th>
+                        <th className="px-3 py-1.5 text-right font-medium">No price set</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {s.runs.differ.map((x) => (
+                        <tr key={x.run} className="border-b border-line last:border-0">
+                          <td className="py-1.5 pr-3"><Link href={`/runs?id=${encodeURIComponent(x.run)}`} className="font-mono text-[11px] underline decoration-line-strong">{x.run}</Link></td>
+                          <td className="tnum px-3 py-1.5 text-right">{x.recorded_usd === null ? "none" : fmtUsd(x.recorded_usd)}</td>
+                          <td className="tnum px-3 py-1.5 text-right">{x.calls_usd === null ? "none" : fmtUsd(x.calls_usd)}</td>
+                          <td className="tnum px-3 py-1.5 text-right">{x.unpriced_calls}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                </div>
-              ))}
-              {!evidence.size && off && <p className="px-3 py-5 text-center text-[12px] text-faint">The latest model comparison for each workflow is shown here: quality, cost per case and latency.</p>}
-              {!evidence.size && !off && (
-                <p className="px-3 py-5 text-center text-[12px] text-faint">
-                  No model comparison on record yet. Run <Link href="/evals" className="underline">Compare models</Link> on a workflow&rsquo;s eval set to get evidence here.
-                </p>
-              )}
-            </div>
-          </Section>
-        </div>
+                )}
+              </div>
+            </Section>
 
-        {/* ── Routing ── */}
-        <Section id="routing" title="Model routing" caption="Where each step's calls go. A route set here outranks the step's own model in its spec and the tier defaults; a forced model for a measurement outranks everything. Saved routes apply to the next run of the workflow." folded={folds.routing} onToggle={() => toggleFold("routing")}
-          meta={
-            <span className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-              {saved && <span className={`text-[11px] ${saved.startsWith("could not") ? "text-err" : "text-ok"}`}>{saved}</span>}
-              {routesDirty && <Button size="sm" variant="quiet" onClick={() => { setRoutes(data?.config.node_routes ?? {}); setRoutesDirty(false); }}>Discard</Button>}
-              <Button size="sm" variant="solid" permission="configure" loading={saving} disabled={!routesDirty} onClick={saveRoutes}>Save routes</Button>
-            </span>
-          }>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[11.5px]">
-              <thead>
-                <tr className="border-b border-line text-left text-[10.5px] text-faint">
-                  {["Workflow › step", "Pattern", "Spec says", "Effective model", "Served", "Override", `Calls · ${stepWin}`, `Cost · ${stepWin}`].map((h, i) => (
-                    <th key={h} className={`px-3 py-2 font-medium whitespace-nowrap ${i >= 6 ? "text-right" : ""}`}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {routeRows.map((r) => (
-                  <tr key={r.key} className={`border-b border-line last:border-0 ${r.route ? "bg-ok/5" : ""}`}>
-                    <td className="px-3 py-1.5 whitespace-nowrap"><span className="text-dim">{r.agent.name}</span> <span className="text-faint">›</span> <span className="font-mono text-[11px]">{r.node.id}</span></td>
-                    <td className="px-3 py-1.5 text-dim">{r.node.harness}</td>
-                    <td className="px-3 py-1.5 text-[10.5px] text-faint">{r.specSays}</td>
-                    <td className="px-3 py-1.5 font-mono text-[10.5px]">{r.effective || <span className="text-faint">none</span>}</td>
-                    <td className="px-3 py-1.5"><Place info={book.get(r.effective) ?? null} /></td>
-                    <td className="px-3 py-1.5"><div className="w-56"><Pick value={r.route} onChange={(v) => setRoute(r.key, v)} options={offeredOptions} aria-label={`Route ${r.key}`} /></div></td>
-                    <td className="tnum px-3 py-1.5 text-right text-dim">{r.calls}</td>
-                    <td className="tnum px-3 py-1.5 text-right">{fmtCost(r.cost)}</td>
-                  </tr>
-                ))}
-                {!routeRows.length && <tr><td colSpan={8} className="px-3 py-5 text-center text-faint">{off ? "Each workflow step is listed here with the model its calls go to and its override." : "No workflows in the registry."}</td></tr>}
-              </tbody>
-            </table>
-          </div>
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-line px-3 py-2 text-[10.5px] text-faint">
-            {off ? (
-              <span>The deployment default and the tier defaults are named here.</span>
-            ) : (
-              <>
-                <span>Deployment default: <Mono>{data?.config.default_model || "none"}</Mono></span>
-                {(["small", "medium", "large"] as const).map((c) => (
-                  <span key={c}>{c}: <Mono>{data?.config.class_defaults?.[c] || "—"}</Mono></span>
-                ))}
-              </>
-            )}
-            <span className="grow" />
-            <Link href="/configuration#models" className="underline">Manage models and providers in Configuration</Link>
-          </div>
-        </Section>
+            {/* ── budgets ── */}
+            <Section id="budgets" title="Budgets" caption="An amount in USD per rolling period (the last 24 hours, 7 days or 30 days). Once one is spent, a new run it applies to is refused, and a run already going pauses after the model call that reached it, until a person decides under Paused at budget on the Approvals page. Calls with no price set are not counted against it." folded={folds.budgets} onToggle={() => toggleFold("budgets")}>
+              <Budgets state={d.budgetState} rows={d.budgets} onSaved={() => load(win)} />
+            </Section>
 
-        {/* ── Providers + billing ── */}
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.4fr_1fr]">
-          <Section id="providers" title="Providers" caption="Every endpoint this deployment can route to, with the models offered from it. Local providers are priced by the hardware hour." folded={folds.providers} onToggle={() => toggleFold("providers")}>
-            {off && <p className="px-4 pt-3 text-[12px] text-faint">Each provider is shown here with its endpoint, its models and its spend in the window.</p>}
-            <div className="grid grid-cols-1 gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
-              {(data?.config.providers ?? []).map((p) => {
-                const models = (data?.config.models ?? []).filter((m) => (m.provider ?? "") === p.id);
-                const spend = sumCost(kpiCalls.filter((c) => models.some((m) => m.id === c.model)).map((c) => c.cost));
-                return (
-                  <button key={p.id} type="button" onClick={() => setDrill({ kind: "calls", title: p.label, subtitle: `Calls on ${p.label} in the last ${winFor("kpi")}.`, rows: kpiCalls.filter((c) => models.some((m) => m.id === c.model)) })}
-                    className="focusable flex flex-col gap-2 rounded-md border border-line bg-canvas p-3 text-left transition-colors hover:bg-raise/40">
-                    <span className="flex items-center gap-2">
-                      <span className="text-[12.5px] font-medium">{p.label}</span>
-                      <Tag tone={p.local ? "ok" : "neutral"}>{p.local ? "local" : "cloud"}</Tag>
-                      <span className="grow" />
-                      <span className="text-[10.5px] text-faint">{kindOf(p.kind).label}</span>
-                    </span>
-                    <span className="truncate font-mono text-[10px] text-faint" title={p.endpoint}>{p.endpoint ? hostOf(p.endpoint) : "endpoint from environment"}</span>
-                    <span className="flex items-center gap-3 text-[11px] text-dim">
-                      <span><b className="text-fg">{models.length}</b> model{models.length === 1 ? "" : "s"}</span>
-                      <span><b className="text-fg">{fmtCost(spend)}</b> · {winFor("kpi")}</span>
-                      {p.local && <span>{p.hourly_usd !== undefined ? `${fmtCost(p.hourly_usd)}/h` : "hour not priced"}</span>}
-                    </span>
-                    <span className="flex flex-wrap gap-1">
-                      {models.slice(0, 6).map((m) => <span key={m.id} className="rounded-sm border border-line px-1 py-px font-mono text-[9.5px] text-dim">{m.id}</span>)}
-                      {models.length > 6 && <span className="text-[9.5px] text-faint">+{models.length - 6}</span>}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </Section>
+            {/* ── routing ── */}
+            <Section id="routing" title="Model routing" caption="Where each step's calls go now, and by which rule. In order: a model forced for a measurement, a route set here, the model the step names, its tier's default, the deployment default. The model shown is for data of no stated class and a run started without a model of its own; a call whose data class its model is not cleared for goes to that model's first cleared fallback (Configuration, Models). Saved routes apply from the next call." folded={folds.routing} onToggle={() => toggleFold("routing")}>
+              <Routing agents={d.agents} config={d.config} bySteps={s.by_step} window={s.window} onSaved={() => load(win)} />
+            </Section>
 
-          <Section id="billing" title="Billing and budget" caption="Journalled spend against what the cloud actually billed, and the monthly budget the run rate is measured against." folded={folds.billing} onToggle={() => toggleFold("billing")}>
-            <Billing key={`${data?.budget ?? ""}/${data?.period ?? ""}`} off={off} data={data} totals={totals} windowBudget={windowBudget} window={winFor("kpi")} onSaved={load} />
-          </Section>
-        </div>
-        </>)}
+            <p className="pb-2 text-[10.5px] text-ghost">
+              Not built on this deployment: {d.not_built.map((k) => (k === "evals" ? "evaluations, so no step is judged fit for another model" : k === "billing" ? "a cloud billing feed, so recorded spend is not compared with an invoice" : k)).join("; ")}.
+            </p>
+          </>
+        )}
+        {!d && !error && <p className="text-[12px] text-faint">Reading the costs…</p>}
       </div>
 
-      {drill && (
-        <DrillView drill={drill} data={data} book={book} profiles={profiles} evidence={evidence} verdicts={verdicts} routes={routes} onRoute={setRoute} onClose={() => setDrill(null)} onDrill={setDrill} agentsById={agentsById} />
-      )}
+      {drill && <DrillView drill={drill} now={now} name={name} onClose={() => setDrill(null)} />}
     </div>
   );
 }
 
 /* ═══════════════════ pieces ═══════════════════ */
-
-function hostOf(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
-}
 
 function Section({ id, title, caption, meta, children, folded = false, onToggle }: { id: string; title: string; caption: string; meta?: React.ReactNode; children: React.ReactNode; folded?: boolean; onToggle?: () => void }) {
   return (
@@ -1107,225 +422,494 @@ function Section({ id, title, caption, meta, children, folded = false, onToggle 
   );
 }
 
-/** `value` null: a quiet console whose ledger was not read. The tile says so where the figure would be and opens nothing. */
-function Kpi({ label, value, sub, tone, onOpen }: { label: string; value: string | null; sub: string; tone?: "ok" | "warn" | "err"; onOpen: () => void }) {
+function Kpi({ label, value, sub, tone, onOpen }: { label: string; value: string; sub: string; tone?: "ok" | "warn" | "err"; onOpen: () => void }) {
   return (
-    <button type="button" onClick={value === null ? undefined : onOpen} className={`focusable -mr-px -mb-px flex flex-col gap-1 border-r border-b border-line px-3 py-2.5 text-left transition-colors ${value === null ? "cursor-default" : "cursor-pointer hover:bg-raise/50"}`}>
+    <button type="button" onClick={onOpen} className="focusable -mr-px -mb-px flex cursor-pointer flex-col gap-1 border-r border-b border-line px-3 py-2.5 text-left transition-colors hover:bg-raise/50">
       <span className="truncate text-[10.5px] text-faint">{label}</span>
-      {value === null ? (
-        <span className="flex h-[22px] items-center text-[12px] text-faint">Not connected</span>
-      ) : (
-        <span className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]" style={tone ? { color: `var(--color-${tone})` } : undefined}>{value}</span>
-      )}
-      <span className="truncate text-[10px] text-ghost">{sub}</span>
+      <span className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]" style={tone ? { color: `var(--color-${tone})` } : undefined}>{value}</span>
+      <span className="truncate text-[10px] text-ghost" title={sub}>{sub}</span>
     </button>
   );
 }
 
-function Big({ label, value, sub, tone }: { label: string; value: string | null; sub: string; tone?: "ok" | "err" }) {
+/** Whether a card's rows add up to the window's totals, said under the card. */
+function AddsUp({ rows, totals }: { rows: Figures[]; totals: Figures }) {
+  if (!rows.length) return null;
+  const a = addsUp(rows, totals);
   return (
-    <div className="flex flex-col gap-1 rounded-md border border-line bg-canvas p-3">
-      <span className="text-[10.5px] text-faint">{label}</span>
-      {value === null ? (
-        <span className="flex h-5 items-center text-[11.5px] whitespace-nowrap text-faint">Not connected</span>
+    <p className={`border-t border-line px-3 py-2 text-[10.5px] leading-[1.5] ${a.ok ? "text-faint" : "text-err"}`}>
+      {a.ok ? "The rows add up to the window's total: " : "The rows do not add up to the window's total: "}
+      {fmtUsd(a.cost)} over {plural(a.calls - a.unpriced, "priced call")}, and {plural(a.unpriced, "call")} with no price set{a.ok ? "." : `; the total is ${groupCost(totals)} over ${plural(totals.calls - totals.unpriced_calls, "priced call")}, and ${plural(totals.unpriced_calls, "call")} with no price set.`}
+    </p>
+  );
+}
+
+function AddsUpLine({ label, rows, totals }: { label: string; rows: Figures[]; totals: Figures }) {
+  if (!totals.calls) return null;
+  const a = addsUp(rows, totals);
+  return (
+    <p className={`-mt-3 px-1 text-[10.5px] leading-[1.5] ${a.ok ? "text-faint" : "text-err"}`}>
+      {label} {a.ok ? "add up to" : "do not add up to"} the window&rsquo;s total: {fmtUsd(a.cost)} over {plural(a.calls - a.unpriced, "priced call")}, and {plural(a.unpriced, "call")} with no price set
+      {a.ok ? "." : `, against ${groupCost(totals)} over ${plural(totals.calls - totals.unpriced_calls, "priced call")}, and ${plural(totals.unpriced_calls, "call")} with no price set.`}
+    </p>
+  );
+}
+
+/** A ranked list of groups: the bar is the priced spend; calls with no price set are named on the row, never drawn as $0. */
+function Groups({ rows, totals, empty, onPick, href }: { rows: { key: string; label: string; f: Figures }[]; totals?: Figures; empty: string; onPick?: (key: string, label: string) => void; href?: (key: string) => string }) {
+  if (!rows.length) return <p className="px-4 py-6 text-center text-[12px] text-faint">{empty}</p>;
+  return (
+    <>
+      <div className="flex flex-col px-3 py-1">
+        {rows.map((r, i) => {
+          const max = Math.max(...rows.map((x) => x.f.cost_usd ?? 0));
+          const width = max > 0 ? ((r.f.cost_usd ?? 0) / max) * 100 : 0;
+          const body = (
+            <>
+              <span className="truncate text-[12px] text-mist">{r.label}</span>
+              <span className="flex h-3.5 items-center">{width > 0 && <span className="h-full rounded-[2px]" style={{ width: `${width}%`, background: CAT[i % CAT.length] }} />}</span>
+              <span className="tnum text-right text-[11px] whitespace-nowrap text-dim">
+                {groupCost(r.f)} · {plural(r.f.calls, "call")}
+                {r.f.runs ? ` · ${plural(r.f.runs, "run")}` : ""}
+                {r.f.unpriced_calls && r.f.cost_usd !== null ? <span className="text-warn"> · {r.f.unpriced_calls} no price set</span> : ""}
+              </span>
+            </>
+          );
+          const cls = "grid grid-cols-[minmax(96px,1fr)_1.4fr_auto] items-center gap-3 border-b border-line py-2 last:border-0";
+          if (href) return <Link key={r.key || "none"} href={href(r.key)} className={`${cls} focusable -mx-1 rounded-sm px-1 hover:bg-raise/60`}>{body}</Link>;
+          return (
+            <div key={r.key || "none"} role={onPick ? "button" : undefined} onClick={onPick ? () => onPick(r.key, r.label) : undefined} className={`${cls} ${onPick ? "focusable -mx-1 cursor-pointer rounded-sm px-1 hover:bg-raise/60" : ""}`}>
+              {body}
+            </div>
+          );
+        })}
+      </div>
+      {totals && <AddsUp rows={rows.map((r) => r.f)} totals={totals} />}
+    </>
+  );
+}
+
+function Series({ spend, calls, onDrill }: { spend: Spend; calls: Call[]; onDrill: (d: Drill) => void }) {
+  const hourly = spend.series.bucket === "hour";
+  const step = hourly ? 3_600_000 : 86_400_000;
+  const points = spend.series.points;
+  const label = (p: Point) => (hourly ? `${p.at.slice(5, 10)} ${p.at.slice(11, 16)}` : p.at.slice(0, 10));
+  const withUnpriced = points.filter((p) => p.unpriced_calls > 0);
+  const priced = points.some((p) => (p.cost_usd ?? 0) > 0);
+  const max = Math.max(0, ...points.map((p) => p.cost_usd ?? 0));
+  const bucketCalls = (at: string) => {
+    const t = new Date(at).getTime();
+    return calls.filter((c) => {
+      const x = new Date(c.at).getTime();
+      return x >= t && x < t + step;
+    });
+  };
+  // Three labels under the bars: the first bucket, the middle one and the last.
+  const marks = new Set([0, Math.floor((points.length - 1) / 2), points.length - 1]);
+  return (
+    <div className="flex flex-col gap-2 p-3">
+      {priced ? (
+        <div className="flex flex-col gap-1">
+          <div className="flex items-baseline justify-between text-[10px] text-faint">
+            <span>{fmtUsd(max)} at the highest</span>
+            <span>a warn mark under a bar: calls with no price set in it</span>
+          </div>
+          <div className="flex h-[170px] items-end gap-px border-b border-line">
+            {points.map((p) => (
+              <button
+                key={p.at}
+                type="button"
+                title={`${label(p)}: ${p.cost_usd === null ? (p.calls ? "no price set" : "no call") : fmtUsd(p.cost_usd)} over ${plural(p.calls, "call")}${p.unpriced_calls ? `, ${p.unpriced_calls} with no price set` : ""}`}
+                onClick={() => p.calls && onDrill({ kind: "calls", title: label(p), rows: bucketCalls(p.at).reverse() })}
+                className={`focusable flex h-full min-w-0 grow flex-col justify-end ${p.calls ? "cursor-pointer hover:bg-raise/60" : "cursor-default"}`}
+              >
+                {(p.cost_usd ?? 0) > 0 && <span className="block w-full rounded-t-[2px]" style={{ height: `${((p.cost_usd ?? 0) / max) * 100}%`, background: CAT[0] }} />}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-px">
+            {points.map((p, i) => (
+              <span key={p.at} className="relative h-4 min-w-0 grow">
+                {p.unpriced_calls > 0 && <span className="absolute top-0 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-warn" />}
+                {marks.has(i) && <span className={`absolute top-1 font-mono text-[9.5px] whitespace-nowrap text-faint ${i === 0 ? "left-0" : i === points.length - 1 ? "right-0" : "left-1/2 -translate-x-1/2"}`}>{label(p)}</span>}
+              </span>
+            ))}
+          </div>
+        </div>
       ) : (
-        <span className="tnum text-[20px] leading-none font-semibold tracking-[-0.02em]" style={tone ? { color: `var(--color-${tone})` } : undefined}>{value}</span>
+        <p className="px-1 py-6 text-center text-[12px] text-faint">{points.some((p) => p.calls > 0) ? "No call in this window was priced, so there is no spend to chart." : "No model call was recorded in this window."}</p>
       )}
-      <span className="truncate text-[10px] text-ghost">{sub}</span>
+      {withUnpriced.length > 0 && (
+        <p className="px-1 text-[10.5px] leading-[1.5] text-warn">
+          Calls with no price set, in no bar: {withUnpriced.slice(0, 8).map((p) => `${label(p)} (${p.unpriced_calls})`).join(", ")}
+          {withUnpriced.length > 8 ? `, and ${withUnpriced.length - 8} more ${hourly ? "hours" : "days"}` : ""}.
+        </p>
+      )}
     </div>
   );
 }
 
-function Num({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <label className="flex items-center justify-between gap-2 text-[11px] text-dim">
-      {label}
-      <input type="number" min={0} step="0.01" value={value} onChange={(e) => onChange(e.target.value)} className="focusable h-7 w-20 rounded-md border border-line-strong bg-field px-1.5 font-mono text-[11px] text-fg" />
-    </label>
-  );
-}
-
-function Place({ info }: { info: ModelInfo | null }) {
-  if (!info) return <span className="text-[10.5px] text-faint">—</span>;
-  return <Tag tone={info.local ? "ok" : "neutral"}>{info.local ? "local" : info.provider?.label ?? "cloud"}</Tag>;
-}
-
-function Billing({ data, totals, windowBudget, window, onSaved, off = false }: { off?: boolean; data: Data | null; totals: { cost: number | null; monthly: number | null }; windowBudget: number | null; window: Win; onSaved: () => void }) {
-  const [budget, setBudget] = useState(data?.budget ? String(data.budget) : "");
-  const [period, setPeriod] = useState<Period>(data?.period ?? "month");
-  const [busy, setBusy] = useState(false);
-  const az = data?.azure;
-  const st = data?.budgetState;
-  // The shadows in this window, from their own list: none of them is in a figure above.
-  const [now] = useState(() => Date.now());
-  const shadowWindow = shadowSummary(data?.shadow ?? [], window === "all" ? undefined : new Date(now - winMs(window)));
-  const save = async () => {
-    setBusy(true);
-    try {
-      await fetch("/api/finops", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ budget_usd: budget === "" ? null : Number(budget), period }) });
-      onSaved();
-    } finally {
-      setBusy(false);
-    }
-  };
+function PlanningView({ plan, error, name }: { plan: Planning | null; error: string; name: (a: string) => string }) {
+  if (error) return <p className="px-4 py-3"><Failure inline message={error} /></p>;
+  if (!plan) return <p className="px-4 py-3 text-[12px] text-faint">Reading the cost plan…</p>;
   return (
     <div className="flex flex-col">
-      <Fact k={`Journalled · ${window}`} v={off ? "Not connected" : fmtCost(totals.cost)} tone={off ? "text-faint" : undefined} />
-      {windowBudget !== null && <Fact k={`Budget scaled to ${window}`} v={`${fmtCost(windowBudget)} · ${totals.cost !== null ? pct(totals.cost / Math.max(0.01, windowBudget)) : "—"} used`} tone={totals.cost !== null && totals.cost > windowBudget ? "text-err" : undefined} />}
-      {st && data?.budget != null && (
-        <Fact k={`This ${data.period} so far`} v={st.exceeded ? `${fmtCost(st.spent)} of ${fmtCost(data.budget)} · exhausted, runs refused` : `${fmtCost(st.spent)} of ${fmtCost(data.budget)} · ${fmtCost(Math.max(0, st.remaining ?? 0))} left`} tone={st.exceeded ? "text-err" : undefined} />
-      )}
-      {/* L8, second round: a canary's shadow runs, beside the budget, never in it. */}
-      {st && (st.shadow_spent ?? 0) > 0 && <Fact k={`Shadow runs · this ${data?.period ?? "period"}`} v={shadowSpentLine(st.shadow_spent, (n) => fmtCost(n))} tone="text-faint" />}
-      {shadowWindow.runs > 0 && <Fact k={`Shadow runs · ${window}`} v={shadowBesideLine(shadowWindow, (n) => fmtCost(n))} tone="text-faint" />}
-      <Fact k="Run rate · month" v={off ? "Not connected" : fmtCost(totals.monthly)} tone={off ? "text-faint" : undefined} />
-      <Fact k="Cloud billed · month to date" v={az?.configured && !az.error ? `${az.currency ?? ""} ${az.mtd?.toFixed(2) ?? "—"}` : "no billing source on this deployment"} tone={az?.configured ? undefined : "text-faint"} />
-      <Fact k="Cloud billed · 7d" v={az?.configured && !az.error ? `${az.currency ?? ""} ${az.last7d?.toFixed(2) ?? "—"}` : off ? "Not connected" : "—"} tone={off ? "text-faint" : undefined} />
-      <div className="flex items-center gap-2 px-4 py-3">
-        <label className="flex items-center gap-2 text-[11.5px] text-dim">
-          Budget $
-          <input type="number" min={0} step="1" value={budget} onChange={(e) => setBudget(e.target.value)} placeholder="none" className="focusable h-7 w-24 rounded-md border border-line-strong bg-field px-1.5 font-mono text-[11px] text-fg" />
-        </label>
-        <span className="text-[11px] text-faint">per</span>
-        <div className="w-24">
-          <Pick value={period} onChange={setPeriod} options={[{ value: "day", label: "day" }, { value: "week", label: "week" }, { value: "month", label: "month" }]} aria-label="Budget period" />
-        </div>
-        <span className="text-[10.5px] text-ghost">{off ? "The rolling period\u2019s spend is held to it." : <>Runs are refused once the rolling period&rsquo;s spend reaches it.</>}</span>
-        <Button size="sm" variant="solid" permission="configure" loading={busy} onClick={save}>Set budget</Button>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-[11.5px]">
+          <thead>
+            <tr className="border-b border-line text-left text-[10.5px] text-faint">
+              <th className="px-3 py-2 font-medium">Agent › step</th>
+              <th className="px-3 py-2 font-medium">Model used</th>
+              <th className="px-3 py-2 text-right font-medium">Tokens in / out</th>
+              <th className="px-3 py-2 text-right font-medium">Recorded cost</th>
+              <th className="px-3 py-2 font-medium">The same tokens on each other offered, priced model</th>
+            </tr>
+          </thead>
+          <tbody>
+            {plan.steps.map((p) => (
+              <tr key={`${p.agent}/${p.node}`} className="border-b border-line align-top last:border-0">
+                <td className="px-3 py-2 whitespace-nowrap"><span className="text-dim">{name(p.agent)}</span> <span className="text-faint">›</span> <span className="font-mono text-[11px]">{p.node}</span></td>
+                <td className="px-3 py-2 font-mono text-[10.5px]">{p.models.join(", ")}</td>
+                <td className="tnum px-3 py-2 text-right text-dim">{fmtTokens(p.tokens_in)} / {fmtTokens(p.tokens_out)}</td>
+                <td className="tnum px-3 py-2 text-right">
+                  {groupCost(p)}
+                  {p.unpriced_calls > 0 && p.cost_usd !== null && <span className="block text-[10px] text-warn">{unpricedNote(p)}, not in it</span>}
+                </td>
+                <td className="px-3 py-2">
+                  {p.elsewhere.length ? (
+                    <span className="flex flex-wrap gap-x-4 gap-y-1">
+                      {p.elsewhere.map((e) => (
+                        <span key={e.model} className="tnum whitespace-nowrap">
+                          <Mono className="text-[10.5px]">{e.model}</Mono> {fmtUsd(e.cost_usd)}
+                          {e.difference_usd !== null && <span className={e.difference_usd < 0 ? "text-ok" : "text-faint"}> ({e.difference_usd < 0 ? "−" : "+"}{fmtUsd(Math.abs(e.difference_usd))})</span>}
+                        </span>
+                      ))}
+                    </span>
+                  ) : (
+                    <span className="text-faint">no other offered model has a price set</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {!plan.steps.length && <tr><td colSpan={5} className="px-3 py-5 text-center text-faint">No step made a model call in this window.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex flex-col gap-1 border-t border-line px-3 py-2 text-[10.5px] leading-[1.5] text-faint">
+        <span>{plan.basis}</span>
+        {plan.unpriced_models.length > 0 && <span className="text-warn">Given no figure, because no price is set: {plan.unpriced_models.join(", ")}.</span>}
+        {!plan.could_take_it.built && (
+          <span>
+            <span className="font-medium text-dim">Not built: whether a smaller model could take a step.</span> {plan.could_take_it.why}
+          </span>
+        )}
       </div>
     </div>
   );
 }
 
-function Fact({ k, v, tone }: { k: string; v: string; tone?: string }) {
+/* ═══════════════════ budgets ═══════════════════ */
+
+function Budgets({ state, rows, onSaved }: { state: BudgetState | null; rows: BudgetRow[]; onSaved: () => void }) {
+  const [amount, setAmount] = useState(state ? String(state.budget_usd) : "");
+  const [period, setPeriod] = useState<Period>(state?.period ?? "month");
+  const [busy, setBusy] = useState("");
+  const [said, setSaid] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const [useCases, setUseCases] = useState<UseCase[] | null>(null);
+  const [ucError, setUcError] = useState("");
+  const [uc, setUc] = useState("");
+  const [ucAmount, setUcAmount] = useState("");
+  const [ucPeriod, setUcPeriod] = useState<Period>("month");
+
+  useEffect(() => {
+    read<{ use_cases: UseCase[] }>("/api/use-cases")
+      .then((d) => setUseCases(Array.isArray(d.use_cases) ? d.use_cases : []))
+      .catch((e: Error) => {
+        setUseCases([]);
+        setUcError(e.message);
+      });
+  }, []);
+
+  /** A typed amount: the number when it is one, else the text as typed, so the service refuses it in its own words. */
+  const typed = (s: string): number | string => (Number.isFinite(Number(s.trim())) && s.trim() !== "" ? Number(s.trim()) : s.trim());
+
+  const act = async (what: string, run: () => Promise<Rec>, done: string, after?: () => void) => {
+    setBusy(what);
+    setSaid(null);
+    try {
+      await run();
+      after?.();
+      setSaid({ tone: "ok", text: done });
+      onSaved();
+    } catch (e) {
+      setSaid({ tone: "err", text: (e as Error).message });
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const useCaseRows = rows.filter((r) => r.scope === "use_case");
+  const nameOf = (workload: string) => useCases?.find((u) => u.workload === workload)?.name ?? "";
+  const by = (r: BudgetRow) => r.set_by?.name || r.set_by?.email || r.set_by?.sub || "";
+
   return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-line px-4 py-2 text-[11.5px] last:border-0">
-      <span className="text-faint">{k}</span>
-      <span className={`tnum text-right font-medium ${tone ?? "text-fg"}`}>{v}</span>
+    <div className="flex flex-col">
+      {said && (
+        <p className={`border-b border-line px-4 py-2 text-[11.5px] leading-[1.5] ${said.tone === "ok" ? "text-ok" : "text-err"}`} role={said.tone === "err" ? "alert" : undefined}>
+          {said.tone === "err" && <span className="font-medium">Not saved. </span>}
+          {said.text}
+        </p>
+      )}
+
+      {/* the deployment's */}
+      <div className="flex flex-col gap-2 border-b border-line px-4 py-3">
+        <span className="text-[12px] font-semibold text-fg">The deployment</span>
+        <span className="text-[11.5px] leading-[1.5] text-dim">
+          {state
+            ? `${fmtUsd(state.budget_usd)} per ${state.period}: ${fmtUsd(state.spent)} spent since ${when(state.since)}, ${state.exceeded ? "nothing left, so new runs are refused and running ones pause" : `${fmtUsd(state.remaining)} left`}${state.unpriced ? `; ${plural(state.unpriced, "call")} with no price set are not counted` : ""}.`
+            : "No budget is set for the deployment: every recorded call still counts in the figures above, and nothing is refused or paused for spend."}
+        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2 text-[11.5px] text-dim">
+            USD
+            <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="amount" aria-label="Deployment budget in USD" className="focusable h-7 w-28 rounded-md border border-line-strong bg-field px-1.5 font-mono text-[11px] text-fg" />
+          </label>
+          <span className="text-[11px] text-faint">per</span>
+          <div className="w-24">
+            <Pick value={period} onChange={setPeriod} options={[{ value: "day", label: "day" }, { value: "week", label: "week" }, { value: "month", label: "month" }]} aria-label="Budget period" />
+          </div>
+          <Button size="sm" variant="solid" tone="ink" permission="configure" loading={busy === "deployment"} disabled={!amount.trim()}
+            onClick={() => act("deployment", () => write("POST", "/api/finops", { budget_usd: typed(amount), period }), `The deployment's budget is ${amount.trim()} USD per ${period}.`)}>
+            Set the budget
+          </Button>
+          {state && (
+            <Button size="sm" variant="solid" tone="err" permission="configure" loading={busy === "remove"}
+              onClick={() => act("remove", () => write("POST", "/api/finops", { budget_usd: null, period: null }), "The deployment's budget is removed.", () => setAmount(""))}>
+              Remove it
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* each use case's */}
+      <div className="flex flex-col gap-2 px-4 py-3">
+        <span className="text-[12px] font-semibold text-fg">Use cases</span>
+        <span className="text-[11.5px] leading-[1.5] text-faint">The calls of the runs that served a use case count against its budget, beside the deployment&rsquo;s.</span>
+        {useCaseRows.length > 0 && (
+          <table className="w-full border-collapse text-[11.5px]">
+            <thead>
+              <tr className="border-b border-line text-left text-[10.5px] text-faint">
+                <th className="py-1.5 pr-3 font-medium">Use case</th>
+                <th className="px-3 py-1.5 text-right font-medium">Budget</th>
+                <th className="px-3 py-1.5 text-right font-medium">Spent in the period</th>
+                <th className="px-3 py-1.5 text-right font-medium">Left</th>
+                <th className="px-3 py-1.5 font-medium">Set</th>
+                <th className="py-1.5 pl-3" />
+              </tr>
+            </thead>
+            <tbody>
+              {useCaseRows.map((r) => (
+                <tr key={r.key} className="border-b border-line align-top last:border-0">
+                  <td className="py-1.5 pr-3">
+                    <span className="block text-fg">{nameOf(r.key) || r.key}</span>
+                    <Mono className="text-[10px] text-faint">{r.key}</Mono>
+                  </td>
+                  <td className="tnum px-3 py-1.5 text-right">{fmtUsd(r.amount_usd)} per {r.period}</td>
+                  <td className="tnum px-3 py-1.5 text-right">
+                    {fmtUsd(r.spent_usd)}
+                    {r.unpriced_calls > 0 && <span className="block text-[10px] text-warn">{plural(r.unpriced_calls, "call")} with no price set, not counted</span>}
+                  </td>
+                  <td className={`tnum px-3 py-1.5 text-right ${r.remaining_usd <= 0 ? "text-err" : ""}`}>{r.remaining_usd <= 0 ? "spent" : fmtUsd(r.remaining_usd)}</td>
+                  <td className="px-3 py-1.5 text-dim">{by(r)}{r.set_at ? `, ${when(r.set_at)}` : ""}</td>
+                  <td className="py-1.5 pl-3 text-right">
+                    <Button size="sm" variant="solid" tone="err" permission="configure" loading={busy === `uc:${r.key}`}
+                      onClick={() => act(`uc:${r.key}`, () => write("DELETE", `/api/budgets/use-cases/${encodeURIComponent(r.key)}`), `The budget of ${nameOf(r.key) || r.key} is removed.`)}>
+                      Remove
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {ucError && <Failure inline message={ucError} />}
+        {useCases?.length === 0 && !ucError && <span className="text-[11.5px] text-faint">No use case is registered, so none can have a budget.</span>}
+        {useCases && useCases.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="w-64">
+              <Pick value={uc} onChange={setUc} options={[{ value: "", label: "choose a use case" }, ...useCases.map((u) => ({ value: u.workload, label: `${u.name} (${u.workload})` }))]} aria-label="Use case" />
+            </div>
+            <label className="flex items-center gap-2 text-[11.5px] text-dim">
+              USD
+              <input value={ucAmount} onChange={(e) => setUcAmount(e.target.value)} inputMode="decimal" placeholder="amount" aria-label="Use case budget in USD" className="focusable h-7 w-28 rounded-md border border-line-strong bg-field px-1.5 font-mono text-[11px] text-fg" />
+            </label>
+            <span className="text-[11px] text-faint">per</span>
+            <div className="w-24">
+              <Pick value={ucPeriod} onChange={setUcPeriod} options={[{ value: "day", label: "day" }, { value: "week", label: "week" }, { value: "month", label: "month" }]} aria-label="Use case budget period" />
+            </div>
+            <Button size="sm" variant="solid" tone="ink" permission="configure" loading={busy === "uc"} disabled={!uc || !ucAmount.trim()}
+              onClick={() => act("uc", () => write("PUT", `/api/budgets/use-cases/${encodeURIComponent(uc)}`, { amount_usd: typed(ucAmount), period: ucPeriod }), `The budget of ${nameOf(uc) || uc} is ${ucAmount.trim()} USD per ${ucPeriod}.`)}>
+              Set its budget
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════ routing ═══════════════════ */
+
+function Routing({ agents, config, bySteps, window, onSaved }: { agents: AgentSpec[]; config: Config; bySteps: Spend["by_step"]; window: Win; onSaved: () => void }) {
+  const [routes, setRoutes] = useState<Record<string, string>>(config.node_routes ?? {});
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<{ tone: "ok" | "err" | "warn"; text: string } | null>(null);
+  // Compared entry by entry, sorted: the stored routes come back in no particular key order.
+  const sorted = (r: Record<string, string>) => JSON.stringify(Object.entries(r).sort(([a], [b]) => a.localeCompare(b)));
+  const dirty = sorted(routes) !== sorted(config.node_routes ?? {});
+
+  const rows = agents.flatMap((a) => a.nodes.filter((n) => n.effective !== null).map((n) => ({ key: `${a.id}/${n.id}`, agent: a, node: n, f: bySteps.find((x) => x.agent === a.id && x.node === n.id) })));
+  const options = [{ value: "", label: "no route" }, ...config.models.map((m) => ({ value: m.id, label: m.label || m.id }))];
+  const setRoute = (key: string, model: string) =>
+    setRoutes((r) => {
+      const next = { ...r };
+      if (model) next[key] = model;
+      else delete next[key];
+      return next;
+    });
+
+  const save = async () => {
+    setBusy(true);
+    setSaid(null);
+    try {
+      const d = await write("POST", "/api/config", { node_routes: routes });
+      const dropped = (d.dropped && typeof d.dropped === "object" ? (d.dropped as Rec).node_routes : null) as Record<string, string> | null;
+      setSaid(dropped && Object.keys(dropped).length ? { tone: "warn", text: `Saved, except: ${Object.entries(dropped).map(([k, why]) => `${k} (${why})`).join("; ")}.` } : { tone: "ok", text: "Routes saved: each applies from the step's next call." });
+      onSaved();
+    } catch (e) {
+      setSaid({ tone: "err", text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col">
+      <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2">
+        {said && <span className={`text-[11.5px] ${said.tone === "ok" ? "text-ok" : said.tone === "warn" ? "text-warn" : "text-err"}`}>{said.tone === "err" ? `Not saved. ${said.text}` : said.text}</span>}
+        <span className="grow" />
+        {dirty && (
+          <Button size="sm" variant="solid" tone="err" onClick={() => setRoutes(config.node_routes ?? {})}>
+            Discard
+          </Button>
+        )}
+        <Button size="sm" variant="solid" tone="ink" permission="configure" loading={busy} disabled={!dirty} onClick={save}>
+          Save routes
+        </Button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-[11.5px]">
+          <thead>
+            <tr className="border-b border-line text-left text-[10.5px] text-faint">
+              {["Agent › step", "The step names", "Its calls go to now", "Route", `Calls · ${window}`, `Cost · ${window}`].map((h, i) => (
+                <th key={h} className={`px-3 py-2 font-medium whitespace-nowrap ${i >= 4 ? "text-right" : ""}`}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const changed = (routes[r.key] ?? "") !== (config.node_routes?.[r.key] ?? "");
+              return (
+                <tr key={r.key} className={`border-b border-line align-top last:border-0 ${routes[r.key] ? "bg-ok/5" : ""}`}>
+                  <td className="px-3 py-1.5 whitespace-nowrap"><span className="text-dim">{r.agent.name}</span> <span className="text-faint">›</span> <span className="font-mono text-[11px]">{r.node.id}</span></td>
+                  <td className="px-3 py-1.5 text-[10.5px] text-faint">{r.node.model ? `model ${r.node.model}` : r.node.model_class ? `the ${r.node.model_class} tier` : "nothing: the deployment default"}</td>
+                  <td className="px-3 py-1.5">
+                    {r.node.effective?.error ? (
+                      <span className="text-[11px] text-err">{r.node.effective.error}</span>
+                    ) : (
+                      <span className="flex flex-col">
+                        <Mono className="text-[10.5px]">{r.node.effective?.model}</Mono>
+                        <span className="text-[10px] text-faint">{changed ? "changes when the routes are saved" : r.node.effective?.rule}</span>
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-1.5"><div className="w-56"><Pick value={routes[r.key] ?? ""} onChange={(v) => setRoute(r.key, v)} options={options} aria-label={`Route ${r.key}`} /></div></td>
+                  <td className="tnum px-3 py-1.5 text-right text-dim">{r.f?.calls ?? 0}</td>
+                  <td className="tnum px-3 py-1.5 text-right">{r.f ? groupCost(r.f) : "$0.00"}</td>
+                </tr>
+              );
+            })}
+            {!rows.length && <tr><td colSpan={6} className="px-3 py-5 text-center text-faint">No agent has a step that calls a model.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-line px-3 py-2 text-[10.5px] text-faint">
+        <span>Deployment default: <Mono>{config.default_model || "none"}</Mono></span>
+        {(["small", "medium", "large"] as const).map((c) => (
+          <span key={c}>{c} tier: <Mono>{config.class_defaults?.[c] || "no default"}</Mono></span>
+        ))}
+        <span className="grow" />
+        <Link href="/configuration?tab=models" className="underline">Models, prices, clearances and fallbacks in Configuration</Link>
+      </div>
     </div>
   );
 }
 
 /* ═══════════════════ drill-downs ═══════════════════ */
 
-function DrillView({ drill, data, book, profiles, evidence, verdicts, routes, onRoute, onClose, onDrill, agentsById }: {
-  drill: Drill; data: Data | null; book: Map<string, ModelInfo>;
-  profiles: { agent: string; node: string; spec: NodeSpec | undefined; calls: number; runs: number; avgIn: number; avgOut: number; avgMs: number; toolRate: number; cost: number | null; share: number; models: string[]; effective: string; rows: Call[] }[];
-  evidence: Map<string, { batch: string; at: string; incumbent: string; rows: (Eval & { rate: number; clears: boolean })[]; best: string | null }>;
-  verdicts: { p: { agent: string; node: string }; action: string; target: ModelInfo | null; reasons: string[]; saving: number | null; projected: number | null }[];
-  routes: Record<string, string>; onRoute: (key: string, model: string) => void; onClose: () => void; onDrill: (d: Drill) => void; agentsById: Map<string, AgentSpec>;
-}) {
-  const callCols = [
-    { label: "When", cell: (c: Call) => <span className="whitespace-nowrap text-dim">{ago(c.at)}</span> },
-    { label: "Run", cell: (c: Call) => <Link href={`/runs?id=${encodeURIComponent(c.run)}`} className="font-mono text-[10.5px] underline decoration-line-strong" onClick={(e) => e.stopPropagation()}>{c.run.slice(0, 28)}</Link> },
-    { label: "Step", cell: (c: Call) => <span><span className="text-dim">{agentsById.get(c.system)?.name ?? c.system}</span> › <span className="font-mono text-[10.5px]">{c.node}</span></span> },
-    { label: "Model", cell: (c: Call) => <span className="flex items-center gap-1.5 font-mono text-[10.5px]">{c.model}<Place info={book.get(c.model) ?? null} /></span> },
-    { label: "In / out", cell: (c: Call) => `${fmtTokens(c.in)} / ${fmtTokens(c.out)}`, right: true },
-    { label: "Latency", cell: (c: Call) => fmtMs(c.ms), right: true },
-    { label: "Tools", cell: (c: Call) => (c.tools ? String(c.tools) : "—"), right: true },
-    { label: "Cost", cell: (c: Call) => fmtCost(c.cost, true), right: true },
-  ];
-  const runCols = [
-    { label: "When", cell: (r: Run) => <span className="whitespace-nowrap text-dim">{ago(r.at)}</span> },
-    { label: "Run", cell: (r: Run) => <Link href={`/runs?id=${encodeURIComponent(r.id)}`} className="font-mono text-[10.5px] underline decoration-line-strong" onClick={(e) => e.stopPropagation()}>{r.id.slice(0, 32)}</Link> },
-    { label: "Workflow", cell: (r: Run) => agentsById.get(r.system)?.name ?? r.system },
-    { label: "State", cell: (r: Run) => <Status tone={r.state === "done" ? "ok" : r.state === "failed" || r.state === "killed" ? "err" : r.state === "suspended" ? "warn" : "neutral"}>{r.state}</Status> },
-    { label: "Calls", cell: (r: Run) => String(r.modelCalls), right: true },
-    { label: "Tokens", cell: (r: Run) => fmtTokens(r.tokens.in + r.tokens.out), right: true },
-    { label: "Time", cell: (r: Run) => fmtMs(r.ms), right: true },
-    { label: "Cost", cell: (r: Run) => fmtCost(r.cost, true), right: true },
-  ];
-
+function DrillView({ drill, now, name, onClose }: { drill: Drill; now: number; name: (a: string) => string; onClose: () => void }) {
+  const cost = (c: number | null, unpriced: boolean) => (c !== null ? fmtUsd(c) : unpriced ? "no price set" : "none");
   if (drill.kind === "calls") {
     return (
       <DrillModal title={drill.title} subtitle={drill.subtitle} count={drill.rows.length} onClose={onClose}>
-        <DrillTable columns={callCols} rows={drill.rows.slice(0, 500)} keyOf={(c) => `${c.run}/${c.node}/${c.at}/${c.in}/${c.out}`} empty="No model calls match." />
+        <DrillTable
+          columns={[
+            { label: "When", cell: (c: Call) => <span className="whitespace-nowrap text-dim">{ago(c.at, now)}</span> },
+            {
+              label: "Where",
+              cell: (c: Call) =>
+                c.source === "run" ? (
+                  <span className="flex flex-col">
+                    <span><span className="text-dim">{name(c.system)}</span> › <span className="font-mono text-[10.5px]">{c.node}</span></span>
+                    <Link href={`/runs?id=${encodeURIComponent(c.run)}`} className="font-mono text-[10px] text-faint underline decoration-line-strong" onClick={(e) => e.stopPropagation()}>{c.run}</Link>
+                  </span>
+                ) : (
+                  <span className="flex flex-col">
+                    <Link href={`/applications/${encodeURIComponent(c.application)}`} className="underline decoration-line-strong" onClick={(e) => e.stopPropagation()}>{c.application}</Link>
+                    <span className="text-[10px] text-faint">through the gateway</span>
+                  </span>
+                ),
+            },
+            { label: "Model", cell: (c: Call) => <Mono className="text-[10.5px]">{c.model}</Mono> },
+            { label: "In / out", cell: (c: Call) => `${fmtTokens(c.in)} / ${fmtTokens(c.out)}`, right: true },
+            { label: "Latency", cell: (c: Call) => fmtMs(c.ms), right: true },
+            { label: "Cost", cell: (c: Call) => <span className={c.unpriced ? "text-warn" : ""}>{cost(c.cost, c.unpriced)}</span>, right: true },
+          ]}
+          rows={drill.rows.slice(0, 500)}
+          keyOf={(c) => c.ref}
+          empty="No recorded call matches."
+        />
       </DrillModal>
     );
   }
-  if (drill.kind === "runs") {
-    return (
-      <DrillModal title={drill.title} subtitle={drill.subtitle} count={drill.rows.length} onClose={onClose}>
-        <DrillTable columns={runCols} rows={drill.rows.slice(0, 500)} keyOf={(r) => r.id} empty="No runs match." />
-      </DrillModal>
-    );
-  }
-  if (drill.kind === "model") {
-    const info = book.get(drill.id) ?? null;
-    const rows = profiles.flatMap((p) => p.rows.filter((c) => c.model === drill.id));
-    const steps = profiles.filter((p) => p.rows.some((c) => c.model === drill.id));
-    return (
-      <DrillModal title={drill.id} subtitle={info ? `${info.label} · ${info.local ? `local on ${info.provider?.label ?? "local hardware"}` : info.provider?.label ?? "the deployment's model endpoint"}${info.tier ? ` · ${info.tier} tier` : ""}` : "not in the offered list — costed at the estimate rate"} count={rows.length} onClose={onClose}>
-        <div className="grid grid-cols-2 gap-x-6 border-b border-line px-4 py-2 sm:grid-cols-4">
-          <Fact k="$/M in" v={info?.price_in === null || !info ? `$${(data?.estimate?.in ?? 0).toFixed(2)} est.` : `$${info.price_in}${info.estimated ? " est." : ""}`} />
-          <Fact k="$/M out" v={info?.price_out === null || !info ? `$${(data?.estimate?.out ?? 0).toFixed(2)} est.` : `$${info.price_out}${info.estimated ? " est." : ""}`} />
-          <Fact k="Cost in window" v={fmtCost(sumCost(rows.map((c) => c.cost)))} />
-          <Fact k="Steps using it" v={String(steps.length)} />
-        </div>
-        <p className="px-4 pt-3 pb-1 text-[11px] font-semibold text-dim">Steps</p>
-        <div className="flex flex-wrap gap-1.5 px-4 pb-3">
-          {steps.map((p) => (
-            <button key={`${p.agent}/${p.node}`} type="button" onClick={() => onDrill({ kind: "node", agent: p.agent, node: p.node })} className="focusable rounded-sm border border-line px-2 py-1 font-mono text-[10.5px] hover:bg-raise/50">
-              {agentsById.get(p.agent)?.name ?? p.agent} › {p.node}
-            </button>
-          ))}
-        </div>
-        <DrillTable columns={callCols} rows={rows.slice(0, 500)} keyOf={(c) => `${c.run}/${c.node}/${c.at}/${c.in}`} />
-      </DrillModal>
-    );
-  }
-  // node
-  const p = profiles.find((x) => x.agent === drill.agent && x.node === drill.node);
-  const v = verdicts.find((x) => x.p.agent === drill.agent && x.p.node === drill.node);
-  const spec = p?.spec ?? agentsById.get(drill.agent)?.nodes.find((n) => n.id === drill.node);
-  const key = `${drill.agent}/${drill.node}`;
-  const ev = evidence.get(drill.agent);
   return (
-    <DrillModal
-      title={`${agentsById.get(drill.agent)?.name ?? drill.agent} › ${drill.node}`}
-      subtitle={spec?.purpose || `A ${spec?.harness ?? "sequence"} step.`}
-      count={p?.calls}
-      onClose={onClose}
-      actions={
-        data && (
-          <span className="flex items-center gap-2">
-            <span className="text-[10.5px] text-faint">Route to</span>
-            <div className="w-52">
-              <Pick value={routes[key] ?? ""} onChange={(m) => onRoute(key, m)} options={[{ value: "", label: "no override" }, ...data.config.models.map((m) => ({ value: m.id, label: `${m.label}${book.get(m.id)?.local ? " · local" : ""}` }))]} aria-label="Route this step" />
-            </div>
-          </span>
-        )
-      }
-    >
-      <div className="grid grid-cols-2 gap-x-6 border-b border-line px-4 py-2 sm:grid-cols-4">
-        <Fact k="Pattern" v={spec?.harness ?? "—"} />
-        <Fact k="Effective model" v={p?.effective || "—"} />
-        <Fact k="Tool grants" v={spec ? `${spec.tools} · ${spec.risk}${spec.sinks ? ` · ${spec.sinks} sink${spec.sinks === 1 ? "" : "s"}` : ""}` : "—"} />
-        <Fact k="Typed contract" v={spec?.structured ? "yes" : "no"} />
-        <Fact k="Calls · runs" v={p ? `${p.calls} · ${p.runs}` : "0"} />
-        <Fact k="Avg tokens in / out" v={p ? `${fmtTokens(p.avgIn)} / ${fmtTokens(p.avgOut)}` : "—"} />
-        <Fact k="Avg latency" v={fmtMs(p?.avgMs ?? null)} />
-        <Fact k="Cost in window" v={fmtCost(p?.cost ?? null)} />
-      </div>
-      {v && (
-        <div className="flex flex-col gap-1 border-b border-line px-4 py-3">
-          <span className="flex items-center gap-2 text-[11px] font-semibold text-dim">
-            Assessment
-            <Status tone={v.action === "handoff" ? "ok" : v.action === "trial" ? "warn" : "neutral"}>{v.action === "handoff" ? `Hand off to ${v.target?.id}` : v.action === "trial" ? `Trial on ${v.target?.id}` : "Keep"}</Status>
-            {v.saving !== null && v.action !== "keep" && <span className="tnum text-[11px] text-ok">saves {fmtCost(v.saving)} in window</span>}
-          </span>
-          <ul className="list-disc pl-5 text-[11.5px] leading-[1.5] text-dim">
-            {v.reasons.map((r) => <li key={r}>{r}</li>)}
-          </ul>
-        </div>
-      )}
-      {ev && (
-        <div className="flex flex-col border-b border-line px-4 py-3">
-          <span className="text-[11px] font-semibold text-dim">Eval evidence for this workflow ({ago(ev.at)})</span>
-          <span className="text-[11px] text-faint">{ev.rows.map((r) => `${r.model} ${r.passed}/${r.total} at ${fmtCost(r.cost_per_case, true)}/case`).join(" · ")}</span>
-        </div>
-      )}
-      <DrillTable columns={callCols} rows={(p?.rows ?? []).slice(0, 500)} keyOf={(c) => `${c.run}/${c.at}/${c.in}/${c.out}`} empty="No calls in the window." />
+    <DrillModal title={drill.title} subtitle={drill.subtitle} count={drill.rows.length} onClose={onClose}>
+      <DrillTable
+        columns={[
+          { label: "When", cell: (r: Run) => <span className="whitespace-nowrap text-dim">{ago(r.at, now)}</span> },
+          { label: "Run", cell: (r: Run) => <Link href={`/runs?id=${encodeURIComponent(r.id)}`} className="font-mono text-[10.5px] underline decoration-line-strong" onClick={(e) => e.stopPropagation()}>{r.id.slice(0, 32)}</Link> },
+          { label: "Agent", cell: (r: Run) => name(r.system) },
+          { label: "Started by", cell: (r: Run) => <span className="text-dim">{r.owner ? `${r.owner.name}${r.owner.team ? ` · ${r.owner.team}` : ""}` : "not recorded"}</span> },
+          { label: "State", cell: (r: Run) => <Status tone={r.state === "done" ? "ok" : r.state === "failed" || r.state === "killed" ? "err" : r.state === "suspended" ? "warn" : "neutral"}>{r.state}</Status> },
+          { label: "Calls", cell: (r: Run) => String(r.modelCalls), right: true },
+          { label: "Tokens", cell: (r: Run) => fmtTokens(r.tokens.in + r.tokens.out), right: true },
+          { label: "Cost", cell: (r: Run) => (r.cost !== null ? fmtUsd(r.cost) : r.modelCalls ? <span className="text-warn">no price set</span> : "$0.00"), right: true },
+        ]}
+        rows={drill.rows.slice(0, 500)}
+        keyOf={(r) => r.id}
+        empty="No run matches."
+      />
     </DrillModal>
   );
 }
+

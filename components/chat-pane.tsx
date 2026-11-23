@@ -1,47 +1,43 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { Button, Mono, Spinner, Status, Tag } from "./ui";
 import { Markdown } from "./markdown";
 import { ControlRef, resolveControl } from "./control-ref";
 import { api, errorText, type Schemas } from "@/lib/api/client";
-import { getConversation, listConversations, type Application, type Conversation, type ConversationRow } from "@/lib/api/l4";
+import { getConversation, listConversations, outcomeWords, type Application, type Conversation, type ConversationRow } from "@/lib/api/l4";
 import { controlLabel } from "@/lib/guardrails";
 
 /**
- * One chatbot, tried from the console (feature 2.3; backend/app/chat.py).
+ * One chatbot, talked to from the console (agentfactory/applications/chat.py).
  *
- * `POST /api/apps/{id}/chat` admits the application's own key or a signed-in
- * session with the `run` permission, so a person may talk to a chatbot
- * registered here without holding its key. The door injects the registered
- * system prompt, uses the policy's model, screens the message and the reply
- * as the gateway does and journals the turn. It answers the whole reply at
- * once (it does not stream), with the screener's verdicts and the usage; a
- * refusal names the control that ruled and the run it is recorded on. A
- * chatbot returns no citations: retrieval belongs to RAG applications,
- * which answer through the retrieval door.
+ * `POST /api/apps/{id}/chat` takes a person with the `run` permission through
+ * exactly the gateway's path: the chatbot's registered prompt, its first
+ * model, its data class, rate and budget, the screening of the message and
+ * of the reply, the leak check, and a journal row under the person's name.
+ * The reply comes whole (chat does not stream), with the screening flags it
+ * passed with and what it used and cost; the cost is null when its model has
+ * no price set. A refusal names its code, the control that ruled and the
+ * completion it is journalled as.
  *
- * The door keeps the conversation (`conversations`, `messages`) and takes
- * its id back to continue it. Earlier conversations are read from the
- * applications door (`GET /api/applications/{id}/conversations` and
- * `.../{cid}`, the `view` permission), which replays them redacted. A
- * conversation is continued here only by the principal who holds it: the
- * door would otherwise put this person's name on someone else's record.
+ * A conversation the service keeps is started by a person's first turn and
+ * held by that person: only they continue it. Earlier conversations are read
+ * from the applications register (`GET /api/applications/{id}/conversations`
+ * and `.../{cid}`), masked as journalled. One held by someone else, and one
+ * the application named itself through the gateway, are shown and not
+ * continued.
  */
 
 type ChatReply = Schemas["ChatReply"];
 
-/** A refusal from the chat door, with what it named. */
+/** A refusal from chat, with what it named. */
 export interface ChatRefusal {
   status: number;
   message: string;
   code: string;
   control: string;
-  /** `user` when the message was screened; "" otherwise. */
-  where: string;
-  run: string;
   conversation: string;
+  completion: string;
 }
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -54,10 +50,10 @@ export async function sendChat(app: string, message: string, conversation: strin
     const e = (error && typeof error === "object" ? error : {}) as Record<string, unknown>;
     return {
       ok: false,
-      refusal: { status: response.status, message: errorText(error, response), code: str(e.code), control: str(e.control), where: str(e.where), run: str(e.run), conversation: str(e.conversation) },
+      refusal: { status: response.status, message: errorText(error, response), code: str(e.code), control: str(e.control), conversation: str(e.conversation), completion: str(e.completion) },
     };
   } catch (e) {
-    return { ok: false, refusal: { status: 0, message: (e as Error).message || "the request did not reach the server", code: "", control: "", where: "", run: "", conversation: "" } };
+    return { ok: false, refusal: { status: 0, message: (e as Error).message || "the request did not reach the server", code: "", control: "", conversation: "", completion: "" } };
   }
 }
 
@@ -70,68 +66,51 @@ interface Exchange {
   reply: string;
   model: string;
   tokens: { in: number; out: number } | null;
+  /** Null when its model has no price set. */
   cost: number | null;
-  estimated: boolean;
   latency_ms: number | null;
-  run: string;
+  /** The completion the turn is journalled as. */
+  completion: string;
   /** Screener verdicts that let the turn through (`flag`). */
   flags: string[];
   refusal: { title: string; message: string; control: string } | null;
-  /** Read from the record, redacted; not typed in this window. */
+  /** Read from the record, masked; not typed in this window. */
   recorded: boolean;
 }
 
-/** What a refusal is, in a few words, from the door's status and code. */
-function refusalTitle(r: Pick<ChatRefusal, "status" | "code" | "where">): string {
-  if (r.code === "prompt_screened") return "Message refused by screening";
-  if (r.code === "response_screened") return "Reply withheld by screening";
-  if (r.code === "system_prompt_leaked") return "Reply withheld: it repeated the registered prompt";
-  if (r.status === 429) return "Rate limit reached";
-  if (r.status === 402) return "Budget spent";
-  if (r.status === 423) return "This chatbot is blocked";
-  if (r.status === 403) return "Not permitted";
+/** What a refusal is, in a few words: by its code, else by its status. */
+function refusalTitle(r: Pick<ChatRefusal, "status" | "code">): string {
+  if (r.code) return `Refused: ${outcomeWords(r.code)}`;
   if (r.status === 409) return "Not a chatbot";
   if (r.status === 404) return "Not on the register";
-  if (r.status === 502 || r.code.startsWith("upstream")) return "The model did not answer";
+  if (r.status === 403) return "Not permitted";
   if (r.status === 0) return "The request did not arrive";
   return "Refused";
 }
-
-const OUTCOME_TITLE: Record<string, string> = {
-  screened: "Refused by screening",
-  leaked: "Reply withheld: it repeated the registered prompt",
-  upstream_error: "The model did not answer",
-};
 
 /** The exchanges of a recorded conversation: per completion, the message that asked and the answer journalled for it. */
 function exchangesOf(c: Conversation): Exchange[] {
   const out: Exchange[] = [];
   const groups = new Map<string, Conversation["turns"]>();
-  for (const t of c.turns) {
-    const k = t.entry || `${t.at}`;
-    groups.set(k, [...(groups.get(k) ?? []), t]);
-  }
+  for (const t of c.turns) groups.set(t.completion, [...(groups.get(t.completion) ?? []), t]);
   for (const [key, turns] of groups) {
     const answer = turns[turns.length - 1];
-    // The completion's turns are the request as the model saw it: the history, then the new message.
+    // The completion's turns are what the caller sent: for a person's chat, the new message alone.
     const asked = [...turns.slice(0, -1)].reverse().find((t) => t.role === "user");
     if (!answer || answer.role !== "assistant") continue;
-    // Refused when the gateway says so, when a verdict blocked it, or when the journalled outcome is anything but ok.
-    const refused = answer.refused || answer.screened?.action === "block" || Boolean(answer.outcome && answer.outcome !== "ok");
     out.push({
       key,
       question: asked?.content ?? "",
       at: answer.at,
-      state: refused ? "refused" : "answered",
+      state: answer.refused ? "refused" : "answered",
       reply: answer.content,
       model: answer.model,
       tokens: answer.tokens,
       cost: answer.cost,
-      estimated: false,
       latency_ms: answer.latency_ms,
-      run: answer.run,
-      flags: !refused && answer.screened ? [answer.screened.control] : [],
-      refusal: refused ? { title: OUTCOME_TITLE[answer.outcome] ?? `Refused${answer.outcome ? `: ${answer.outcome.replace(/_/g, " ")}` : ""}`, message: "", control: answer.screened?.control ?? "" } : null,
+      completion: answer.completion,
+      flags: !answer.refused && answer.screened ? [answer.screened.control] : [],
+      refusal: answer.refused ? { title: refusalTitle({ status: 0, code: answer.outcome }), message: answer.reason, control: answer.screened?.control ?? "" } : null,
       recorded: true,
     });
   }
@@ -151,7 +130,7 @@ function ago(iso: string, now: number): string {
   return `${Math.round(h / 24)}d ago`;
 }
 
-const money = (c: number | null) => (c === null ? "unknown" : c === 0 ? "$0.00" : c < 0.005 ? "<$0.01" : c < 100 ? `$${c.toFixed(2)}` : `$${Math.round(c).toLocaleString("en-GB")}`);
+const money = (c: number) => (c === 0 ? "$0.00" : c < 0.01 ? `$${c.toFixed(6).replace(/0+$/, "")}` : c < 100 ? `$${c.toFixed(2)}` : `$${Math.round(c).toLocaleString("en-GB")}`);
 const duration = (ms: number) => (ms < 1000 ? `${Math.round(ms)}ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)}s` : `${(ms / 60000).toFixed(1)}m`);
 
 /** The control that ruled: its register row when it has one, else its key, in words when the console has them. */
@@ -167,18 +146,9 @@ function Control({ control }: { control: string }) {
   );
 }
 
-function RunLink({ run }: { run: string }) {
-  if (!run) return null;
-  return (
-    <Link href={`/runs?id=${encodeURIComponent(run)}`} className="focusable rounded-sm font-mono text-[10.5px] text-dim underline decoration-line-strong underline-offset-2 hover:decoration-fg">
-      {run}
-    </Link>
-  );
-}
-
 /* ═══════════════════ one exchange ═══════════════════ */
 
-function ExchangeView({ x, name, asker }: { x: Exchange; name: string; /** Who asked: "You", or the principal who holds a conversation read from the record. */ asker: string }) {
+function ExchangeView({ x, name, asker }: { x: Exchange; name: string; /** Who asked: "You", or whoever the record names. */ asker: string }) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex max-w-[86%] flex-col gap-1 self-end">
@@ -193,7 +163,7 @@ function ExchangeView({ x, name, asker }: { x: Exchange; name: string; /** Who a
         {x.state === "waiting" && (
           <div className="flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-[12.5px] text-dim">
             <Spinner size={13} />
-            Waiting for the reply. It arrives whole: this door does not stream.
+            Waiting for the reply. It arrives whole: chat does not stream.
           </div>
         )}
         {x.state === "answered" && (
@@ -217,12 +187,7 @@ function ExchangeView({ x, name, asker }: { x: Exchange; name: string; /** Who a
                 {x.tokens.in.toLocaleString("en-GB")} in · {x.tokens.out.toLocaleString("en-GB")} out
               </span>
             )}
-            {x.cost !== null && (x.state === "answered" || x.cost > 0) && (
-              <span className="tnum">
-                {money(x.cost)}
-                {x.estimated ? " estimated" : ""}
-              </span>
-            )}
+            {x.state === "answered" && <span className="tnum">{x.cost !== null ? money(x.cost) : "no price set"}</span>}
             {x.latency_ms !== null && x.latency_ms > 0 && <span className="tnum">{duration(x.latency_ms)}</span>}
             {x.flags.map((c) => (
               <span key={c} className="inline-flex flex-wrap items-center gap-1.5">
@@ -230,11 +195,7 @@ function ExchangeView({ x, name, asker }: { x: Exchange; name: string; /** Who a
                 <Control control={c} />
               </span>
             ))}
-            {x.run && (
-              <span className="inline-flex items-center gap-1">
-                on run <RunLink run={x.run} />
-              </span>
-            )}
+            {x.completion && <Mono className="text-[10px] text-ghost">{x.completion}</Mono>}
           </span>
         )}
       </div>
@@ -246,12 +207,13 @@ function ExchangeView({ x, name, asker }: { x: Exchange; name: string; /** Who a
 
 const MESSAGE_CAP = 50_000;
 
-export function ChatPane({ app, me }: { app: Application; /** The principal the door gives this person's turns: their email, else their subject. */ me: string }) {
+export function ChatPane({ app, me }: { app: Application; /** The person signed in: their email, else their subject, as a kept conversation names its holder. */ me: string }) {
   const [now] = useState(() => Date.now());
   const [convs, setConvs] = useState<ConversationRow[] | null>(null);
   const [convError, setConvError] = useState("");
   const [cid, setCid] = useState<string | null>(null);
-  const [holder, setHolder] = useState("");
+  /** The conversation open: whether the service keeps it (a person's chat), and who holds it. */
+  const [held, setHeld] = useState<{ kept: boolean; holder: string }>({ kept: true, holder: "" });
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
   const [opening, setOpening] = useState("");
   const [openError, setOpenError] = useState("");
@@ -282,7 +244,7 @@ export function ChatPane({ app, me }: { app: Application; /** The principal the 
 
   const fresh = () => {
     setCid(null);
-    setHolder("");
+    setHeld({ kept: true, holder: "" });
     setExchanges([]);
     setOpenError("");
   };
@@ -294,7 +256,7 @@ export function ChatPane({ app, me }: { app: Application; /** The principal the 
     try {
       const c = await getConversation(app.id, row.id);
       setCid(row.id);
-      setHolder(c.conversation.principal || row.principal);
+      setHeld({ kept: c.conversation.kept, holder: c.conversation.principal });
       setExchanges(exchangesOf(c));
     } catch (e) {
       setOpenError((e as Error).message);
@@ -303,10 +265,18 @@ export function ChatPane({ app, me }: { app: Application; /** The principal the 
     }
   };
 
-  // Another person's conversation is read, not continued; so is one whose holder the record does not name.
-  const foreign = cid !== null && exchanges.some((x) => x.recorded) && (!holder || !me || holder.toLowerCase() !== me.toLowerCase());
+  const mine = (holder: string) => Boolean(me) && holder.toLowerCase() === me.toLowerCase();
+  // A conversation the application named is not continued here; nor is one another person holds.
+  const named = cid !== null && !held.kept;
+  const foreign = cid !== null && held.kept && !mine(held.holder);
   const tooLong = draft.length > MESSAGE_CAP;
-  const cannot = app.blocked ? "This chatbot is blocked by an operator; every door refuses until the block is lifted." : foreign ? `This conversation is held by ${holder || "a principal the record does not name"}. It is shown as recorded and is not continued from here.` : "";
+  const cannot = app.blocked
+    ? "This chatbot is blocked: the gateway refuses every call until the block is lifted."
+    : named
+      ? "This conversation was named by the application through the gateway. It is shown as recorded and is not continued from here."
+      : foreign
+        ? `This conversation is held by ${held.holder || "a person the record does not name"}. It is shown as recorded and is not continued by anyone else.`
+        : "";
 
   const send = async () => {
     const message = draft.trim();
@@ -315,38 +285,38 @@ export function ChatPane({ app, me }: { app: Application; /** The principal the 
     setDraft("");
     setOpenError("");
     setSending(true);
-    setExchanges((xs) => [...xs, { key, question: message, at: new Date().toISOString(), state: "waiting", reply: "", model: "", tokens: null, cost: null, estimated: false, latency_ms: null, run: "", flags: [], refusal: null, recorded: false }]);
+    setExchanges((xs) => [...xs, { key, question: message, at: new Date().toISOString(), state: "waiting", reply: "", model: "", tokens: null, cost: null, latency_ms: null, completion: "", flags: [], refusal: null, recorded: false }]);
     const answer = await sendChat(app.id, message, cid);
     const patch = (p: Partial<Exchange>) => setExchanges((xs) => xs.map((x) => (x.key === key ? { ...x, ...p } : x)));
     if (answer.ok) {
       const r = answer.reply;
+      const usage = r.usage as Partial<ChatReply["usage"]> & { cost?: number | null };
       setCid(r.conversation);
-      setHolder(r.principal || me);
+      setHeld({ kept: true, holder: r.principal || me });
       patch({
         state: "answered",
         reply: r.reply,
-        model: r.usage.model,
-        tokens: { in: r.usage.tokens.in, out: r.usage.tokens.out },
-        cost: r.usage.cost,
-        estimated: r.usage.estimated,
-        latency_ms: r.usage.latency_ms,
-        run: r.usage.run,
+        model: usage.model ?? "",
+        tokens: usage.tokens ? { in: usage.tokens.in, out: usage.tokens.out } : null,
+        cost: typeof usage.cost === "number" ? usage.cost : null,
+        latency_ms: typeof usage.latency_ms === "number" ? usage.latency_ms : null,
+        completion: usage.completion ?? "",
         flags: [...new Set((r.screened ?? []).map((v) => str(v.control)).filter(Boolean))],
       });
     } else {
       const r = answer.refusal;
-      // A refusal after the conversation was opened still belongs to it.
+      // A refusal journalled in a conversation still belongs to it.
       if (r.conversation) {
         setCid(r.conversation);
-        setHolder((h) => h || me);
+        setHeld((h) => ({ kept: true, holder: h.holder || me }));
       }
-      patch({ state: "refused", run: r.run, refusal: { title: refusalTitle(r), message: r.message, control: r.control } });
+      patch({ state: "refused", completion: r.completion, refusal: { title: refusalTitle(r), message: r.message, control: r.control } });
     }
     setSending(false);
     readConversations();
   };
 
-  const model = app.policy.model || app.policy.models[0] || "";
+  const model = app.policy.models[0] ?? "";
 
   return (
     <section className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
@@ -355,8 +325,7 @@ export function ChatPane({ app, me }: { app: Application; /** The principal the 
         <Mono className="text-[10.5px] text-faint">{app.id}</Mono>
         {app.blocked ? <Status tone="err">blocked</Status> : <Status tone="ok">admitted</Status>}
         <span className="text-[11px] leading-[1.55] text-faint">
-          {model ? `model ${model}` : "the deployment’s default model"} · screening {app.policy.screen === "block" ? "blocks a hit" : "flags a hit and lets it through"} ·{" "}
-          {app.policy.system_prompt ? "registered system prompt" : "no registered system prompt"}
+          model {model} · {app.policy.data_class} data · {app.policy.system_prompt ? "registered system prompt" : "no registered system prompt"} · screening refuses a block and records a flag
         </span>
         <span className="grow" />
         <Button size="sm" variant="solid" tone="neutral" href={`/applications/${encodeURIComponent(app.id)}`}>
@@ -379,34 +348,32 @@ export function ChatPane({ app, me }: { app: Application; /** The principal the 
             {convs === null && <span className="px-3 py-3 text-[11.5px] text-faint">Reading the conversations…</span>}
             {convError && <span className="px-3 py-3 text-[11.5px] leading-[1.5] text-err">{convError}</span>}
             {convs?.length === 0 && !convError && <span className="px-3 py-3 text-[11.5px] leading-[1.5] text-faint">No conversation is on the record for this chatbot yet.</span>}
-            {(convs ?? []).map((c) => {
-              const mine = Boolean(me) && c.principal.toLowerCase() === me.toLowerCase();
-              return (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => void open(c)}
-                  aria-current={cid === c.id || undefined}
-                  className={`focusable flex cursor-pointer flex-col gap-0.5 border-b border-line px-3 py-2 text-left last:border-0 ${cid === c.id ? "bg-raise/80" : "hover:bg-raise/50"}`}
-                >
-                  <span className="flex items-center gap-1.5">
-                    <span className="truncate text-[12px] font-medium text-fg">{mine ? "You" : c.principal || "no principal"}</span>
-                    <span className="grow" />
-                    <span className="shrink-0 text-[10.5px] text-faint">{opening === c.id ? "opening…" : ago(c.last, now)}</span>
+            {(convs ?? []).map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => void open(c)}
+                aria-current={cid === c.id || undefined}
+                className={`focusable flex cursor-pointer flex-col gap-0.5 border-b border-line px-3 py-2 text-left last:border-0 ${cid === c.id ? "bg-raise/80" : "hover:bg-raise/50"}`}
+              >
+                <span className="flex items-center gap-1.5">
+                  <span className="truncate text-[12px] font-medium text-fg">{c.kept ? (mine(c.principal) ? "You" : c.principal || "a person not recorded") : "named by the application"}</span>
+                  <span className="grow" />
+                  <span className="shrink-0 text-[10.5px] text-faint">{opening === c.id ? "opening…" : ago(c.last, now)}</span>
+                </span>
+                <span className="flex flex-wrap items-center gap-x-2 text-[10.5px] text-faint">
+                  <span className="tnum">
+                    {c.completions} turn{c.completions === 1 ? "" : "s"}
                   </span>
-                  <span className="flex flex-wrap items-center gap-x-2 text-[10.5px] text-faint">
-                    <span className="tnum">
-                      {c.turns} turn{c.turns === 1 ? "" : "s"}
-                    </span>
-                    {c.refusals > 0 && <span className="tnum text-err">{c.refusals} refused</span>}
-                    <span className="tnum">{money(c.cost)}</span>
-                  </span>
-                  <span className="truncate font-mono text-[10px] text-ghost">{c.id}</span>
-                </button>
-              );
-            })}
+                  {c.refusals > 0 && <span className="tnum text-err">{c.refusals} refused</span>}
+                  <span className="tnum">{c.cost !== null ? money(c.cost) : c.unpriced ? "no price set" : ""}</span>
+                  {c.cost !== null && c.unpriced > 0 && <span className="tnum">+ {c.unpriced} unpriced</span>}
+                </span>
+                <span className="truncate font-mono text-[10px] text-ghost">{c.id}</span>
+              </button>
+            ))}
           </div>
-          <p className="border-t border-line px-3 py-2 text-[10.5px] leading-[1.5] text-ghost">Everyone&rsquo;s conversations with this chatbot, newest first, replayed with secrets and personal data redacted.</p>
+          <p className="border-t border-line px-3 py-2 text-[10.5px] leading-[1.5] text-ghost">Everyone&rsquo;s conversations with this chatbot, newest first, replayed with secrets and personal data masked.</p>
         </div>
 
         {/* ── the conversation ── */}
@@ -417,17 +384,17 @@ export function ChatPane({ app, me }: { app: Application; /** The principal the 
               <div className="m-auto flex max-w-[46ch] flex-col items-center gap-1.5 text-center">
                 <span className="text-[13px] font-medium text-fg">A new conversation</span>
                 <span className="text-[12.5px] leading-[1.55] text-dim">
-                  What you send goes to the chatbot as it is registered: its system prompt, its model, its screening and its limits. Every turn is journalled under your name.
+                  What you send goes to the chatbot as it is registered: its system prompt, its first model, its data class, its rate and budget, and its screening. Every turn is journalled under your name, and only you can continue the conversation.
                 </span>
               </div>
             )}
             {cid && exchanges.some((x) => x.recorded) && (
               <span className="self-center text-[10.5px] text-ghost">
-                Conversation <span className="font-mono">{cid}</span>, as recorded: secrets and personal data are redacted.
+                Conversation <span className="font-mono">{cid}</span>, as recorded: secrets and personal data are masked.
               </span>
             )}
             {exchanges.map((x) => (
-              <ExchangeView key={x.key} x={x} name={app.name} asker={foreign && x.recorded ? holder || "A principal the record does not name" : "You"} />
+              <ExchangeView key={x.key} x={x} name={app.name} asker={x.recorded && (named || foreign) ? (named ? "the application" : held.holder || "a person the record does not name") : "You"} />
             ))}
           </div>
 

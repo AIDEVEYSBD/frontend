@@ -10,7 +10,7 @@ import { Chips, FilterBar, SearchBox, type Chip } from "./filters";
 import { Figures, PageHeader, Section } from "./section";
 import { WindowPick, winMs, type Win } from "./window-pick";
 import { ApproveDialog } from "./approve";
-import { BudgetHolds, holdsOf } from "./budget-holds";
+import { PausedAtBudget, holdsOf } from "./paused-at-budget";
 import { useDoor, Failure } from "./pending";
 import { Deadline, ShapeTag, useNow } from "./gate-form";
 import { listGates, type Gate } from "@/lib/api/l5";
@@ -34,10 +34,10 @@ import type { BudgetHoldList } from "@/lib/api/pending";
  * gives them (`closed` in `GET /api/approvals`, the 100 most recent): who
  * answered, how, when, and the note they left.
  *
- * Beside the gates, the runs paused at their budget (components/budget-holds.tsx):
- * a second queue for a person, decided with the same permission. Its door is
- * ahead of the backend (`budgetHolds` in lib/api/pending.ts); the page reads
- * it once, for the figure and for the section.
+ * Beside the gates, the runs paused at a budget (components/paused-at-budget.tsx,
+ * `GET /api/budget/holds`): a second queue for a person, decided with the
+ * approve permission by anyone but the run's starter. The page reads it
+ * once, for the figure and for the section, and again every 15 seconds.
  */
 
 /** How long ago, short: `40s`, `12m`, `3h 5m`, `2d 4h`. */
@@ -344,7 +344,7 @@ export function ApprovalsView() {
         )}
       </Section>
 
-      <BudgetHolds answer={holds} reload={reloadHolds} now={now} calm={false} />
+      <PausedAtBudget answer={holds} reload={reloadHolds} now={now} />
 
       <Section
         title="Answered"

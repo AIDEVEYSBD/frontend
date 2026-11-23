@@ -1,7 +1,7 @@
 "use client";
 import { errorText } from "@/lib/api/client";
 
-import { DATA_CLASS_ENFORCED, PanelFailure, PermittedClass, PermittedClassNote, announceConfig } from "./providers";
+import { PanelFailure, announceConfig } from "./providers";
 import type { DataClass } from "@/lib/api/pending";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -420,14 +420,6 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
                       />
                     </label>
                   ))}
-                  <PermittedClass
-                    value={offered.max_data_class}
-                    label={`Permitted data class of ${m.label}`}
-                    onChange={(v) =>
-                      // Written only once something enforces the field; the control is disabled until then.
-                      DATA_CLASS_ENFORCED && save({ ...config, models: config.models.map((x) => (x.id === m.id ? { ...x, max_data_class: v || undefined } : x)) })
-                    }
-                  />
                   <span className="ml-auto flex flex-wrap items-center gap-2">
                     {offered.class && config.class_defaults?.[offered.class] !== m.id && (
                       <Button
@@ -462,9 +454,6 @@ export function OfferedModels({ bare = false, onChanged, onQuiet }: { bare?: boo
           </p>
         )}
       </div>
-      <p className="flex px-4 py-2.5">
-        <PermittedClassNote />
-      </p>
     </>
   );
 }

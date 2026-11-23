@@ -1,37 +1,32 @@
 import { PUBLIC_ORIGIN } from "@/lib/site";
+import type { DataClass } from "./pending";
 import { api, errorText, type Schemas } from "./client";
 
 /**
- * The L4 doors (backend/CONTRACT.md, "L4: applications, the gateway and the
- * retrieval door"), through the generated client.
+ * The applications register, the model gateway and a person's chat with a
+ * chatbot, as the service answers them (agentfactory/applications/,
+ * api/routes/applications.py, apps_chat.py, gateway.py).
  *
- * lib/api/backend.d.ts carries the register's paths since the backend
- * landed them (`npm run gen:api`), so every call here is `api.GET(...)` on
- * a typed path and the wire shapes are the backend's own schemas. What this
- * module adds is the console's reading of them: the figures a row shows
- * beside its policy (activity, cost, controls fired) come from the
- * application's own metrics and conversations doors, and a conversation's
- * completions are flattened into turns the replay drawer can show. The
- * retrieval door and the chatbot door are not in the document yet; their
- * URLs are named here for the snippets only.
+ * Calls go through the generated client on its typed paths. The service's
+ * answers carry more than the generated schemas (a policy's data class,
+ * budget and rate, a removed application, a conversation the service keeps),
+ * so each answer is read here field by field into the console's own shape.
+ * A figure the service answers null (a cost with no price set, a latency
+ * with no answered call) stays null: it is never read as 0.
  */
 
-export type ApplicationView = Schemas["ApplicationView"];
-export type PolicyView = Schemas["PolicyView"];
-export type MetricsView = Schemas["MetricsView"];
-export type ConversationRowView = Schemas["ConversationRow"];
-export type ConversationView = Schemas["ConversationView"];
-export type CompletionView = Schemas["CompletionView"];
-export type RegisterRequest = Schemas["RegisterRequest"];
-export type ApplicationPatch = Schemas["ApplicationPatch"];
-export type SystemPromptVersionView = Schemas["SystemPromptVersion"];
-export type SystemPromptHistoryView = Schemas["SystemPromptHistory"];
+type Rec = Record<string, unknown>;
+const rec = (v: unknown): Rec => (v && typeof v === "object" && !Array.isArray(v) ? (v as Rec) : {});
+const str = (v: unknown): string => (typeof v === "string" ? v : "");
+const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+const numOrNull = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+const num = (v: unknown): number => numOrNull(v) ?? 0;
 
-export type ApplicationClass = ApplicationView["class"];
-export type Autonomy = ApplicationView["autonomy"];
-export type ScreenPolicy = PolicyView["screen"];
-/** The windows the metrics door cuts; the page's 90d and All are clamped to 30d. */
-export type MetricsWindow = MetricsView["window"];
+export type ApplicationClass = "chatbot" | "rag" | "agent" | "multi_agent";
+export type Autonomy = "L0" | "L1" | "L2" | "L3" | "L4" | "L5";
+export type BudgetPeriod = "day" | "week" | "month";
+/** The windows the metrics address cuts. */
+export type MetricsWindow = "24h" | "7d" | "30d" | "90d" | "all";
 
 export const CLASS_LABEL: Record<ApplicationClass, string> = {
   chatbot: "Chatbot",
@@ -48,150 +43,149 @@ export const AUTONOMY_LABEL: Record<Autonomy, string> = {
   L4: "L4 · acts, reviewed after",
   L5: "L5 · acts unsupervised",
 };
+export const AUTONOMIES = Object.keys(AUTONOMY_LABEL) as Autonomy[];
 
-/** Limits as the contract names them, per application and per principal. */
-export interface Limits {
-  requests_per_minute: number | null;
-  tokens_per_day: number | null;
-  cost_per_day_usd: number | null;
+/** An autonomy tier in words; none declared says so. */
+export const autonomyLabel = (a: Autonomy | null): string => (a ? AUTONOMY_LABEL[a] : "not declared");
+
+/** An application's budget: an amount in US dollars per calendar period in UTC (a week starts on Monday). */
+export interface AppBudget {
+  amount_usd: number;
+  period: BudgetPeriod;
 }
 
+/**
+ * An application's policy as the service stores it (agentfactory/applications/policy.py).
+ * `models` are in order and chat uses the first; `knowledge_stores` are a
+ * RAG app's (recorded; nothing retrieves from them through the service
+ * yet); `data_class` is the most sensitive class it handles, and every model
+ * call is resolved with it; `rate_per_minute` and `budget` are null for no
+ * limit. `system_prompt` is a chatbot's prompt in force ("" for none).
+ */
 export interface Policy {
-  screen: ScreenPolicy;
-  /** The header the principal arrives in; default x-principal. */
-  principal_header: string;
-  /** Refuse a request that carries no principal. */
-  principal_required: boolean;
-  limits: Limits;
-  /** The same three, applied to each principal separately. */
-  principal_limits: Limits;
-  /** The model a caller that names none gets; empty means the deployment default. */
-  model: string;
-  /** Allowed models; empty means the policy's model only. */
   models: string[];
-  /** What a RAG app may retrieve from. */
-  namespaces: string[];
-  /** Principal → namespaces, "*" for all. */
-  entitlements: Record<string, string[]>;
-  /** A registered prompt the gateway injects; the app sends none. */
+  knowledge_stores: string[];
+  data_class: DataClass;
+  rate_per_minute: number | null;
+  budget: AppBudget | null;
   system_prompt: string;
 }
+
+/** The fields a registration or a change sends, under the service's own names only. */
+export type PolicyWire = Partial<Policy>;
 
 export interface Application {
   id: string;
   name: string;
   description: string;
   class: ApplicationClass;
-  autonomy: Autonomy;
+  /** The tier declared for it; recorded and checked by nothing (the register's `not_built`). */
+  autonomy: Autonomy | null;
   owner: string;
-  /** The key's prefix as the register shows it; never the key. Empty for a workflow. */
+  /** The key's prefix; never the key. Empty for an agent. */
   key_prefix: string;
+  /** A registered chatbot or RAG app (`application`), or a deployed agent (`workflow`), listed and never changed here. */
+  source: "application" | "workflow";
+  /** An agent's row carries no policy: `policy` is then empty and is never shown. */
   policy: Policy;
   blocked: boolean;
+  block: { reason: string; by: string; at: string } | null;
   created_at: string;
-  /** Where the row comes from: the applications table, a workflow, an attached agent. */
-  source: ApplicationView["source"];
-  estate_id: string;
+  created_by: string;
+  removed_at: string | null;
+  removed_by: string;
 }
 
-/** What the register shows beside a row, read from its own doors over 30 days. */
+/** The register, and what it records that nothing carries out (`not_built_says`, keyed by `not_built`). */
+export interface Register {
+  rows: Application[];
+  notBuilt: Record<string, string>;
+}
+
+/** What the register shows beside a registered application, read from its own addresses over 30 days. */
 export interface Activity {
   last_seen: string | null;
   cost: number | null;
+  /** Answered calls that had no price set: in no cost figure. */
+  unpriced: number;
   completions: number;
   controls_fired: number;
-  /** The doors could not be read; the figures above are unknown, not zero. */
+  /** The addresses could not be read; the figures above are unknown, not zero. */
   unknown: boolean;
 }
 
 export interface ModelMix {
   model: string;
   completions: number;
-  cost: number;
+  cost: number | null;
+  unpriced: number;
   tokens: { in: number; out: number };
 }
 
+/** `GET /api/applications/{id}/metrics`: what the completions journalled in a window say. */
 export interface ApplicationMetrics {
   window: MetricsWindow;
   since: string;
   until: string;
-  /** Completions journalled in the window. */
-  volume: number;
-  requests: number;
-  conversations: number;
-  principals: number;
-  cost: number | null;
-  unpriced: number;
-  tokens: { in: number; out: number };
-  latency: { p50: number | null; p95: number | null };
+  /** Every call journalled, answered or refused. */
+  completions: number;
+  answered: number;
   refusals: number;
   refusals_by_reason: Record<string, number>;
-  /** Screened hits by control (the journal key or the catalogue id). */
+  conversations: number;
+  principals: number;
+  /** The priced calls' sum; null when every answered call had no price set; 0 when no model answered. */
+  cost: number | null;
+  priced: number;
+  unpriced: number;
+  model_answered: number;
+  tokens: { in: number; out: number };
+  /** The model call's latency over the calls a model answered; null when none did. */
+  latency: { p50: number | null; p95: number | null };
+  /** Screening verdicts that flagged or blocked, by control. */
   screened: Record<string, number>;
   blocked: number;
   flagged: number;
-  streamed: number;
   models: ModelMix[];
-  /** What the retrieval door journalled in the window (the backend's `RagMetrics`); null when the application retrieved nothing in it. */
-  rag: RagFigures | null;
   basis: string;
-}
-
-/**
- * The retrieval door's figures for one application over the window: hit
- * rate over the retrievals it was entitled to, answers whose grounding
- * verdict was empty or ungrounded, and grounded answers over answers that
- * produced text. Rates are null when there is nothing to divide by.
- */
-export interface RagFigures {
-  retrievals: number;
-  searches: number;
-  answers: number;
-  /** Retrievals refused because the principal had no entitlement to the namespace. */
-  refused: number;
-  hits: number;
-  hit_rate: number | null;
-  answered: number;
-  unanswerable: number;
-  grounded: number;
-  partial: number;
-  grounding_rate: number | null;
-  /** Retrievals per namespace. */
-  namespaces: Record<string, number>;
 }
 
 export interface ConversationRow {
   id: string;
+  /** A person's chat the service keeps (held by `principal`), or a conversation the application named through the gateway. */
+  kept: boolean;
+  /** The person who holds a kept conversation; the end user the application named otherwise ("" when none). */
   principal: string;
   started: string;
   last: string;
-  /** Completions in the conversation. */
-  turns: number;
-  cost: number | null;
+  completions: number;
   refusals: number;
-  /** Screened completions; the row does not carry it, so null until the conversation is opened. */
-  screened: number | null;
+  cost: number | null;
+  unpriced: number;
   models: string[];
   tokens: { in: number; out: number };
 }
 
 export interface Turn {
   at: string;
-  role: "user" | "assistant" | "system" | "tool" | "retrieval";
-  /** Redacted by the backend with the journal's rules. */
+  role: "user" | "assistant" | "system";
+  /** Masked by the service with the journal's rules. */
   content: string;
   model: string;
   tokens: { in: number; out: number } | null;
   cost: number | null;
+  /** A model answered and its model had no price set. */
+  unpriced: boolean;
   latency_ms: number | null;
+  /** The first screening verdict that flagged or blocked. */
   screened: { control: string; action: "block" | "flag" } | null;
   refused: boolean;
+  /** The journalled outcome: `ok`, or the refusal's code. */
   outcome: string;
-  /** The journal this turn is recorded in, for the lineage drawer. */
-  run: string;
-  entry: string;
-  /** Passages a retrieval turn returned, by document title. */
-  passages: { title: string; namespace: string; excerpt: string }[];
+  /** Why it was refused, as journalled. */
+  reason: string;
+  /** The completion the turn is recorded as. */
+  completion: string;
 }
 
 export interface Conversation {
@@ -201,10 +195,10 @@ export interface Conversation {
 
 export interface NewApplication {
   name: string;
-  class: RegisterRequest["class"];
+  class: "chatbot" | "rag";
   owner: string;
-  autonomy?: Autonomy;
-  policy: Partial<Policy>;
+  autonomy: Autonomy | null;
+  policy: PolicyWire;
 }
 
 export interface Minted {
@@ -216,11 +210,7 @@ export interface Minted {
   system_prompt: PromptVersion | null;
 }
 
-/**
- * One version of a registered application's system prompt (the backend's
- * `SystemPromptVersion`): every change is a new version, signed, and an
- * earlier one is still checked for leaks for a while after it is retired.
- */
+/** One version of a chatbot's system prompt (`SystemPromptVersion`): every change is a new version, signed. */
 export interface PromptVersion {
   id: string;
   version: number;
@@ -228,19 +218,18 @@ export interface PromptVersion {
   /** `sha256:<hex>` of the text. */
   digest: string;
   chars: number;
-  /** Who set it; "" for a prompt registered before versions were kept (adopted). */
   set_by: string;
   set_at: string;
-  /** When the next version replaced it; null while it is current. */
+  /** When the next version replaced it; null while it is in force. */
   retired_at: string | null;
   current: boolean;
-  /** Whether the leak check still compares responses against it. */
+  /** Whether the leak check compares replies against it: only the prompt in force, when it is not empty. */
   guarded: boolean;
   /** Recorded on first sight from a prompt registered before versions were kept. */
   adopted: boolean;
 }
 
-/** The leak check's reach over earlier versions, in days and versions, with the backend's own sentence. */
+/** The leak check's reach over earlier versions, in days and versions, with the service's own sentence. */
 export interface LeakCheck {
   window_days: number;
   max_versions: number;
@@ -255,196 +244,207 @@ export interface PromptHistory {
   versions: PromptVersion[];
   count: number;
   leak_check: LeakCheck;
+  /** Why the application has none (a RAG app), when the service says. */
+  says: string;
 }
 
-/* ═══════════════════ mapping ═══════════════════ */
+/** A journalled outcome in words (the gateway's refusal codes, agentfactory/applications/gateway.py); one not named here is shown as sent. */
+const OUTCOME_WORDS: Record<string, string> = {
+  ok: "answered",
+  application_blocked: "the application is blocked",
+  model_not_allowed: "a model its policy does not list",
+  model_not_cleared: "no model cleared for its data class",
+  model_not_offered: "a model this deployment does not offer",
+  rate_limited: "over its rate limit",
+  model_unpriced: "a model with no price set, under a budget",
+  spend_uncounted: "spend that cannot be counted against its budget",
+  over_budget: "its budget is spent",
+  screener_unavailable: "the screener could not answer",
+  prompt_screened: "the prompt was refused by screening",
+  response_screened: "the reply was withheld by screening",
+  system_prompt_leaked: "the reply repeated the registered system prompt",
+  upstream_unavailable: "the model could not be called",
+  upstream_error: "the model did not answer",
+};
+export const outcomeWords = (outcome: string): string => OUTCOME_WORDS[outcome] ?? outcome.replace(/_/g, " ");
 
-const numOrNull = (v: unknown): number | null => (v === null || v === undefined ? null : Number.isFinite(Number(v)) ? Number(v) : null);
-const num = (v: unknown): number => numOrNull(v) ?? 0;
+/* ═══════════════════ reading the answers ═══════════════════ */
 
-function limits(v: { requests_per_minute?: number | null; tokens_per_day?: number | null; cost_per_day_usd?: number | null } | undefined): Limits {
-  return { requests_per_minute: numOrNull(v?.requests_per_minute), tokens_per_day: numOrNull(v?.tokens_per_day), cost_per_day_usd: numOrNull(v?.cost_per_day_usd) };
+const PERIODS: BudgetPeriod[] = ["day", "week", "month"];
+const CLASSES: DataClass[] = ["public", "internal", "confidential", "restricted"];
+
+function budgetOf(v: unknown): AppBudget | null {
+  const b = rec(v);
+  const amount = numOrNull(b.amount_usd);
+  return amount !== null && PERIODS.includes(b.period as BudgetPeriod) ? { amount_usd: amount, period: b.period as BudgetPeriod } : null;
 }
 
-export function policyOf(v: PolicyView | null | undefined): Policy {
-  const p = v ?? ({} as Partial<PolicyView>);
+export function policyOf(v: unknown): Policy {
+  const p = rec(v);
   return {
-    screen: p.screen === "flag" ? "flag" : "block",
-    principal_header: p.principal_header || "x-principal",
-    principal_required: Boolean(p.principal_required),
-    limits: limits(p.limits),
-    principal_limits: limits(p.limits?.principal),
-    model: p.model ?? "",
-    models: p.models ?? [],
-    namespaces: p.namespaces ?? [],
-    entitlements: p.entitlements ?? {},
-    system_prompt: p.system_prompt ?? "",
+    models: strs(p.models),
+    knowledge_stores: strs(p.knowledge_stores),
+    data_class: CLASSES.includes(p.data_class as DataClass) ? (p.data_class as DataClass) : "internal",
+    rate_per_minute: numOrNull(p.rate_per_minute),
+    budget: budgetOf(p.budget),
+    system_prompt: str(p.system_prompt),
   };
 }
 
-/** The policy as the register stores it, from the console's shape; unset fields take the door's defaults. */
-export function policyToWire(p: Partial<Policy>): PolicyView {
-  const lim = p.limits ?? { requests_per_minute: null, tokens_per_day: null, cost_per_day_usd: null };
-  const pl = p.principal_limits ?? { requests_per_minute: null, tokens_per_day: null, cost_per_day_usd: null };
+export function applicationOf(v: ApplicationView | Rec): Application {
+  const a = rec(v);
+  const block = a.block ? rec(a.block) : null;
+  const by = rec(a.created_by);
+  const cls = (["chatbot", "rag", "agent", "multi_agent"].includes(str(a.class)) ? a.class : "agent") as ApplicationClass;
   return {
-    screen: p.screen ?? "block",
-    principal_header: p.principal_header || "x-principal",
-    principal_required: p.principal_required ?? false,
-    limits: { ...lim, principal: pl },
-    model: p.model ?? "",
-    models: p.models ?? [],
-    namespaces: p.namespaces ?? [],
-    entitlements: p.entitlements ?? {},
-    system_prompt: p.system_prompt ?? "",
+    id: str(a.id),
+    name: str(a.name) || str(a.id),
+    description: str(a.description),
+    class: cls,
+    autonomy: AUTONOMIES.includes(a.autonomy as Autonomy) ? (a.autonomy as Autonomy) : null,
+    owner: str(a.owner),
+    key_prefix: str(a.key_prefix),
+    source: a.source === "application" ? "application" : "workflow",
+    policy: policyOf(a.policy),
+    blocked: a.blocked === true,
+    block: block ? { reason: str(block.reason), by: str(block.by), at: str(block.at) } : null,
+    created_at: str(a.created_at),
+    created_by: str(by.email) || str(by.name) || str(by.sub),
+    removed_at: str(a.removed_at) || null,
+    removed_by: str(a.removed_by),
   };
 }
 
-export function applicationOf(v: ApplicationView): Application {
+export function metricsOf(v: unknown): ApplicationMetrics {
+  const m = rec(v);
+  const tokens = rec(m.tokens);
+  const latency = rec(m.latency_ms);
+  const counts = (x: unknown): Record<string, number> => Object.fromEntries(Object.entries(rec(x)).map(([k, n]) => [k, num(n)]));
   return {
-    id: v.id,
-    name: v.name || v.id,
-    description: v.description ?? "",
-    class: v.class,
-    autonomy: v.autonomy,
-    owner: v.owner ?? "",
-    key_prefix: v.key_prefix ?? "",
-    policy: policyOf(v.policy),
-    blocked: Boolean(v.blocked),
-    created_at: v.created_at ?? "",
-    source: v.source,
-    estate_id: v.estate_id || "default",
-  };
-}
-
-export function ragOf(r: NonNullable<MetricsView["rag"]>): RagFigures {
-  return {
-    retrievals: num(r.retrievals),
-    searches: num(r.searches),
-    answers: num(r.answers),
-    refused: num(r.refused),
-    hits: num(r.hits),
-    hit_rate: numOrNull(r.hit_rate),
-    answered: num(r.answered),
-    unanswerable: num(r.unanswerable),
-    grounded: num(r.grounded),
-    partial: num(r.partial),
-    grounding_rate: numOrNull(r.grounding_rate),
-    namespaces: Object.fromEntries(Object.entries(r.namespaces ?? {}).map(([k, v]) => [k, num(v)])),
-  };
-}
-
-export function metricsOf(m: MetricsView): ApplicationMetrics {
-  return {
-    window: m.window,
-    since: m.since,
-    until: m.until,
-    volume: num(m.completions),
-    requests: num(m.requests),
+    window: str(m.window) as MetricsWindow,
+    since: str(m.since),
+    until: str(m.until),
+    completions: num(m.completions),
+    answered: num(m.answered),
+    refusals: num(m.refusals),
+    refusals_by_reason: counts(m.refusals_by_reason),
     conversations: num(m.conversations),
     principals: num(m.principals),
-    // Every completion priced at the gateway; unpriced ones are counted, not folded into zero.
-    cost: m.unpriced > 0 && m.completions > 0 && m.unpriced >= m.completions ? null : num(m.cost),
+    cost: numOrNull(m.cost),
+    priced: num(m.priced),
     unpriced: num(m.unpriced),
-    tokens: { in: num(m.tokens?.in), out: num(m.tokens?.out) },
-    latency: { p50: numOrNull(m.latency_ms?.p50), p95: numOrNull(m.latency_ms?.p95) },
-    refusals: num(m.refusals),
-    refusals_by_reason: m.refusals_by_reason ?? {},
-    screened: m.screened ?? {},
+    model_answered: num(m.model_answered),
+    tokens: { in: num(tokens.in), out: num(tokens.out) },
+    latency: { p50: numOrNull(latency.p50), p95: numOrNull(latency.p95) },
+    screened: counts(m.screened),
     blocked: num(m.blocked),
     flagged: num(m.flagged),
-    streamed: num(m.streamed),
-    models: (m.models ?? []).map((x) => ({ model: x.model, completions: num(x.completions), cost: num(x.cost), tokens: { in: num(x.tokens?.in), out: num(x.tokens?.out) } })),
-    rag: m.rag ? ragOf(m.rag) : null,
-    basis: `journalled completions between ${m.since} and ${m.until}; cost from the gateway's price sheet (${m.unpriced} unpriced)${m.rag ? "; retrieval figures from the retrieval door's journalled searches and answers" : ""}`,
+    models: (Array.isArray(m.models) ? m.models : []).map((x) => {
+      const r = rec(x);
+      const t = rec(r.tokens);
+      return { model: str(r.model), completions: num(r.completions), cost: numOrNull(r.cost), unpriced: num(r.unpriced), tokens: { in: num(t.in), out: num(t.out) } };
+    }),
+    basis: str(m.basis),
   };
 }
 
-export function conversationRowOf(c: ConversationRowView): ConversationRow {
+export function conversationRowOf(v: unknown): ConversationRow {
+  const c = rec(v);
+  const t = rec(c.tokens);
   return {
-    id: c.id,
-    principal: c.principal ?? "",
-    started: c.started ?? "",
-    last: c.last ?? c.started ?? "",
-    turns: num(c.completions),
-    cost: numOrNull(c.cost),
+    id: str(c.id),
+    kept: c.kept === true,
+    principal: str(c.principal),
+    started: str(c.started),
+    last: str(c.last) || str(c.started),
+    completions: num(c.completions),
     refusals: num(c.refusals),
-    screened: null,
-    models: c.models ?? [],
-    tokens: { in: num(c.tokens?.in), out: num(c.tokens?.out) },
+    cost: numOrNull(c.cost),
+    unpriced: num(c.unpriced),
+    models: strs(c.models),
+    tokens: { in: num(t.in), out: num(t.out) },
   };
 }
-
-const REFUSED = /block|refus|denied|limit|budget|rate/i;
 
 /**
- * A conversation's completions, flattened into turns: the prompt's turns as
- * the caller sent them (redacted by the backend), then the answer with the
- * figures the gateway journalled for it. A completion the screener matched
- * carries the control; one the gateway refused carries no answer.
+ * A conversation's completions, flattened into turns: the turns the caller
+ * sent (masked), then the answer with the figures journalled for it. A
+ * completion whose outcome is not `ok` was refused, and carries the reason.
  */
-export function turnsOf(c: ConversationView): Turn[] {
+export function turnsOf(v: unknown): Turn[] {
   const out: Turn[] = [];
-  for (const comp of c.completions ?? []) {
-    const verdict = (comp.verdicts ?? []).find((v) => v && typeof v === "object" && typeof (v as { control?: unknown }).control === "string") as { control?: string; action?: string } | undefined;
-    const control = comp.control || verdict?.control || "";
-    const refused = REFUSED.test(comp.outcome ?? "");
-    const action: "block" | "flag" = refused || /block/i.test(String(verdict?.action ?? "")) ? "block" : "flag";
-    for (const t of comp.turns ?? []) {
-      const role = (["user", "assistant", "system", "tool", "retrieval"].includes(t.role) ? t.role : t.role === "developer" ? "system" : "user") as Turn["role"];
-      out.push({ at: comp.at, role, content: t.content ?? "", model: "", tokens: null, cost: null, latency_ms: null, screened: null, refused: false, outcome: "", run: comp.run_id ?? "", entry: comp.id ?? "", passages: [] });
+  for (const raw of Array.isArray(rec(v).completions) ? (rec(v).completions as unknown[]) : []) {
+    const c = rec(raw);
+    const verdict = (Array.isArray(c.verdicts) ? c.verdicts : []).map(rec).find((x) => x.action === "block" || x.action === "flag");
+    const outcome = str(c.outcome);
+    const blank = { model: "", tokens: null, cost: null, unpriced: false, latency_ms: null, screened: null, refused: false, outcome: "", reason: "", completion: str(c.id) };
+    for (const t of Array.isArray(c.turns) ? c.turns : []) {
+      const turn = rec(t);
+      const role = turn.role === "assistant" ? "assistant" : turn.role === "system" || turn.role === "developer" ? "system" : "user";
+      out.push({ at: str(c.at), role, content: str(turn.content), ...blank });
     }
+    const tk = c.tokens ? rec(c.tokens) : null;
     out.push({
-      at: comp.at,
+      at: str(c.at),
       role: "assistant",
-      content: comp.response ?? "",
-      model: comp.model ?? "",
-      tokens: comp.tokens ? { in: num(comp.tokens.in), out: num(comp.tokens.out) } : null,
-      cost: numOrNull(comp.cost),
-      latency_ms: numOrNull(comp.latency_ms),
-      screened: control ? { control, action } : null,
-      refused,
-      outcome: comp.outcome ?? "",
-      run: comp.run_id ?? "",
-      entry: comp.id ?? "",
-      passages: [],
+      content: str(c.response),
+      model: str(c.model),
+      tokens: tk ? { in: num(tk.in), out: num(tk.out) } : null,
+      cost: numOrNull(c.cost),
+      unpriced: c.unpriced === true,
+      latency_ms: numOrNull(c.latency_ms),
+      screened: verdict ? { control: str(verdict.control), action: verdict.action === "block" ? "block" : "flag" } : null,
+      refused: outcome !== "ok",
+      outcome,
+      reason: str(c.reason),
+      completion: str(c.id),
     });
   }
   return out;
 }
 
-export function promptVersionOf(v: SystemPromptVersionView): PromptVersion {
+export function promptVersionOf(v: SystemPromptVersionView | Rec): PromptVersion {
+  const p = rec(v);
   return {
-    id: v.id,
-    version: num(v.version),
-    prompt: v.prompt ?? "",
-    digest: v.digest ?? "",
-    chars: num(v.chars),
-    set_by: v.set_by ?? "",
-    set_at: v.set_at ?? "",
-    retired_at: v.retired_at ?? null,
-    current: Boolean(v.current),
-    guarded: Boolean(v.guarded),
-    adopted: Boolean(v.adopted),
+    id: str(p.id),
+    version: num(p.version),
+    prompt: str(p.prompt),
+    digest: str(p.digest),
+    chars: num(p.chars),
+    set_by: str(p.set_by),
+    set_at: str(p.set_at),
+    retired_at: str(p.retired_at) || null,
+    current: p.current === true,
+    guarded: p.guarded === true,
+    adopted: p.adopted === true,
   };
 }
 
 /** The history, newest version first whatever order it arrived in. */
-export function promptHistoryOf(h: SystemPromptHistoryView): PromptHistory {
-  const versions = (h.versions ?? []).map(promptVersionOf).sort((a, b) => b.version - a.version);
+export function promptHistoryOf(v: SystemPromptHistoryView | Rec): PromptHistory {
+  const h = rec(v);
+  const versions = (Array.isArray(h.versions) ? h.versions : []).map((x) => promptVersionOf(rec(x))).sort((a, b) => b.version - a.version);
+  const leak = rec(h.leak_check);
   return {
-    application: h.application,
-    current: h.current ?? null,
+    application: str(h.application),
+    current: str(h.current) || null,
     versions,
     count: typeof h.count === "number" ? h.count : versions.length,
-    leak_check: { window_days: num(h.leak_check?.window_days), max_versions: num(h.leak_check?.max_versions), says: h.leak_check?.says ?? "" },
+    leak_check: { window_days: num(leak.window_days), max_versions: num(leak.max_versions), says: str(leak.says) },
+    says: str(h.says),
   };
 }
 
-/** The leak check's window as the page states it beside the versions. */
+/** The leak check's reach as the page states it beside the versions. */
 export function leakWindowLine(c: LeakCheck): string {
   if (!c.window_days && !c.max_versions) return c.says;
   return `Responses are checked against the current prompt and every version retired in the last ${c.window_days} day${c.window_days === 1 ? "" : "s"}, at most the ${c.max_versions} most recent.`;
 }
+
+/** The generated schemas the typed paths answer with; each is read through the functions above. */
+type ApplicationView = Schemas["ApplicationView"];
+type SystemPromptVersionView = Schemas["SystemPromptVersion"];
+type SystemPromptHistoryView = Schemas["SystemPromptHistory"];
 
 /* ═══════════════════ calls ═══════════════════ */
 
@@ -452,10 +452,20 @@ function fail(error: unknown, response: Response): Error {
   return new Error(errorText(error, response));
 }
 
-export async function listApplications(cls?: ApplicationClass): Promise<Application[]> {
-  const { data, error, response } = await api.GET("/api/applications", { params: { query: cls ? { class: cls } : {} } });
+/** The register: registered applications by name, then the deployed agents. */
+export async function readRegister(): Promise<Register> {
+  const { data, error, response } = await api.GET("/api/applications", { params: { query: {} } });
   if (!data) throw fail(error, response);
-  return data.applications.map(applicationOf);
+  const d = rec(data);
+  const says = rec(d.not_built_says);
+  return {
+    rows: (Array.isArray(d.applications) ? d.applications : []).map((a) => applicationOf(rec(a))),
+    notBuilt: Object.fromEntries(strs(d.not_built).map((k) => [k, str(says[k]) || k])),
+  };
+}
+
+export async function listApplications(): Promise<Application[]> {
+  return (await readRegister()).rows;
 }
 
 export async function getApplication(id: string): Promise<Application | null> {
@@ -464,64 +474,61 @@ export async function getApplication(id: string): Promise<Application | null> {
     if (response.status === 404) return null;
     throw fail(error, response);
   }
-  return applicationOf(data);
+  return applicationOf(rec(data));
 }
 
+/** `POST /api/applications`: the policy goes under the service's own names, and nothing else is sent. */
 export async function createApplication(body: NewApplication): Promise<Minted> {
   const { data, error, response } = await api.POST("/api/applications", {
-    body: { name: body.name, class: body.class, owner: body.owner, autonomy: body.autonomy ?? null, policy: policyToWire(body.policy) },
+    body: { name: body.name, class: body.class, owner: body.owner, autonomy: body.autonomy, policy: body.policy as unknown as Schemas["PolicyView"] },
   });
   if (!data) throw fail(error, response);
-  return { application: applicationOf(data.application), key: data.key, note: data.note, system_prompt: data.system_prompt ? promptVersionOf(data.system_prompt) : null };
+  const d = rec(data);
+  return { application: applicationOf(rec(d.application)), key: str(d.key), note: str(d.note), system_prompt: d.system_prompt ? promptVersionOf(rec(d.system_prompt)) : null };
 }
 
-export async function patchApplication(id: string, patch: { blocked?: boolean; owner?: string; name?: string; policy?: Partial<Policy>; autonomy?: Autonomy }): Promise<Application> {
-  const body: ApplicationPatch = { id };
-  if (patch.blocked !== undefined) body.blocked = patch.blocked;
-  if (patch.owner !== undefined) body.owner = patch.owner;
-  if (patch.name !== undefined) body.name = patch.name;
-  if (patch.autonomy !== undefined) body.autonomy = patch.autonomy;
-  if (patch.policy !== undefined) body.policy = policyToWire(patch.policy);
+/** `PATCH /api/applications`: only what is sent changes; a policy is merged field by field. */
+export async function patchApplication(
+  id: string,
+  patch: { blocked?: boolean; blocked_reason?: string; owner?: string; name?: string; autonomy?: Autonomy | null; policy?: PolicyWire },
+): Promise<Application> {
+  const body = { id, ...patch } as Schemas["ApplicationPatch"];
   const { data, error, response } = await api.PATCH("/api/applications", { body });
   if (!data) throw fail(error, response);
-  return applicationOf(data.application);
+  return applicationOf(rec(rec(data).application));
 }
 
 /**
- * Register a new system prompt for an application: `PATCH /api/applications`
- * with the prompt alone (the door merges a policy patch field by field, so
- * nothing else on the policy moves). A changed prompt is a new version,
- * signed by the session; the answer names the version recorded, null when
- * the text was the same.
+ * A new system prompt for a chatbot: `PATCH /api/applications` with the prompt
+ * alone. A changed prompt is a new version, signed by the person signed in;
+ * the answer names the version recorded, null when the text was the same.
  */
 export async function setSystemPrompt(id: string, prompt: string): Promise<{ application: Application; recorded: PromptVersion | null }> {
   const { data, error, response } = await api.PATCH("/api/applications", { body: { id, policy: { system_prompt: prompt } } });
   if (!data) throw fail(error, response);
-  return { application: applicationOf(data.application), recorded: data.system_prompt ? promptVersionOf(data.system_prompt) : null };
+  const d = rec(data);
+  return { application: applicationOf(rec(d.application)), recorded: d.system_prompt ? promptVersionOf(rec(d.system_prompt)) : null };
 }
 
-/** `GET /api/applications/{id}/system-prompts`; null for a row that is not a registered application (a workflow, an attached agent: 404). */
+/** `GET /api/applications/{id}/system-prompts`; null for a row that is not a registered application (a deployed agent: 404). */
 export async function systemPrompts(id: string): Promise<PromptHistory | null> {
   const { data, error, response } = await api.GET("/api/applications/{app_id}/system-prompts", { params: { path: { app_id: id } } });
   if (!data) {
     if (response.status === 404) return null;
     throw fail(error, response);
   }
-  return promptHistoryOf(data);
+  return promptHistoryOf(rec(data));
 }
 
+/** `DELETE /api/applications?id=`: takes it off the register and revokes its key. Its completions stay. */
 export async function deleteApplication(id: string): Promise<void> {
   const { data, error, response } = await api.DELETE("/api/applications", { params: { query: { id } } });
   if (!data) throw fail(error, response);
 }
 
-/** The page's window, as the metrics door accepts it: 90d and All are cut at 30 days. */
-export function metricsWindow(win: string): MetricsWindow {
-  return win === "24h" || win === "7d" ? win : "30d";
-}
-
 export async function applicationMetrics(id: string, window: MetricsWindow): Promise<ApplicationMetrics> {
-  const { data, error, response } = await api.GET("/api/applications/{app_id}/metrics", { params: { path: { app_id: id }, query: { window } } });
+  const query = { window } as { window?: "24h" | "7d" | "30d" };
+  const { data, error, response } = await api.GET("/api/applications/{app_id}/metrics", { params: { path: { app_id: id }, query } });
   if (!data) throw fail(error, response);
   return metricsOf(data);
 }
@@ -529,107 +536,74 @@ export async function applicationMetrics(id: string, window: MetricsWindow): Pro
 export async function listConversations(id: string, limit = 200): Promise<ConversationRow[]> {
   const { data, error, response } = await api.GET("/api/applications/{app_id}/conversations", { params: { path: { app_id: id }, query: { limit } } });
   if (!data) throw fail(error, response);
-  return data.conversations.map(conversationRowOf);
+  return (Array.isArray(rec(data).conversations) ? (rec(data).conversations as unknown[]) : []).map(conversationRowOf);
 }
 
 export async function getConversation(id: string, cid: string): Promise<Conversation> {
   const { data, error, response } = await api.GET("/api/applications/{app_id}/conversations/{cid}", { params: { path: { app_id: id, cid } } });
   if (!data) throw fail(error, response);
-  const turns = turnsOf(data);
-  const answers = turns.filter((t) => t.role === "assistant");
-  const costs = answers.map((t) => t.cost).filter((c): c is number => c !== null);
-  return {
-    conversation: {
-      id: data.id,
-      principal: data.principal ?? "",
-      started: data.started ?? "",
-      last: data.last ?? data.started ?? "",
-      turns: data.completions?.length ?? 0,
-      cost: costs.length ? costs.reduce((a, b) => a + b, 0) : null,
-      refusals: answers.filter((t) => t.refused).length,
-      screened: answers.filter((t) => t.screened).length,
-      models: [...new Set(answers.map((t) => t.model).filter(Boolean))],
-      tokens: answers.reduce((s, t) => ({ in: s.in + (t.tokens?.in ?? 0), out: s.out + (t.tokens?.out ?? 0) }), { in: 0, out: 0 }),
-    },
-    turns,
-  };
+  return { conversation: conversationRowOf(data), turns: turnsOf(data) };
 }
 
 /**
- * What the register shows beside a row: last seen, cost and controls fired
- * over 30 days, from the row's own metrics and conversations doors. A door
- * that cannot be read leaves the figures unknown rather than zero.
+ * What the register shows beside a registered application: last seen, cost
+ * and controls fired over 30 days, from its own metrics and conversations
+ * addresses. One that cannot be read leaves the figures unknown, never zero.
  */
 export async function activityOf(id: string): Promise<Activity> {
   try {
     const [m, c] = await Promise.all([applicationMetrics(id, "30d"), listConversations(id, 1)]);
     const screened = Object.values(m.screened).reduce((a, b) => a + b, 0);
-    return { last_seen: c[0]?.last || null, cost: m.cost, completions: m.volume, controls_fired: m.refusals + screened, unknown: false };
+    return { last_seen: c[0]?.last || null, cost: m.cost, unpriced: m.unpriced, completions: m.completions, controls_fired: m.refusals + screened, unknown: false };
   } catch {
-    return { last_seen: null, cost: null, completions: 0, controls_fired: 0, unknown: true };
+    return { last_seen: null, cost: null, unpriced: 0, completions: 0, controls_fired: 0, unknown: true };
   }
 }
 
-/* ═══════════════════ snippets ═══════════════════ */
+/* ═══════════════════ the gateway, for an application's own code ═══════════════════ */
 
 export const GATEWAY_URL = `${PUBLIC_ORIGIN}/api/gateway/v1`;
-export const RETRIEVAL_URL = `${PUBLIC_ORIGIN}/api/retrieval`;
 
 export interface SnippetContext {
   key: string;
-  principalHeader: string;
   model: string;
-  namespace: string;
 }
 
 const KEY = (c: SnippetContext) => c.key || "<application key>";
 
+/**
+ * The OpenAI SDK pointed at the gateway. The gateway takes the key and
+ * nothing else; `user` is journalled (masked) as the end user, and
+ * `X-Conversation-Id` groups calls into a conversation the register replays.
+ */
 export const SNIPPETS = {
   python: (c: SnippetContext) => `from openai import OpenAI
 
-client = OpenAI(
-    base_url="${GATEWAY_URL}",
-    api_key="${KEY(c)}",
-    default_headers={"${c.principalHeader}": "alice@example.com"},  # who is asking
-)
+client = OpenAI(base_url="${GATEWAY_URL}", api_key="${KEY(c)}")
 
 reply = client.chat.completions.create(
-    model="${c.model || "MODEL_ID"}",
+    model="${c.model}",
     messages=[{"role": "user", "content": "Summarise our password policy."}],
+    user="alice@example.com",                          # the end user, journalled masked
+    extra_headers={"X-Conversation-Id": "ticket-4711"},  # optional: groups calls into a conversation
 )
 print(reply.choices[0].message.content)
-# A screened prompt is refused with HTTP 400 naming the control; a rate limit is 429, a spent budget 402.`,
+# Refusals: 400 screened or a leaked system prompt, 402 budget, 403 a model the policy does not list
+# or not cleared for its data class, 423 blocked, 429 rate limit (with Retry-After). Streaming and tools are not built.`,
 
   typescript: (c: SnippetContext) => `import OpenAI from "openai";
 
-const client = new OpenAI({
-  baseURL: "${GATEWAY_URL}",
-  apiKey: "${KEY(c)}",
-  defaultHeaders: { "${c.principalHeader}": "alice@example.com" }, // who is asking
-});
+const client = new OpenAI({ baseURL: "${GATEWAY_URL}", apiKey: "${KEY(c)}" });
 
-const reply = await client.chat.completions.create({
-  model: "${c.model || "MODEL_ID"}",
-  messages: [{ role: "user", content: "Summarise our password policy." }],
-});
+const reply = await client.chat.completions.create(
+  {
+    model: "${c.model}",
+    messages: [{ role: "user", content: "Summarise our password policy." }],
+    user: "alice@example.com", // the end user, journalled masked
+  },
+  { headers: { "X-Conversation-Id": "ticket-4711" } }, // optional: groups calls into a conversation
+);
 console.log(reply.choices[0].message.content);
-// A screened prompt is refused with HTTP 400 naming the control; a rate limit is 429, a spent budget 402.`,
-
-  retrieval: (c: SnippetContext) => `curl -X POST ${RETRIEVAL_URL}/search \\
-  -H "Authorization: Bearer ${KEY(c)}" \\
-  -H "${c.principalHeader}: alice@example.com" \\
-  -H "content-type: application/json" \\
-  -d '{"query": "retention period for audit logs", "namespace": "${c.namespace || "default"}", "conversation": "conv-1"}'
-# Passages are screened before they return; the namespace must be in the policy and the principal's entitlements.
-# POST ${RETRIEVAL_URL}/answer with the same body returns citations and a grounding verdict.`,
-
-  retrievalPython: (c: SnippetContext) => `import requests
-
-r = requests.post(
-    "${RETRIEVAL_URL}/search",
-    headers={"Authorization": "Bearer ${KEY(c)}", "${c.principalHeader}": "alice@example.com"},
-    json={"query": "retention period for audit logs", "namespace": "${c.namespace || "default"}", "conversation": "conv-1"},
-)
-for passage in r.json()["passages"]:
-    print(passage["title"], passage["body"][:120])`,
+// Refusals: 400 screened or a leaked system prompt, 402 budget, 403 a model the policy does not list
+// or not cleared for its data class, 423 blocked, 429 rate limit (with Retry-After). Streaming and tools are not built.`,
 } as const;
