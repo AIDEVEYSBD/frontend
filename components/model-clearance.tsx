@@ -7,6 +7,7 @@ import { Button, Mono } from "./ui";
 import { Checkbox } from "./forms";
 import { Pick } from "./select";
 import { announceConfig, useConfigChanges } from "./providers";
+import { useSession } from "@/lib/use-session";
 
 /**
  * The classes of data each offered model may be sent, and the models its
@@ -35,6 +36,9 @@ type Rec = Record<string, unknown>;
 const same = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
 
 export function ModelClearance({ onSaved }: { /** A save went through: the page reads the model settings again. */ onSaved: () => void }) {
+  // Who may change clearances and fallbacks: configure. Without it every control is shown disabled (the service refuses the save regardless).
+  const { session, loaded } = useSession();
+  const readOnly = Boolean(loaded && session && !session.permissions.includes("configure"));
   const [stored, setStored] = useState<Model[] | null>(null);
   const [draft, setDraft] = useState<Model[]>([]);
   const [error, setError] = useState("");
@@ -146,7 +150,7 @@ export function ModelClearance({ onSaved }: { /** A save went through: the page 
                             key={c}
                             label={c}
                             checked={on}
-                            disabled={last}
+                            disabled={last || readOnly}
                             aria-label={`${m.id} cleared for ${c}`}
                             onChange={() => edit(m.id, (x) => ({ cleared_for: on ? x.cleared_for.filter((y) => y !== c) : DATA_CLASSES.filter((y) => y === c || x.cleared_for.includes(y)) }))}
                           />
@@ -161,11 +165,11 @@ export function ModelClearance({ onSaved }: { /** A save went through: the page 
                           <span className="tnum text-[10px] text-faint">{i + 1}</span>
                           <Mono className="text-[10.5px]">{f}</Mono>
                           {i > 0 && (
-                            <Button size="sm" variant="quiet" onClick={() => edit(m.id, (x) => ({ fallbacks: [...x.fallbacks.slice(0, i - 1), f, x.fallbacks[i - 1], ...x.fallbacks.slice(i + 1)] }))}>
+                            <Button size="sm" variant="quiet" permission="configure" onClick={() => edit(m.id, (x) => ({ fallbacks: [...x.fallbacks.slice(0, i - 1), f, x.fallbacks[i - 1], ...x.fallbacks.slice(i + 1)] }))}>
                               Earlier
                             </Button>
                           )}
-                          <Button size="sm" variant="solid" tone="err" onClick={() => edit(m.id, (x) => ({ fallbacks: x.fallbacks.filter((y) => y !== f) }))}>
+                          <Button size="sm" variant="solid" tone="err" permission="configure" onClick={() => edit(m.id, (x) => ({ fallbacks: x.fallbacks.filter((y) => y !== f) }))}>
                             Remove
                           </Button>
                         </span>
@@ -173,7 +177,7 @@ export function ModelClearance({ onSaved }: { /** A save went through: the page 
                       {!m.fallbacks.length && <span className="text-[11px] text-faint">none</span>}
                       {others.length > 0 && (
                         <span className="w-44">
-                          <Pick value="" onChange={(v) => v && edit(m.id, (x) => ({ fallbacks: [...x.fallbacks, v] }))} options={[{ value: "", label: "add a fallback" }, ...others.map((o) => ({ value: o.id, label: o.label }))]} aria-label={`Add a fallback for ${m.id}`} />
+                          <Pick value="" onChange={(v) => v && edit(m.id, (x) => ({ fallbacks: [...x.fallbacks, v] }))} options={[{ value: "", label: "add a fallback" }, ...others.map((o) => ({ value: o.id, label: o.label }))]} aria-label={`Add a fallback for ${m.id}`} disabled={readOnly} />
                         </span>
                       )}
                     </span>
