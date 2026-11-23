@@ -13,7 +13,9 @@ import { dataClassChoices } from "@/lib/bom";
 import { soon } from "@/lib/soon";
 import { controlLabel } from "@/lib/guardrails";
 import { DoorError } from "@/lib/api/l5";
-import { addPeer, approvePeer, deletePeer, listPeers, peerOfRefusal, rescanPeer, type Peer } from "@/lib/api/l7b";
+import { errorText } from "@/lib/api/client";
+import { listAgents, type AgentSummary } from "@/lib/api/l2";
+import { addPeer, approvePeer, deletePeer, peerOfRefusal, peerRegistryOf, rescanPeer, type Peer } from "@/lib/api/l7b";
 import { type Me } from "@/lib/mcp-registry";
 import {
   EMPTY_PEER_FORM,
@@ -35,26 +37,73 @@ import {
 } from "@/lib/peers";
 
 /**
- * The peer registry (phase L7, second round; backend/CONTRACT.md "The peer
- * registry"): the A2A agents this factory hands tasks to and hears tasks
- * from, shaped like Tool servers (components/tool-servers.tsx), because a
- * peer is admitted the way a tool server is.
+ * The peer registry: the A2A agents this platform hands tasks to and hears
+ * tasks from, shaped like Tool servers (components/tool-servers.tsx), because
+ * a peer is admitted the way a tool server is; and the agents this platform
+ * offers peers (the skills on its own agent card).
  *
- * Registering is admission, not trust. The registry fetches the peer's
- * agent card signed under the secret the two sides share, checks the
- * answer's signature, and pins the card by its digest; the peer waits,
- * pending, until a person approves the card, and only an approved peer is
- * spoken to, or heard. A rescan that finds another card marks the peer
- * changed and refuses it both ways until someone approves again; the row
- * shows the digest approved against the one found, and what moved. A card
- * that could not be fetched is kept with the fetch's error: two factories
- * register each other before either can answer. The secret is shown by its
- * vault name only; the value never leaves the vault. Every action needs the
- * configure permission, so a viewer reads all of this and changes none of it.
+ * Registering is admission, not trust. A peer is registered by its agent
+ * card's address; the card is fetched, its signature checked against the key
+ * its `jku` names, and the card and that key are pinned; the peer waits,
+ * pending, until a second person approves the card (never the person who
+ * registered it), and only an approved peer is spoken to, or heard. An
+ * unsigned card is shown and cannot be approved: every exchange is verified
+ * against the key that signed the peer's card. A rescan that finds another
+ * card or another key marks the peer changed and refuses it both ways until
+ * someone approves again; the row shows the digest approved against the one
+ * found, and what moved. A card that could not be fetched is kept with the
+ * fetch's error. The credential the peer's own door asks for is shown by its
+ * vault name only. Registering, rescanning and removing need configure;
+ * approving needs approve; offering an agent to peers needs deploy.
  *
  * It is a panel of Configuration (components/configuration.tsx): this file
- * holds the panel's body and the registry's read.
+ * holds the panel's body and the registry's read. The registry's answer
+ * carries `signed_by` (the key the pinned card is signed with), which the
+ * shared parser (lib/api/l7b.ts) does not keep, so the read is made here.
  */
+
+/** The key a peer's pinned card is signed with; null for an unsigned card, or when no card is pinned. */
+export type SignedBy = { kid: string; jku: string; thumbprint: string } | null;
+/** A peer as the registry answers it here: `signed_by` is left undefined only where a peer did not come from `readPeers`. */
+export type PeerWithKey = Peer & { signed_by?: SignedBy };
+
+/** One agent offered to peers (`GET /api/peers/skills`). */
+interface PeerSkill {
+  agent: string;
+  name: string;
+  description: string;
+  set_by: string;
+  set_at: string;
+  ready: boolean;
+  why: string | null;
+  input: { name: string; kind: string; required: boolean }[];
+  text_input: string | null;
+}
+
+/** One request to the backend; a refusal is a DoorError carrying the body. */
+async function door(method: "GET" | "PUT" | "DELETE", path: string): Promise<unknown> {
+  const res = await fetch(path, { method, cache: "no-store", credentials: "include" });
+  const text = await res.text();
+  let json: unknown = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    json = null;
+  }
+  if (!res.ok) {
+    const body = json && typeof json === "object" ? (json as Record<string, unknown>) : {};
+    throw new DoorError(errorText(json && typeof json === "object" ? json : text.trimStart().startsWith("<") ? null : text, res, method, path), res.status, body);
+  }
+  return json;
+}
+
+/** `GET /api/peers`, keeping each peer's `signed_by`. */
+async function readPeers(): Promise<{ peers: PeerWithKey[]; two_person: boolean }> {
+  const raw = (await door("GET", "/api/peers")) as { peers?: { id?: unknown; signed_by?: unknown }[] } | null;
+  const keys = new Map((raw?.peers ?? []).map((p) => [String(p.id ?? ""), (p.signed_by ?? null) as SignedBy]));
+  const r = peerRegistryOf(raw);
+  return { peers: r.peers.map((p) => ({ ...p, signed_by: keys.get(p.id) ?? null })), two_person: r.two_person };
+}
 
 function ago(iso: string): string {
   if (!iso) return "never";
@@ -117,9 +166,9 @@ const INPUT = "focusable h-8 w-full rounded-md border border-line-strong bg-fiel
 
 /**
  * The register form. It posts the contract's body (lib/peers.ts peerBody):
- * the peer's A2A endpoint and the vault name of the secret the two sides
- * share. The card is fetched at once; a fetch that fails is no refusal (the
- * peer is kept, without a card, until a rescan pins one).
+ * the address of the peer's agent card and the vault name of the credential
+ * its door asks for. The card is fetched at once; a fetch that fails is no
+ * refusal (the peer is kept, without a card, until a rescan pins one).
  */
 function RegisterPeerForm({ onAdded, onCancel }: { onAdded: (p: Peer) => void; onCancel: () => void }) {
   const [form, setForm] = useState<PeerForm>(EMPTY_PEER_FORM);
@@ -157,7 +206,7 @@ function RegisterPeerForm({ onAdded, onCancel }: { onAdded: (p: Peer) => void; o
     >
       <span className="flex flex-wrap items-center gap-2">
         <span className="text-[12px] font-semibold text-fg">Register a peer</span>
-        <span className="text-[10.5px] text-faint">its agent card is fetched signed and pinned; nothing is sent to it, or heard from it, until a person approves the card</span>
+        <span className="text-[10.5px] text-faint">its agent card is fetched, its signature checked, and the card and its key pinned; nothing is sent to it, or heard from it, until a second person approves the card</span>
       </span>
       <div className="flex flex-wrap items-end gap-2">
         <label className={cell}>
@@ -165,22 +214,18 @@ function RegisterPeerForm({ onAdded, onCancel }: { onAdded: (p: Peer) => void; o
           <input value={form.label} onChange={(e) => set({ label: e.target.value })} placeholder="SOC triage peer" className={INPUT} />
         </label>
         <label className={cell}>
-          <span className="text-[10.5px] text-ghost">Id (optional; the name a spec&rsquo;s peer config uses)</span>
+          <span className="text-[10.5px] text-ghost">Id (optional; what a run&rsquo;s peer.send names)</span>
           <input value={form.id} onChange={(e) => set({ id: e.target.value })} placeholder={slugOfLabel(form.label) || "from the name"} spellCheck={false} className={`${INPUT} font-mono text-[11.5px]`} />
-        </label>
-        <label className={cell}>
-          <span className="text-[10.5px] text-ghost">Calls in as (optional; this factory&rsquo;s x-af-agent)</span>
-          <input value={form.agent} onChange={(e) => set({ agent: e.target.value })} placeholder="the deployment's own id" spellCheck={false} className={`${INPUT} font-mono text-[11.5px]`} />
         </label>
       </div>
       <div className="grid gap-2 md:grid-cols-2">
         <label className="flex min-w-0 flex-col gap-1">
-          <span className="text-[10.5px] text-ghost">A2A endpoint (its card is read at the endpoint&rsquo;s /.well-known/agent.json)</span>
-          <input value={form.url} onChange={(e) => set({ url: e.target.value })} placeholder="https://peer.example.com/a2a" spellCheck={false} className={`${INPUT} font-mono text-[11.5px]`} />
+          <span className="text-[10.5px] text-ghost">Agent card address (https)</span>
+          <input value={form.url} onChange={(e) => set({ url: e.target.value })} placeholder="https://peer.example.com/.well-known/agent-card.json" spellCheck={false} className={`${INPUT} font-mono text-[11.5px]`} />
         </label>
         <label className="flex min-w-0 flex-col gap-1">
-          <span className="text-[10.5px] text-ghost">Shared secret, by its vault name</span>
-          <input value={form.secret_name} onChange={(e) => set({ secret_name: e.target.value })} placeholder="soc-peer-a2a" spellCheck={false} className={`${INPUT} font-mono text-[11.5px]`} />
+          <span className="text-[10.5px] text-ghost">Credential its door asks for, by vault name</span>
+          <input value={form.secret_name} onChange={(e) => set({ secret_name: e.target.value })} placeholder="soc-peer-token" spellCheck={false} className={`${INPUT} font-mono text-[11.5px]`} />
         </label>
       </div>
       <div className="grid gap-2 md:grid-cols-2">
@@ -194,7 +239,7 @@ function RegisterPeerForm({ onAdded, onCancel }: { onAdded: (p: Peer) => void; o
         </label>
       </div>
       <p className="text-[10.5px] leading-[1.5] text-faint">
-        Store the secret in the vault first (Credentials, on this page) and give its name here, or <Mono className="text-[10px]">{"${secret:name}"}</Mono>; a value pasted where the name belongs is refused, and one name signs for one caller only.
+        Store the credential in the vault first (Credentials, on this page) and give its name here, or <Mono className="text-[10px]">{"${secret:name}"}</Mono>; a value pasted where the name belongs is refused. It is presented as the peer&rsquo;s card asks (a bearer token, or an API key in a header). Requests are signed with this platform&rsquo;s own key, not with this credential.
       </p>
       {error && <Refusal error={error} />}
       <div className="flex flex-wrap items-center gap-2">
@@ -212,13 +257,15 @@ function RegisterPeerForm({ onAdded, onCancel }: { onAdded: (p: Peer) => void; o
 
 /* ═══════════════════ one peer ═══════════════════ */
 
-export function PeerRow({ peer: p, twoPerson, me, onChanged }: { peer: Peer; twoPerson: boolean; me: Me | null; onChanged: () => void }) {
+export function PeerRow({ peer: p, twoPerson, me, onChanged }: { peer: PeerWithKey; twoPerson: boolean; me: Me | null; onChanged: () => void }) {
   const [busy, setBusy] = useState<"approve" | "rescan" | "delete" | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [notice, setNotice] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const meta = PEER_STATUS_META[p.status];
-  const access = approvePeerAccess(p, me, twoPerson);
+  // An unsigned card is pinned and shown, and cannot be approved: nothing the peer sent could be verified.
+  const unsigned = Boolean(p.card) && p.signed_by === null;
+  const access = unsigned ? { ok: false, reason: "its card is not signed: nothing it sent could be verified, so it cannot be approved" } : approvePeerAccess(p, me, twoPerson);
   const skills = skillsOf(p.card);
   const change = cardChange(p);
   const title = cardTitle(p.card);
@@ -233,7 +280,7 @@ export function PeerRow({ peer: p, twoPerson, me, onChanged }: { peer: Peer; two
     try {
       if (what === "approve") {
         await approvePeer(p.id);
-        setNotice({ tone: "ok", text: "Card approved: runs may hand this peer tasks, and it may hand tasks in." });
+        setNotice({ tone: "ok", text: "Card approved: runs may now hand this peer tasks, and the tasks door hears its signed requests." });
       } else if (what === "rescan") {
         const r = await rescanPeer(p.id);
         setNotice(
@@ -269,9 +316,9 @@ export function PeerRow({ peer: p, twoPerson, me, onChanged }: { peer: Peer; two
             <Tag tone="warn">No card</Tag>
           </span>
         )}
-        {p.adopted && (
-          <span title={`Read back from the runtime's ${p.adopted.from || "file"} ${ago(p.adopted.at)}, because the registry's own record was gone`} className="inline-flex">
-            <Tag tone="warn">Adopted</Tag>
+        {unsigned && (
+          <span title="The card carries no signature: it cannot be approved, since every exchange is verified against the key that signed the peer's card." className="inline-flex">
+            <Tag tone="warn">Unsigned card</Tag>
           </span>
         )}
         {title.version && <Mono className="text-[10.5px] text-faint">v{title.version}</Mono>}
@@ -292,7 +339,7 @@ export function PeerRow({ peer: p, twoPerson, me, onChanged }: { peer: Peer; two
         ) : (
           <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
             {p.status !== "approved" && (
-              <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={!access.ok || busy !== null} loading={busy === "approve"} onClick={() => act("approve")}>
+              <Button size="sm" variant="solid" tone="ink" permission="approve" disabled={!access.ok || busy !== null} loading={busy === "approve"} onClick={() => act("approve")}>
                 {p.status === "changed" ? "Approve new card" : "Approve"}
               </Button>
             )}
@@ -344,11 +391,17 @@ export function PeerRow({ peer: p, twoPerson, me, onChanged }: { peer: Peer; two
             {p.added_at ? ` ${ago(p.added_at)}` : ""}
           </span>
         </Fact>
-        <Fact k="Shared secret (vault name)">
+        <Fact k="Credential (vault name)">
           <Mono className="rounded-[3px] bg-raise px-1 py-px text-[10px] text-fg">{p.secret_name || "none"}</Mono>
         </Fact>
-        <Fact k="This factory calls in as">
-          <Mono className="text-[10.5px] text-fg">{p.agent || "the deployment's own id"}</Mono>
+        <Fact k={p.status === "changed" ? "New card signed by" : "Card signed by"}>
+          {p.signed_by ? (
+            <span title={`Key ${p.signed_by.kid}, from ${p.signed_by.jku}. Its requests must be signed with this key.`}>
+              <Mono className="text-[10.5px] text-fg">{p.signed_by.thumbprint.slice(0, 16)}&hellip;</Mono>
+            </span>
+          ) : (
+            <span className="text-ghost">{p.card ? "not signed" : "no card pinned"}</span>
+          )}
         </Fact>
         <Fact k="Last fetch">
           {p.last_fetch ? (
@@ -382,7 +435,7 @@ export function PeerRow({ peer: p, twoPerson, me, onChanged }: { peer: Peer; two
       {p.status === "changed" && (
         <div className="flex flex-col gap-1.5">
           <p className="text-[11.5px] leading-[1.5] font-medium text-err">
-            Agent card changed — re-approval needed. A rescan found a card other than the one approved and pinned it, waiting; the runtime will not send this peer a task, and the tasks door will not hear one from it, until someone approves the new card.
+            Agent card changed — re-approval needed. A rescan found a card, or a signing key, other than the one approved and pinned it, waiting; no run will send this peer a task, and the tasks door will not hear one from it, until a second person approves the new card.
           </p>
           <span className="flex flex-wrap items-center gap-1.5 text-[11px] text-dim">
             <span>Approved</span>
@@ -403,12 +456,12 @@ export function PeerRow({ peer: p, twoPerson, me, onChanged }: { peer: Peer; two
 /* ═══════════════════ the panel ═══════════════════ */
 
 export function usePeers() {
-  const [peers, setPeers] = useState<Peer[] | null>(null);
+  const [peers, setPeers] = useState<PeerWithKey[] | null>(null);
   const [twoPerson, setTwoPerson] = useState(false);
   const [error, setError] = useState("");
   const refresh = useCallback(async () => {
     try {
-      const r = await listPeers();
+      const r = await readPeers();
       setPeers(r.peers);
       setTwoPerson(r.two_person);
       setError("");
@@ -429,14 +482,15 @@ export function usePeers() {
  * is addressed as `#peer-<id>`: a kill receipt, a breaker and a finding link
  * a peer to its row.
  */
-export function PeerList({ peers, twoPerson, me, error, refresh, bare = false }: { peers: Peer[] | null; twoPerson: boolean; me: Me | null; error: string; refresh: () => void; /** The console has nothing behind it (null: not known yet). */ bare?: boolean | null }) {
+export function PeerList({ peers, twoPerson, me, error, refresh, bare = false }: { peers: PeerWithKey[] | null; twoPerson: boolean; me: Me | null; error: string; refresh: () => void; /** The console has nothing behind it (null: not known yet). */ bare?: boolean | null }) {
   const [adding, setAdding] = useState(false);
   const addDoor = useDoorOff("POST", "/api/peers");
   const [added, setAdded] = useState<Peer | null>(null);
   const counts = peerCounts(peers ?? []);
   const shown = orderPeers(peers ?? []);
   const none = shown.length === 0;
-  const approvalRule = twoPerson ? "Two-person approval is on: whoever registers a peer cannot approve its card." : "One approval admits a peer; two-person approval is off on this deployment.";
+  // Said only from a registry that answered: with its read failed, whether a second person is needed is not known here.
+  const approvalRule = error ? "" : twoPerson ? "Two-person approval is on: whoever registers a peer cannot approve its card." : "One approval admits a peer; two-person approval is off on this deployment.";
 
   // Quiet (lib/quiet.ts): a registry that could not be read is not shown as an empty one with zero counts.
   // Not known yet whether anything is behind the console: no "no peer is registered" in the meantime.
@@ -447,8 +501,8 @@ export function PeerList({ peers, twoPerson, me, error, refresh, bare = false }:
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-2 last:border-b-0">
         {none && !error ? (
           <span className="min-w-0 max-w-[92ch] text-[12px] leading-[1.55] text-dim">
-            No peer is registered. A spec&rsquo;s peer step reaches another party&rsquo;s agent only once that agent is registered here and its card approved; until then the runtime refuses it,
-            whatever URL the spec carries. {approvalRule}
+            No peer is registered. A run&rsquo;s peer.send reaches another party&rsquo;s agent only once that agent is registered here and its card approved; until then the call is refused,
+            and nothing is sent. {approvalRule}
           </span>
         ) : (
           <>
@@ -503,8 +557,109 @@ export function PeerList({ peers, twoPerson, me, error, refresh, bare = false }:
 
       {error && <p className="border-b border-line px-4 py-2.5 text-[11.5px] text-err">{error}</p>}
       {shown.map((p) => (
-        <PeerRow key={p.id} peer={p} twoPerson={twoPerson} me={me} onChanged={refresh} />
+        <PeerRow key={p.id} peer={p as PeerWithKey} twoPerson={twoPerson} me={me} onChanged={refresh} />
       ))}
+      <OfferedSkills />
     </>
+  );
+}
+
+/* ═══════════════════ what this platform offers peers ═══════════════════ */
+
+/**
+ * The agents an approved peer may hand a task to: the skills on this
+ * platform's own agent card. A definition has no field for it, so a person
+ * offers each agent here (deploy permission). An offered agent takes a task
+ * only while it has a deployed version and is not retired; the row says why
+ * when it cannot. While the tasks door takes no task at all, the block says
+ * so, in the backend's words.
+ */
+function OfferedSkills() {
+  const [read, setRead] = useState<{ skills: PeerSkill[]; accepted: boolean; notBuilt: string[] } | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+  const [agents, setAgents] = useState<AgentSummary[] | null>(null);
+  const [agentsError, setAgentsError] = useState("");
+  const [choice, setChoice] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<Error | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const r = (await door("GET", "/api/peers/skills")) as { skills: PeerSkill[]; tasks_accepted: boolean; not_built: string[] };
+      setRead({ skills: r.skills, accepted: r.tasks_accepted, notBuilt: r.not_built });
+      setError(null);
+    } catch (e) {
+      setError(e as Error);
+    }
+  }, []);
+  useEffect(() => soon(refresh), [refresh]);
+  useEffect(
+    () =>
+      soon(async () => {
+        try {
+          setAgents(await listAgents());
+        } catch (e) {
+          setAgentsError((e as Error).message);
+        }
+      }),
+    [],
+  );
+
+  const act = async (what: "offer" | "withdraw", agent: string) => {
+    setBusy(`${what}:${agent}`);
+    setActionError(null);
+    try {
+      await door(what === "offer" ? "PUT" : "DELETE", `/api/peers/skills/${encodeURIComponent(agent)}`);
+      if (what === "offer") setChoice("");
+      await refresh();
+    } catch (e) {
+      setActionError(e as Error);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const offered = new Set((read?.skills ?? []).map((s) => s.agent));
+  const choices = (agents ?? []).filter((a) => a.deployed_version != null && !a.retired && !offered.has(a.id)).map((a) => ({ value: a.id, label: a.name && a.name !== a.id ? `${a.name} (${a.id})` : a.id }));
+
+  return (
+    <div className="flex flex-col gap-2 border-t border-line bg-raise/30 px-4 py-3">
+      <span className="flex flex-wrap items-center gap-2">
+        <span className="text-[12px] font-semibold text-fg">Offered to peers</span>
+        <span className="text-[10.5px] text-faint">the agents an approved peer may hand a task to: the skills on this platform&rsquo;s agent card</span>
+      </span>
+      {error && <Refusal error={error} />}
+      {read && !read.accepted && (
+        <p className="text-[11px] leading-[1.5] font-medium text-warn">The tasks door takes no task yet: {read.notBuilt.join("; ")}.</p>
+      )}
+      {read && read.skills.length === 0 && <span className="text-[11.5px] text-dim">No agent is offered to peers.</span>}
+      {read?.skills.map((s) => (
+        <div key={s.agent} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <Mono className="text-[11px] text-fg">{s.agent}</Mono>
+          {s.name !== s.agent && <span className="text-[11px] text-dim">{s.name}</span>}
+          {s.ready ? <Tag tone="ok">Takes tasks</Tag> : <Tag tone="err">Cannot take a task</Tag>}
+          <span className="text-[10.5px] text-faint">
+            {s.ready ? (s.text_input ? `text fills ${s.text_input}; or a data part with ${s.input.map((f) => f.name).join(", ")}` : `a data part with ${s.input.map((f) => f.name).join(", ") || "no fields"}`) : s.why}
+          </span>
+          <span className="text-[10.5px] text-ghost" title={s.set_by}>
+            offered by {who(s.set_by)} {ago(s.set_at)}
+          </span>
+          <span className="grow" />
+          <Button size="sm" variant="solid" tone="err" permission="deploy" loading={busy === `withdraw:${s.agent}`} disabled={busy !== null} onClick={() => act("withdraw", s.agent)}>
+            Withdraw
+          </Button>
+        </div>
+      ))}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="min-w-[220px]">
+          <Pick aria-label="Agent to offer to peers" value={choice} onChange={setChoice} loading={agents === null && !agentsError} disabled={choices.length === 0} options={[{ value: "", label: choices.length ? "Choose a deployed agent" : "No other deployed agent" }, ...choices]} />
+        </span>
+        <Button size="sm" variant="solid" tone="ink" permission="deploy" disabled={!choice || busy !== null} loading={busy === `offer:${choice}`} onClick={() => act("offer", choice)}>
+          Offer to peers
+        </Button>
+        {agentsError && <span className="text-[11px] text-err">The agents could not be read: {agentsError}</span>}
+      </div>
+      {actionError && <Refusal error={actionError} />}
+    </div>
   );
 }

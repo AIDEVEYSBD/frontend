@@ -2,57 +2,64 @@
  * Third-party agents attached to the factory.
  *
  * An agent built elsewhere — a client's own, a vendor's, another team's — is
- * attached so it runs under the same journal as the factory's own agents,
- * which is what puts it on the control pane, in the theater and under the
- * controls with nothing else changing. Two ways in:
+ * attached so it runs under the same record, cost accounting, policy and gates
+ * as the factory's own agents. It is attached with its policy (the tools it is
+ * granted, its gates, its model routing and limits) and a key shown once, and a
+ * second person approves the attachment before the key works. Then it reaches
+ * the platform through three doors, each call naming the run it belongs to:
  *
- *   sdk   the agent's code is ours to change: the SDK journals every model
- *         call, tool call, refusal and gate from inside the process
- *   a2a   the agent's code cannot change: it registers its agent card, its
- *         model calls and tools are routed through the factory, and it
- *         receives its work over A2A
+ *   SDK runs   /api/sdk/runs: open a run of itself, report its steps, wait at a
+ *              gate for a person, take a stop or a steer, finish
+ *   gateway    /api/a2a/gateway/v1: its model calls, screened, priced, limited
+ *              and recorded in the run
+ *   broker     /api/a2a/mcp/<agent>: its tool calls over MCP, decided by the
+ *              platform's own policy and made by the platform's tool host
+ *
+ * Two ways to attach, which differ only in who writes the calls:
+ *
+ *   sdk   the agent's code is ours to change: the Python or TypeScript SDK
+ *         makes these calls
+ *   a2a   the agent's code cannot change: point its OpenAI-compatible base URL
+ *         at the gateway and its MCP configuration at the broker
  *
  * Everything the page shows about an attached agent — snippets, steps,
- * frameworks — is described here once, so the panel renders from a table and
- * the describing endpoints answer from the same one.
+ * frameworks — is described here once.
  */
 
 import { PUBLIC_ORIGIN } from "./site";
 
 export type AttachMode = "sdk" | "a2a";
 export type Language = "python" | "typescript" | "java" | "csharp" | "go";
+/** The languages a tested SDK exists in. Go, Java and C# have a reference of the wire format only (sdk/WIRE.md). */
+export type SnippetLanguage = "python" | "typescript";
 
 export const MODE_META: Record<AttachMode, { label: string; blurb: string; enforcement: string }> = {
   sdk: {
     label: "Agent Factory SDK",
-    blurb: "For an agent whose code you own. A few lines wrap the model client and the tools; the journal, the policy engine and the gates come with them.",
-    enforcement: "in-process guard",
+    blurb: "For an agent whose code you own. The SDK opens a run, reports its steps, sends its model calls through the gateway and its tool calls through the broker, and waits at a gate for a person.",
+    enforcement: "gateway + broker",
   },
   a2a: {
-    label: "A2A",
-    blurb: "For an agent whose code cannot change. Register its card, point its model endpoint and tool configuration at the factory, and hand it work over A2A.",
-    enforcement: "model + tool gateway",
+    label: "Gateway and broker",
+    blurb: "For an agent whose code cannot change. Point its OpenAI-compatible base URL at the gateway and its MCP configuration at the broker; each call names the run it belongs to.",
+    enforcement: "gateway + broker",
   },
 };
 
-/**
- * The languages the panel offers a snippet in. The Java and Go reference
- * clients exist (the snippets below, `Language`), but their package paths
- * carry the name of the organisation that wrote them, so this console does
- * not offer them until those clients are renamed.
- */
-export const LANGUAGES: { id: Language; label: string; install: string }[] = [
-  { id: "python", label: "Python", install: "pip install agentfactory" },
-  { id: "typescript", label: "TypeScript", install: "npm install @agentfactory/sdk" },
-  { id: "csharp", label: "C#", install: "Reference client: one file, no dependencies, supplied with the platform" },
+/** The languages the panel offers a snippet in: the two SDKs that are tested against the platform. */
+export const LANGUAGES: { id: SnippetLanguage; label: string; install: string }[] = [
+  { id: "python", label: "Python", install: "pip install ./sdk/python   (agentfactory-sdk, standard library only)" },
+  { id: "typescript", label: "TypeScript", install: "npm install ./sdk/typescript   (@agentfactory/sdk, Node 23.6 or later)" },
 ];
+
+export const isSnippetLanguage = (l: string): l is SnippetLanguage => LANGUAGES.some((x) => x.id === l);
 
 export interface Framework {
   id: string;
   label: string;
   /** The SDK language a team using this framework usually writes in. */
   language?: Language;
-  /** Products whose agents are configured, not coded: A2A is the only way in. */
+  /** Products whose agents are configured, not coded: only the gateway and the broker are open to them. */
   a2aOnly?: boolean;
 }
 
@@ -81,22 +88,22 @@ export const FRAMEWORKS: Framework[] = [
 
 export const FRAMEWORK_BY_ID = new Map(FRAMEWORKS.map((f) => [f.id, f]));
 
-/** What lands in the journal from an attached agent, and where it then shows. */
+/** What lands in a run's record from an attached agent, and who writes it. */
 export const RECORDED: { kind: string; what: string }[] = [
-  { kind: "model.call", what: "model, tokens in and out, latency; priced against the model sheet, so cost is a measurement" },
-  { kind: "tool.call · tool.result", what: "every tool with its arguments and result, at the risk it was declared" },
-  { kind: "denied", what: "a call the policy engine refused, and the rule that refused it" },
-  { kind: "gate.open · gate.answer", what: "who was asked, who answered, when, and the note they left" },
-  { kind: "taint", what: "untrusted content marked at entry, and every value derived from it" },
-  { kind: "run.start · run.end", what: "state, result and duration, so a run is a record and never a stream that ended" },
+  { kind: "run.start · run.end", what: "written by the platform when the run opens and when the agent finishes it: state, result, duration" },
+  { kind: "note · error", what: "the steps and failures the agent reports, marked as reported by it; it cannot report a cost, an approver or an outcome" },
+  { kind: "model.call", what: "every call through the gateway naming the run: model, tokens in and out, latency, priced at the configured price" },
+  { kind: "tool.call · tool.result", what: "every call through the broker naming the run, with its arguments, its result and the risk it is registered at" },
+  { kind: "denied", what: "a call the platform refused, and the rule that refused it" },
+  { kind: "gate.open · gate.answer · resume", what: "who was asked, who answered, when, the note they left, and the agent taking the answer" },
+  { kind: "taint", what: "untrusted content the broker handed the run: from then on no tool that acts outside is called in that run" },
 ];
 
 export const SHOWN_ON: { page: string; what: string }[] = [
-  { page: "Control", what: "spend, activity, latency and denials beside the factory's own agents" },
-  { page: "Runs", what: "every run readable afterwards, decision by decision" },
-  { page: "Controls", what: "refusals, gates and taint counted from the record" },
-  { page: "Agents", what: "the agent in the one list, with its derived autonomy" },
-  { page: "Explore", what: "its tool calls and activity beside every other agent's; traces export in OpenTelemetry form to any OTLP collector" },
+  { page: "Runs", what: "every run readable afterwards, entry by entry, with a chain that verifies like any run's" },
+  { page: "Approvals", what: "its gates and its held tool calls, answered under the same rules as any run's" },
+  { page: "Costs", what: "its model calls by model, agent, person and team, beside the factory's own" },
+  { page: "Control", what: "pause, stop, steer and lockdown reach its runs as they reach any run" },
 ];
 
 /* ═══════════════════ Endpoints an attached agent talks to ═══════════════════ */
@@ -118,146 +125,50 @@ export interface SnippetContext {
   key: string;
 }
 
-const KEY = (c: SnippetContext) => c.key || "<api key>";
+const KEY = (c: SnippetContext) => c.key || "<agent key>";
 
 /*
  * The names in angle brackets are placeholders for the agent's own: its
- * input, its tools, the model it calls, the role that answers its gate.
- * Nothing in a snippet names a product, an agent or a record.
+ * input, its tools, the role that answers its gate. Nothing in a snippet names
+ * a product, an agent or a record.
  */
-export const SNIPPETS: Record<Language, (c: SnippetContext) => string> = {
-  python: (c) => `from agentfactory import AgentFactory, Denied
-from openai import OpenAI
+export const SNIPPETS: Record<SnippetLanguage, (c: SnippetContext) => string> = {
+  python: (c) => `from agentfactory_sdk import AgentFactory, Killed, Refused
 
 af = AgentFactory(
     endpoint="${PUBLIC_ORIGIN}",
-    api_key="${KEY(c)}",                     # scoped to this agent
+    api_key="${KEY(c)}",                     # this agent's key; it works once a second person approves
     agent="${c.agent}",
 )
 
-# Every completion through this client is journalled: model, tokens, latency, cost.
-llm = af.instrument(OpenAI())
-
-@af.tool("<read-tool-name>", risk="read")              # asked of the policy engine before it runs
-def look_up(record_id: str) -> dict:
-    ...                                                # your own code
-
-@af.tool("<sink-tool-name>", risk="write", sink=True)  # tainted input can never reach this
-def send(to: str, body: str) -> None:
-    ...                                                # your own code
-
-with af.run(input={"<input-field>": "<value>"}) as run:
-    record = look_up("<record-id>")                                         # tool.call → tool.result
-    reply = llm.chat.completions.create(model="<model-id>", messages=msgs)  # model.call
-    if run.gate("<what is being approved>", approvers=["<approver-role>"]):  # suspends; answered in the console
-        send("<recipient>", reply.choices[0].message.content)
-    run.result({"<result-field>": "<value>"})`,
+with af.run(input={"<input-field>": "<value>"}) as run:                       # run.start; refused during a lockdown or a pause
+    run.step("<what the agent did>", node="<step>")                            # a note, marked as reported by the agent
+    reply = run.chat([{"role": "user", "content": "<prompt>"}])                # model.call through the gateway, priced
+    record = run.call_tool("<granted-tool>", {"<arg>": "<value>"})             # through the broker; waits here if it is gated
+    if run.gate("<what is being approved>", approvers=["<approver-role>"])["approved"]:   # waits for a person on Approvals
+        run.call_tool("<other-granted-tool>", {"<arg>": reply.text})
+    run.result({"<result-field>": "<value>"})                                   # run.end, done; Killed and errors finish it too`,
 
   typescript: (c) => `import { AgentFactory } from "@agentfactory/sdk";
-import OpenAI from "openai";
 
 const af = new AgentFactory({
   endpoint: "${PUBLIC_ORIGIN}",
-  apiKey: "${KEY(c)}",                       // scoped to this agent
+  apiKey: "${KEY(c)}",                       // this agent's key; it works once a second person approves
   agent: "${c.agent}",
 });
 
-// Every completion through this client is journalled: model, tokens, latency, cost.
-const llm = af.instrument(new OpenAI());
-
-const lookUp = af.tool("<read-tool-name>", { risk: "read" }, async (id: string) => readRecord(id));               // your own code
-const send = af.tool("<sink-tool-name>", { risk: "write", sink: true }, async (to: string, body: string) => deliver(to, body));
-
-await af.run({ "<input-field>": "<value>" }, async (run) => {
-  const record = await lookUp("<record-id>");                                              // tool.call → tool.result
-  const reply = await llm.chat.completions.create({ model: "<model-id>", messages });      // model.call
-  if (await run.gate("<what is being approved>", { approvers: ["<approver-role>"] })) {    // suspends; answered in the console
-    await send("<recipient>", reply.choices[0].message.content);
+await af.run({ "<input-field>": "<value>" }, async (run) => {                   // run.start; refused during a lockdown or a pause
+  await run.step("<what the agent did>", { node: "<step>" });                    // a note, marked as reported by the agent
+  const reply = await run.chat([{ role: "user", content: "<prompt>" }]);         // model.call through the gateway, priced
+  await run.callTool("<granted-tool>", { "<arg>": "<value>" });                  // through the broker; waits here if it is gated
+  if ((await run.gate("<what is being approved>", { approvers: ["<approver-role>"] })).approved) {   // waits for a person
+    await run.callTool("<other-granted-tool>", { "<arg>": reply.text });
   }
-  run.result({ "<result-field>": "<value>" });
+  run.result({ "<result-field>": "<value>" });                                   // run.end, done; a stop or an error finishes it too
 });`,
-
-  java: (c) => `import com.ey.agentfactory.AgentFactory;
-import com.ey.agentfactory.AgentFactory.*;
-
-AgentFactory af = AgentFactory.builder()
-    .endpoint("${PUBLIC_ORIGIN}")
-    .apiKey("${KEY(c)}")                       // scoped to this agent
-    .agent("${c.agent}")
-    .build();
-
-try (Run run = af.run(Map.of("<input-field>", "<value>"))) {
-    // Every tool call journalled at its declared risk; TAINTS marks the result untrusted.
-    var record = run.tool("<read-tool-name>", Risk.READ, Run.TAINTS, "<record-id>", () -> readRecord("<record-id>"));
-
-    // Every model call journalled: model, tokens in and out, latency → cost.
-    ModelReply reply = run.model("<model-id>", () -> {
-        var r = llm.call(prompt);
-        return new ModelReply(r.text(), "<model-id>", r.promptTokens(), r.completionTokens());
-    });
-
-    if (run.gate("<what is being approved>", List.of("<approver-role>"))) {   // suspends; answered in the console
-        // SINK: a tainted argument is refused before the call; this one is clean.
-        run.tool("<sink-tool-name>", Risk.WRITE, Run.SINK, List.of("<recipient>", reply.text), () -> deliver("<recipient>", reply.text));
-    }
-    run.result(Map.of("<result-field>", "<value>"));
-}`,
-
-  csharp: (c) => `using AgentFactory.Sdk;
-
-var af = new AgentFactoryClient(new AgentFactoryOptions
-{
-    Endpoint = "${PUBLIC_ORIGIN}",
-    ApiKey   = "${KEY(c)}",                     // scoped to this agent
-    Agent    = "${c.agent}",
-});
-
-await using var run = af.StartRun(new Dictionary<string, object> { ["<input-field>"] = "<value>" });
-
-// Every tool call journalled at its declared risk; Taints marks the result untrusted.
-var record = await run.ToolAsync("<read-tool-name>", Risk.Read, ToolFlags.Taints, "<record-id>", () => ReadRecordAsync("<record-id>"));
-
-// Every model call journalled: model, tokens in and out, latency → cost.
-var reply = await run.ModelAsync("<model-id>", async () =>
-{
-    var r = await kernel.InvokePromptAsync(prompt);
-    return new ModelReply(r.ToString(), "<model-id>", r.PromptTokens, r.CompletionTokens);
-});
-
-if (await run.GateAsync("<what is being approved>", new[] { "<approver-role>" }))   // suspends; answered in the console
-    // Sink: a tainted argument is refused before the call; this one is clean.
-    await run.ToolAsync("<sink-tool-name>", Risk.Write, ToolFlags.Sink, new object[] { "<recipient>", reply.Text }, () => DeliverAsync("<recipient>", reply.Text));
-
-run.Result(new Dictionary<string, object> { ["<result-field>"] = "<value>" });`,
-
-  go: (c) => `import af "github.com/ey/agentfactory-go"
-
-client := af.New(af.Options{
-    Endpoint: "${PUBLIC_ORIGIN}",
-    APIKey:   "${KEY(c)}",                    // scoped to this agent
-    Agent:    "${c.agent}",
-})
-
-run := client.Run(ctx, map[string]any{"<input-field>": "<value>"})
-defer run.Close()
-
-// Every model call goes through run.Model: model, tokens, latency → cost.
-reply, err := run.Model(ctx, "<model-id>", func() (af.ModelReply, error) {
-    r, err := llm.Chat(ctx, prompt)
-    return af.ModelReply{Text: r.Text, TokensIn: r.Usage.Prompt, TokensOut: r.Usage.Completion}, err
-})
-
-lookUp := af.Tool(client, "<read-tool-name>", af.Read, af.Taints, readRecord)   // result marked untrusted
-send := af.Tool(client, "<sink-tool-name>", af.Write, af.Sink, deliver)         // refuses a tainted argument
-
-record, _ := lookUp(run, "<record-id>")                                          // tool.call → tool.result
-if ok, _ := run.Gate(ctx, "<what is being approved>", []string{"<approver-role>"}); ok {   // suspends; answered in the console
-    send(run, "<recipient>", reply.Text)
-}
-run.Result(map[string]any{"<result-field>": "<value>"})`,
 };
 
-/* ═══════════════════ A2A setup ═══════════════════ */
+/* ═══════════════════ Gateway and broker setup ═══════════════════ */
 
 export interface A2AStep {
   title: string;
@@ -268,50 +179,42 @@ export interface A2AStep {
 
 export const A2A_STEPS: A2AStep[] = [
   {
-    title: "Register the agent",
-    body: "Name it, say who owns it, and give the factory its agent card URL. A key scoped to this agent is minted at the same time; every door below checks it. Then propose its tools and its gate in the registry's policy editor, which someone other than you approves (an agent starts with nothing), and name the vault secret it signs its A2A requests with.",
-    snippet: (c) => `POST ${ENDPOINTS.origin}/api/attached      { "name": "…", "mode": "a2a", "card_url": "…" }
-→    { "agent": "${c.agent}", "key": "${KEY(c)}" }
-POST ${ENDPOINTS.origin}/api/policy/changes  { "target": { "kind": "attached", "id": "${c.agent}" }, "proposed": { "grants": ["<tool-name>"], "gate_at": "write" }, "reason": "…" }
-PATCH ${ENDPOINTS.origin}/api/attached     { "id": "${c.agent}", "secret_name": "${c.agent}-a2a" }`,
+    title: "Attach the agent, and have it approved",
+    body: "Name it, say who owns it, and attach it. Before a second person approves, set its policy here (the tools it is granted, its gate, its model routing and limits): an agent starts with nothing granted. The key is shown once; every door refuses it until the attachment is approved.",
+    snippet: (c) => `POST ${ENDPOINTS.origin}/api/attached                      { "name": "…", "mode": "a2a", "grants": ["<tool>"], "gate_at": "write" }
+→    { "agent": { "id": "${c.agent}", "policy_digest": "sha256:…" }, "key": "${KEY(c)}" }
+POST ${ENDPOINTS.origin}/api/attached/${c.agent}/approve   { "digest": "sha256:…" }      (someone else)`,
     lang: "http",
   },
   {
-    title: "Route its model calls through the factory",
-    body: "Point the agent's OpenAI-compatible base URL at the model gateway and give it the key. Every completion is forwarded to the deployment's own model resource and journalled with model, tokens and latency, priced from the model sheet. User and tool turns are screened before they leave; a blocked agent gets no answer. Streaming works; send x-agentfactory-run to group calls into one run.",
-    snippet: (c) => `# OpenAI SDKs, LangChain, LlamaIndex, Vercel AI, Spring AI: anything that honours these
+    title: "Open a run for the work",
+    body: "Each piece of work is a run of the agent, opened with its key and finished when the work ends. Its model and tool calls name it, so their cost and their decisions are the run's. A run whose agent sends nothing for the platform's lease is closed as abandoned.",
+    snippet: (c) => `POST ${ENDPOINTS.ingest}                  Authorization: Bearer ${KEY(c)}
+{ "run": { "input": { "…": "…" } } }       →  { "run_id": "<run id>" }
+POST ${ENDPOINTS.ingest}/<run id>/finish   { "state": "done", "result": { … } }`,
+    lang: "http",
+  },
+  {
+    title: "Route its model calls through the gateway",
+    body: "Point the agent's OpenAI-compatible base URL at the gateway and give it the key. Every completion is screened, priced at the configured price and recorded; send X-Agentfactory-Run to record it in the run. The model may be auto, a tier or a model its policy lets it name. Streaming and tool calling through the gateway are not built.",
+    snippet: (c) => `# OpenAI SDKs and anything that honours these
 OPENAI_BASE_URL=${ENDPOINTS.gateway}
-OPENAI_API_KEY=${KEY(c)}`,
+OPENAI_API_KEY=${KEY(c)}
+# and, on each request: X-Agentfactory-Run: <run id>`,
     lang: "env",
   },
   {
-    title: "Route its tools through the factory",
-    body: "Point the agent's MCP configuration at the broker. It serves exactly the registry tools the agent was granted, through the policy engine: an ungranted tool is refused and the refusal recorded, a call at or above the gate risk waits for a person on the control pane, and every call lands in the journal. The MCP session is the run.",
+    title: "Route its tools through the broker",
+    body: "Point the agent's MCP configuration at the broker. It serves exactly the tools the agent was granted, through the platform's own policy: an ungranted tool is refused and the refusal recorded, a call at or above the gate waits for a person on the Approvals page, and every call lands in the run. Every tool call names its run; one that names none is refused.",
     snippet: (c) => `{
   "mcpServers": {
     "agent-factory": {
       "url": "${ENDPOINTS.broker(c.agent)}",
-      "headers": { "Authorization": "Bearer ${KEY(c)}" }
+      "headers": { "Authorization": "Bearer ${KEY(c)}", "X-Agentfactory-Run": "<run id>" }
     }
   }
 }`,
     lang: "json",
-  },
-  {
-    title: "Exchange work over A2A",
-    body: "Every A2A request is signed, both ways, under a secret the two sides share and the vault holds by name: the agent signs as its id with the secret named in its policy, and checks the signature on every answer before reading it. The factory hands the agent tasks through the peer connector (peer.send, then peer.result, the reply marked untrusted until a node validates it) once its endpoint is registered under Peers and a person has approved its pinned card. The factory is a peer too: its card, served signed, lists the deployed workflows as skills, and tasks/send at the tasks door puts a task on the trigger queue for a worker to run under the policy engine.",
-    snippet: (c) => `POST ${ENDPOINTS.tasks}
-x-af-agent: ${c.agent}
-x-af-timestamp: <unix seconds>      x-af-nonce: <16 random bytes, hex>
-x-af-signature: <base64url HMAC-SHA256, under the shared secret, of
-                 POST\\n/api/a2a\\ntimestamp\\nnonce\\nsha256hex(body)\\nx-af-delegation>
-{ "jsonrpc": "2.0", "id": 1, "method": "tasks/send",
-  "params": { "id": "${c.agent}-task-1", "metadata": { "workflow": "<workflow-id>" },
-              "message": { "role": "user", "parts": [{ "type": "data", "data": { "…": "the workflow's input" } }] } } }
-→ { "result": { "id": "…", "status": { "state": "submitted" } } }      then tasks/get until completed
-  x-af-signature on the answer: status\\nyour nonce\\nsha256hex(body), verified before it is read
-GET  ${ENDPOINTS.card}   the factory's own card, signed the same way`,
-    lang: "http",
   },
 ];
 
@@ -340,7 +243,7 @@ export interface AttachedAgent {
   gate_at: "" | "read" | "write" | "risky" | "destructive";
   injection: "block" | "flag";
   blocked: boolean;
-  /** The vault name of the secret it signs its A2A requests with (phase L7); "" when it has none, and then the tasks door does not hear it. Never the value. */
+  /** Always "": an attached agent does not sign A2A requests with a shared secret (the platform answers 501 for one). */
   secret_name: string;
   /** How the model gateway routes it: the default (a model, a tier, or "" for the deployment's), what it may name, what is tried when one fails. */
   model?: string;
@@ -355,6 +258,16 @@ export interface AttachedAgent {
   gates30d: number | null;
   p50ms: number | null;
 }
+
+/**
+ * What the register answers beside the generated `AttachedAgentView` (ahead of lib/api/backend.d.ts): whether a
+ * second person has approved the attachment (until then its key is refused at every door), who may not, and the
+ * digest of the policy as it stands, which an approval names.
+ */
+export type AttachedRow = AttachedAgent & {
+  approval?: { state: "awaiting" | "approved"; digest: string; by?: { sub?: string; email?: string; name?: string }; at?: string | null; proposed_by?: string[] };
+  policy_digest?: string;
+};
 
 export function slugOf(name: string): string {
   return name

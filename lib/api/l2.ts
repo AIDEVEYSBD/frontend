@@ -142,11 +142,42 @@ export async function attachAgent(body: AttachRequest): Promise<Schemas["Attache
   return data;
 }
 
-/** `PATCH /api/attached`: an attached agent's injection action, block and signing secret. Its grants and gate risk answer 409 since L9: they are a policy target (`proposePolicyChange`, lib/api/l9.ts). */
-export async function setAttachedPolicy(patch: PolicyPatch): Promise<Schemas["PolicyChanged"]> {
-  const { data, error, response } = await api.PATCH("/api/attached", { body: patch });
+/** What `PATCH /api/attached` takes: the generated `PolicyPatch` and, before approval, routing and limits too (ahead of lib/api/backend.d.ts). */
+export type AttachedPatch = PolicyPatch & { model?: string; models?: string[]; fallbacks?: string[]; limits?: Record<string, number> };
+
+/**
+ * `PATCH /api/attached`: an attached agent's block and injection action at any time; before a second person has
+ * approved the attachment, its whole policy (grants, gate, routing, limits), and whoever saves it cannot approve
+ * it. After approval the reviewed fields answer 409 (`control: policy_change`): they are a policy target
+ * (`proposePolicyChange`, lib/api/l9.ts). A shared A2A secret answers 501.
+ */
+export async function setAttachedPolicy(patch: AttachedPatch): Promise<Schemas["PolicyChanged"]> {
+  const { data, error, response } = await api.PATCH("/api/attached", { body: patch as PolicyPatch });
   if (!data) throw doorError(error, response);
   return data;
+}
+
+/**
+ * `POST /api/attached/{id}/approve`: a second person approves the attachment exactly as they read it (its
+ * `policy_digest`); its key works from then. 403 for the person who attached it or changed its policy; 409 when
+ * the policy changed since it was read. The address is ahead of lib/api/backend.d.ts, so it is called by hand.
+ */
+export async function approveAttached(id: string, digest: string): Promise<Schemas["PolicyChanged"]> {
+  const path = `/api/attached/${encodeURIComponent(id)}/approve`;
+  let response: Response;
+  try {
+    response = await fetch(path, { method: "POST", credentials: "include", cache: "no-store", headers: { "content-type": "application/json" }, body: JSON.stringify({ digest }) });
+  } catch (e) {
+    throw new Error(`POST ${path} could not be reached: ${(e as Error).message || "the request did not reach the server"}`);
+  }
+  let body: unknown = null;
+  try {
+    body = await response.json();
+  } catch {
+    body = null;
+  }
+  if (!response.ok) throw new Error(errorText(body, response, "POST", path));
+  return body as Schemas["PolicyChanged"];
 }
 
 /** `DELETE /api/attached?id=`: detached, and the key minted for it revoked. */

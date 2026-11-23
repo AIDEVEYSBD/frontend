@@ -25,6 +25,8 @@ import { Providers, useConfigChanges } from "./providers";
 import { Keys, OfferedModels } from "./settings";
 import { ModelClearance } from "./model-clearance";
 import { ApiKeys } from "./api-keys";
+import { IngressActivity } from "./ingress-activity";
+import { VendorConnectors } from "./vendor-connectors";
 import { PeerList, meOf, usePeers } from "./peers";
 import { useSession } from "@/lib/use-session";
 import { Appearance } from "./appearance";
@@ -970,8 +972,8 @@ function ConfigurationTabs() {
               id="peers"
               {...fold("peers")}
               title={TITLES.peers}
-              caption="Other parties' agents this deployment speaks A2A with. Nothing is sent to a peer, or heard from it, until a person approves its agent card."
-              how="Each peer is admitted the way a tool server is: its agent card is fetched signed and pinned by digest. A card that changes detaches the peer until someone approves it again. Every request both ways is signed under a secret the two sides share, held in the vault and shown here by name only."
+              caption="Other parties' agents this deployment speaks A2A with, and the agents it offers them. Nothing is sent to a peer, or heard from it, until a second person approves its agent card."
+              how="Each peer is admitted the way a tool server is: its agent card is fetched, its signature checked, and the card and its signing key pinned. A card or key that changes detaches the peer until a second person approves it again. Every request both ways is signed (HTTP Message Signatures) with the key on each side's card; a credential the peer's own door asks for is held in the vault and shown here by name only."
               meta={peers.peers && !peers.error && peerCount.changed > 0 ? <Tag tone="err" solid>{peerCount.changed} changed</Tag> : undefined}
             >
               {off("peers") && <EmptyBar action="Register a peer">Peers are listed here, each with its agent card, the state of its approval and the secret it signs under, by name.</EmptyBar>}
@@ -993,6 +995,7 @@ function ConfigurationTabs() {
               }
             >
               <AttachedAgents onLoaded={(agents) => setAttached(agents)} onQuiet={says.agents} />
+              <VendorConnectors />
             </Panel>
             {/* ── egress: the hosts outbound requests may reach (9.6) ── */}
             <Panel
@@ -1092,6 +1095,7 @@ function ConfigurationTabs() {
                   )}
                 </div>
               </div>}
+              <IngressActivity />
             </Panel>
             {/* ── gates ── */}
             <Panel

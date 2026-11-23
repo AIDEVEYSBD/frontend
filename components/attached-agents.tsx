@@ -3,6 +3,7 @@ import { useDoorOff } from "@/lib/use-doors";
 import { Failure } from "./pending";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSession } from "@/lib/use-session";
 import Link from "next/link";
 import { Button, Mono, Status, Tag } from "./ui";
 import { Pick } from "./select";
@@ -18,26 +19,33 @@ import {
   RECORDED,
   SHOWN_ON,
   SNIPPETS,
+  isSnippetLanguage,
   slugOf,
   type AgentLimits,
   type AttachMode,
   type AttachedAgent,
-  type Language,
+  type AttachedRow,
+  type SnippetLanguage,
 } from "@/lib/attached";
-import { attachAgent, attachableTools, detachAgent, listAttached, setAttachedPolicy, type AttachedList, type PolicyPatch } from "@/lib/api/l2";
+import { approveAttached, attachAgent, attachableTools, detachAgent, listAttached, setAttachedPolicy, type AttachedList, type AttachedPatch } from "@/lib/api/l2";
 import { proposePolicyChange, type PolicyChange } from "@/lib/api/l9";
 import { attachedSplit, effectiveAt, effectiveProblem, proposedLine } from "@/lib/policy";
 
 /**
  * Third-party agents: how one attaches, and which ones have.
  *
- * The manual (the SDK in the five languages teams write agents in, or the
- * A2A route for an agent whose code cannot change) sits behind "Show the
- * code", so the panel opens on the attach form and the registry. It renders
- * with the id and key of whatever was just attached, so the snippet on
- * screen is the one to paste, and it opens by itself when a key is minted.
- * The registry is every attached agent with its activity beside the
- * factory's own.
+ * The manual (the Python and TypeScript SDKs, or the gateway and broker
+ * route for an agent whose code cannot change) sits behind "Show the code",
+ * so the panel opens on the attach form and the registry. It renders with the
+ * id and key of whatever was just attached, so the snippet on screen is the
+ * one to paste, and it opens by itself when a key is minted. The registry is
+ * every attached agent with its approval, its policy and its activity.
+ *
+ * An attachment waits for a second person's approval before its key works.
+ * Until then its policy editor saves every field at once (and whoever saves
+ * it cannot approve it); after approval the grants, the gate, routing and
+ * limits go to review as a policy change, and the injection filter and the
+ * block still save at once.
  */
 
 const MODES: AttachMode[] = ["sdk", "a2a"];
@@ -185,7 +193,8 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
   const [unread, setUnread] = useState("");
   const [mode, setMode] = useState<AttachMode>("sdk");
   const attachDoor = useDoorOff("POST", "/api/attached");
-  const [language, setLanguage] = useState<Language>("python");
+  const [language, setLanguage] = useState<SnippetLanguage>("python");
+  const { session } = useSession();
   /** The install line, the snippets and the setup steps are folded away until asked for. */
   const [code, setCode] = useState(false);
 
@@ -241,7 +250,7 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
   }, []);
 
   /** Resolves whether the change was taken; a refusal stays on the page (the policy editor's own line when it is open). */
-  const patch = async (id: string, body: Omit<PolicyPatch, "id">): Promise<boolean> => {
+  const patch = async (id: string, body: Omit<AttachedPatch, "id">): Promise<boolean> => {
     setSaving(true);
     setPolicyError("");
     try {
@@ -286,12 +295,39 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
       limits: a.limits ?? {},
     });
   };
-  /** Saves the row's own fields at once and proposes the rest. A refusal (a 409 naming the policy door among them) stays on the editor, in the door's words. */
+  /** Whether this person attached the agent or changed its policy before approval: such a person cannot approve it. */
+  const proposedByMe = (a: AttachedRow) =>
+    Boolean(session?.email) && (a.approval?.proposed_by ?? []).some((p) => p.toLowerCase() === session?.email.toLowerCase());
+  const awaiting = (a: AttachedRow) => a.approval?.state !== "approved";
+
+  const approve = async (a: AttachedRow) => {
+    setSaving(true);
+    setError("");
+    try {
+      await approveAttached(a.id, a.policy_digest ?? a.approval?.digest ?? "");
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /**
+   * Before approval every field is saved at once. After it, the row's own fields are saved and the rest proposed.
+   * A refusal (a 409 naming the policy door among them) stays on the editor, in the door's words.
+   */
   const savePolicy = async (a: AttachedAgent) => {
+    if (awaiting(a)) {
+      const { grants, gate_at, injection, model, models, fallbacks, limits } = draft;
+      const sorted = Object.fromEntries(Object.entries(limits).filter(([, v]) => typeof v === "number" && v > 0)) as Record<string, number>;
+      if (await patch(a.id, { grants, gate_at, injection, model, models, fallbacks, limits: sorted })) setEditing("");
+      return;
+    }
     const { reviewed: proposal, direct } = attachedSplit(a, draft);
     const reviewing = Object.keys(proposal).length > 0;
     if (reviewing && !reason.trim()) return setPolicyError("Grants, the gate, routing and limits go to review: say why.");
-    if (Object.keys(direct).length && !(await patch(a.id, direct as Omit<PolicyPatch, "id">))) return;
+    if (Object.keys(direct).length && !(await patch(a.id, direct as Omit<AttachedPatch, "id">))) return;
     if (!reviewing) return setEditing("");
     setSaving(true);
     setPolicyError("");
@@ -318,8 +354,8 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
   const changeFramework = (id: string) => {
     setFramework(id);
     const lang = FRAMEWORK_BY_ID.get(id)?.language;
-    // Only a language this console offers a snippet in; otherwise the choice stands.
-    if (lang && LANGUAGES.some((l) => l.id === lang)) setLanguage(lang);
+    // Only a language a tested SDK exists in; otherwise the choice stands.
+    if (lang && isSnippetLanguage(lang)) setLanguage(lang);
   };
   const changeMode = (m: AttachMode) => {
     setMode(m);
@@ -397,7 +433,7 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
             </div>
             <Code text={SNIPPETS[language](ctx)} lang={language} />
             <span className="border-t border-line px-4 py-2.5 text-[11px] leading-[1.55] text-faint">
-              The SDK never carries policy of its own. Every tool call is asked of this control plane before it runs, every gate suspends here and is answered in the console, and the run record lands in the same store as the factory&rsquo;s own. Reports to <Mono className="text-[10.5px]">{ENDPOINTS.ingest}</Mono>.
+              The SDK carries no policy of its own. Every tool call goes through the broker and is decided here before it is made, every gate waits here and is answered on the Approvals page, and the run&rsquo;s record lands in the same store as the factory&rsquo;s own. Runs open at <Mono className="text-[10.5px]">{ENDPOINTS.ingest}</Mono>. Go, Java and C# have a reference of the wire format (sdk/WIRE.md), not a tested SDK.
             </span>
           </div>
           <div className="flex min-w-0 flex-col bg-surface">
@@ -436,32 +472,23 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
             ))}
           </div>
           <div className="flex min-w-0 flex-col bg-surface">
-            <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">Enforced at the gateway, without a line of the agent&rsquo;s code</span>
+            <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">Enforced at the gateway and the broker, without a line of the agent&rsquo;s code</span>
             {[
               { k: "Capability", v: "a tool the agent was never granted is refused, and the refusal is recorded" },
-              { k: "Scope", v: "which rows of a granted tool it may touch, enforced on the call" },
-              { k: "Taint", v: "everything a tainting tool returns is marked, and cannot reach a sink" },
-              { k: "Gates", v: "a call at or above the gate risk waits for a named person" },
+              { k: "Scope", v: "the argument values a granted tool may be called with, enforced on the call" },
+              { k: "Taint", v: "what an untrusted tool returns is marked; from then on no tool that acts outside is called in that run" },
+              { k: "Gates", v: "a call at or above the gate risk waits for a person on the Approvals page" },
               { k: "Injection", v: "prompts are screened before they leave for the model" },
-              { k: "Kill switch", v: "an operator kill refuses the agent's next model call" },
-              { k: "Cost", v: "every completion priced from the model sheet, never estimated" },
+              { k: "Stop", v: "a stopped run's next model or tool call is refused" },
+              { k: "Cost", v: "every completion priced at the configured price; a model with no price shows as unpriced" },
             ].map((r) => (
               <span key={r.k} className="flex items-start gap-3 border-b border-line px-4 py-2">
                 <span className="w-[92px] shrink-0 text-[11.5px] text-fg">{r.k}</span>
                 <span className="min-w-0 grow text-[11px] leading-[1.5] text-faint">{r.v}</span>
               </span>
             ))}
-            <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">Known to attach this way</span>
-            <span className="flex flex-wrap gap-1.5 px-4 py-3">
-              {FRAMEWORKS.filter((f) => f.a2aOnly).map((f) => (
-                <Tag key={f.id} tone="queue">{f.label}</Tag>
-              ))}
-              {FRAMEWORKS.filter((f) => !f.a2aOnly && f.id !== "custom").map((f) => (
-                <Tag key={f.id}>{f.label}</Tag>
-              ))}
-            </span>
-            <span className="border-t border-line px-4 py-2.5 text-[11px] leading-[1.55] text-faint">
-              Any agent that honours an OpenAI-compatible base URL and an MCP configuration attaches this way. The factory&rsquo;s own card is at <Mono className="text-[10.5px]">{ENDPOINTS.card}</Mono>.
+            <span className="px-4 py-2.5 text-[11px] leading-[1.55] text-faint">
+              An agent that lets you set an OpenAI-compatible base URL, an MCP server and the headers sent to each can attach this way; none of the products in the framework list has been tried against this platform. Handing this platform tasks over A2A is a separate door: register the agent under Peers. The factory&rsquo;s own card is at <Mono className="text-[10.5px]">{ENDPOINTS.card}</Mono>.
             </span>
           </div>
         </div>
@@ -518,7 +545,7 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
             <Status tone="ok">{minted.agent.name} attached</Status>
             <Mono className="text-[11px] text-fg">{minted.key}</Mono>
             <CopyButton text={minted.key} />
-            <span className="text-[10.5px] text-faint">This is the only time the key is shown. The snippet above already carries it.</span>
+            <span className="text-[10.5px] text-faint">This is the only time the key is shown; it works once someone else approves the attachment. Set its policy with Policy below before then.</span>
             <span className="grow" />
             <Button size="sm" variant="solid" tone="neutral" onClick={() => setMinted(null)}>Dismiss</Button>
           </div>
@@ -558,32 +585,20 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
                   <td className="px-3 py-2.5">
                     <span className="flex flex-col gap-1">
                       <span className="flex items-center gap-1.5">
-                        {a.mode === "sdk" ? <Tag tone="run" solid>SDK</Tag> : <Tag tone="queue" solid>A2A</Tag>}
+                        {a.mode === "sdk" ? <Tag tone="run" solid>SDK</Tag> : <Tag tone="queue" solid>Gateway</Tag>}
                         <span className="text-[11px] text-fg">{fw}</span>
                       </span>
                       <span className="max-w-[240px] truncate font-mono text-[10px] text-ghost">
-                        {a.mode === "sdk" ? `${lang ?? "SDK"} · in-process` : a.card_url ? host(a.card_url) : "gateway + broker"}
+                        {a.mode === "sdk" ? `${lang ? `${lang} SDK` : "SDK"} · gateway + broker` : a.card_url ? host(a.card_url) : "gateway + broker"}
                       </span>
-                      {(a.mode === "a2a" || a.secret_name) && (
-                        <span
-                          className={`max-w-[240px] truncate text-[10px] ${a.secret_name ? "text-faint" : "text-warn"}`}
-                          title={a.secret_name ? `It signs its A2A requests as ${a.id} with the vault secret named ${a.secret_name}; the value never leaves the vault.` : "No A2A secret: the tasks door does not hear it until its policy names one."}
-                        >
-                          {a.secret_name ? (
-                            <>
-                              signs A2A with <Mono className="text-[10px] text-dim">{a.secret_name}</Mono>
-                            </>
-                          ) : (
-                            "no A2A secret named"
-                          )}
-                        </span>
-                      )}
                     </span>
                   </td>
                   <td className="px-3 py-2.5 whitespace-nowrap">
-                    {a.blocked ? <Status tone="err">blocked</Status> : <Status tone="ok">enforced</Status>}
+                    {a.blocked ? <Status tone="err">blocked</Status> : awaiting(a) ? <Status tone="warn">awaiting approval</Status> : <Status tone="ok">enforced</Status>}
                     <span className="block text-[10px] text-ghost">
-                      {a.blocked ? "every door refuses" : `${a.model ? `routes to ${a.model} · ` : ""}${MODE_META[a.mode].enforcement} · ${a.grants.length} tool${a.grants.length === 1 ? "" : "s"} · gate ${a.gate_at || "never"}`}
+                      {a.blocked
+                        ? "every door refuses"
+                        : `${awaiting(a) ? "key refused until approved · " : ""}${a.model ? `routes to ${a.model} · ` : ""}${MODE_META[a.mode].enforcement} · ${a.grants.length} tool${a.grants.length === 1 ? "" : "s"} · gate ${a.gate_at || "never"}`}
                     </span>
                   </td>
                   <td className="px-3 py-2.5 whitespace-nowrap text-[11.5px]">{a.owner || <span className="text-ghost">unowned</span>}</td>
@@ -603,6 +618,19 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1.5">
+                        {awaiting(a) && (
+                          <Button
+                            size="sm"
+                            variant="solid"
+                            tone="ok"
+                            permission="configure"
+                            onClick={() => approve(a)}
+                            disabled={saving || proposedByMe(a)}
+                            title={proposedByMe(a) ? "You attached this agent or changed its policy, so someone else approves it" : "Approve the attachment exactly as its policy stands now; its key works from then"}
+                          >
+                            Approve
+                          </Button>
+                        )}
                         <Button size="sm" variant="solid" tone="neutral" permission="configure" onClick={() => (editing === a.id ? setEditing("") : openPolicy(a))} disabled={store === "db unreachable"}>
                           {editing === a.id ? "Close" : "Policy"}
                         </Button>
@@ -630,7 +658,7 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
                     <div className="flex flex-col gap-3">
                       <div className="flex flex-wrap items-end gap-3">
                         <span className="text-[12px] font-semibold text-fg">Policy for {a.name}</span>
-                        <span className="text-[11px] text-faint">Enforced at the tool broker and the model gateway. An agent starts with nothing granted.</span>
+                        <span className="text-[11px] text-faint">Enforced at the tool broker and the model gateway. An agent starts with nothing granted; agent.invoke cannot be granted.</span>
                         <span className="grow" />
                         <label className="flex flex-col gap-1">
                           <span className="text-[10.5px] text-ghost">Gate at</span>
@@ -663,17 +691,6 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
                             />
                           </span>
                         </label>
-                        <label className="flex flex-col gap-1">
-                          <span className="text-[10.5px] text-ghost">A2A secret (vault name)</span>
-                          <input
-                            value={draft.secret_name}
-                            onChange={(e) => setDraft((d) => ({ ...d, secret_name: e.target.value }))}
-                            placeholder={`${a.id}-a2a`}
-                            spellCheck={false}
-                            aria-label="A2A secret, by its vault name"
-                            className={`${control} w-[190px] font-mono text-[11px]`}
-                          />
-                        </label>
                         <Button
                           size="sm"
                           variant="solid"
@@ -683,19 +700,18 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
                           disabled={Boolean(effectiveProblem(effective))}
                           onClick={() => savePolicy(a)}
                         >
-                          {Object.keys(attachedSplit(a, draft).reviewed).length ? "Propose for review" : "Save"}
+                          {!awaiting(a) && Object.keys(attachedSplit(a, draft).reviewed).length ? "Propose for review" : "Save"}
                         </Button>
                         <Button size="sm" variant="solid" tone="err" onClick={() => setEditing("")}>Cancel</Button>
                       </div>
                       <ModelRouting draft={draft} onChange={setDraft} catalogue={catalogue} control={control} />
                       <span className="text-[10.5px] leading-[1.5] text-faint">
-                        The A2A secret is the name the vault holds it under (or <Mono className="text-[10px]">{"${secret:name}"}</Mono>), never the secret itself: the agent signs every A2A request with it as <Mono className="text-[10px]">{a.id}</Mono>, and one name signs for one caller, peer or agent. Leave it empty to remove it.
+                        {awaiting(a)
+                          ? "The attachment waits for a second person's approval: every field saves here at once, and whoever saves it cannot approve it. The approval covers the policy exactly as it stands then."
+                          : "The gate, the grants, routing and limits go to review: someone other than you approves them on the Policy page, and they stand as they are until then. The injection filter applies at once."}
                       </span>
-                      <span className="text-[10.5px] leading-[1.5] text-faint">
-                        The gate, the grants, routing and limits go to review: someone other than you approves them on the Policy page, and they stand as they are until then. The injection filter and the A2A secret apply at once.
-                      </span>
-                      <OpenChanges target={{ kind: "attached", id: a.id }} tick={proposals} />
-                      {Object.keys(attachedSplit(a, draft).reviewed).length > 0 && <ProposalNote reason={reason} onReason={setReason} effective={effective} onEffective={setEffective} />}
+                      {!awaiting(a) && <OpenChanges target={{ kind: "attached", id: a.id }} tick={proposals} />}
+                      {!awaiting(a) && Object.keys(attachedSplit(a, draft).reviewed).length > 0 && <ProposalNote reason={reason} onReason={setReason} effective={effective} onEffective={setEffective} />}
                       {proposed && (
                         <Link href={`/policy?change=${encodeURIComponent(proposed.id)}`} className="focusable w-fit rounded-sm text-[11px] text-ok hover:underline">
                           {proposedLine(proposed)}
