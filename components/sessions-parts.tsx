@@ -29,8 +29,14 @@ export const isLive = (s: Session): boolean => s.state === "active" || s.state =
  * A session that can be ended: any not already ended. Ending acts on the
  * caller, not on a cookie, so a person or a key not seen lately ("expired")
  * still has something to stop: the person can come back, the key still works.
+ * An attached agent's own key (client `sdk`) is not ended here: the platform
+ * revokes it by detaching the agent, or refuses it while the agent is blocked,
+ * both on Configuration, Third-party agents.
  */
-export const isEndable = (s: Session): boolean => s.state !== "revoked";
+export const isEndable = (s: Session): boolean => s.state !== "revoked" && !attachedKey(s);
+
+/** An attached agent's session: its own key at the SDK, gateway and broker doors. */
+export const attachedKey = (s: Session): boolean => s.kind === "agent" && s.client.kind === "sdk";
 
 const CLIENT_WORD: Record<string, string> = {
   browser: "Browser",
@@ -87,6 +93,8 @@ export function consequence(s: Session): string {
   if (s.kind === "agent" && s.client.kind === "api_key") return `The API key ${who} is revoked: its next request is refused, and a revoked key cannot be restored. Mint a new key to replace it.`;
   if (s.kind === "agent" && s.client.kind === "workload")
     return `Every token issued to ${who} until now is refused. A token its issuer issues later signs it in again; to keep it out, remove its subject from the issuer.`;
+  if (attachedKey(s))
+    return `${who} is an attached agent: its session is not ended here. Block it to refuse its key until it is unblocked, or detach it to revoke its key and stop its runs in flight, both on Configuration, Third-party agents.`;
   return `${who} is stopped from its next request.`;
 }
 
@@ -323,7 +331,7 @@ export function SessionPanel({
                 ? "Ended by an administrator, and not seen since. It stays here as a record."
                 : mine
                   ? "This is your own session. Nobody ends their own; another administrator can."
-                  : `${live ? "" : "Not seen in the last 30 minutes; ending it still acts. "}${consequence(s)}`)}
+                  : `${live || attachedKey(s) ? "" : "Not seen in the last 30 minutes; ending it still acts. "}${consequence(s)}`)}
           </span>
           {endable && !mine && (
             <span className="flex flex-wrap items-center justify-end gap-2">

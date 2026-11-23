@@ -552,22 +552,22 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
         )}
       </form>
 
-      {/* ── the registry ── */}
+      {/* ── the registry: it fits its panel at 1280 px and up, long text wrapping and each row's actions stacking ── */}
       <div className="overflow-x-auto border-t border-line">
-        <table className="w-full min-w-[980px] border-collapse text-[11.5px]">
+        <table className="w-full border-collapse text-[11.5px]">
           <thead>
-            <tr className="border-b border-line text-left text-[10.5px] text-faint">
-              <th className="px-4 py-2 font-medium">Agent</th>
-              <th className="px-3 py-2 font-medium">Attached over</th>
-              <th className="px-3 py-2 font-medium">Enforcement</th>
-              <th className="px-3 py-2 font-medium">Owner</th>
-              <th className="px-3 py-2 font-medium">Last seen</th>
-              <th className="px-3 py-2 text-right font-medium whitespace-nowrap">Runs · 30d</th>
-              <th className="px-3 py-2 text-right font-medium whitespace-nowrap">Cost · 30d</th>
-              <th className="px-3 py-2 text-right font-medium">Denials</th>
-              <th className="px-3 py-2 text-right font-medium">Gates</th>
-              <th className="px-3 py-2 text-right font-medium">p50</th>
-              <th className="px-3 py-2" />
+            <tr className="border-b border-line text-left align-bottom text-[10.5px] text-faint">
+              <th className="py-2 pr-2 pl-4 font-medium">Agent</th>
+              <th className="px-2 py-2 font-medium">Attached over</th>
+              <th className="px-2 py-2 font-medium">Enforcement</th>
+              <th className="px-2 py-2 font-medium">Owner</th>
+              <th className="px-2 py-2 font-medium">Last seen</th>
+              <th className="px-2 py-2 text-right font-medium">Runs 30d</th>
+              <th className="px-2 py-2 text-right font-medium">Cost 30d</th>
+              <th className="px-2 py-2 text-right font-medium">Denials</th>
+              <th className="px-2 py-2 text-right font-medium">Gates</th>
+              <th className="px-2 py-2 text-right font-medium">p50</th>
+              <th className="py-2 pr-4 pl-2" />
             </tr>
           </thead>
           <tbody>
@@ -576,48 +576,49 @@ export function AttachedAgents({ onLoaded, onQuiet }: { onLoaded?: (agents: Atta
               const lang = LANGUAGES.find((l) => l.id === a.language)?.label;
               return (
                 <tr key={a.id} className="border-b border-line last:border-0">
-                  <td className="px-4 py-2.5">
-                    <span className="flex flex-col">
-                      <span className="text-[12px] text-fg">{a.name}</span>
-                      <span className="font-mono text-[10px] text-faint">{a.id} · key {a.key_prefix}…</span>
+                  <td className="py-2.5 pr-2 pl-4 align-top">
+                    <span className="flex max-w-[200px] min-w-[104px] flex-col">
+                      <span className="text-[12px] break-words text-fg">{a.name}</span>
+                      <span className="font-mono text-[10px] break-all text-faint">{a.id}</span>
+                      <span className="font-mono text-[10px] text-faint">key {a.key_prefix}…</span>
                     </span>
                   </td>
-                  <td className="px-3 py-2.5">
+                  <td className="px-2 py-2.5 align-top">
                     <span className="flex flex-col gap-1">
-                      <span className="flex items-center gap-1.5">
+                      <span className="flex flex-wrap items-center gap-1.5">
                         {a.mode === "sdk" ? <Tag tone="run" solid>SDK</Tag> : <Tag tone="queue" solid>Gateway</Tag>}
                         <span className="text-[11px] text-fg">{fw}</span>
                       </span>
-                      <span className="max-w-[240px] truncate font-mono text-[10px] text-ghost">
+                      <span className="block max-w-[150px] font-mono text-[10px] leading-[1.45] break-words text-ghost">
                         {a.mode === "sdk" ? `${lang ? `${lang} SDK` : "SDK"} · gateway + broker` : a.card_url ? host(a.card_url) : "gateway + broker"}
                       </span>
                     </span>
                   </td>
-                  <td className="px-3 py-2.5 whitespace-nowrap">
-                    {a.blocked ? <Status tone="err">blocked</Status> : awaiting(a) ? <Status tone="warn">awaiting approval</Status> : <Status tone="ok">enforced</Status>}
-                    <span className="block text-[10px] text-ghost">
+                  <td className="px-2 py-2.5 align-top">
+                    <span className="whitespace-nowrap">{a.blocked ? <Status tone="err">blocked</Status> : awaiting(a) ? <Status tone="warn">awaiting approval</Status> : <Status tone="ok">enforced</Status>}</span>
+                    <span className="mt-0.5 block max-w-[190px] min-w-[120px] text-[10px] leading-[1.45] text-ghost">
                       {a.blocked
                         ? "every door refuses"
                         : `${awaiting(a) ? "key refused until approved · " : ""}${a.model ? `routes to ${a.model} · ` : ""}${MODE_META[a.mode].enforcement} · ${a.grants.length} tool${a.grants.length === 1 ? "" : "s"} · gate ${a.gate_at || "never"}`}
                     </span>
                   </td>
-                  <td className="px-3 py-2.5 whitespace-nowrap text-[11.5px]">{a.owner || <span className="text-ghost">unowned</span>}</td>
-                  <td className="px-3 py-2.5 whitespace-nowrap text-[11px] text-faint">
-                    {a.last_seen ? ago(a.last_seen) : <span className="text-ghost">awaiting first run</span>}
+                  <td className="px-2 py-2.5 align-top text-[11.5px] break-words">{a.owner || <span className="text-ghost">unowned</span>}</td>
+                  <td className="px-2 py-2.5 align-top text-[11px] text-faint">
+                    {a.last_seen ? <span className="whitespace-nowrap">{ago(a.last_seen)}</span> : <span className="text-ghost">awaiting first run</span>}
                   </td>
-                  <td className="tnum px-3 py-2.5 text-right whitespace-nowrap">{a.runs30d || <span className="text-ghost">0</span>}</td>
-                  <td className="tnum px-3 py-2.5 text-right whitespace-nowrap">{money(a.cost30d, a.runs30d)}</td>
-                  <td className="tnum px-3 py-2.5 text-right">{a.denials30d ? <span className="text-warn">{a.denials30d}</span> : <span className="text-ghost">0</span>}</td>
-                  <td className="tnum px-3 py-2.5 text-right">{a.gates30d === null ? <span className="text-ghost">—</span> : a.gates30d}</td>
-                  <td className="tnum px-3 py-2.5 text-right whitespace-nowrap text-faint">{a.p50ms === null ? <span className="text-ghost">—</span> : a.p50ms >= 1000 ? `${(a.p50ms / 1000).toFixed(1)} s` : `${a.p50ms} ms`}</td>
-                  <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                  <td className="tnum px-2 py-2.5 text-right align-top whitespace-nowrap">{a.runs30d || <span className="text-ghost">0</span>}</td>
+                  <td className="tnum px-2 py-2.5 text-right align-top whitespace-nowrap">{money(a.cost30d, a.runs30d)}</td>
+                  <td className="tnum px-2 py-2.5 text-right align-top">{a.denials30d ? <span className="text-warn">{a.denials30d}</span> : <span className="text-ghost">0</span>}</td>
+                  <td className="tnum px-2 py-2.5 text-right align-top">{a.gates30d === null ? <span className="text-ghost">—</span> : a.gates30d}</td>
+                  <td className="tnum px-2 py-2.5 text-right align-top whitespace-nowrap text-faint">{a.p50ms === null ? <span className="text-ghost">—</span> : a.p50ms >= 1000 ? `${(a.p50ms / 1000).toFixed(1)} s` : `${a.p50ms} ms`}</td>
+                  <td className="py-2.5 pr-4 pl-2 text-right align-top">
                     {confirming === a.id ? (
-                      <span className="inline-flex items-center gap-1.5">
+                      <span className="ml-auto flex w-max flex-col items-stretch gap-1.5">
                         <Button size="sm" variant="solid" tone="err" permission="configure" onClick={() => detach(a.id)}>Detach and revoke key</Button>
                         <Button size="sm" variant="solid" tone="neutral" onClick={() => setConfirming("")}>Keep</Button>
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1.5">
+                      <span className="ml-auto grid w-max grid-cols-2 gap-1.5 [&>*]:justify-center">
                         {awaiting(a) && (
                           <Button
                             size="sm"

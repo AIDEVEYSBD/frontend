@@ -115,7 +115,7 @@ export const KIND_META: Record<Kind, { label: string; plural: string; tone: Tone
 export const KINDS = Object.keys(KIND_META) as Kind[];
 export const RISK_TONE: Record<string, Tone> = { read: "ok", write: "warn", risky: "err", destructive: "err" };
 export const RISK_COLOR: Record<string, string> = { read: "var(--t-ok)", write: "var(--t-warn)", risky: "var(--t-err)", destructive: "var(--t-err)" };
-export const STATUS_TONE: Record<string, Tone> = { active: "ok", deployed: "ok", "in use": "ok", saved: "neutral", unreferenced: "warn", unset: "warn", blocked: "err", revoked: "neutral" };
+export const STATUS_TONE: Record<string, Tone> = { active: "ok", deployed: "ok", "in use": "ok", saved: "neutral", unreferenced: "warn", unset: "warn", blocked: "err", revoked: "neutral", "awaiting approval": "warn" };
 export const riskLabel = (r: string): string => (r === "risky" ? "acts outside" : r);
 
 export const FLAGS = [

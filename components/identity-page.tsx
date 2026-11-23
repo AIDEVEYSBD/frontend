@@ -63,6 +63,9 @@ export interface IamActions {
 
 const list = (v: unknown): string[] => (Array.isArray(v) ? (v as unknown[]).map(String) : []);
 
+/** An attached agent with its own key (`facts.via` "key"), not a service a trusted issuer admits ("issuer"): both are the register's `attached_agent`. */
+const keyedAgent = (i: Identity): boolean => i.kind === "attached_agent" && i.facts.via === "key";
+
 /**
  * A person's team: the one an administrator set here, else the one the
  * deployment names for their address's domain (TEAM_DOMAINS), else none.
@@ -281,7 +284,14 @@ export function IdentityPage({
                 </Button>
               </>
             ))}
+          {/* An attached agent's own key: blocked here, detached on Configuration, Third-party agents (the link above). */}
+          {i && keyedAgent(i) && i.status !== "revoked" && (
+            <Button size="sm" variant="solid" tone={i.status === "blocked" ? "ok" : "warn"} permission="configure" loading={busy === `block:${i.id}`} onClick={() => actions.blockAgent(i, i.status !== "blocked")}>
+              {i.status === "blocked" ? "Unblock" : "Block"}
+            </Button>
+          )}
           {i?.kind === "attached_agent" &&
+            !keyedAgent(i) &&
             (confirming === "disconnect-service" ? (
               <span className="flex max-w-[460px] flex-col items-end gap-1.5">
                 <span className="text-right text-[11.5px] leading-[1.5] text-dim">
@@ -460,7 +470,26 @@ function IdentityAccess({ identity: i, now, busy, ownerStoreDown, editOwner, act
       { k: "Deployed", v: when(f.deployed_at, "never") },
       { k: "Retired", v: f.retired ? "yes" : "no" },
     );
-  if (i.kind === "attached_agent")
+  if (keyedAgent(i)) {
+    const person = (v: unknown): string => {
+      const p = (v && typeof v === "object" ? v : {}) as { sub?: unknown; email?: unknown; name?: unknown };
+      return text(p.email) || text(p.name) || text(p.sub);
+    };
+    const block = (f.blocked && typeof f.blocked === "object" ? f.blocked : null) as { reason?: unknown; by?: unknown; at?: unknown } | null;
+    facts.push(
+      { k: "Key", v: <Mono className="text-[11px]">{text(f.key_prefix)}…</Mono> },
+      { k: "Attached over", v: `${f.mode === "a2a" ? "A2A" : "the SDK"}${text(f.framework) ? ` · ${text(f.framework)}` : ""}${text(f.language) ? ` · ${text(f.language)}` : ""}` },
+      { k: "Owning team", v: text(f.team) || "none given when it was attached" },
+      { k: "Attached by", v: `${person(f.attached_by) || "not recorded"}, ${when(i.created_at, "at a time not recorded")}` },
+      { k: "Approved by", v: f.approved_by ? `${person(f.approved_by)}, ${when(f.approved_at, "at a time not recorded")}` : "nobody yet: its key works once a second person approves the attachment" },
+      ...(block ? [{ k: "Blocked", v: <span className="text-err">by {text(block.by) || "not recorded"}, {when(block.at, "at a time not recorded")}: {text(block.reason) || "no reason given"}</span> }] : []),
+      ...(f.detached_at ? [{ k: "Detached", v: `${when(f.detached_at, "")} by ${text(f.detached_by) || "not recorded"}; its key is revoked and its record stays` }] : []),
+      { k: "Granted tools", v: chips(f.grants) },
+      { k: "Stops for a person at", v: list(f.gates).join(", ") || "never: no gate in its policy" },
+      { k: "Data class", v: text(f.data_class) || "not recorded" },
+      ...(f.owner_held_out ? [{ k: "Its owner", v: <span className="text-err">is held out of the console; this agent&rsquo;s key still works until it is blocked or detached</span> }] : []),
+    );
+  } else if (i.kind === "attached_agent")
     facts.push(
       { k: "Issuer", v: <Mono className="text-[11px] break-all">{text(f.issuer)}</Mono> },
       { k: "Subject", v: <Mono className="text-[11px] break-all">{text(f.subject)}</Mono> },
