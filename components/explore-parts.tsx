@@ -7,29 +7,36 @@ import { Button } from "./ui";
 import { ActiveFilters, SearchBox } from "./filters";
 import { CAT } from "./charts";
 import { count } from "./observability-shared";
-import { winMs, type Win } from "./window-pick";
+import type { Win } from "./window-pick";
 
 /**
- * What every view of Explore shares: the address as the one place a filter is
- * kept, the fold from records to facet counts, the timeline that narrows by
- * a dragged span, and the filter rail.
+ * What Explore is drawn with: the address as the one place a filter is kept,
+ * the timeline that narrows by a dragged span, the filter rail and the view
+ * switch.
  *
- * Nothing here reads a door. A view hands over the records it read and says
- * which of their own fields are facets; the counts in the rail, the bars of
- * the timeline and the rows of the list are all cut from those records.
+ * Nothing here reads a door or counts a record. The page reads
+ * `GET /api/explore` with the address's own parameters (the same names: a
+ * link is the query), and the platform answers the rows, the counts beside
+ * each filter and the timeline's bars.
  */
 
 /* ═══════════════════ the address ═══════════════════ */
 
-export type ViewId = "tools" | "activity" | "security";
+export type ViewId = "all" | "tools" | "activity" | "security";
 
-export const VIEWS: { id: ViewId; label: string; what: string }[] = [
-  { id: "tools", label: "Tool calls", what: "Every tool call in the journals read: when it was made, by which agent at which step, how it ended and how long it took. A row opens the run at that entry." },
-  { id: "activity", label: "Agent activity", what: "What each agent did: its runs, steps, model calls, tool calls and failed runs, and what happened on those runs. An event opens the run at that entry." },
-  { id: "security", label: "Security events", what: "What the controls did and what people did about it: refusals, screening blocks and flags, gates, operator kills and lockdown changes. A row opens the run at that entry." },
+/** A view is a preset of kinds: the kinds it reads while the address names none. */
+export const VIEWS: { id: ViewId; label: string; what: string; kinds: string[] }[] = [
+  { id: "all", label: "Everything", what: "Every journal entry of every run you may see, and the audit trail's changes, refusals and sign-ins when you may read it. A row opens the run at that entry.", kinds: [] },
+  { id: "tools", label: "Tool calls", what: "Every tool call: when it was made, by which agent at which step, how it ended and how long its result took. A row opens the run at that entry.", kinds: ["tool_call"] },
+  { id: "activity", label: "Agent activity", what: "What each agent did: runs starting and ending, steps, model calls with their cost, tool calls and gates. A row opens the run at that entry.", kinds: ["activity", "model_call", "tool_call", "gate"] },
+  { id: "security", label: "Security events", what: "What the controls did and what people did about it: refusals, screening flags and taint marks, gates, stops, operator changes and refused requests. A row opens the run at that entry.", kinds: ["refusal", "security", "operator", "gate"] },
 ];
 
-/** Parameters that belong to the page, not to one view's filters. */
+/** The filters the platform takes, each one parameter of the address and of `GET /api/explore`. */
+export const FILTERS = ["kind", "agent", "run", "control", "outcome", "person"] as const;
+export type FilterId = (typeof FILTERS)[number];
+
+/** Parameters that belong to the page, not to the view's filters. */
 const PAGE_KEYS = new Set(["view", "window"]);
 
 export interface Span {
@@ -40,6 +47,7 @@ export interface Span {
 export interface Address {
   /** The query string, as the key a memo can depend on. */
   key: string;
+  /** A parameter's values: given once each, or several in one separated by commas. */
   all: (id: string) => string[];
   one: (id: string) => string;
   span: Span | null;
@@ -47,7 +55,7 @@ export interface Address {
   /** Set a parameter to exactly these values; none removes it. */
   set: (id: string, values: string[]) => void;
   setSpan: (s: Span | null) => void;
-  /** Drop every filter of the view: facets, search and span. The view and the window stay. */
+  /** Drop every filter: facets, search and span. The view and the window stay. */
   clear: () => void;
   /** Move to another view. Filters belong to a view, so they are dropped; the window stays. */
   go: (view: ViewId) => void;
@@ -55,10 +63,13 @@ export interface Address {
   window: (w: Win) => void;
 }
 
+const valuesOf = (p: URLSearchParams, id: string) => p.getAll(id).flatMap((v) => v.split(",")).map((v) => v.trim()).filter(Boolean);
+
 /**
  * The address as state. Changes go through `history.replaceState`, which the
- * router follows (`useSearchParams` re-reads), so a filter never asks the
- * server for anything and a filtered view can be copied as a link.
+ * router follows (`useSearchParams` re-reads), so a filtered view can be
+ * copied as a link. The span is kept as `from` and `to` in UTC, as the
+ * platform takes them.
  */
 export function useAddress(): Address {
   const params = useSearchParams();
@@ -71,8 +82,8 @@ export function useAddress(): Address {
   }, []);
   return useMemo(() => {
     const p = new URLSearchParams(key);
-    const from = Number(p.get("from"));
-    const to = Number(p.get("to"));
+    const from = Date.parse(p.get("from") ?? "");
+    const to = Date.parse(p.get("to") ?? "");
     const set = (id: string, values: string[]) =>
       write((q) => {
         q.delete(id);
@@ -80,13 +91,13 @@ export function useAddress(): Address {
       });
     return {
       key,
-      all: (id) => p.getAll(id),
+      all: (id) => valuesOf(p, id),
       one: (id) => p.get(id) ?? "",
-      span: Number.isFinite(from) && Number.isFinite(to) && from > 0 && to > from ? { from, to } : null,
+      span: Number.isFinite(from) && Number.isFinite(to) && to > from ? { from, to } : null,
       set,
       toggle: (id, value) =>
         write((q) => {
-          const now = q.getAll(id);
+          const now = valuesOf(q, id);
           q.delete(id);
           for (const v of now.includes(value) ? now.filter((x) => x !== value) : [...now, value]) q.append(id, v);
         }),
@@ -95,8 +106,8 @@ export function useAddress(): Address {
           q.delete("from");
           q.delete("to");
           if (s) {
-            q.set("from", String(s.from));
-            q.set("to", String(s.to));
+            q.set("from", new Date(s.from).toISOString());
+            q.set("to", new Date(s.to).toISOString());
           }
         }),
       clear: () =>
@@ -124,19 +135,6 @@ export function useAddress(): Address {
 
 type Tone = "ok" | "warn" | "err";
 
-/** One field of a record that the rail can filter on. `id` is its parameter in the address. */
-export interface FacetDef<T> {
-  id: string;
-  label: string;
-  /** The values a record carries for this field; none when it carries nothing. */
-  of: (r: T) => readonly string[];
-  /** A value in words. */
-  name?: (value: string) => string;
-  tone?: (value: string) => Tone | undefined;
-  /** A fixed order for the values; otherwise the most frequent comes first. */
-  order?: readonly string[];
-}
-
 export interface FacetValue {
   value: string;
   label: string;
@@ -151,66 +149,6 @@ export interface FacetView {
   values: FacetValue[];
 }
 
-export interface Narrowed<T> {
-  /** Search, facets and span applied: what the list shows. */
-  list: T[];
-  /** Search and facets applied, the span not: what the timeline counts. */
-  timeline: T[];
-  /** One entry per facet that has a value: the count beside a value is what picking it would list. */
-  facets: FacetView[];
-  /** What is set, as removable chips. */
-  chips: { key: string; label: string }[];
-  /** Search, span and every facet but one applied. */
-  except: (id: string) => T[];
-}
-
-/**
- * Cut `records` by what the address holds. A value's count is taken with its
- * own facet left out, so the values of one facet add up to what the others
- * leave and picking a second value widens rather than empties.
- */
-export function narrow<T>(
-  records: readonly T[],
-  defs: readonly FacetDef<T>[],
-  address: Address,
-  /** When a record happened, for the span; null for records the span does not cut. */
-  at: ((r: T) => number) | null,
-  /** What the search reads of a record; null for records the search does not cut. */
-  text: ((r: T) => string) | null,
-): Narrowed<T> {
-  const chosen = new Map(defs.map((d) => [d.id, new Set(address.all(d.id))]));
-  const needle = text ? address.one("q").trim().toLowerCase() : "";
-  const s = at ? address.span : null;
-  const passes = (r: T, skip?: string) =>
-    defs.every((d) => {
-      const set = chosen.get(d.id)!;
-      return d.id === skip || !set.size || d.of(r).some((v) => set.has(v));
-    });
-  const searched = needle && text ? records.filter((r) => text(r).toLowerCase().includes(needle)) : [...records];
-  const spanned = s && at ? searched.filter((r) => at(r) >= s.from && at(r) < s.to) : searched;
-  const except = (id: string) => spanned.filter((r) => passes(r, id));
-
-  const facets: FacetView[] = [];
-  const chips: { key: string; label: string }[] = [];
-  for (const d of defs) {
-    const set = chosen.get(d.id)!;
-    const tally = new Map<string, number>();
-    for (const r of except(d.id)) for (const v of new Set(d.of(r))) tally.set(v, (tally.get(v) ?? 0) + 1);
-    // A value picked from a link that nothing carries any more still shows, at zero, so it can be removed.
-    for (const v of set) if (!tally.has(v)) tally.set(v, 0);
-    const rank = (v: string) => {
-      const i = d.order ? d.order.indexOf(v) : -1;
-      return i < 0 ? Number.MAX_SAFE_INTEGER : i;
-    };
-    const values = [...tally.entries()]
-      .sort((a, b) => rank(a[0]) - rank(b[0]) || b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([value, n]) => ({ value, label: d.name?.(value) || value || "(unnamed)", count: n, on: set.has(value), tone: d.tone?.(value) }));
-    if (values.length) facets.push({ id: d.id, label: d.label, values });
-    for (const v of set) chips.push({ key: `${d.id}\u0000${v}`, label: `${d.label}: ${d.name?.(v) || v || "(unnamed)"}` });
-  }
-  return { list: spanned.filter((r) => passes(r)), timeline: searched.filter((r) => passes(r)), facets, chips, except };
-}
-
 /** Remove what a chip stands for. Facet chips are keyed `${facet}\0${value}`. */
 export function dropChip(address: Address, key: string) {
   if (key === "q") address.set("q", []);
@@ -221,7 +159,7 @@ export function dropChip(address: Address, key: string) {
   }
 }
 
-/** The search and the span as chips, beside a view's facet chips. */
+/** The search and the span as chips, beside the facet chips. */
 export function pageChips(address: Address): { key: string; label: string }[] {
   const out: { key: string; label: string }[] = [];
   const q = address.one("q").trim();
@@ -239,62 +177,9 @@ export interface Bucket {
   flagged: number;
 }
 
-export interface Domain {
-  start: number;
-  step: number;
-  n: number;
-}
-
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
-/** A window's bar: 48 half hours, 56 three-hour bars, 60 half days, 90 days. */
-const STEP: Record<Exclude<Win, "all">, number> = { "24h": 30 * MIN, "7d": 3 * HOUR, "30d": 12 * HOUR, "90d": DAY };
-const STEPS = [5 * MIN, 15 * MIN, 30 * MIN, HOUR, 3 * HOUR, 6 * HOUR, 12 * HOUR, DAY, 2 * DAY, 7 * DAY, 14 * DAY, 30 * DAY, 90 * DAY, 365 * DAY];
-/** Bars across the widest timeline. */
-const MAX_BARS = 96;
-
-/**
- * The timeline's axis for a window: bars of one size ending at the present,
- * on local clock edges so a span in a link lands on the same bars later.
- * A record older than the window (a call early in a run that ended inside
- * it) widens the axis rather than being left off it.
- */
-export function domainOf(win: Win, now: number, times: readonly number[]): Domain | null {
-  const known = times.filter((t) => t > 0);
-  if (!known.length) return null;
-  const oldest = Math.min(...known);
-  const newest = Math.max(now, ...known);
-  const zone = new Date(now).getTimezoneOffset() * MIN;
-  const edge = (t: number, step: number, up: boolean) => (up ? Math.ceil((t - zone) / step) : Math.floor((t - zone) / step)) * step + zone;
-  const fit = (step: number): Domain => {
-    const end = edge(newest, step, true);
-    const start = edge(win === "all" ? oldest : Math.min(oldest, now - winMs(win)), step, false);
-    return { start, step, n: Math.max(1, Math.round((end - start) / step)) };
-  };
-  let step = win === "all" ? STEPS[0] : STEP[win];
-  let d = fit(step);
-  for (const next of STEPS) {
-    if (d.n <= MAX_BARS) break;
-    if (next <= step) continue;
-    step = next;
-    d = fit(step);
-  }
-  return d;
-}
-
-/** Count records into the axis's bars. A record with no time is on no bar. */
-export function fill<T>(domain: Domain, records: readonly T[], at: (r: T) => number, flagged: (r: T) => boolean): Bucket[] {
-  const out: Bucket[] = Array.from({ length: domain.n }, (_, i) => ({ from: domain.start + i * domain.step, to: domain.start + (i + 1) * domain.step, total: 0, flagged: 0 }));
-  for (const r of records) {
-    const t = at(r);
-    if (!t) continue;
-    const b = out[Math.min(domain.n - 1, Math.max(0, Math.floor((t - domain.start) / domain.step)))];
-    b.total += 1;
-    if (flagged(r)) b.flagged += 1;
-  }
-  return out;
-}
 
 const stamp = (ms: number, day: boolean) =>
   new Date(ms).toLocaleString("en-GB", day ? { day: "2-digit", month: "short" } : { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -318,8 +203,9 @@ const BAR = CAT[1];
 const FLAG = "var(--color-err)";
 
 /**
- * A histogram of the view's records over the window: one bar per bucket, the
- * flagged ones (failures, refusals) as the red top of the bar. Dragging across
+ * A histogram of the records over the window, as the platform counted them:
+ * one bar per bucket, the flagged ones (failures, refusals) as the red top of
+ * the bar. Dragging across
  * it sets the span every list below is narrowed to; a click sets one bar.
  * From the keyboard: the arrow keys choose a bar and move the span, Shift
  * with an arrow widens or shortens it, Escape clears it.
@@ -716,7 +602,7 @@ export function ExploreFrame({
 
 /* ═══════════════════ the view switch ═══════════════════ */
 
-/** The kind of record being read. Segmented and solid: the view in force is ink. */
+/** Which kinds of record are read. Segmented and solid: the view in force is ink. */
 export function ViewSwitch({ value, onChange }: { value: ViewId; onChange: (v: ViewId) => void }) {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -735,90 +621,6 @@ export function ViewSwitch({ value, onChange }: { value: ViewId; onChange: (v: V
         ))}
       </div>
       <p className="max-w-[96ch] min-w-[min(100%,36ch)] flex-1 text-[12px] leading-[1.5] text-dim">{VIEWS.find((v) => v.id === value)?.what}</p>
-    </div>
-  );
-}
-
-/* ═══════════════════ a view with nothing read ═══════════════════ */
-
-/**
- * A view's frame on a quiet console whose doors did not answer (lib/quiet.ts):
- * the timeline card, the rail with its search and facet headings, and the
- * view's own cards beside it, all empty. The page has said once, above, that
- * it is not connected; nothing here repeats it and nothing here is a record.
- */
-export function QuietFrame({ title, line, sections, placeholder, children }: { title: string; line: string; sections: { title?: string; labels: string[] }[]; placeholder: string; children: ReactNode }) {
-  return (
-    <>
-      <section className="flex min-w-0 flex-col rounded-lg border border-line bg-surface elev-1" aria-label="Timeline" data-explore-timeline>
-        <div className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1.5 rounded-t-lg border-b border-line bg-raise/55 px-4 py-2">
-          <h2 className="text-[12.5px] font-semibold whitespace-nowrap text-fg">{title}</h2>
-          <span className="grow" />
-          <span className="text-[11px] text-faint">Drag across the bars to narrow the list to a span.</span>
-        </div>
-        <p className="px-4 py-7 text-center text-[12px] text-faint">{line}</p>
-      </section>
-      <div className="grid min-w-0 items-start gap-4 min-[1100px]:grid-cols-[216px_minmax(0,1fr)]">
-        <aside aria-label="Filters" className="hidden flex-col gap-4 rounded-lg border border-line bg-surface p-2.5 elev-1 min-[1100px]:flex" data-explore-rail>
-          <SearchBox value="" onChange={() => {}} placeholder={placeholder} width="w-full" />
-          {sections.map((s, i) => (
-            <div key={s.title ?? i} className="flex flex-col gap-3.5">
-              {s.title && <span className="border-t border-line px-1.5 pt-3 text-[11.5px] font-semibold text-fg">{s.title}</span>}
-              {s.labels.map((l) => (
-                <span key={l} className="px-1.5 text-[11px] font-medium text-faint">
-                  {l}
-                </span>
-              ))}
-            </div>
-          ))}
-          <span className="border-t border-line px-1.5 pt-3 text-[11px] leading-[1.5] text-ghost">The values to filter by are listed under each heading, with a count.</span>
-        </aside>
-        <div className="@container flex min-w-0 flex-col gap-4">{children}</div>
-      </div>
-    </>
-  );
-}
-
-/** The band of counts with no figure read: each tile says so where its number would be. */
-export function QuietTiles({ tiles }: { tiles: { label: string; sub: string }[] }) {
-  const row = tiles.length > 5 ? "@[1040px]:grid-flow-col @[1040px]:auto-cols-fr @[1040px]:grid-cols-none" : "@[820px]:grid-flow-col @[820px]:auto-cols-fr @[820px]:grid-cols-none";
-  return (
-    <div className="@container">
-      <div className={`grid grid-cols-2 overflow-hidden rounded-md border border-line bg-surface @[520px]:grid-cols-3 ${row}`}>
-        {tiles.map((t) => (
-          <div key={t.label} className="-mr-px -mb-px flex min-w-0 flex-col gap-1 border-r border-b border-line px-3 py-2.5 text-left">
-            <span className="truncate text-[10.5px] text-faint">{t.label}</span>
-            <span className="flex h-[22px] items-center text-[12px] whitespace-nowrap text-faint">Not connected</span>
-            <span className="truncate text-[10px] text-ghost">{t.sub}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** A table's column headers over one line saying what it will hold. */
-export function QuietTable({ columns, line }: { columns: string[]; line: string }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[640px] border-collapse text-[11.5px]">
-        <thead>
-          <tr className="border-b border-line text-left text-[10.5px] text-faint">
-            {columns.map((c, i) => (
-              <th key={c} className={`py-2 font-medium ${i === 0 ? "px-4" : "px-3"}`}>
-                {c}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td colSpan={columns.length} className="px-4 py-8 text-center text-[11.5px] text-faint">
-              {line}
-            </td>
-          </tr>
-        </tbody>
-      </table>
     </div>
   );
 }

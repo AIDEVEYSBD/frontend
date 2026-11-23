@@ -30,7 +30,7 @@ import { getLifecycle, STAGE_NAMES, type Lifecycle } from "@/lib/api/l8";
 import { STAGE_LABEL, spineOf } from "@/lib/lifecycle";
 import { DeployDialog } from "./deploy-gate";
 import { JOB_STATUS_META, countOf, jobLine } from "@/lib/queue";
-import { productionRuns, shadowBesideLine, shadowSpentLine } from "@/lib/production";
+import { productionRuns } from "@/lib/production";
 import { partnerStatus, type PartnerPeer } from "@/lib/peers";
 import { auditLine, inFlight, type RunRowL5 } from "@/lib/api/l5";
 import { KillDialog } from "./kill-dialog";
@@ -70,8 +70,12 @@ interface RunRow {
   at: string;
   ms: number;
   entries: number;
+  /** The run's own recorded cost: null once one of its calls was on a model with no price set. */
   cost: number | null;
-  estimated?: number;
+  /** What the run's priced calls cost; null when it made calls and none of them was priced. */
+  priced: number | null;
+  /** Calls of the run on a model with no price set: counted apart, never as $0. */
+  unpricedCalls: number;
   tokens: { in: number; out: number };
   models: string[];
   suspendedAt: string;
@@ -80,9 +84,19 @@ interface RunRow {
   toolCalls: number;
   artifacts: number;
   artifactNames: string[];
-  byModel: { model: string; in: number; out: number; cost: number | null }[];
-  /** `sdk` or `a2a` when an attached agent opened the run; "" for the platform's own. */
+  byModel: { model: string; in: number; out: number; cost: number | null; unpricedCalls: number }[];
+  /** How the run was started: console, trigger, sub_run, api. */
   source?: string;
+}
+
+/** An agent's figures over one window, as the platform counted them. */
+interface AgentWindow {
+  runs: number;
+  avgMs: number | null;
+  cost: number | null;
+  unpricedCalls: number;
+  tokens: number;
+  models: string[];
 }
 
 interface AgentRow {
@@ -90,26 +104,29 @@ interface AgentRow {
   name: string;
   description: string;
   deployed_at: string | null;
+  retired: boolean;
   nodes: number;
   active: number;
   pending: number;
-  runs7d: number;
   runsTotal: number;
-  lastRun: string | null;
-  lastState: string | null;
+  ticks: { id: string; state: string; at: string }[];
+  /** Null: evaluations are not built on this platform, so no agent has a benchmark. */
+  evals: { passed: number; total: number; at: string; digest: string; model: string }[] | null;
+  byWindow: Record<Win, AgentWindow>;
+  /* The window's figures, laid on by `rewindow` from `byWindow`. */
+  runs7d: number;
   avgMs7d: number | null;
   cost7d: number | null;
-  unpriced7d?: number;
+  unpriced7d: number;
   tokens7d: number;
   models: string[];
-  ticks: { id: string; state: string; at: string }[];
-  evals: { passed: number; total: number; at: string; digest: string; model: string }[];
 }
 
 interface DayRow {
   day: string;
   runs: number;
   cost: number | null;
+  unpricedCalls: number;
   denials: number;
   kills: number;
   avgMs: number | null;
@@ -118,47 +135,47 @@ interface DayRow {
 
 interface ModelRow {
   model: string;
-  local: boolean;
   tokens: number;
   in: number;
   out: number;
   cost: number | null;
+  unpricedCalls: number;
   runs: number;
 }
 
 interface Posture {
+  agents: number;
   grants: number;
   byRisk: Record<string, number>;
   sinks: number;
   gatedSinks: number;
-  ungated: { agent: string; node: string; tool: string }[];
-  taintSplits: number;
+  conditionalSinks: number;
+  ungated: { agent: string; node: string; tool: string; risk: string; conditional: boolean }[];
+  unregistered: { agent: string; node: string; tool: string }[];
+  undeclared: { agent: string; node: string; tool: string }[];
+  basis: string;
+}
+
+/** One window's figures, counted by the platform (the page never sums records itself). */
+interface WindowFigures {
+  totals: { runs: number; cost: number | null; unpricedCalls: number; tokens: number; denials: number; kills: number; avgMs: number | null; gatesAnswered: number };
+  days: DayRow[];
+  models: ModelRow[];
+  latency: { p50: number; p95: number; p99: number; max: number; runs: number } | null;
 }
 
 interface ControlData {
   posture: Posture;
-  routing: { agent: string; node: string; model: string | null }[];
-  peers: PartnerPeer[];
+  /** Null: the A2A peer registry is not built (`not_built.peers` says so). */
+  peers: PartnerPeer[] | null;
   finops: {
-    azure: {
-      configured: boolean;
-      missing: string[];
-      scope: "resource" | "subscription" | null;
-      currency: string | null;
-      mtd: number | null;
-      last7d: number | null;
-      daily: { date: string; cost: number }[];
-      fetchedAt: string | null;
-      error: string | null;
-    };
+    /** Null: reading a cloud bill is not built (`not_built.billing` says so). */
+    billing: null;
     budget: number | null;
-    period: "day" | "week" | "month";
-    /** `shadow_spent` (L8, second round): what a canary's shadow runs spent in the period, beside the budget, never in `spent`. */
-    budgetState: { since: string; spent: number; unpriced: number; remaining: number | null; exceeded: boolean; used: number | null; shadow_spent?: number };
+    period: "day" | "week" | "month" | null;
+    budgetState: { since: string; spent: number; unpriced: number; remaining: number | null; exceeded: boolean; used: number | null } | null;
     spend7d: number | null;
-    unpriced7d?: number;
-    /** What a canary's shadow runs spent in the last 7 days: beside the spend, never in it. */
-    shadowSpend7d?: number;
+    unpriced7d: number;
   };
   ledger: { entries: number; runs: number; lastWrite: string | null };
   totals: {
@@ -166,106 +183,74 @@ interface ControlData {
     registered: number;
     active: number;
     pending: number;
+    pausedAtBudget: number;
     runs7d: number;
     cost7d: number | null;
-    unpriced7d?: number;
+    unpriced7d: number;
     tokens7d: number;
     denials7d: number;
     kills7d: number;
     avgMs7d: number | null;
+    gatesAnswered: number;
   };
+  windows: Record<Win, WindowFigures>;
   agents: AgentRow[];
-  /** In flight, from the backend's ledger. `step`, `stuck` and `waitingOn` are L5's: the node in flight, whether it has run past the agent's p95 for it, and what it is waiting on. */
+  /** In flight. `step`, `stuck` and `waitingOn` come from the run ledger (GET /api/runs), laid over by `withLive`. */
   live: { id: string; system: string; startedAt: string; stuck?: boolean; waitingOn?: string | null; step?: string; stepMs?: number; stepP95Ms?: number | null; source?: string; state?: string }[];
   days: DayRow[];
   models: ModelRow[];
+  latency: WindowFigures["latency"];
   runs: RunRow[];
-  /** A canary's shadow runs in the last 7 days (L8, second round): listed apart, left out of every figure on the page. */
-  shadow?: { runs: number; cost: number; ids: string[] };
+  /** How many runs there are; `runs` holds the newest of them. */
+  runsTotal: number;
   store: string;
   costBasis: string;
-  /** The window every "7d"-shaped figure was actually cut over (client-side). */
+  /** What this platform does not have, each with why. */
+  not_built: Record<string, string>;
+  /** The window the figures are cut over. */
   window: Win;
   /** The clock the window was cut against. */
   now: number;
 }
 
-/* ── windows: every time-shaped figure re-cut in the browser from the run ledger ── */
+/* ── windows: every time-shaped figure is the platform's own count for that window ── */
 
-const sumCosts = (xs: (number | null)[]): number | null =>
-  xs.every((x) => x === null) ? null : xs.reduce((a: number, b) => a + (b ?? 0), 0);
-const countUnpriced = (rs: RunRow[]): number => rs.filter((r) => (r.estimated ?? 0) > 0).length;
-
-/** The estate read, re-cut to a window. Field names keep their "7d" suffix —
+/** The estate read with one window's figures laid on. Field names keep their "7d" suffix —
     they are "the window" everywhere below, and the label says which. */
 function rewindow(d: ControlData, now: number, w: Win): ControlData {
-  const since = now - winMs(w);
-  const inWin = (r: RunRow) => new Date(r.at).getTime() >= since;
-  const recent = d.runs.filter(inWin);
-  const agents = d.agents.map((a) => {
-    const mine = recent.filter((r) => r.system === a.id);
-    return {
-      ...a,
-      runs7d: mine.length,
-      avgMs7d: mine.length ? Math.round(mine.reduce((s, r) => s + r.ms, 0) / mine.length) : null,
-      cost7d: sumCosts(mine.map((r) => r.cost)),
-      unpriced7d: countUnpriced(mine),
-      tokens7d: mine.reduce((s, r) => s + r.tokens.in + r.tokens.out, 0),
-      models: [...new Set(mine.flatMap((r) => r.models))],
-    };
-  });
-  const oldest = d.runs.length ? Math.min(...d.runs.map((r) => new Date(r.at).getTime())) : now;
-  const nDays = w === "all" ? Math.min(90, Math.max(14, Math.ceil((now - oldest) / 86_400_000) + 1)) : Math.max(14, Math.min(90, Math.round(winMs(w) / 86_400_000)));
-  const days: DayRow[] = [];
-  for (let i = nDays - 1; i >= 0; i--) {
-    const key = new Date(now - i * 86_400_000).toISOString().slice(0, 10);
-    const inDay = d.runs.filter((r) => r.at.slice(0, 10) === key);
-    days.push({
-      day: key,
-      runs: inDay.length,
-      cost: sumCosts(inDay.map((r) => r.cost)),
-      denials: inDay.reduce((s, r) => s + r.denials, 0),
-      kills: inDay.filter((r) => r.state === "killed").length,
-      avgMs: inDay.length ? Math.round(inDay.reduce((s, r) => s + r.ms, 0) / inDay.length) : null,
-      ids: inDay.map((r) => r.id),
-    });
-  }
-  const agg = new Map<string, { in: number; out: number; cost: number | null; runs: Set<string> }>();
-  for (const r of recent) {
-    for (const b of r.byModel ?? []) {
-      const a = agg.get(b.model) ?? { in: 0, out: 0, cost: 0, runs: new Set<string>() };
-      a.in += b.in;
-      a.out += b.out;
-      a.cost = a.cost === null || b.cost === null ? null : a.cost + b.cost;
-      a.runs.add(r.id);
-      agg.set(b.model, a);
-    }
-  }
-  const models: ModelRow[] = [...agg.entries()]
-    .map(([model, a]) => ({ model, local: model === "scripted", tokens: a.in + a.out, in: a.in, out: a.out, cost: a.cost, runs: a.runs.size }))
-    .sort((a, b) => b.tokens - a.tokens);
-  const cost7d = sumCosts(recent.map((r) => r.cost));
-  const unpriced7d = countUnpriced(recent);
+  const f = d.windows[w];
   return {
     ...d,
-    agents,
-    days,
-    models,
-    finops: { ...d.finops, spend7d: cost7d, unpriced7d },
+    agents: d.agents.map((a) => {
+      const aw = a.byWindow[w];
+      return { ...a, runs7d: aw.runs, avgMs7d: aw.avgMs, cost7d: aw.cost, unpriced7d: aw.unpricedCalls, tokens7d: aw.tokens, models: aw.models };
+    }),
+    days: f.days,
+    models: f.models,
+    latency: f.latency,
+    finops: { ...d.finops, spend7d: f.totals.cost, unpriced7d: f.totals.unpricedCalls },
     totals: {
       ...d.totals,
-      runs7d: recent.length,
-      cost7d,
-      unpriced7d,
-      tokens7d: recent.reduce((s, r) => s + r.tokens.in + r.tokens.out, 0),
-      denials7d: recent.reduce((s, r) => s + r.denials, 0),
-      kills7d: recent.filter((r) => r.state === "killed").length,
-      avgMs7d: recent.length ? Math.round(recent.reduce((s, r) => s + r.ms, 0) / recent.length) : null,
+      runs7d: f.totals.runs,
+      cost7d: f.totals.cost,
+      unpriced7d: f.totals.unpricedCalls,
+      tokens7d: f.totals.tokens,
+      denials7d: f.totals.denials,
+      kills7d: f.totals.kills,
+      avgMs7d: f.totals.avgMs,
+      gatesAnswered: f.totals.gatesAnswered,
     },
     window: w,
     now,
   };
 }
+
+/** A run's cost as a list shows it: its own recorded cost, or, once a call had no price, what the priced calls came to and how many had none. */
+const runCost = (r: { cost: number | null; priced: number | null; unpricedCalls: number }) =>
+  r.cost !== null ? fmtCost(r.cost) : `${r.priced !== null ? `${fmtCost(r.priced)} priced, ` : ""}${r.unpricedCalls} with no price`;
+
+/** "3 calls with no price", for a figure that leaves such calls out. */
+const unpricedLine = (n: number) => (n ? `${n} call${n === 1 ? "" : "s"} with no price` : "");
 
 /** The backend's view of what is in flight (GET /api/runs, the `live` flag), laid over the estate read. Null leaves the read as it came. */
 function withLive(d: ControlData, rows: LedgerRow[] | null): ControlData {
@@ -345,23 +330,36 @@ const STATE_TONE: Record<string, "ok" | "err" | "warn" | "run" | "queue"> = {
 
 /* ═══════════════════ the page ═══════════════════ */
 
-/** Every refusal and mark on this deployment, with the rule that fired. */
-function useRefusals(active: boolean) {
-  const [rows, setRows] = useState<
-    { control: string; run: string; agent: string; node: string; title: string; detail: string; at: string }[] | null
-  >(null);
+/** A refusal entry as Explore answers it, as far as the denials drill reads it. */
+interface Refusal {
+  id: string;
+  control: string;
+  run: string | null;
+  agent: string;
+  node: string;
+  title: string;
+  detail: string;
+  at: string;
+}
+
+/** The refusals behind the denials tile: the window's `denied` and `contract.breach` entries (`GET /api/explore?kind=refusal`), newest first. */
+function useRefusals(active: boolean, window: Win) {
+  const [read, setRead] = useState<{ window: Win; rows: Refusal[]; total: number; error: string } | null>(null);
   useEffect(() => {
-    if (!active || rows) return;
+    if (!active || read?.window === window) return;
     let stop = false;
-    fetch("/api/guardrails")
-      .then((r) => r.json())
-      .then((d) => !stop && setRows(d.recent ?? []))
-      .catch(() => !stop && setRows([]));
+    fetch(`/api/explore?kind=refusal&window=${window}&limit=200`, { cache: "no-store" })
+      .then(async (res) => {
+        const body = (await res.json().catch(() => null)) as { entries?: Refusal[]; total?: number; error?: string } | null;
+        if (!res.ok || !body || !Array.isArray(body.entries)) throw new Error(errorText(body, res, "GET", "/api/explore"));
+        if (!stop) setRead({ window, rows: body.entries, total: body.total ?? body.entries.length, error: "" });
+      })
+      .catch((e: Error) => !stop && setRead({ window, rows: [], total: 0, error: e.message }));
     return () => {
       stop = true;
     };
-  }, [active, rows]);
-  return rows;
+  }, [active, window, read]);
+  return read?.window === window ? read : null;
 }
 
 export function Control() {
@@ -425,6 +423,8 @@ export function Control() {
   }, []);
 
   const [queue, setQueue] = useState<QueueData | null>(null);
+  /* Why the trigger queue was not read, in the platform's words; "" while it answers. */
+  const [queueError, setQueueError] = useState("");
   /** The estate read as it answered; `estateNotBuilt` stops asking once it has said 501. */
   const [estateAnswer, setEstateAnswer] = useState<Answer<unknown> | null>(null);
   const estateNotBuilt = useRef(false);
@@ -454,8 +454,10 @@ export function Control() {
     // estate read is slow, and the other way round.
     try {
       setQueue(await readQueue());
-    } catch {
+      setQueueError("");
+    } catch (e) {
       setQueue(null);
+      setQueueError((e as Error).message || "the trigger queue did not answer");
     }
     // Liveness is the backend's: `live` flags the runs it drives in-process,
     // and a worker's or an attached agent's run in flight reads `running`.
@@ -695,13 +697,13 @@ export function Control() {
         <Kpi off={off} label="Awaiting approval" value={t ? String(t.pending) : "…"} sub={t?.pending ? "a person is next" : "no gates open"}
           tone={t?.pending ? "warn" : undefined} active={drill?.kind === "kpi" && drill.which === "pending"}
           onOpen={() => open({ kind: "kpi", which: "pending" })} />
-        <Kpi off={off} label="Runs" value={cut("runs")?.totals ? String(cut("runs")!.totals.runs7d) : "…"} sub={raw?.shadow?.runs ? `${raw.shadow.runs} shadow run${raw.shadow.runs === 1 ? "" : "s"} left out (7d)` : "every journal counted"}
+        <Kpi off={off} label="Runs" value={cut("runs")?.totals ? String(cut("runs")!.totals.runs7d) : "…"} sub="every run asked for in the window"
           win={wf("runs")} onWin={() => tile("runs")} spark={cut("runs")?.days.map((d) => d.runs)} active={drill?.kind === "kpi" && drill.which === "runs"}
           onOpen={() => open({ kind: "kpi", which: "runs" })} />
-        <Kpi off={off} label="Spend" value={cut("spend")?.totals ? fmtCost(cut("spend")!.totals.cost7d) : "…"} sub={cut("spend")?.totals ? `${fmtTokens(cut("spend")!.totals.tokens7d)} tokens${cut("spend")!.totals.unpriced7d ? ` · ${cut("spend")!.totals.unpriced7d} estimated` : ""}` : ""}
+        <Kpi off={off} label="Spend" value={cut("spend")?.totals ? fmtCost(cut("spend")!.totals.cost7d) : "…"} sub={cut("spend")?.totals ? [`${fmtTokens(cut("spend")!.totals.tokens7d)} tokens`, unpricedLine(cut("spend")!.totals.unpriced7d)].filter(Boolean).join(" · ") : ""}
           win={wf("spend")} onWin={() => tile("spend")} spark={cut("spend")?.days.map((d) => d.cost ?? 0)} active={drill?.kind === "kpi" && drill.which === "spend"}
           onOpen={() => open({ kind: "kpi", which: "spend" })} />
-        <Kpi off={off} label="Avg run time" value={cut("time")?.totals ? fmtMs(cut("time")!.totals.avgMs7d) : "…"} sub="wall clock"
+        <Kpi off={off} label="Avg run time" value={cut("time")?.totals ? fmtMs(cut("time")!.totals.avgMs7d) : "…"} sub="ended runs, work time"
           win={wf("time")} onWin={() => tile("time")} spark={cut("time")?.days.map((d) => d.avgMs ?? 0)} active={drill?.kind === "kpi" && drill.which === "time"}
           onOpen={() => open({ kind: "kpi", which: "time" })} />
         <Kpi off={off} label="Guardrail denials" value={cut("denials")?.totals ? String(cut("denials")!.totals.denials7d) : "…"} sub="click for the rule that fired"
@@ -894,6 +896,8 @@ export function Control() {
                       <span title={`${spines[a.id].retired!.reason}${spines[a.id].retired!.replacement ? ` · replaced by ${spines[a.id].retired!.replacement}` : ""}`}>
                         <Status tone="neutral">Retired</Status>
                       </span>
+                    ) : a.retired ? (
+                      <Status tone="neutral">Retired</Status>
                     ) : a.active > 0 ? (
                       <Status tone="run">{a.active} live</Status>
                     ) : a.deployed_at ? (
@@ -910,7 +914,9 @@ export function Control() {
                   </span>
 
                   <span className="flex flex-col gap-1">
-                    {a.evals.length ? (
+                    {a.evals === null ? (
+                      <span className="text-[11px] text-faint" title={data.not_built.evals}>Not built</span>
+                    ) : a.evals.length ? (
                       <>
                         <span className="flex items-baseline gap-1">
                           <span className={`tnum text-[13px] font-semibold ${a.evals[0].passed === a.evals[0].total ? "text-ok" : "text-warn"}`}>
@@ -1017,7 +1023,7 @@ export function Control() {
                       <RunSourceTag run={r} />
                     </span>
                     <span className="truncate font-mono text-[9.5px] text-faint">
-                      {r.state} · {fmtMs(r.ms)} · {fmtCost(r.cost)}
+                      {r.state} · {fmtMs(r.ms)} · {runCost(r)}
                       {r.denials > 0 ? ` · ${r.denials} denied` : ""}
                     </span>
                   </span>
@@ -1164,17 +1170,17 @@ export function Control() {
           {data && (<>
           {/* Guardrails — the record of "no" */}
           <section className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">
-            <PanelHead title="Guardrails" meta="policy in action, 7 days" />
+            <PanelHead title="Guardrails" meta={`policy in action, ${win}`} />
             <div className={off ? "hidden" : "grid grid-cols-3 divide-x divide-line"}>
               {[
                 { label: "Denials", value: t?.denials7d ?? 0, tone: t?.denials7d ? "text-warn" : "text-fg", drill: "denials" as const },
                 { label: "Kills", value: t?.kills7d ?? 0, tone: t?.kills7d ? "text-err" : "text-fg", drill: "kills" as const },
-                { label: "Gates answered", value: (data?.runs ?? []).filter((r) => new Date(r.at).getTime() >= now - 7 * 86_400_000 && r.state === "done").length, tone: "text-fg", drill: "runs" as const },
+                { label: "Gates answered", value: t?.gatesAnswered ?? 0, tone: "text-fg", drill: "gates" as const },
               ].map((g) => (
                 <button
                   key={g.label}
                   type="button"
-                  onClick={() => open({ kind: "kpi", which: g.drill })}
+                  onClick={() => (g.drill === "gates" ? router.push(`/explore?kind=gate&outcome=approved,refused,answered&window=${win}`) : open({ kind: "kpi", which: g.drill }))}
                   className="focusable flex cursor-pointer flex-col items-center gap-0.5 px-2 py-3 transition-colors hover:bg-raise/50"
                 >
                   <span className={`tnum text-[18px] leading-none font-semibold ${g.tone}`}>{g.value}</span>
@@ -1183,13 +1189,13 @@ export function Control() {
               ))}
             </div>
             <p className={`${off ? "" : "border-t border-line "}px-3 py-2 text-[10.5px] leading-[1.5] text-faint`}>
-              Every refusal, gate and kill is a journal entry with a because-chain — open any run
-              to read the exact rule that fired.
+              Every refusal, gate and kill is a journal entry with a because-chain. Gates answered
+              opens them in Explore; open any run to read the exact rule that fired.
             </p>
           </section>
 
           {/* FinOps — the gateway's own balance, and the budget beside the burn */}
-          <FinOpsPanel finops={data?.finops ?? null} window={win} onSaved={load} off={off} />
+          <FinOpsPanel finops={data?.finops ?? null} window={win} onSaved={load} off={off} billingNote={data?.not_built.billing ?? "reading a cloud bill is not built"} />
           </>)}
         </div>
       </div>
@@ -1211,10 +1217,6 @@ export function Control() {
           ) : (
             <ActivityChart days={cut("activity")?.days ?? []} selected={drill?.kind === "day" ? drill.day : null} onPick={(day) => open({ kind: "day", day })} />
           )}
-          {/* A canary's shadow runs (L8, second round) are listed on the Runs page, marked; they are counted in none of these figures. */}
-          {raw?.shadow && shadowBesideLine(raw.shadow, (n) => fmtCost(n)) && (
-            <p className="border-t border-line px-3 py-2 text-[10.5px] text-faint">{shadowBesideLine(raw.shadow, (n) => fmtCost(n))} (last 7 days).</p>
-          )}
         </section>
 
         <section className="mb-4 flex break-inside-avoid flex-col overflow-hidden rounded-md border border-line bg-surface">
@@ -1230,7 +1232,7 @@ export function Control() {
             pulse={Boolean(queue && Object.values(queue.agents).some((a) => (a.running ?? 0) > 0))}
             right={<Mono className="text-[10px] text-ghost">{queue ? `${queue.workers.length} worker${queue.workers.length === 1 ? "" : "s"} live` : ""}</Mono>}
           />
-          <QueuePanel queue={queue} now={now} />
+          <QueuePanel queue={queue} error={queueError} now={now} />
           {/* The jobs themselves (L8, second round): a cancelled one with its reason, a dead letter, a shadow job, a canary's arm. */}
           {queue && <JobsList agents={Object.keys(queue.agents)} />}
         </section>
@@ -1289,6 +1291,7 @@ export function Control() {
         {/* Partner agents — A2A peers, as the peer registry holds them */}
         <section className="mb-4 flex break-inside-avoid flex-col overflow-hidden rounded-md border border-line bg-surface">
           <PanelHead title="Partner agents" meta="A2A peers, from the registry" />
+          {data && data.peers === null && <p className="px-3 py-4 text-[12px] leading-[1.55] text-faint">Not built: {data.not_built.peers ?? "the A2A peer registry is not built"}.</p>}
           {(data?.peers ?? []).map((p) => {
             const st = partnerStatus(p);
             return (
@@ -1305,21 +1308,22 @@ export function Control() {
               </Link>
             );
           })}
-          {regOff && (data?.peers.length ?? 0) === 0 && <p className="px-3 py-4 text-[12px] leading-[1.55] text-faint">Peers registered on Configuration, under Peers, are listed here with their state.</p>}
-          {data && !regOff && data.peers.length === 0 && (
+          {data && !regOff && data.peers !== null && data.peers.length === 0 && (
             <p className="px-3 py-4 text-[12px] leading-[1.55] text-faint">
               No peer is registered or named by a workflow. Register one on Configuration, under Peers: its card is pinned and nothing is sent to it until a person
               approves it.
             </p>
           )}
-          <p className="border-t border-line px-3 py-2 text-[10.5px] leading-[1.5] text-faint">
-            Spoken to only once registered and approved, signed both ways. Their answers arrive marked untrusted — the same taint rules as every other boundary.
-          </p>
+          {data && data.peers !== null && (
+            <p className="border-t border-line px-3 py-2 text-[10.5px] leading-[1.5] text-faint">
+              Spoken to only once registered and approved, signed both ways. Their answers arrive marked untrusted — the same taint rules as every other boundary.
+            </p>
+          )}
         </section>
 
         {/* Least-privilege posture */}
         <section className="mb-4 flex break-inside-avoid flex-col overflow-hidden rounded-md border border-line bg-surface">
-          <PanelHead title="Least privilege" meta="grants × declared risk × gates" />
+          <PanelHead title="Least privilege" meta="grants × risk × gates, by the engine's rule" />
           {regOff && <p className="px-3 py-4 text-[12px] leading-[1.55] text-faint">Grants by declared risk, and the sinks behind a gate, are counted here from the specs.</p>}
           {data && !regOff && (
             <>
@@ -1344,17 +1348,24 @@ export function Control() {
                     {data.posture.gatedSinks}/{data.posture.sinks}
                   </span>
                 </span>
+                {data.posture.conditionalSinks > 0 && (
+                  <span className="flex items-baseline justify-between text-[11.5px]">
+                    <span className="text-dim">Sinks gated only when a condition holds</span>
+                    <span className="tnum font-semibold text-warn">{data.posture.conditionalSinks}</span>
+                  </span>
+                )}
                 {data.posture.ungated.length > 0 && (
                   <div className="mt-1">
                     <Banner
                       tone="warn"
-                      title={`${data.posture.ungated.length} sink${data.posture.ungated.length === 1 ? "" : "s"} without an approval gate`}
+                      title={`${data.posture.ungated.length} sink${data.posture.ungated.length === 1 ? "" : "s"} no gate always holds`}
                     >
                       <span className="flex flex-col gap-1 pt-0.5">
                         {data.posture.ungated.slice(0, 4).map((u, i) => (
                           <Button key={i} size="sm" variant="quiet" className="max-w-full self-start font-mono" onClick={() => open({ kind: "agent", id: u.agent })}>
                             <span className="min-w-0 truncate">
-                              {u.agent} · {u.node} · {u.tool}
+                              {u.agent} · {u.node} · {u.tool} · {u.risk}
+                              {u.conditional ? " · gated under a condition" : ""}
                             </span>
                           </Button>
                         ))}
@@ -1362,9 +1373,20 @@ export function Control() {
                     </Banner>
                   </div>
                 )}
+                {(data.posture.unregistered.length > 0 || data.posture.undeclared.length > 0) && (
+                  <p className="text-[11px] leading-[1.5] text-warn">
+                    {[
+                      data.posture.unregistered.length ? `${data.posture.unregistered.length} grant${data.posture.unregistered.length === 1 ? "" : "s"} of a tool that is not registered (a run of that agent is refused at its start)` : "",
+                      data.posture.undeclared.length ? `${data.posture.undeclared.length} grant${data.posture.undeclared.length === 1 ? "" : "s"} of a tool the definition does not declare (every call of it is refused)` : "",
+                    ]
+                      .filter(Boolean)
+                      .join("; ")}
+                    .
+                  </p>
+                )}
               </div>
-              <p className="border-t border-line px-3 py-2 text-[10.5px] leading-[1.5] text-faint">
-                Derived from the specs, never typed in — the same numbers the runtime enforces.
+              <p className="border-t border-line px-3 py-2 text-[10.5px] leading-[1.5] text-faint" title={data.posture.basis}>
+                Read from each agent&rsquo;s deployed version (its latest when none is deployed) and judged by the rule the engine applies to a call.
               </p>
             </>
           )}
@@ -1434,7 +1456,7 @@ export function Control() {
       {killAsk?.id && (
         <KillDialog
           title="Kill this run?"
-          what={`${(data?.live ?? []).find((l) => l.id === killAsk.id)?.system ?? "run"} · ${killAsk.id}. A worker running it stops before its next model call, step or node; a call already in flight finishes. A run waiting for a person stops at once. Child runs it started are not stopped. The journal records the reason and your name.`}
+          what={`${(data?.live ?? []).find((l) => l.id === killAsk.id)?.system ?? "run"} · ${killAsk.id}. A worker running it stops before its next model call, step or node; a call already in flight finishes. A run waiting for a person stops at once. Every run it started, and theirs, is stopped the same way. The journal records the reason and your name.`}
           confirm="Kill run"
           busy={killing !== null}
           onClose={() => setKillAsk(null)}
@@ -1477,18 +1499,21 @@ export function Control() {
 
 /* ═══════════════════ pieces ═══════════════════ */
 
-/** FinOps: what the billing source billed for the resource, what the journal says was
-    spent, and a budget to burn against. Billed lags usage by up to a day and
-    is the truth; journalled is tokens times the configured price and is now. */
+/** FinOps: what the model calls recorded as spent over the window, and a budget to burn
+    against. Spend is the recorded cost of each priced call; a call on a model with no price
+    set is counted apart, never as $0. Reading a cloud bill is not built. */
 function FinOpsPanel({
   finops,
   window,
   onSaved,
+  billingNote,
   off = false,
 }: {
   finops: ControlData["finops"] | null;
   window: Win;
   onSaved: () => void;
+  /** Why no billed figure is shown: the platform's `not_built.billing`. */
+  billingNote: string;
   /** A quiet console with nothing on record: no figure is shown for a spend that was not read. */
   off?: boolean;
 }) {
@@ -1497,35 +1522,27 @@ function FinOpsPanel({
   const [period, setPeriod] = useState<"day" | "week" | "month">("month");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
-  const azure = finops?.azure ?? null;
-  const billed = azure?.configured && azure.error === null ? azure.last7d : null;
-  const cur = azure?.currency ?? "USD";
-  const fmtBilled = (n: number | null) => (n === null ? "—" : `${cur === "USD" ? "$" : `${cur} `}${n.toFixed(2)}`);
   const spend = finops?.spend7d ?? null;
   // The budget is a rate (so much per period). The window's spend is compared
   // to the budget scaled to the window: $5 a day is $150 over 30 days, and
   // an "all time" window is scaled to however many days it actually spans.
   const state = finops?.budgetState ?? null;
+  const per = finops?.budget != null && finops.period ? finops.period : null;
   // One clock reading per mount: the window's span must not move between renders.
   const [now] = useState(() => Date.now());
   const windowDays = window === "all" ? Math.max(1, (now - new Date(state?.since ?? now).getTime()) / 86_400_000) : winMs(window) / 86_400_000;
-  const windowBudget = finops?.budget != null && finops.period ? (finops.budget * windowDays) / PERIOD_DAYS[finops.period] : null;
+  const windowBudget = per && finops?.budget != null ? (finops.budget * windowDays) / PERIOD_DAYS[per] : null;
   const burnPct = windowBudget && spend !== null ? Math.min(100, (spend / Math.max(0.01, windowBudget)) * 100) : null;
   const usedPct = state?.used != null ? Math.round(state.used * 100) : null;
 
   return (
     <section className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">
-      <PanelHead
-        title="Costs"
-        meta={azure?.configured ? "billed · journalled burn vs budget" : "journalled burn vs budget"}
-      />
-      {off && <p className="border-b border-line px-3 py-3 text-[12px] text-faint">What was billed and what the journals priced show here, beside the budget.</p>}
-      <div className={off ? "hidden" : "grid grid-cols-4 divide-x divide-line border-b border-line"}>
+      <PanelHead title="Costs" meta="recorded spend vs budget" />
+      {off && <p className="border-b border-line px-3 py-3 text-[12px] text-faint">What the model calls recorded as spent shows here, beside the budget.</p>}
+      <div className={off ? "hidden" : "grid grid-cols-2 divide-x divide-line border-b border-line"}>
         {[
-          { label: "Billed · MTD", value: fmtBilled(azure?.configured && azure.error === null ? azure.mtd : null), tone: "text-fg" },
-          { label: "Billed · 7d", value: fmtBilled(billed), tone: "text-fg" },
-          { label: finops?.unpriced7d ? `Journalled · ${window} · ${finops.unpriced7d} estimated` : `Journalled · ${window}`, value: fmtCost(spend), tone: "text-fg" },
-          { label: finops?.budget != null ? `Budget · per ${PERIOD_LABEL[finops.period]}` : "Budget", value: finops?.budget != null ? `$${finops.budget.toFixed(2)}` : "unset", tone: state?.exceeded ? "text-err" : "text-fg" },
+          { label: [`Recorded · ${window}`, unpricedLine(finops?.unpriced7d ?? 0)].filter(Boolean).join(" · "), value: fmtCost(spend), tone: "text-fg" },
+          { label: per ? `Budget · per ${PERIOD_LABEL[per]}` : "Budget", value: finops?.budget != null ? `$${finops.budget.toFixed(2)}` : "unset", tone: state?.exceeded ? "text-err" : "text-fg" },
         ].map((x) => (
           <div key={x.label} className="flex flex-col items-center gap-0.5 px-1 py-2.5">
             <span className={`tnum text-[15px] leading-none font-semibold ${x.tone}`}>{x.value}</span>
@@ -1533,22 +1550,18 @@ function FinOpsPanel({
           </div>
         ))}
       </div>
-      {state && finops?.budget != null && (
+      {state && per && finops?.budget != null && (
         <div className={`flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-b border-line px-3 py-2 text-[10.5px] ${state.exceeded ? "text-err" : "text-faint"}`}>
-          <span className="font-medium">{state.exceeded ? "Budget exhausted · new runs are refused" : `This ${PERIOD_LABEL[finops.period]} so far`}</span>
+          <span className="font-medium">{state.exceeded ? "Budget exhausted · new runs are refused" : `This ${PERIOD_LABEL[per]} so far`}</span>
           <span className="tnum">{fmtCost(state.spent)} of ${finops.budget.toFixed(2)}{usedPct !== null ? ` · ${usedPct}%` : ""}</span>
           {state.remaining !== null && !state.exceeded && <span className="tnum">{fmtCost(Math.max(0, state.remaining))} left</span>}
-          {state.unpriced > 0 && <span>{state.unpriced} run{state.unpriced === 1 ? "" : "s"} at estimated prices</span>}
-          {shadowSpentLine(state.shadow_spent, fmtCost) && <span className="text-faint">{shadowSpentLine(state.shadow_spent, fmtCost)}</span>}
+          {state.unpriced > 0 && <span>{unpricedLine(state.unpriced)}, not counted against it</span>}
         </div>
-      )}
-      {(finops?.shadowSpend7d ?? 0) > 0 && (finops?.budget == null || !state) && (
-        <div className="border-b border-line px-3 py-2 text-[10.5px] text-faint">{shadowSpentLine(finops?.shadowSpend7d, fmtCost)} (7 days)</div>
       )}
       {burnPct !== null && windowBudget !== null && (
         <div className="flex flex-col gap-1 px-3 pt-2.5">
           <span className="flex justify-between text-[10px] text-faint">
-            <span>{window} spend vs {fmtCost(windowBudget)} ({`$${finops!.budget!.toFixed(2)} per ${PERIOD_LABEL[finops!.period]}`} scaled to {window})</span>
+            <span>{window} spend vs {fmtCost(windowBudget)} ({`$${finops!.budget!.toFixed(2)} per ${PERIOD_LABEL[per!]}`} scaled to {window})</span>
             <span className="tnum">{burnPct.toFixed(0)}%</span>
           </span>
           <span className="h-1.5 w-full overflow-hidden rounded-full bg-raise">
@@ -1625,12 +1638,8 @@ function FinOpsPanel({
               {finops?.budget != null ? "Change budget" : "Set a budget"}
             </Button>
             <span className="grow" />
-            <span className="truncate text-[10px] text-ghost" title={azure?.error ?? ""}>
-              {!azure?.configured
-                ? "This deployment has no billing source."
-                : azure.error
-                  ? `The billing source did not answer: ${azure.error}`
-                  : `Billed figures as of ${azure.fetchedAt ? new Date(azure.fetchedAt).toLocaleTimeString() : "now"}; billing lags usage by up to a day`}
+            <span className="truncate text-[10px] text-ghost" title={billingNote}>
+              Not built: {billingNote}.
             </span>
             {saveError && <Failure inline message={saveError} />}
           </>
@@ -1640,8 +1649,8 @@ function FinOpsPanel({
   );
 }
 
-/** Log export: the journal stream, SIEM-shaped. The download works today;
-    the forwarders are deployment slots and say so. */
+/** Log export: every run's journal as one download. The audit trail is also forwarded as
+    it is written when the deployment names a destination; nothing here configures that. */
 function LogExport() {
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
@@ -1649,7 +1658,7 @@ function LogExport() {
 
   return (
     <div ref={ref} className="relative">
-      <Button size="sm" variant="outline" onClick={() => setOpen((v) => !v)}>
+      <Button size="sm" variant="solid" tone="neutral" onClick={() => setOpen((v) => !v)}>
         Export logs
       </Button>
       {open && (
@@ -1665,30 +1674,12 @@ function LogExport() {
             </span>
             <span className="flex min-w-0 flex-col">
               <span className="text-[12.5px] font-semibold text-fg">Download NDJSON</span>
-              <span className="text-[10.5px] text-faint">
-                Every journal entry, one event per line — SIEM-ready
-              </span>
+              <span className="text-[10.5px] text-faint">Every run&rsquo;s journal, one entry per line</span>
             </span>
           </a>
-          {[
-            { name: "Splunk HEC", hint: "HTTP Event Collector" },
-            { name: "Microsoft Sentinel", hint: "Log Analytics ingestion" },
-            { name: "Google Chronicle", hint: "Ingestion API" },
-          ].map((s) => (
-            <div key={s.name} className="flex items-center gap-2.5 border-b border-line px-3 py-2 opacity-70 last:border-b-0">
-              <span className="grid size-7 shrink-0 place-items-center rounded-md bg-raise text-faint">
-                <Icon name="webhook" size={13} />
-              </span>
-              <span className="flex min-w-0 grow flex-col">
-                <span className="text-[12px] font-medium text-dim">{s.name}</span>
-                <span className="text-[10px] text-ghost">{s.hint}</span>
-              </span>
-              <Status tone="queue">not configured</Status>
-            </div>
-          ))}
           <p className="px-3 py-2 text-[10px] leading-[1.5] text-ghost">
-            Forwarders are wired per deployment — same stream as the download, shipped
-            continuously inside the client&rsquo;s tenancy.
+            The audit trail is forwarded as it is written, as OpenTelemetry logs or syslog, when the deployment names a destination
+            (LOG_FORWARD_TO). What receives it is outside this platform.
           </p>
         </div>
       )}
@@ -1897,7 +1888,7 @@ function ModelMix({
   onPick: (id: string) => void;
 }) {
   const total = Math.max(1, models.reduce((s, m) => s + m.tokens, 0));
-  const localShare = Math.round((models.filter((m) => m.local).reduce((s, m) => s + m.tokens, 0) / total) * 100);
+  const unpriced = models.reduce((s, m) => s + m.unpricedCalls, 0);
   if (off) return <p className="px-3 py-4 text-[12px] text-faint">Where the tokens went, model by model, shows here.</p>;
   if (!models.length) return <p className="px-3 py-4 text-[12px] text-faint">No model calls in this window.</p>;
   return (
@@ -1907,13 +1898,13 @@ function ModelMix({
           <span
             key={m.model}
             title={`${m.model} · ${fmtTokens(m.tokens)} tokens`}
-            className={m.local ? "bg-ok" : "bg-run"}
+            className="bg-run"
             style={{ width: `${Math.max(1.5, (m.tokens / total) * 100)}%` }}
           />
         ))}
       </div>
       <p className="text-[10.5px] text-faint">
-        <span className="font-semibold text-ok">{localShare}%</span> of tokens ran on local models — genuinely $0, nothing left the machine.
+        Tokens and recorded spend per model{unpriced ? `; ${unpricedLine(unpriced)}, shown as no cost rather than $0` : ""}.
       </p>
       <div className="flex flex-col">
         {models.map((m) => (
@@ -1926,7 +1917,7 @@ function ModelMix({
               selected === m.model ? "bg-raise/80" : "hover:bg-raise/50"
             }`}
           >
-            <span className={`size-1.5 shrink-0 rounded-[2px] ${m.local ? "bg-ok" : "bg-run"}`} />
+            <span className="size-1.5 shrink-0 rounded-[2px] bg-run" />
             <span className="min-w-0 grow truncate font-mono text-[11px] text-fg">{m.model}</span>
             <span className="tnum shrink-0 text-[10.5px] text-dim">{fmtTokens(m.tokens)}</span>
             <span className="tnum w-14 shrink-0 text-right text-[10.5px] text-mist">{fmtCost(m.cost)}</span>
@@ -1964,7 +1955,7 @@ function Drawer({
   // pure function of what is already known, and a waterfall needs a fetch.
   const runInView = drill.kind === "run" ? drill.id : drill.kind === "span" ? drill.run : null;
   const { trace, state: traceState } = useTrace(runInView);
-  const refusals = useRefusals(drill.kind === "kpi" && drill.which === "denials");
+  const refusals = useRefusals(drill.kind === "kpi" && drill.which === "denials", data.window);
   const { title, body } = renderDrill(drill, data, onOpen, onKill, killing, trace, traceState, refusals, onAnswer);
   return (
     // A modal over the room: the backdrop is a click target — empty space
@@ -2028,7 +2019,7 @@ function RunList({
               <RunSourceTag run={r} />
             </span>
             <span className="truncate font-mono text-[9.5px] text-faint">
-              {r.state} · {fmtMs(r.ms)} · {fmtCost(r.cost)}
+              {r.state} · {fmtMs(r.ms)} · {runCost(r)}
               {r.denials > 0 ? ` · ${r.denials} denied` : ""}
             </span>
           </span>
@@ -2036,6 +2027,16 @@ function RunList({
         </button>
       ))}
     </div>
+  );
+}
+
+/** Said above a drill list when the estate read carried only the newest runs (the figures still count every run). */
+function TruncatedNote({ data }: { data: ControlData }) {
+  if (data.runs.length >= data.runsTotal) return null;
+  return (
+    <p className="border-b border-line px-4 py-2 text-[10.5px] text-faint">
+      Listing from the newest {data.runs.length} of {data.runsTotal} runs; the figures count every run.
+    </p>
   );
 }
 
@@ -2056,9 +2057,7 @@ function renderDrill(
   killing: string | null,
   trace: import("./waterfall").Trace | null,
   traceState: "idle" | "loading" | "failed",
-  refusals:
-    | { control: string; run: string; agent: string; node: string; title: string; detail: string; at: string }[]
-    | null,
+  refusals: { rows: Refusal[]; total: number; error: string } | null,
   onAnswer: (runId: string) => void,
 ): { title: string; body: React.ReactNode } {
   const runs = data.runs;
@@ -2132,7 +2131,7 @@ function renderDrill(
           {r.suspendedAt && <Fact k="Waiting at" v={<Mono className="text-[10.5px]">{r.suspendedAt}</Mono>} tone="text-warn" />}
           <Fact k="When" v={ago(r.at)} />
           <Fact k="Duration" v={fmtMs(r.ms)} />
-          <Fact k="Cost" v={fmtCost(r.cost)} />
+          <Fact k="Cost" v={r.cost !== null ? fmtCost(r.cost) : `${fmtCost(r.priced)} priced · ${unpricedLine(r.unpricedCalls)}`} tone={r.cost === null ? "text-warn" : undefined} />
           <Fact k="Tokens" v={`${fmtTokens(r.tokens.in)} in · ${fmtTokens(r.tokens.out)} out`} />
           <Fact k="Calls" v={`${r.modelCalls} model · ${r.toolCalls} tool`} />
           {r.artifacts > 0 && <Fact k="Artifacts" v={String(r.artifacts)} />}
@@ -2142,7 +2141,7 @@ function renderDrill(
               <span className="text-[11px] font-semibold text-dim">By model</span>
               {r.byModel.map((b) => (
                 <div key={b.model} className="mt-1.5 flex items-center gap-2">
-                  <span className={`size-1.5 shrink-0 rounded-[2px] ${b.model === "scripted" ? "bg-ok" : "bg-run"}`} />
+                  <span className="size-1.5 shrink-0 rounded-[2px] bg-run" />
                   <span className="min-w-0 grow truncate font-mono text-[10.5px] text-mist">{b.model}</span>
                   <span className="tnum text-[10.5px] text-dim">{fmtTokens(b.in + b.out)}</span>
                   <span className="tnum w-14 text-right text-[10.5px] text-mist">{fmtCost(b.cost)}</span>
@@ -2222,11 +2221,13 @@ function renderDrill(
             }
           />
           <Fact k="Runs" v={`${a.runs7d} in ${data.window} · ${a.runsTotal} total`} />
+          {a.unpriced7d > 0 && <Fact k={`Calls with no price · ${data.window}`} v={String(a.unpriced7d)} tone="text-warn" />}
           <Fact k={`Avg time · ${data.window}`} v={fmtMs(a.avgMs7d)} />
           <Fact k={`Spend · ${data.window}`} v={fmtCost(a.cost7d)} />
           {a.pending > 0 && <Fact k="Awaiting approval" v={String(a.pending)} tone="text-warn" />}
 
-          {a.evals.length > 0 && (
+          {a.evals === null && <Fact k="Benchmark" v="Not built" />}
+          {a.evals !== null && a.evals.length > 0 && (
             <div className="border-b border-line px-4 py-2.5">
               <span className="text-[11px] font-semibold text-dim">Benchmark history</span>
               {a.evals.map((e, i) => (
@@ -2247,7 +2248,7 @@ function renderDrill(
               <span className="text-[11px] font-semibold text-dim">Models this agent used</span>
               {[...costByModel.entries()].map(([m, agg]) => (
                 <div key={m} className="mt-1.5 flex items-center gap-2">
-                  <span className={`size-1.5 shrink-0 rounded-[2px] ${m === "scripted" ? "bg-ok" : "bg-run"}`} />
+                  <span className="size-1.5 shrink-0 rounded-[2px] bg-run" />
                   <span className="min-w-0 grow truncate font-mono text-[10.5px] text-mist">{m}</span>
                   <span className="tnum text-[10.5px] text-dim">{fmtTokens(agg.tokens)}</span>
                   <span className="tnum w-14 text-right text-[10.5px] text-mist">{fmtCost(agg.cost)}</span>
@@ -2308,9 +2309,10 @@ function renderDrill(
       title: drill.id,
       body: (
         <div className="flex flex-col">
-          <Fact k="Where it runs" v={m?.local ? "no model, $0" : "the deployment's model endpoint"} tone={m?.local ? "text-ok" : undefined} />
+          <Fact k="Where it runs" v="the deployment's model endpoint" />
           <Fact k={`Tokens · ${data.window}`} v={m ? `${fmtTokens(m.in)} in · ${fmtTokens(m.out)} out` : "—"} />
           <Fact k={`Cost · ${data.window}`} v={fmtCost(m?.cost ?? null)} />
+          {(m?.unpricedCalls ?? 0) > 0 && <Fact k="Calls with no price" v={String(m!.unpricedCalls)} tone="text-warn" />}
           <Fact k="Runs that used it" v={String(m?.runs ?? modelRuns.length)} />
           <p className="px-4 pt-3 pb-1 text-[11px] font-semibold text-dim">Runs</p>
           <RunList runs={modelRuns.slice(0, 15)} onOpen={onOpen} empty="No recent runs used this model." />
@@ -2385,74 +2387,87 @@ function renderDrill(
         ),
       };
     case "runs":
-      return { title: "Runs · 7 days", body: <RunList runs={recent} onOpen={onOpen} empty="No runs in the last week." /> };
+      return { title: `Runs · ${data.window}`, body: <><TruncatedNote data={data} /><RunList runs={recent} onOpen={onOpen} empty="No runs in this window." /></> };
     case "spend": {
-      const priciest = [...recent].filter((r) => (r.cost ?? 0) > 0).sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0));
+      const priciest = [...recent].filter((r) => (r.priced ?? 0) > 0).sort((a, b) => (b.priced ?? 0) - (a.priced ?? 0));
       return {
-        title: "Spend · 7 days",
+        title: `Spend · ${data.window}`,
         body: (
           <div className="flex flex-col">
             <div className="border-b border-line px-4 py-2.5">
               <span className="text-[11px] font-semibold text-dim">By model</span>
               {data.models.map((m) => (
                 <div key={m.model} className="mt-1.5 flex items-center gap-2">
-                  <span className={`size-1.5 shrink-0 rounded-[2px] ${m.local ? "bg-ok" : "bg-run"}`} />
+                  <span className="size-1.5 shrink-0 rounded-[2px] bg-run" />
                   <span className="min-w-0 grow truncate font-mono text-[10.5px] text-mist">{m.model}</span>
+                  {m.unpricedCalls > 0 && <span className="text-[10px] text-warn">{unpricedLine(m.unpricedCalls)}</span>}
                   <span className="tnum w-14 text-right text-[10.5px] text-mist">{fmtCost(m.cost)}</span>
                 </div>
               ))}
             </div>
-            <p className="px-4 pt-3 pb-1 text-[11px] font-semibold text-dim">Costliest runs</p>
-            <RunList runs={priciest.slice(0, 10)} onOpen={onOpen} empty="Every recent run cost $0 — all local." />
+            <p className="px-4 pt-3 pb-1 text-[11px] font-semibold text-dim">Costliest runs, by their priced calls</p>
+            <TruncatedNote data={data} />
+            <RunList runs={priciest.slice(0, 10)} onOpen={onOpen} empty="No run in this window has a priced model call." />
           </div>
         ),
       };
     }
     case "time": {
-      const slowest = [...recent].sort((a, b) => b.ms - a.ms);
-      // An average hides the tail, and the tail is what a person waits through.
-      const sorted = recent.map((r) => r.ms).sort((a, b) => a - b);
-      const at = (p: number) =>
-        sorted.length ? sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1))] : 0;
+      const slowest = [...recent].filter((r) => r.state === "done" || r.state === "failed" || r.state === "killed").sort((a, b) => b.ms - a.ms);
+      // An average hides the tail, and the tail is what a person waits through. The percentiles are the platform's, over the window's ended runs.
+      const lat = data.latency;
       return {
-        title: "Run time · 7 days",
+        title: `Run time · ${data.window}`,
         body: (
           <div className="flex flex-col">
-            <Fact k="Median" v={fmtMs(at(50))} />
-            <Fact k="95th percentile" v={fmtMs(at(95))} />
-            <Fact k="99th percentile" v={fmtMs(at(99))} />
-            <Fact k="Slowest" v={fmtMs(sorted[sorted.length - 1] ?? 0)} />
+            <Fact k="Ended runs measured" v={String(lat?.runs ?? 0)} />
+            <Fact k="Median" v={fmtMs(lat?.p50 ?? null)} />
+            <Fact k="95th percentile" v={fmtMs(lat?.p95 ?? null)} />
+            <Fact k="99th percentile" v={fmtMs(lat?.p99 ?? null)} />
+            <Fact k="Slowest" v={fmtMs(lat?.max ?? null)} />
             <div className="px-4 pt-2.5 pb-1">
               <span className="text-[11px] font-semibold text-dim">Slowest runs</span>
             </div>
-            <RunList runs={slowest.slice(0, 12)} onOpen={onOpen} empty="No runs in the last week." />
+            <RunList runs={slowest.slice(0, 12)} onOpen={onOpen} empty="No run in this window has ended." />
           </div>
         ),
       };
     }
     case "denials": {
-      const hard = (refusals ?? []).filter((x) => x.control !== "taint" && x.control !== "gate");
+      const hard = refusals?.rows ?? [];
       return {
-        title: "Guardrail denials",
+        title: `Guardrail denials · ${data.window}`,
         body: (
           <div className="flex flex-col">
             {refusals === null && (
               <p className="px-4 py-3 text-[11.5px] text-faint">Reading the journals…</p>
             )}
-            {refusals !== null && hard.length === 0 && (
+            {refusals?.error && (
+              <div className="px-4 py-3">
+                <Failure what="The refusals could not be read" message={refusals.error} />
+              </div>
+            )}
+            {refusals !== null && !refusals.error && hard.length === 0 && (
               <p className="px-4 py-4 text-[12px] leading-[1.55] text-faint">
-                Nothing has been refused on this deployment. That is the controls having nothing to
-                stop rather than the controls being off — the Guardrails page shows which are
-                running and how often each has fired.
+                No call was refused in this window. The Guardrails page shows which controls are in
+                force and how often each has fired.
+              </p>
+            )}
+            {refusals !== null && refusals.total > hard.length && (
+              <p className="border-b border-line px-4 py-2 text-[10.5px] text-faint">
+                The newest {hard.length} of {refusals.total}.{" "}
+                <Link href={`/explore?kind=refusal&window=${data.window}`} className="underline">
+                  All of them in Explore
+                </Link>
               </p>
             )}
             {hard.map((x, i) => {
               const why = explainControl(x.control);
               return (
                 <button
-                  key={`${x.run}-${i}`}
+                  key={`${x.id}-${i}`}
                   type="button"
-                  onClick={() => onOpen({ kind: "run", id: x.run })}
+                  onClick={() => x.run && onOpen({ kind: "run", id: x.run })}
                   className="focusable flex flex-col gap-1 border-b border-line px-4 py-2.5 text-left last:border-0 hover:bg-raise/40"
                 >
                   <span className="flex flex-wrap items-center gap-2">
@@ -2478,7 +2493,7 @@ function renderDrill(
     }
     case "kills":
       return {
-        title: "Killed runs · 7 days",
+        title: `Killed runs · ${data.window}`,
         body: (
           <div className="flex flex-col">
             <div className="flex flex-col gap-1.5 border-b border-line px-4 py-3">
@@ -2494,7 +2509,7 @@ function renderDrill(
             <RunList
               runs={recent.filter((r) => r.state === "killed")}
               onOpen={onOpen}
-              empty="No kills this week. When an operator throws the switch, the journalled decision lands here."
+              empty="No run was killed in this window. When an operator throws the switch, the journalled decision lands here."
             />
           </div>
         ),
@@ -2506,7 +2521,6 @@ function renderDrill(
 
 interface Corner {
   model: string;
-  local: boolean;
   costPerRun: number | null;
   avgMs: number | null;
   passRate: number | null;
@@ -2534,11 +2548,10 @@ interface Corner {
 function cornersOf(models: ModelRow[], runs: RunRow[], agents: AgentRow[]): Corner[] {
   const raw = models.map((m) => {
     const used = runs.filter((r) => r.models.includes(m.model) && r.ms > 0);
-    const evals = agents.flatMap((a) => a.evals.filter((e) => e.model === m.model));
+    const evals = agents.flatMap((a) => (a.evals ?? []).filter((e) => e.model === m.model));
     const total = evals.reduce((s, e) => s + e.total, 0);
     return {
       model: m.model,
-      local: m.local,
       runs: m.runs,
       costPerRun: m.cost === null ? null : m.cost / Math.max(1, m.runs),
       avgMs: used.length ? used.reduce((s, r) => s + r.ms, 0) / used.length : null,
@@ -2549,7 +2562,7 @@ function cornersOf(models: ModelRow[], runs: RunRow[], agents: AgentRow[]): Corn
   // Log scale against the best in view, two decades wide: the cheapest or
   // fastest model scores 1, ten times worse scores 0.5, a hundred times worse
   // scores 0. Halving a bar always means the same thing, and the worst model
-  // still has a shape instead of collapsing to a point. Zero (local) is best.
+  // still has a shape instead of collapsing to a point.
   const bestCost = bestOf(raw.map((r) => r.costPerRun));
   const bestMs = bestOf(raw.map((r) => r.avgMs));
   return raw.map((r) => {
@@ -2586,6 +2599,9 @@ function TradeoffTriangle({
 }) {
   const [view, setView] = useState<"profiles" | "table">("profiles");
   const corners = cornersOf(models, runs, agents);
+  // Evaluations are not built: every agent's `evals` is null, and no model has an accuracy to show.
+  const evalsBuilt = agents.some((a) => a.evals !== null);
+  const noEvals = evalsBuilt ? "no evals" : "not built";
   const colorOf = new Map(corners.map((c, i) => [c.model, CAT[i % CAT.length]]));
   const ranked = [...corners].sort((a, b) => b.overall - a.overall || b.known - a.known);
   const short = (id: string) => id.split("/").pop() ?? id;
@@ -2611,7 +2627,7 @@ function TradeoffTriangle({
     <>
       <PanelHead
         title="Cost · accuracy · time"
-        meta="7 days — one triangle per model"
+        meta="this window — one triangle per model"
         right={
           <Button size="sm" variant="quiet" onClick={() => setView(view === "profiles" ? "table" : "profiles")}>
             {view === "profiles" ? "Table" : "Profiles"}
@@ -2636,14 +2652,14 @@ function TradeoffTriangle({
                   <td className="px-3 py-1.5 font-mono text-[10.5px] text-fg">{c.model}</td>
                   <td className="px-2 py-1.5 text-right">{fmtCost(c.costPerRun)}</td>
                   <td className="px-2 py-1.5 text-right">
-                    {c.passRate === null ? "no evals" : `${Math.round(c.passRate * 100)}% · ${c.evalCases}`}
+                    {c.passRate === null ? noEvals : `${Math.round(c.passRate * 100)}% · ${c.evalCases}`}
                   </td>
                   <td className="px-2 py-1.5 text-right">{fmtMs(c.avgMs)}</td>
                   <td className="px-3 py-1.5 text-right">{c.runs}</td>
                 </tr>
               ))}
               {!corners.length && !off && (
-                <tr><td colSpan={5} className="px-3 py-3 text-faint">No model calls in the last 7 days.</td></tr>
+                <tr><td colSpan={5} className="px-3 py-3 text-faint">No model calls in this window.</td></tr>
               )}
             </tbody>
           </table>
@@ -2667,7 +2683,7 @@ function TradeoffTriangle({
           </div>
 
           {!ranked.length && !off && (
-            <p className="px-3 py-4 text-[12px] text-faint">No model calls in the last 7 days.</p>
+            <p className="px-3 py-4 text-[12px] text-faint">No model calls in this window.</p>
           )}
 
           <div className="flex flex-col">
@@ -2681,8 +2697,8 @@ function TradeoffTriangle({
               ].filter((b): b is { t: string; tone: "ok" | "neutral" } => b !== null);
               const isSel = selected === c.model;
               const rows = [
-                { k: "Accuracy", v: c.passRate === null ? "no evals" : `${Math.round(c.passRate * 100)}%`, s: c.score.accuracy, sub: c.passRate === null ? "" : `${c.evalCases} cases` },
-                { k: "Cost", v: fmtCost(c.costPerRun), s: c.score.cost, sub: c.local ? "local" : "per run" },
+                { k: "Accuracy", v: c.passRate === null ? noEvals : `${Math.round(c.passRate * 100)}%`, s: c.score.accuracy, sub: c.passRate === null ? "" : `${c.evalCases} cases` },
+                { k: "Cost", v: fmtCost(c.costPerRun), s: c.score.cost, sub: "per run" },
                 { k: "Time", v: fmtMs(c.avgMs), s: c.score.time, sub: c.avgMs === null ? "" : "avg run" },
               ];
               return (
@@ -2732,7 +2748,8 @@ function TradeoffTriangle({
 
           <p className="px-3 py-2 text-[10.5px] leading-[1.5] text-faint">
             Cost and Time bars are log-scaled against the best model in view: full is the best, half is ten
-            times worse, empty is a hundred times worse. Accuracy is the eval pass rate measured on that model.
+            times worse, empty is a hundred times worse. Accuracy is the eval pass rate measured on that model
+            {evalsBuilt ? "" : "; evaluations are not built, so no model has one"}. A model with calls that had no price has no cost per run.
             Click a model for the runs behind it.
           </p>
         </div>
@@ -2751,8 +2768,8 @@ type QueueData = QueueSummary;
  * queue that grows is a provider or a worker pool that cannot keep up, and
  * the oldest queued age says how far behind the estate is right now.
  */
-function QueuePanel({ queue, now }: { queue: QueueData | null; now: number }) {
-  if (!queue) return <p className="px-3 py-4 text-[12px] text-faint">The queue needs the registry database.</p>;
+function QueuePanel({ queue, error, now }: { queue: QueueData | null; error: string; now: number }) {
+  if (!queue) return <p className="px-3 py-4 text-[12px] text-faint">{error ? `The trigger queue could not be read: ${error}` : "Reading the trigger queue…"}</p>;
   const rows = Object.entries(queue.agents);
   const age = (iso: string | null | undefined) => {
     if (!iso) return "";

@@ -1,5 +1,4 @@
 "use client";
-import { notBuiltDoorOf } from "@/lib/api/client";
 
 import { Suspense, useMemo } from "react";
 import Link from "next/link";
@@ -10,9 +9,9 @@ import { PageHeader } from "./section";
 import { usePageFacts } from "./assistant";
 import { WINDOWS, WindowPick, type Win } from "./window-pick";
 import { OutcomesBody } from "./outcomes";
-import { failureTrend, fmtAge, fmtCount, fmtMoney, inWindow, leaders, oldestGate, totalsOf, windowWords } from "./overview-data";
+import { fmtAge, fmtCount, fmtMoney, leaders, plural, spendText, unpricedIn, unpricedWords, useFigures, useWaiting, windowWords } from "./overview-data";
 import { Card, CardFigure, FigureTile, FootNote, Nothing, RankList, TrendBars } from "./overview-parts";
-import { bucketsOf, cutCost, rankControls, rankRefusals, resultTotals, useCost, useSecurity, staleOf } from "./dashboards-data";
+import { rankControls, rankRefusals, resultTotals, spendByAgent, spendByModel, windowBudget, windowDays } from "./dashboards-data";
 import { notBuilt, notBuiltOf } from "@/lib/not-built";
 import { BoardNote, BoardSwitch, CloudFindingsCard, ValueBars } from "./dashboards-parts";
 import type { Answer, FindingsSummary } from "@/lib/api/pending";
@@ -27,9 +26,10 @@ import type { Answer, FindingsSummary } from "@/lib/api/pending";
  *   Workload results   the Results summary: findings by severity and status
  *                      for each workload
  *
- * A board holds no record of its own: every figure is counted from the doors
- * the page it links to reads (components/dashboards-data.tsx), so a figure
- * here and the page behind it agree. The board and the window live in the
+ * A board holds no record of its own. The security posture and cost boards
+ * show the platform's own counts for the window (`GET /api/estate`, the
+ * answer the Overview reads too), so a figure here and on the Overview is
+ * the same number; the results board reads the findings summary. The board and the window live in the
  * address (`?board=cost&window=30d`), so a reload or a shared link opens on
  * the same board over the same cut.
  */
@@ -45,7 +45,6 @@ const BOARDS: { id: Board; label: string; line: string }[] = [
 const DEFAULT_BOARD: Board = "security";
 const DEFAULT_WINDOW: Win = "7d";
 
-const plural = (n: number, one: string, many = `${one}s`) => `${fmtCount(n)} ${n === 1 ? one : many}`;
 const percent = (part: number, whole: number) => (whole ? `${((part / whole) * 100).toFixed(part && part / whole < 0.1 ? 1 : 0)}%` : "0%");
 const stamp = (t: number, unit: string) =>
   unit === "hour" ? new Date(t).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
@@ -137,7 +136,7 @@ function EmptyWindow({ win, setWin, age }: BoardProps & { age: number }) {
         </Button>
       }
     >
-      No runs in {windowWords(win)}. The latest run finished {fmtAge(age)} ago.
+      No runs in {windowWords(win)}. The latest run was asked for {fmtAge(age)} ago.
     </BoardNote>
   );
 }
@@ -146,143 +145,124 @@ function EmptyWindow({ win, setWin, age }: BoardProps & { age: number }) {
 
 const SECURITY_VIEW = "/explore?view=security";
 
+/** What a board says while its figures are not in hand: reading, or why they could not be read. */
+function useBoardFigures(win: Win) {
+  const figures = useFigures(win, 30_000);
+  const f = figures.data;
+  const reading = f === null && !figures.error;
+  const unread = f === null && Boolean(figures.error);
+  const off: false | string = unread ? (/not built/i.test(figures.error) ? "Not built" : "Not read") : false;
+  const stale = f !== null && Boolean(figures.error);
+  return { figures, f, reading, unread, off, stale };
+}
+
+function FiguresBanners({ figures, unread, stale }: { figures: { error: string; at: number }; unread: boolean; stale: boolean }) {
+  return (
+    <>
+      {unread && (
+        <Banner tone="err" title="The figures could not be read">
+          {figures.error}. The figures below stay empty until the platform answers.
+        </Banner>
+      )}
+      {stale && (
+        <Banner tone="err" title="The figures stopped answering">
+          {figures.error}. The figures below are stale: they are as the platform last answered{figures.at ? `, at ${new Date(figures.at).toLocaleTimeString("en-GB")}` : ""}.
+        </Banner>
+      )}
+    </>
+  );
+}
+
 function SecurityBoard({ win, setWin }: BoardProps) {
-  const { runs, gates, lockdown, firings, names, now } = useSecurity();
+  const { figures, f, reading, unread, off, stale } = useBoardFigures(win);
+  const { gates, gatesError } = useWaiting(30_000);
   const chip = chipOf(win);
-
-  const rows = useMemo(() => (runs.data ? inWindow(runs.data, (r) => r.at, now, win) : []), [runs.data, now, win]);
-  const totals = useMemo(() => totalsOf(rows), [rows]);
-  const refusals = useMemo(() => rows.reduce((a, r) => a + (r.denials > 0 ? r.denials : 0), 0), [rows]);
-  const refusedRuns = useMemo(() => rows.filter((r) => r.denials > 0).length, [rows]);
-  const refusers = useMemo(() => leaders(rankRefusals(rows, names)), [rows, names]);
-  const controls = useMemo(() => (firings.data ? rankControls(firings.data, now, win) : null), [firings.data, now, win]);
-  const controlsTop = useMemo(() => leaders(controls?.rows ?? []), [controls]);
-  const trend = useMemo(() => {
-    const all = runs.data ?? [];
-    return failureTrend(rows, now, win, all.length ? Date.parse(all[all.length - 1].at) : null);
-  }, [rows, runs.data, now, win]);
-  const peak = Math.max(...trend.points);
-  const waiting = useMemo(() => [...(gates.data ?? [])].sort((a, b) => (Date.parse(a.waiting_since) || Infinity) - (Date.parse(b.waiting_since) || Infinity)), [gates.data]);
-  const oldest = gates.data?.length ? oldestGate(gates.data, now) : null;
-  const latest = runs.data?.[0]?.at ?? null;
-
-  /* A read that never answered: data null with a reason. A quiet console (lib/quiet.ts) says so once, under the switch, and its figures stay unset. */
-  const unread = (r: { data: unknown; error: string }) => r.data === null && Boolean(r.error);
-  const reading = (r: { data: unknown; error: string }) => r.data === null && !r.error;
-  const failures = [
-    unread(runs) ? `the run ledger (${runs.error})` : "",
-    unread(gates) ? `the approvals inbox (${gates.error})` : "",
-    unread(lockdown) ? `the lockdown (${lockdown.error})` : "",
-    unread(firings) ? `the control firings (${firings.error})` : "",
-  ].filter(Boolean);
-  const off = (r: { data: unknown; error: string }) => (unread(r) ? (notBuiltDoorOf(r.error) ? "Not built" : "Not read") : false);
-  const ledgerSub = (said: string) => (reading(runs) ? "reading the ledger" : unread(runs) ? "ledger not read" : !rows.length ? "no runs in this window" : said);
+  const now = figures.at || 0;
+  const names = useMemo(() => Object.fromEntries((f?.rank.agents ?? []).map((a) => [a.id, a.name])), [f]);
+  const refusers = useMemo(() => (f ? leaders(rankRefusals(f, names)) : { top: [], of: 0 }), [f, names]);
+  const controls = useMemo(() => (f ? leaders(rankControls(f)) : { top: [], of: 0 }), [f]);
+  const total = f?.runs.total ?? 0;
+  const state = (s: string) => f?.runs.by_state[s] ?? 0;
+  const peak = f ? Math.max(...f.trend.failed) : 0;
+  const waiting = useMemo(() => [...(gates ?? [])].sort((a, b) => (Date.parse(a.waiting_since) || Infinity) - (Date.parse(b.waiting_since) || Infinity)), [gates]);
+  const oldest = f?.now.oldest_gate_since ? now - Date.parse(f.now.oldest_gate_since) : null;
+  const latest = f?.now.last_run_at ?? null;
+  const lock = f?.now.lockdown ?? null;
+  const lockAt = lock?.at ? Date.parse(lock.at) : NaN;
 
   usePageFacts(
-    runs.data
+    f
       ? {
           page: "Dashboards",
           board: "Security posture",
           window: win,
-          approvals_waiting: gates.data?.length ?? null,
-          refused_calls_in_window: refusals,
-          runs_killed_in_window: totals.killed,
-          runs_failed_in_window: totals.failed,
-          runs_in_window: totals.runs,
-          lockdown_on: lockdown.data?.on ?? null,
+          approvals_waiting: f.now.at_gate,
+          refused_calls_in_window: f.refusals.total,
+          runs_killed_in_window: state("killed"),
+          runs_failed_in_window: state("failed"),
+          runs_in_window: total,
+          lockdown_on: lock?.on ?? null,
         }
       : null,
   );
 
-  /** What a ledger card says in place of its rows (null when it has rows): `holds` is what it will list, `none` what it says of runs that give it nothing. */
+  const sub = (said: string) => (reading ? "reading the figures" : unread ? "figures not read" : said);
+  /** What a card says in place of its rows (null when it has rows): `holds` is what it will list, `none` what it says of a window that gives it nothing. */
   const noRows = (has: boolean, holds: string, none: string) => {
-    if (reading(runs)) return <Nothing>Reading the run ledger.</Nothing>;
-    if (off(runs)) return <Nothing>{holds}</Nothing>;
-    if (unread(runs)) return <Nothing>The run ledger could not be read.</Nothing>;
-    if (!rows.length) return <Nothing>{runs.data?.length ? `No runs in ${windowWords(win)}.` : `No runs yet. ${holds}`}</Nothing>;
-    return has ? null : <Nothing>{none}</Nothing>;
+    if (reading) return <Nothing>Reading the figures.</Nothing>;
+    if (off) return <Nothing>{holds}</Nothing>;
+    return has ? null : <Nothing>{latest ? none : `No runs yet. ${holds}`}</Nothing>;
   };
-
-  const lock = lockdown.data;
-  const lockAt = lock?.at ? Date.parse(lock.at) : NaN;
 
   return (
     <>
-      {[runs, gates, lockdown, firings].some(staleOf) && (
-        <Banner tone="err" title="Some of this board stopped answering">
-          Stale:{" "}
-          {[
-            staleOf(runs) ? `the run ledger (${runs.error})` : "",
-            staleOf(gates) ? `the approvals inbox (${gates.error})` : "",
-            staleOf(lockdown) ? `the lockdown (${lockdown.error})` : "",
-            staleOf(firings) ? `the control firings (${firings.error})` : "",
-          ]
-            .filter(Boolean)
-            .join("; ")}
-          . Their figures are as each last answered, not current.
-        </Banner>
-      )}
-      {failures.length > 0 && (
-        <Banner tone="err" title="Some of this board could not be read">
-          Not read: {failures.join("; ")}. Their figures stay empty until they answer.
-        </Banner>
-      )}
-      {runs.data && runs.data.length === 0 && <BoardNote>No agent has run on this deployment yet. The figures and lists below fill in from the first run.</BoardNote>}
-      {runs.data && runs.data.length > 0 && rows.length === 0 && latest && <EmptyWindow win={win} setWin={setWin} age={now - Date.parse(latest)} />}
+      <FiguresBanners figures={figures} unread={unread} stale={stale} />
+      {f && !latest && <BoardNote>No agent has run on this deployment yet. The figures and lists below fill in from the first run.</BoardNote>}
+      {f && latest && total === 0 && <EmptyWindow win={win} setWin={setWin} age={now - Date.parse(latest)} />}
 
       <FigureBand>
         <FigureTile
           label="Approvals waiting"
           href="/approvals"
-          value={gates.data ? fmtCount(gates.data.length) : null}
-          off={off(gates)}
-          tone={gates.data?.length ? "warn" : undefined}
-          sub={reading(gates) ? "reading the inbox" : unread(gates) ? "inbox not read" : gates.data?.length ? (oldest !== null ? `oldest waiting ${fmtAge(oldest)}` : "gates open") : "no gates open"}
+          value={f ? fmtCount(f.now.at_gate) : null}
+          off={off}
+          tone={f?.now.at_gate ? "warn" : undefined}
+          sub={sub(f?.now.at_gate ? (oldest !== null ? `oldest waiting ${fmtAge(oldest)}` : "gates open") : "no gates open")}
         />
         <FigureTile
           label="Refused calls"
           chip={chip}
-          href={SECURITY_VIEW}
-          value={runs.data ? fmtCount(refusals) : null}
-          off={off(runs)}
-          tone={refusals ? "err" : undefined}
-          sub={ledgerSub(refusals ? `in ${plural(refusedRuns, "run")}` : "no call refused")}
+          href={`/explore?kind=refusal&window=${win}`}
+          value={f ? fmtCount(f.refusals.total) : null}
+          off={off}
+          tone={f?.refusals.total ? "err" : undefined}
+          sub={sub(f?.refusals.total ? `in ${plural(f.refusals.runs, "run")}` : "no call refused")}
         />
         <FigureTile
           label="Runs killed"
           chip={chip}
-          href={SECURITY_VIEW}
-          value={runs.data ? fmtCount(totals.killed) : null}
-          off={off(runs)}
-          tone={totals.killed ? "err" : undefined}
-          sub={ledgerSub(totals.killed ? `of ${plural(totals.runs, "run")}` : "no run killed")}
+          href="/runs"
+          value={f ? fmtCount(state("killed")) : null}
+          off={off}
+          tone={state("killed") ? "err" : undefined}
+          sub={sub(state("killed") ? `of ${plural(total, "run")}` : "no run killed")}
         />
         <FigureTile
           label="Lockdown"
-          href={SECURITY_VIEW}
+          href="/control"
           value={lock ? (lock.on ? "On" : "Off") : null}
-          off={off(lockdown)}
+          off={off}
           tone={lock?.on ? "err" : undefined}
-          sub={
-            reading(lockdown)
-              ? "reading the lockdown"
-              : !lock
-                ? "lockdown not read"
-                : Number.isNaN(lockAt)
-                  ? lock.on
-                    ? "nothing new starts"
-                    : "never set"
-                  : `${lock.on ? "set" : "lifted"} ${fmtAge(now - lockAt)} ago${lock.by ? ` by ${lock.by}` : ""}`
-          }
+          sub={sub(!lock ? "" : Number.isNaN(lockAt) ? (lock.on ? "nothing new starts" : "never set") : `${lock.on ? "set" : "lifted"} ${fmtAge(now - lockAt)} ago${lock.by ? ` by ${lock.by}` : ""}`)}
         />
         <FigureTile
           label="Failed runs"
           chip={chip}
           href="/runs"
-          value={runs.data ? fmtCount(totals.failed) : null}
-          off={off(runs)}
-          tone={totals.failed ? "err" : undefined}
-          sub={ledgerSub(`${percent(totals.failed, totals.runs)} of ${plural(totals.runs, "run")}`)}
+          value={f ? fmtCount(state("failed")) : null}
+          off={off}
+          tone={state("failed") ? "err" : undefined}
+          sub={sub(total ? `${percent(state("failed"), total)} of ${plural(total, "run")}` : "no runs in this window")}
         />
       </FigureBand>
 
@@ -299,12 +279,10 @@ function SecurityBoard({ win, setWin }: BoardProps) {
             </>
           }
         >
-          {reading(gates) ? (
+          {gates === null && !gatesError ? (
             <Nothing>Reading the approvals inbox.</Nothing>
-          ) : off(gates) ? (
-            <Nothing>The gates waiting on a person list here, the one that has waited longest first.</Nothing>
-          ) : unread(gates) ? (
-            <Nothing>The approvals inbox could not be read.</Nothing>
+          ) : gates === null ? (
+            <Nothing>The approvals inbox could not be read: {gatesError}</Nothing>
           ) : waiting.length === 0 ? (
             <Nothing>Nothing is waiting on a person.</Nothing>
           ) : (
@@ -332,7 +310,7 @@ function SecurityBoard({ win, setWin }: BoardProps) {
           title="Refused calls by agent"
           footer={
             <>
-              <FootNote>{refusals ? `${plural(refusals, "refused call")} in ${plural(refusedRuns, "run")}` : "Calls a control refused"}</FootNote>
+              <FootNote>{f?.refusals.total ? `${plural(f.refusals.total, "refused call")} in ${plural(f.refusals.runs, "run")}` : "Calls a control refused"}</FootNote>
               <Button size="sm" href={SECURITY_VIEW}>
                 Security events
               </Button>
@@ -344,63 +322,43 @@ function SecurityBoard({ win, setWin }: BoardProps) {
 
         <Card
           title="Controls that fired most"
-          meta={controls && !controls.windowed ? "on record" : undefined}
           footer={
             <>
-              <FootNote>
-                {controls && controlsTop.top.length ? (
-                  <span title={controls.windowed ? undefined : "The record dates only its latest firings, so this ranking is over every run on record and the window does not cut it."}>
-                    {plural(controls.total, "firing")}
-                    {controls.windowed ? "" : ", over every run on record"}
-                  </span>
-                ) : (
-                  "Counted from the run journals"
-                )}
-              </FootNote>
+              <FootNote>{f?.firings.total ? plural(f.firings.total, "firing") : "Counted from the run journals"}</FootNote>
               <Button size="sm" href="/guardrails">
                 Controls
               </Button>
             </>
           }
         >
-          {reading(firings) ? (
-            <Nothing>Reading the control firings.</Nothing>
-          ) : off(firings) ? (
-            <Nothing>Controls rank here by how often they fired.</Nothing>
-          ) : unread(firings) ? (
-            <Nothing>The control firings could not be read.</Nothing>
-          ) : controlsTop.top.length === 0 ? (
-            <Nothing>{controls?.windowed && win !== "all" ? `No control fired in ${windowWords(win)}.` : "No control has fired yet."}</Nothing>
-          ) : (
-            <RankList rows={controlsTop.top} format={fmtCount} measure="firings" />
-          )}
+          {noRows(controls.top.length > 0, "Controls rank here by how often they fired.", `No control fired in ${windowWords(win)}.`) ?? <RankList rows={controls.top} format={fmtCount} measure="firings" />}
         </Card>
 
         <Card
           title="Failed runs"
-          meta={`per ${trend.unit}`}
+          meta={f ? `per ${f.trend.unit}` : undefined}
           footer={
             <>
-              <FootNote>{totals.runs ? `${fmtCount(totals.failed)} of ${plural(totals.runs, "run")} failed` : "Runs that ended in the failed state"}</FootNote>
+              <FootNote>{total ? `${fmtCount(state("failed"))} of ${plural(total, "run")} failed` : "Runs that ended in the failed state"}</FootNote>
               <Button size="sm" href="/runs">
                 View runs
               </Button>
             </>
           }
         >
-          {off(runs) ? (
-            <Nothing>The share of runs that failed, and the failed runs per {trend.unit === "30 days" ? "span" : trend.unit}, show here.</Nothing>
-          ) : !totals.runs ? (
-            <Nothing>{reading(runs) ? "Reading the run ledger." : unread(runs) ? "The run ledger could not be read." : runs.data?.length ? `No runs in ${windowWords(win)}.` : "No runs yet."}</Nothing>
+          {off ? (
+            <Nothing>The share of runs that failed, and the failed runs over the window, show here.</Nothing>
+          ) : !f || !total ? (
+            <Nothing>{reading ? "Reading the figures." : latest ? `No runs in ${windowWords(win)}.` : "No runs yet."}</Nothing>
           ) : (
             <>
               <div className="grid grid-cols-2 gap-4 px-4 pt-4 pb-3">
-                <CardFigure label="Failure rate" value={percent(totals.failed, totals.runs)} tone={totals.failed ? "err" : undefined} />
-                <CardFigure label={`Most in one ${trend.unit === "30 days" ? "span" : trend.unit}`} value={fmtCount(peak)} />
+                <CardFigure label="Failure rate" value={percent(state("failed"), total)} tone={state("failed") ? "err" : undefined} />
+                <CardFigure label={`Most in one ${f.trend.unit === "30 days" ? "span" : f.trend.unit}`} value={fmtCount(peak)} />
               </div>
-              {totals.failed > 0 ? (
+              {state("failed") > 0 ? (
                 <div className="px-4 pb-4">
-                  <TrendBars points={trend.points} from={stamp(trend.from, trend.unit)} to="now" />
+                  <TrendBars points={f.trend.failed} from={stamp(Date.parse(f.trend.from), f.trend.unit)} to="now" />
                 </div>
               ) : (
                 <p className="px-4 pb-4 text-[12px] leading-[1.55] text-faint">No run failed in {windowWords(win)}.</p>
@@ -410,7 +368,7 @@ function SecurityBoard({ win, setWin }: BoardProps) {
         </Card>
       </CardGrid>
 
-      <CloudFindingsCard now={now} />
+      <CloudFindingsCard now={now || Date.now()} />
     </>
   );
 }
@@ -418,91 +376,88 @@ function SecurityBoard({ win, setWin }: BoardProps) {
 /* ═══════════════════ cost ═══════════════════ */
 
 function CostBoard({ win, setWin }: BoardProps) {
-  const { ledger, names } = useCost();
+  const { figures, f, reading, unread, off, stale } = useBoardFigures(win);
   const chip = chipOf(win);
-  const data = ledger.data;
-  const unread = data === null && Boolean(ledger.error);
-  const reading = data === null && !ledger.error;
-  const off = unread ? (notBuiltDoorOf(ledger.error) ? "Not built" : "Not read") : false;
-
-  const cut = useMemo(() => (data ? cutCost(data, names, win) : null), [data, names, win]);
-  const agents = useMemo(() => leaders(cut?.byAgent ?? []), [cut]);
-  const models = useMemo(() => leaders(cut?.byModel ?? []), [cut]);
-  const series = useMemo(() => (data && cut ? bucketsOf(cut.dated, data.now, win, cut.earliest) : null), [data, cut, win]);
-  const peak = series ? Math.max(...series.points) : 0;
+  const now = figures.at || 0;
+  const agents = useMemo(() => (f ? leaders(spendByAgent(f)) : { top: [], of: 0 }), [f]);
+  const models = useMemo(() => (f ? leaders(spendByModel(f)) : { top: [], of: 0 }), [f]);
+  const spend = f?.spend ?? null;
+  const total = f?.runs.total ?? 0;
+  const days = f ? windowDays(f) : 1;
+  const series = f?.trend ?? null;
+  const peak = series ? Math.max(...series.cost_usd) : 0;
   const span = series ? (series.unit === "30 days" ? "span" : series.unit) : "day";
-  const latest = data?.runs.length ? Math.max(...data.runs.map((r) => Date.parse(r.at)).filter((t) => !Number.isNaN(t))) : null;
-
-  const budget = data?.budget ?? null;
-  const state = data?.state ?? null;
-  const used = state?.used ?? null;
-  const budgetTone = state?.exceeded ? "err" : used !== null && used > 0.8 ? "warn" : undefined;
+  const latest = f?.now.last_run_at ?? null;
+  const budget = f?.budget ?? null;
+  const used = budget?.used ?? null;
+  const budgetTone = budget?.exceeded ? "err" : used !== null && used > 0.8 ? "warn" : undefined;
+  const scaled = f ? windowBudget(f) : null;
+  const priced = spend?.cost_usd ?? null;
 
   usePageFacts(
-    data && cut
+    f && spend
       ? {
           page: "Dashboards",
           board: "Cost",
           window: win,
-          spend_in_window_usd: Number(cut.spend.toFixed(4)),
-          runs_in_window: cut.runs,
-          model_calls_in_window: cut.calls,
-          budget_usd: budget,
-          budget_period: data.period,
+          spend_in_window_usd: spend.cost_usd,
+          model_calls_with_no_price: spend.unpriced_calls,
+          runs_in_window: total,
+          model_calls_in_window: spend.calls,
+          budget_usd: budget?.budget_usd ?? null,
+          budget_period: budget?.period ?? null,
           budget_used_share: used,
         }
       : null,
   );
 
-  const sub = (said: string) => (reading ? "reading the cost ledger" : unread ? "cost ledger not read" : said);
+  const sub = (said: string) => (reading ? "reading the figures" : unread ? "figures not read" : said);
   /** What a spend card says in place of its rows (null when it has rows). */
   const noRows = (has: boolean, holds: string) => {
-    if (reading) return <Nothing>Reading the cost ledger.</Nothing>;
+    if (reading) return <Nothing>Reading the figures.</Nothing>;
     if (off) return <Nothing>{holds}</Nothing>;
-    if (unread) return <Nothing>The cost ledger could not be read.</Nothing>;
-    if (!cut?.calls) return <Nothing>{data?.calls.length ? `No model calls in ${windowWords(win)}.` : `No model calls yet. ${holds}`}</Nothing>;
-    return has ? null : <Nothing>No spend recorded for these calls.</Nothing>;
+    if (!spend?.calls) return <Nothing>{latest ? `No model calls in ${windowWords(win)}.` : `No model calls yet. ${holds}`}</Nothing>;
+    return has ? null : <Nothing>{spend.unpriced_calls ? `No priced spend: ${unpricedWords(spend)}.` : "No spend recorded for these calls."}</Nothing>;
   };
   const finops = (
     <Button size="sm" href="/finops">
       Costs
     </Button>
   );
+  const unpricedNote = spend?.unpriced_calls ? ` · ${unpricedWords(spend)}, not counted` : "";
 
   return (
     <>
-      {unread && (
-        <Banner tone="err" title="The cost ledger could not be read">
-          {ledger.error}. The figures below stay empty until it answers.
-        </Banner>
-      )}
-      {staleOf(ledger) && (
-        <Banner tone="err" title="The cost ledger stopped answering">
-          {ledger.error}. The figures below are stale: they are as it last answered{ledger.at ? `, at ${new Date(ledger.at).toLocaleTimeString("en-GB")}` : ""}.
-        </Banner>
-      )}
-      {data && data.runs.length === 0 && <BoardNote>No agent has run on this deployment yet. Spend shows here from the first model call.</BoardNote>}
-      {data && cut && data.runs.length > 0 && cut.runs === 0 && latest !== null && <EmptyWindow win={win} setWin={setWin} age={data.now - latest} />}
+      <FiguresBanners figures={figures} unread={unread} stale={stale} />
+      {f && !latest && <BoardNote>No agent has run on this deployment yet. Spend shows here from the first model call.</BoardNote>}
+      {f && latest && total === 0 && <EmptyWindow win={win} setWin={setWin} age={now - Date.parse(latest)} />}
 
       <FigureBand>
         <FigureTile
           label="Spend"
           chip={chip}
           href="/finops"
-          value={cut ? fmtMoney(cut.spend) : null}
+          value={spend ? spendText(spend) : null}
           off={off}
-          sub={sub(!cut?.calls ? "nothing spent in this window" : cut.estimated ? `${plural(cut.estimated, "call")} priced by estimate` : `across ${plural(cut.calls, "model call")}`)}
+          sub={sub(!spend?.calls ? "nothing spent in this window" : spend.unpriced_calls ? `${unpricedWords(spend)}, not counted` : `across ${plural(spend.calls, "model call")}`)}
         />
-        <FigureTile label="Runs" chip={chip} href="/finops" value={cut ? fmtCount(cut.runs) : null} off={off} sub={sub(!cut?.runs ? "none in this window" : `${(cut.calls / cut.runs).toFixed(1)} model calls per run`)} />
-        <FigureTile label="Cost per run" chip={chip} href="/finops" value={cut ? (cut.runs ? fmtSmall(cut.spend / cut.runs) : "No runs") : null} off={off} sub={sub(cut?.runs ? "spend divided by runs" : "none in this window")} />
-        <FigureTile label="Tokens" chip={chip} href="/finops" value={cut ? fmtTokens(cut.tokens) : null} off={off} sub={sub(cut?.calls ? "in and out, every model call" : "none in this window")} />
+        <FigureTile label="Runs" chip={chip} href="/finops" value={f ? fmtCount(total) : null} off={off} sub={sub(!total ? "none in this window" : `${((spend?.calls ?? 0) / total).toFixed(1)} model calls per run`)} />
+        <FigureTile
+          label="Cost per run"
+          chip={chip}
+          href="/finops"
+          value={f ? (!total ? "No runs" : priced === null ? "Not priced" : fmtSmall(priced / total)) : null}
+          off={off}
+          sub={sub(total ? (spend?.unpriced_calls ? "priced spend divided by runs; calls with no price left out" : "spend divided by runs") : "none in this window")}
+        />
+        <FigureTile label="Tokens" chip={chip} href="/finops" value={spend ? fmtTokens(spend.tokens_in + spend.tokens_out) : null} off={off} sub={sub(spend?.calls ? "in and out, every model call" : "none in this window")} />
         <FigureTile
           label="Budget used"
           href="/finops"
-          value={data ? (budget === null ? "Not set" : used !== null ? percent(used, 1) : fmtMoney(budget)) : null}
+          value={f ? (budget === null ? "Not set" : percent(budget.used, 1)) : null}
           off={off}
           tone={budgetTone}
-          sub={sub(budget === null ? "spend is not capped" : state?.exceeded ? "spent, new runs are refused" : state ? `${fmtMoney(state.spent)} of ${fmtMoney(budget)} this ${data?.period ?? "month"}` : `${fmtMoney(budget)} a ${data?.period ?? "month"}`)}
+          sub={sub(budget === null ? "spend is not capped" : budget.exceeded ? "spent, new runs are refused" : `${fmtMoney(budget.spent)} of ${fmtMoney(budget.budget_usd)} this ${budget.period}`)}
         />
       </FigureBand>
 
@@ -512,33 +467,36 @@ function CostBoard({ win, setWin }: BoardProps) {
           meta={`per ${series?.unit ?? "day"}`}
           footer={
             <>
-              <FootNote>{cut?.calls ? `${fmtMoney(cut.spend)} across ${plural(cut.calls, "model call")}` : "What the model calls were costed at"}</FootNote>
+              <FootNote>{spend?.calls ? `${spendText(spend)} across ${plural(spend.calls, "model call")}${unpricedNote}` : "What the model calls were costed at"}</FootNote>
               {finops}
             </>
           }
         >
           {off ? (
             <Nothing>Spend per {span} over the window shows here.</Nothing>
-          ) : !cut?.calls ? (
-            <Nothing>{reading ? "Reading the cost ledger." : unread ? "The cost ledger could not be read." : data?.calls.length ? `No model calls in ${windowWords(win)}.` : "No model calls yet."}</Nothing>
+          ) : !spend?.calls || !series ? (
+            <Nothing>{reading ? "Reading the figures." : latest ? `No model calls in ${windowWords(win)}.` : "No model calls yet."}</Nothing>
           ) : (
             <>
               <div className="grid grid-cols-2 gap-4 px-4 pt-4 pb-3">
-                <CardFigure label="A day, on average" value={fmtSmall(cut.spend / cut.days)} />
+                <CardFigure label="A day, on average" value={priced === null ? "Not priced" : fmtSmall(priced / days)} />
                 <CardFigure label={`Most in one ${span}`} value={fmtSmall(peak)} />
               </div>
-              {series && peak > 0 ? (
+              {peak > 0 ? (
                 <div className="px-4 pb-4">
                   <ValueBars
-                    points={series.points}
-                    titles={series.points.map((v, i) => `${series.unit === "hour" ? "Hour" : series.unit === "day" ? "Day" : series.unit === "week" ? "Week" : "30 days"} from ${stamp(series.from + i * series.size, series.unit)}: ${fmtSmall(v)}`)}
-                    from={stamp(series.from, series.unit)}
+                    points={series.cost_usd}
+                    titles={series.cost_usd.map(
+                      (v, i) =>
+                        `${series.unit === "hour" ? "Hour" : series.unit === "day" ? "Day" : series.unit === "week" ? "Week" : "30 days"} from ${stamp(Date.parse(series.from) + i * series.size_s * 1000, series.unit)}: ${fmtSmall(v)}${series.unpriced_calls[i] ? `, and ${plural(series.unpriced_calls[i], "call")} with no price` : ""}`,
+                    )}
+                    from={stamp(Date.parse(series.from), series.unit)}
                     to="now"
                     describe={`Spend per ${span}`}
                   />
                 </div>
               ) : (
-                <p className="px-4 pb-4 text-[12px] leading-[1.55] text-faint">No spend recorded for these calls.</p>
+                <p className="px-4 pb-4 text-[12px] leading-[1.55] text-faint">{spend.unpriced_calls ? `No priced spend: ${unpricedWords(spend)}.` : "No spend recorded for these calls."}</p>
               )}
             </>
           )}
@@ -548,7 +506,10 @@ function CostBoard({ win, setWin }: BoardProps) {
           title="Spend by agent"
           footer={
             <>
-              <FootNote>{agents.top.length ? `${agents.top.length} of ${plural(agents.of, "agent")}` : "Where the spend went"}</FootNote>
+              <FootNote>
+                {agents.top.length ? `${agents.top.length} of ${plural(agents.of, "agent")}` : "Where the spend went"}
+                {f && unpricedIn(f.rank.agents) ? ` · ${plural(unpricedIn(f.rank.agents), "call")} with no price not counted` : ""}
+              </FootNote>
               {finops}
             </>
           }
@@ -560,7 +521,10 @@ function CostBoard({ win, setWin }: BoardProps) {
           title="Spend by model"
           footer={
             <>
-              <FootNote>{models.top.length ? `${models.top.length} of ${plural(models.of, "model")}` : "Which models the spend went to"}</FootNote>
+              <FootNote>
+                {models.top.length ? `${models.top.length} of ${plural(models.of, "model")}` : "Which models the spend went to"}
+                {f && unpricedIn(f.rank.models) ? ` · ${plural(unpricedIn(f.rank.models), "call")} with no price not counted` : ""}
+              </FootNote>
               {finops}
             </>
           }
@@ -570,40 +534,33 @@ function CostBoard({ win, setWin }: BoardProps) {
 
         <Card
           title="Budget"
-          meta={budget !== null && data ? `per ${data.period}` : undefined}
+          meta={budget ? `per ${budget.period}` : undefined}
           footer={
             <>
-              <FootNote>{budget !== null ? "Runs are refused once the budget is spent" : "A cap on spend per day, week or month"}</FootNote>
+              <FootNote>{budget ? "Runs are refused once the budget is spent" : "A cap on spend per day, week or month"}</FootNote>
               {finops}
             </>
           }
         >
           {reading ? (
-            <Nothing>Reading the cost ledger.</Nothing>
+            <Nothing>Reading the figures.</Nothing>
           ) : off ? (
             <Nothing>The budget, how much of it is spent and what is left show here.</Nothing>
-          ) : unread ? (
-            <Nothing>The cost ledger could not be read.</Nothing>
-          ) : budget === null || !data ? (
+          ) : budget === null ? (
             <Nothing>No budget is set, so spend is not capped. A budget is set on the Costs page.</Nothing>
           ) : (
             <div className="flex flex-col gap-3 px-4 pt-4 pb-4">
-              {state && used !== null && (
-                <>
-                  <div className="grid grid-cols-2 gap-4">
-                    <CardFigure label="Used" value={percent(used, 1)} tone={state.exceeded ? "err" : undefined} />
-                    <CardFigure label="Left" value={fmtMoney(Math.max(0, state.remaining ?? budget - state.spent))} />
-                  </div>
-                  <Meter value={used} tone={budgetTone ?? "run"} />
-                </>
-              )}
+              <div className="grid grid-cols-2 gap-4">
+                <CardFigure label="Used" value={percent(budget.used, 1)} tone={budget.exceeded ? "err" : undefined} />
+                <CardFigure label="Left" value={fmtMoney(Math.max(0, budget.remaining))} />
+              </div>
+              <Meter value={budget.used} tone={budgetTone ?? "run"} />
               <p className="text-[12px] leading-[1.55] text-faint">
-                {state
-                  ? state.exceeded
-                    ? `${fmtMoney(state.spent)} of ${fmtMoney(budget)} is spent in the last ${PERIOD_WORDS[data.period]}. New runs are refused until spend falls back under the budget or the budget is raised.`
-                    : `${fmtMoney(state.spent)} of ${fmtMoney(budget)} spent in the last ${PERIOD_WORDS[data.period]}.`
-                  : `${fmtMoney(budget)} a ${data.period}.`}
-                {cut && cut.windowBudget !== null && win !== "all" && ` Over ${windowWords(win)} the same rate allows ${fmtMoney(cut.windowBudget)}, and ${fmtMoney(cut.spend)} was spent.`}
+                {budget.exceeded
+                  ? `${fmtMoney(budget.spent)} of ${fmtMoney(budget.budget_usd)} is spent in the last ${PERIOD_WORDS[budget.period]}. New runs are refused until spend falls back under the budget or the budget is raised.`
+                  : `${fmtMoney(budget.spent)} of ${fmtMoney(budget.budget_usd)} spent in the last ${PERIOD_WORDS[budget.period]}.`}
+                {budget.unpriced ? ` ${plural(budget.unpriced, "call")} with no price set are not counted against it.` : ""}
+                {scaled !== null && win !== "all" && priced !== null && ` Over ${windowWords(win)} the same rate allows ${fmtMoney(scaled)}, and ${fmtMoney(priced)} was spent.`}
               </p>
             </div>
           )}

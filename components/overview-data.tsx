@@ -1,58 +1,79 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, errorText, type RunRow } from "@/lib/api/client";
-import { listAgents } from "@/lib/api/l2";
-import { inFlight, listAttention, listGates, type AttentionItem, type Gate } from "@/lib/api/l5";
-import { runSourceOf } from "@/lib/api/l6";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { errorText } from "@/lib/api/client";
+import { listAttention, listGates, type AttentionItem, type Gate } from "@/lib/api/l5";
 import { agentHref } from "@/lib/agent-link";
 import { ATTENTION_LABEL, orderAttention } from "@/lib/gates";
-import { productionRuns } from "@/lib/production";
 import { soon } from "@/lib/soon";
 import type { Tone } from "./ui";
-import { winMs, type Win } from "./window-pick";
+import type { Win } from "./window-pick";
 
 /**
- * What the Overview page reads, and how it cuts it.
+ * What the Overview and the Dashboards read.
  *
- * Nothing here is typed in. The run ledger (`GET /api/runs`) gives the runs,
- * their state, cost, duration and the door each came through; the inbox
- * (`GET /api/approvals`) and the attention queue (`GET /api/attention`) give
- * what waits on a person; the console's own observability route gives each
- * run's duration and, per run, its tool calls. No door returns a ranking, so
- * the rankings are computed here from those rows, over the page's window.
+ * Every figure is the platform's own count (`GET /api/estate?window=`,
+ * agentfactory/estate/figures.py): runs by state, spend with the calls that
+ * had no price counted apart, latency over the ended runs, the failure
+ * trend, refusals and control firings, and the rankings of agents, people,
+ * tools and models. The two screens read the same answer, so a figure is the
+ * same number on both. What waits on a person is read from the attention
+ * queue (`GET /api/attention`) and the approvals inbox (`GET /api/approvals`).
  */
 
-/* ═══════════════════ shapes (mirror /api/observability) ═══════════════════ */
+/* ═══════════════════ shapes (mirror GET /api/estate) ═══════════════════ */
 
-interface TraceSummary {
-  id: string;
-  agent: string;
-  state: string;
-  /** When the run's record was last written. */
-  startedAt: string;
-  durationMs: number;
+export interface Spend {
+  calls: number;
+  priced_calls: number;
+  /** Calls on a model with no price set: never counted as $0. */
+  unpriced_calls: number;
+  unpriced_models: string[];
+  /** The priced calls' sum: 0 with no call, null when there were calls and none was priced. */
+  cost_usd: number | null;
+  tokens_in: number;
+  tokens_out: number;
 }
 
-interface Observability {
-  traces: TraceSummary[];
-  total?: number;
-  latency?: { p50: number; p95: number; p99: number; max: number };
-  error?: string;
+export interface LockdownNow {
+  on: boolean;
+  reason: string;
+  by: string;
+  at: string | null;
 }
 
-interface ToolSpan {
-  kind: string;
-  tool?: string;
-  name: string;
-  duration: number;
+export interface EstateNow {
+  running: number;
+  at_gate: number;
+  oldest_gate_since: string | null;
+  last_run_at: string | null;
+  paused_at_budget: number;
+  in_flight: number;
+  agents_held: { paused: number; draining: number };
+  lockdown: LockdownNow;
 }
 
-/** A person a run row names as its starter, when the ledger carries one (`owner`, lib/api/pending.ts). */
-interface Starter {
-  sub?: string;
-  name?: string;
-  email?: string;
+export interface EstateFigures {
+  window: Win;
+  since: string | null;
+  until: string;
+  runs: { total: number; by_state: Record<string, number> };
+  spend: Spend;
+  latency: { p50: number; p95: number; p99: number; max: number; runs: number } | null;
+  trend: { unit: "hour" | "day" | "week" | "30 days"; size_s: number; from: string; failed: number[]; cost_usd: number[]; unpriced_calls: number[] };
+  refusals: { total: number; runs: number; by_control: { control: string; count: number }[]; by_agent: { agent: string; count: number }[] };
+  firings: { total: number; by_control: { control: string; count: number }[] };
+  gates: { opened: number; answered: number };
+  rank: {
+    agents: { id: string; name: string; runs: number; cost_usd: number | null; unpriced_calls: number }[];
+    people: { key: string; name: string; email: string; kind: string; runs: number; cost_usd: number | null; unpriced_calls: number }[];
+    tools: { tool: string; calls: number; ms: number; ran: number; refused: number; failed: number; open: number }[];
+    models: { model: string; calls: number; tokens: number; cost_usd: number | null; unpriced_calls: number }[];
+  };
+  now: EstateNow;
+  budget: { budget_usd: number; period: "day" | "week" | "month"; since: string; spent: number; unpriced: number; remaining: number; exceeded: boolean; used: number } | null;
+  basis: string;
+  not_included: { what: string; why: string }[];
 }
 
 /* ═══════════════════ formatting ═══════════════════ */
@@ -77,83 +98,87 @@ export function fmtAge(ms: number): string {
 const WINDOW_WORDS: Record<Win, string> = { "24h": "the last 24 hours", "7d": "the last 7 days", "30d": "the last 30 days", "90d": "the last 90 days", all: "any period" };
 export const windowWords = (w: Win) => WINDOW_WORDS[w];
 
-/* ═══════════════════ the estate, read ═══════════════════ */
+export const plural = (n: number, one: string, many = `${one}s`) => `${fmtCount(n)} ${n === 1 ? one : many}`;
 
-export interface Estate {
-  /** Production's runs, newest first; null until the ledger answers. */
-  runs: RunRow[] | null;
-  runsError: string;
-  /** Agent id → its name in the registry. */
-  names: Record<string, string>;
-  gates: Gate[] | null;
-  gatesError: string;
-  attention: AttentionItem[] | null;
-  attentionError: string;
-  observability: Observability | null;
-  /** Whether the observability route has been asked yet (it may have answered nothing). */
-  observed: boolean;
-  /** The clock the window is cut against: stamped when the ledger answered. */
-  now: number;
-  /** When the ledger last answered; a later failure leaves `runs` as of then, and the page marks it stale. */
-  runsAt: number;
+/** "2 calls with no price set (free-x)", or "" when every call was priced. */
+export function unpricedWords(s: Spend): string {
+  if (!s.unpriced_calls) return "";
+  return `${plural(s.unpriced_calls, "call")} with no price set${s.unpriced_models.length ? ` (${s.unpriced_models.join(", ")})` : ""}`;
 }
 
-const EMPTY: Estate = { runs: null, runsError: "", names: {}, gates: null, gatesError: "", attention: null, attentionError: "", observability: null, observed: false, now: 0, runsAt: 0 };
+/** A spend figure as a tile shows it: the priced sum, or "Not priced" when no call of the window was priced. */
+export const spendText = (s: Spend) => (s.cost_usd === null ? "Not priced" : fmtMoney(s.cost_usd));
+
+/* ═══════════════════ the figures, read ═══════════════════ */
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-async function readLedger(): Promise<RunRow[]> {
-  const { data, error, response } = await api.GET("/api/runs");
-  if (!data) throw new Error(errorText(error, response));
-  // A canary's shadow runs are listed on the Runs page and counted in none of production's figures (lib/production.ts).
-  return productionRuns(data.runs).sort((a, b) => b.at.localeCompare(a.at));
-}
-
-async function readObservability(): Promise<Observability | null> {
+/** `GET /api/estate?window=`: the answer, or a thrown error carrying the platform's own words. */
+async function readFigures(win: Win): Promise<EstateFigures> {
+  const path = `/api/estate?window=${win}`;
+  let res: Response;
   try {
-    const res = await fetch("/api/observability");
-    if (!res.ok) return null;
-    const d = (await res.json()) as Partial<Observability>;
-    return { traces: Array.isArray(d.traces) ? d.traces : [], total: d.total, latency: d.latency, error: d.error };
-  } catch {
-    return null;
+    res = await fetch(path, { cache: "no-store" });
+  } catch (e) {
+    throw new Error(`the backend did not answer GET /api/estate (${message(e)})`);
   }
+  const body = (await res.json().catch(() => null)) as (EstateFigures & { error?: string }) | null;
+  if (!res.ok || !body || typeof body.runs !== "object" || body.runs === null) throw new Error(errorText(body, res, "GET", "/api/estate"));
+  return body;
 }
 
-/** The page's reads, again every `everyMs`. The duration read and the agents' names follow the ledger: they are read again only when it has changed. */
-export function useEstate(everyMs = 15_000): Estate {
-  const [estate, setEstate] = useState<Estate>(EMPTY);
-  const seen = useRef("");
+export interface Figures {
+  data: EstateFigures | null;
+  error: string;
+  /** When the platform last answered (ms), 0 before it ever has; a later failure keeps the last answer and its time. */
+  at: number;
+}
 
+/** The estate's figures for one window, read again every `everyMs`. A changed window is read at once, and an answer for an older window is dropped. */
+export function useFigures(win: Win, everyMs = 15_000): Figures {
+  const [figures, setFigures] = useState<Figures>({ data: null, error: "", at: 0 });
+  const asked = useRef(win);
   const load = useCallback(async () => {
-    const [ledger, inbox, queue] = await Promise.allSettled([readLedger(), listGates(), listAttention()]);
-    const runs = ledger.status === "fulfilled" ? ledger.value : null;
-    const mark = runs ? `${runs.length}:${runs[0]?.at ?? ""}:${inFlight(runs).length}` : "unread";
-    let extra: Pick<Estate, "observability" | "names"> | null = null;
-    if (mark !== seen.current) {
-      seen.current = mark;
-      const [obs, agents] = await Promise.allSettled([readObservability(), listAgents()]);
-      extra = {
-        observability: obs.status === "fulfilled" ? obs.value : null,
-        names: agents.status === "fulfilled" ? Object.fromEntries(agents.value.map((a) => [a.id, a.name || a.id])) : {},
-      };
+    const w = win;
+    asked.current = w;
+    try {
+      const data = await readFigures(w);
+      if (asked.current === w) setFigures({ data, error: "", at: Date.now() });
+    } catch (e) {
+      if (asked.current === w) setFigures((prev) => ({ data: prev.data && prev.data.window === w ? prev.data : null, error: message(e), at: prev.at }));
     }
-    setEstate((prev) => ({
-      runs: runs ?? prev.runs,
-      runsError: ledger.status === "rejected" ? message(ledger.reason) : "",
+  }, [win]);
+
+  useEffect(() => {
+    setFigures((prev) => (prev.data && prev.data.window !== win ? { data: null, error: "", at: 0 } : prev));
+    const cancel = soon(load);
+    const id = setInterval(load, everyMs);
+    return () => {
+      cancel();
+      clearInterval(id);
+    };
+  }, [load, everyMs, win]);
+
+  return figures;
+}
+
+/** What waits on a person: the attention queue and the approvals inbox, read again every `everyMs`. */
+export function useWaiting(everyMs = 15_000): { gates: Gate[] | null; gatesError: string; attention: AttentionItem[] | null; attentionError: string } {
+  const [state, setState] = useState<{ gates: Gate[] | null; gatesError: string; attention: AttentionItem[] | null; attentionError: string }>({
+    gates: null,
+    gatesError: "",
+    attention: null,
+    attentionError: "",
+  });
+  const load = useCallback(async () => {
+    const [inbox, queue] = await Promise.allSettled([listGates(), listAttention()]);
+    setState((prev) => ({
       gates: inbox.status === "fulfilled" ? inbox.value.pending : prev.gates,
       gatesError: inbox.status === "rejected" ? message(inbox.reason) : "",
       attention: queue.status === "fulfilled" ? orderAttention(queue.value) : prev.attention,
       attentionError: queue.status === "rejected" ? message(queue.reason) : "",
-      observability: extra ? extra.observability : prev.observability,
-      observed: prev.observed || extra !== null,
-      names: extra && Object.keys(extra.names).length ? extra.names : prev.names,
-      // The window is cut against when the ledger last answered: a failed read moves neither the figures nor their clock.
-      now: runs ? Date.now() : prev.now || Date.now(),
-      runsAt: runs ? Date.now() : prev.runsAt,
     }));
   }, []);
-
   useEffect(() => {
     const cancel = soon(load);
     const id = setInterval(load, everyMs);
@@ -162,47 +187,7 @@ export function useEstate(everyMs = 15_000): Estate {
       clearInterval(id);
     };
   }, [load, everyMs]);
-
-  return estate;
-}
-
-/* ═══════════════════ the window ═══════════════════ */
-
-export function inWindow<T>(rows: readonly T[], at: (row: T) => string, now: number, win: Win): T[] {
-  const ms = winMs(win);
-  if (!Number.isFinite(ms)) return [...rows];
-  const since = now - ms;
-  return rows.filter((r) => Date.parse(at(r)) >= since);
-}
-
-/* ═══════════════════ figures ═══════════════════ */
-
-export interface Totals {
-  runs: number;
-  done: number;
-  failed: number;
-  killed: number;
-  /** The priced runs' cost summed. Read it with `unpriced`: while any run is not priced, the window has no total. */
-  spend: number;
-  /** Runs whose cost includes a call priced by estimate. */
-  estimated: number;
-  /** Runs with no cost figure (`cost: null`): a call used a model with no price set. */
-  unpriced: number;
-}
-
-export function totalsOf(rows: readonly RunRow[]): Totals {
-  const t: Totals = { runs: rows.length, done: 0, failed: 0, killed: 0, spend: 0, estimated: 0, unpriced: 0 };
-  for (const r of rows) {
-    if (r.state === "done") t.done += 1;
-    if (r.state === "failed") t.failed += 1;
-    if (r.state === "killed") t.killed += 1;
-    // `cost` is null for a run on a model with no price set (ahead of the generated type): counted as not priced, never as $0.
-    const cost = r.cost as number | null;
-    if (typeof cost === "number") t.spend += cost;
-    else t.unpriced += 1;
-    if (r.estimated > 0) t.estimated += 1;
-  }
-  return t;
+  return state;
 }
 
 /* ═══════════════════ rankings ═══════════════════ */
@@ -225,260 +210,30 @@ export function leaders(rows: readonly RankRow[], limit = 5): { top: RankRow[]; 
 
 export type RunMeasure = "runs" | "spend";
 
-function tally(rows: readonly RunRow[], keyOf: (r: RunRow) => string | null, measure: RunMeasure): Map<string, number> {
-  const out = new Map<string, number>();
-  for (const r of rows) {
-    const k = keyOf(r);
-    if (k === null) continue;
-    out.set(k, (out.get(k) ?? 0) + (measure === "runs" ? 1 : r.cost || 0));
-  }
-  return out;
+/** Agents by runs, or by what their priced calls cost (a cost of null, every call unpriced, ranks nowhere). */
+export function rankAgents(f: EstateFigures, measure: RunMeasure): RankRow[] {
+  return f.rank.agents.map((a) => ({ key: a.id, label: a.name, value: measure === "runs" ? a.runs : a.cost_usd ?? 0, href: agentHref(a.id) }));
 }
 
-export function rankAgents(rows: readonly RunRow[], names: Record<string, string>, measure: RunMeasure): RankRow[] {
-  return [...tally(rows, (r) => r.agent || r.system || null, measure)].map(([id, value]) => ({ key: id, label: names[id] ?? id, value, href: agentHref(id) }));
-}
+const KIND_WORD: Record<string, string> = { key: "key", service: "service" };
 
-/** The person a run row names as its starter, or null. The ledger gains `owner` later; until a row carries one, nobody is named. */
-function starterOf(row: RunRow): { key: string; label: string } | null {
-  const o = (row as unknown as { owner?: Starter | null }).owner;
-  if (!o || typeof o !== "object") return null;
-  const label = [o.name, o.email, o.sub].find((v) => typeof v === "string" && v.trim());
-  if (!label) return null;
-  const key = [o.sub, o.email, o.name].find((v) => typeof v === "string" && v.trim()) ?? label;
-  return { key, label };
-}
-
-/** The door a run came through, in the ledger's vocabulary (lib/api/l6.ts), as a reader would say it. */
-const SOURCE_LABEL: Record<string, string> = {
-  "": "Platform",
-  console: "Console",
-  worker: "Queue worker",
-  sdk: "Attached agent, SDK",
-  a2a: "Attached agent, A2A",
-  gateway: "Model gateway",
-};
-
-/** Whether a run row names the person who started it. */
-export const namesPerson = (row: RunRow): boolean => starterOf(row) !== null;
-
-export interface Starters {
-  /** True when at least one run in the window names the person who started it. */
-  people: boolean;
-  rows: RankRow[];
-  /** Runs in the window that name no person (only counted when others do). */
-  unnamed: number;
-}
-
-/**
- * Who started the runs, only as far as the records say. A ledger row names
- * the door a run came through (`source`: the console, a worker, an attached
- * agent, the gateway), not a person. Where rows carry an `owner` the list is
- * of people and the runs that name nobody are counted beside it; where none
- * does, the list is of sources and is titled so.
- */
-export function rankStarters(rows: readonly RunRow[], measure: RunMeasure): Starters {
-  const named = rows.filter((r) => starterOf(r));
-  if (named.length) {
-    const label = new Map<string, string>();
-    for (const r of named) {
-      const s = starterOf(r)!;
-      label.set(s.key, s.label);
-    }
-    return {
-      people: true,
-      rows: [...tally(named, (r) => starterOf(r)!.key, measure)].map(([key, value]) => ({ key, label: label.get(key) ?? key, value })),
-      unnamed: rows.length - named.length,
-    };
-  }
-  return {
-    people: false,
-    rows: [...tally(rows, (r) => runSourceOf(r), measure)].map(([key, value]) => ({ key: key || "platform", label: SOURCE_LABEL[key] ?? key, value })),
-    unnamed: 0,
-  };
-}
-
-/* ═══════════════════ tool calls ═══════════════════ */
-
-/** How many runs' journals the tool ranking reads at most: the most recent in the window, as the observability route bounds its own model mix. */
-export const TOOL_RUNS = 60;
-
-type ToolTally = { tool: string; calls: number; ms: number }[];
-
-/** One run's tool calls, by run id and last write; null when the run's journal could not be read. Settled runs never change, so a window switch reads nothing twice. */
-const toolCache = new Map<string, ToolTally | null>();
-const cacheKey = (r: { id: string; at: string }) => `${r.id}@${r.at}`;
-
-async function readTools(run: string): Promise<ToolTally | null> {
-  try {
-    const res = await fetch(`/api/observability?run=${encodeURIComponent(run)}`);
-    if (!res.ok) return null;
-    const spans = ((await res.json()) as { trace?: { spans?: ToolSpan[] } }).trace?.spans;
-    if (!Array.isArray(spans)) return null;
-    const by = new Map<string, { calls: number; ms: number }>();
-    for (const s of spans) {
-      if (s.kind !== "tool") continue;
-      const tool = s.tool || s.name;
-      if (!tool) continue;
-      const t = by.get(tool) ?? { calls: 0, ms: 0 };
-      t.calls += 1;
-      t.ms += Number.isFinite(s.duration) ? s.duration : 0;
-      by.set(tool, t);
-    }
-    return [...by].map(([tool, t]) => ({ tool, ...t }));
-  } catch {
-    return null;
-  }
+/** People, keys and services by the runs they started, or by what their calls cost. Runs that name nobody are one row, "no person". */
+export function rankPeople(f: EstateFigures, measure: RunMeasure): RankRow[] {
+  return f.rank.people.map((p) => ({
+    key: p.key || "no-person",
+    label: KIND_WORD[p.kind] ? `${p.name} (${KIND_WORD[p.kind]})` : p.name,
+    value: measure === "runs" ? p.runs : p.cost_usd ?? 0,
+  }));
 }
 
 export type ToolMeasure = "calls" | "ms";
 
-export interface ToolCalls {
-  /** Per tool, over the runs read. */
-  tools: { tool: string; calls: number; ms: number }[];
-  /** Runs whose journal was read. */
-  read: number;
-  /** Runs whose journal could not be read. */
-  unread: number;
-  /** Runs still being read. */
-  pending: number;
+export function rankTools(f: EstateFigures, measure: ToolMeasure): RankRow[] {
+  return f.rank.tools.map((t) => ({ key: t.tool, label: t.tool, value: measure === "calls" ? t.calls : t.ms, code: true }));
 }
 
-/** Whether this console can read run journals at all: its observability route listed at least one trace. Where it cannot, no run is asked for its trace. */
-export const journalsReadable = (estate: Estate): boolean => Boolean(estate.observability?.traces.length);
-
-/**
- * Tool calls per tool over `runs`, read from each run's trace
- * (`GET /api/observability?run=`): the ledger row counts a run's tool calls
- * but does not name the tools. Six reads at a time.
- */
-export function useToolCalls(runs: readonly RunRow[]): ToolCalls {
-  const [got, setGot] = useState<Map<string, ToolTally | null>>(() => new Map(toolCache));
-  const keys = useMemo(() => runs.map(cacheKey), [runs]);
-  const mark = keys.join("|");
-
-  useEffect(() => {
-    const todo = mark ? mark.split("|").filter((k) => !toolCache.has(k)) : [];
-    if (!todo.length) return;
-    let live = true;
-    let next = 0;
-    const reader = async () => {
-      while (live && next < todo.length) {
-        const k = todo[next++];
-        const tally = await readTools(k.slice(0, k.lastIndexOf("@")));
-        if (toolCache.size > 2000) toolCache.clear();
-        toolCache.set(k, tally);
-      }
-    };
-    void Promise.all(Array.from({ length: Math.min(6, todo.length) }, reader)).then(() => {
-      if (live) setGot(new Map(toolCache));
-    });
-    return () => {
-      live = false;
-    };
-  }, [mark]);
-
-  return useMemo(() => {
-    const by = new Map<string, { calls: number; ms: number }>();
-    let read = 0;
-    let unread = 0;
-    let pending = 0;
-    for (const k of keys) {
-      if (!got.has(k)) {
-        pending += 1;
-        continue;
-      }
-      const tally = got.get(k);
-      if (!tally) {
-        unread += 1;
-        continue;
-      }
-      read += 1;
-      for (const t of tally) {
-        const sum = by.get(t.tool) ?? { calls: 0, ms: 0 };
-        sum.calls += t.calls;
-        sum.ms += t.ms;
-        by.set(t.tool, sum);
-      }
-    }
-    return { tools: [...by].map(([tool, t]) => ({ tool, ...t })), read, unread, pending };
-  }, [keys, got]);
-}
-
-/* ═══════════════════ latency ═══════════════════ */
-
-/** Nearest-rank, as app/api/observability/route.ts computes it. */
-function percentile(sorted: number[], p: number): number {
-  if (!sorted.length) return 0;
-  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1))];
-}
-
-export interface Latency {
-  p50: number;
-  p95: number;
-  max: number;
-  /** Runs measured. */
-  runs: number;
-  /** Where the durations came from: the observability route's traces, or the ledger's own `ms` where that route has no journals to read. */
-  basis: "traces" | "ledger";
-}
-
-/**
- * p50 and p95 run duration over the window. The observability route computes
- * its percentiles over every run ever made; for a window they are computed
- * here, the same way, over the route's traces in that window. The route's
- * own figure is used when the window is everything and it lists fewer traces
- * than it counted. A deployment whose console cannot read the journals falls
- * back to the duration each ledger row carries.
- */
-export function latencyOf(estate: Estate, rows: readonly RunRow[], win: Win): Latency | null {
-  const obs = estate.observability;
-  if (obs && obs.traces.length) {
-    if (win === "all" && obs.latency && (obs.total ?? 0) > obs.traces.length) return { p50: obs.latency.p50, p95: obs.latency.p95, max: obs.latency.max, runs: obs.total ?? obs.traces.length, basis: "traces" };
-    // The ledger says which runs are production's; a trace it does not list at all is kept.
-    const listed = new Set((estate.runs ?? []).map((r) => r.id));
-    const counted = new Set(rows.map((r) => r.id));
-    const ms = inWindow(obs.traces, (t) => t.startedAt, estate.now, win)
-      .filter((t) => counted.has(t.id) || !listed.has(t.id))
-      .map((t) => t.durationMs)
-      .filter((v) => Number.isFinite(v))
-      .sort((a, b) => a - b);
-    return ms.length ? { p50: percentile(ms, 50), p95: percentile(ms, 95), max: ms[ms.length - 1], runs: ms.length, basis: "traces" } : null;
-  }
-  const ms = rows
-    .filter((r) => !r.live && r.state !== "running" && r.ms > 0)
-    .map((r) => r.ms)
-    .sort((a, b) => a - b);
-  return ms.length ? { p50: percentile(ms, 50), p95: percentile(ms, 95), max: ms[ms.length - 1], runs: ms.length, basis: "ledger" } : null;
-}
-
-/* ═══════════════════ failure trend ═══════════════════ */
-
-const HOUR = 3_600_000;
-const DAY = 24 * HOUR;
-
-export interface Trend {
-  /** Failed runs per bucket, oldest first. */
-  points: number[];
-  /** One bucket's length, as a word. */
-  unit: "hour" | "day" | "week" | "30 days";
-  /** When the first bucket starts. */
-  from: number;
-}
-
-/** Failed runs per bucket over the window: hours over a day, days up to a month and a half, weeks up to a year, then 30-day spans. Buckets count back from now. */
-export function failureTrend(rows: readonly RunRow[], now: number, win: Win, earliest: number | null): Trend {
-  const span = Number.isFinite(winMs(win)) ? winMs(win) : Math.max(DAY, now - (earliest ?? now));
-  const [size, unit]: [number, Trend["unit"]] = span <= DAY ? [HOUR, "hour"] : span <= 45 * DAY ? [DAY, "day"] : span <= 366 * DAY ? [7 * DAY, "week"] : [30 * DAY, "30 days"];
-  const n = Math.max(2, Math.ceil(span / size));
-  const points = Array.from({ length: n }, () => 0);
-  for (const r of rows) {
-    if (r.state !== "failed") continue;
-    const i = n - 1 - Math.floor((now - Date.parse(r.at)) / size);
-    if (i >= 0 && i < n) points[i] += 1;
-  }
-  return { points, unit, from: now - n * size };
-}
+/** Calls with no price among the rows a spend ranking leaves out. */
+export const unpricedIn = (rows: readonly { unpriced_calls: number }[]) => rows.reduce((s, r) => s + r.unpriced_calls, 0);
 
 /* ═══════════════════ what needs a person ═══════════════════ */
 
@@ -547,10 +302,4 @@ export function needsOf(attention: readonly AttentionItem[] | null, gates: reado
     });
   }
   return out;
-}
-
-/** The longest any pending gate has waited, milliseconds; null when none says since when. */
-export function oldestGate(gates: readonly Gate[], now: number): number | null {
-  const since = gates.map((g) => Date.parse(g.waiting_since)).filter((t) => !Number.isNaN(t));
-  return since.length ? now - Math.min(...since) : null;
 }

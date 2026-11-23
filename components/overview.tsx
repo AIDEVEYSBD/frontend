@@ -9,47 +9,37 @@ import { Banner } from "./overlays";
 import { PageHeader } from "./section";
 import { usePageFacts } from "./assistant";
 import { WINDOWS, WindowPick, type Win } from "./window-pick";
-import { inFlight } from "@/lib/api/l5";
 import {
-  TOOL_RUNS,
-  failureTrend,
-  journalsReadable,
   fmtAge,
   fmtCount,
   fmtMoney,
   fmtMs,
-  inWindow,
-  latencyOf,
   leaders,
-  namesPerson,
   needsOf,
-  oldestGate,
+  plural,
   rankAgents,
-  rankStarters,
-  totalsOf,
-  useEstate,
-  useToolCalls,
+  rankPeople,
+  rankTools,
+  spendText,
+  unpricedIn,
+  unpricedWords,
+  useFigures,
+  useWaiting,
   windowWords,
-  type RankRow,
   type RunMeasure,
   type ToolMeasure,
 } from "./overview-data";
-import { Card, CardFigure, FigureTile, FootNote, MeasureSwitch, Nothing, RankList, ReadError, TrendBars } from "./overview-parts";
+import { Card, CardFigure, FigureTile, FootNote, MeasureSwitch, Nothing, RankList, TrendBars } from "./overview-parts";
 
 /**
  * Overview: what the estate is doing and what needs a person, on one screen.
  *
  * One window scopes every panel: the figures (runs, failed, spend), the three
- * rankings, the latency percentiles and the failure trend. Two figures are
- * about now and say so by carrying no window mark: what is in flight and
- * what waits at a gate. Everything is counted from the run ledger
- * (`GET /api/runs`), the inbox (`GET /api/approvals`), the attention queue
- * (`GET /api/attention`) and the console's observability route; no door
- * returns a ranking, so components/overview-data.tsx computes them.
- *
- * "Top people" is only as good as the record: a ledger row names the door a
- * run came through (`source`), not a person, so until rows carry an owner
- * the list is of sources and is titled so.
+ * rankings, the latency percentiles and the failure trend. Three figures are
+ * about now and say so by carrying no window mark: what is running, what
+ * waits at a gate, and what needs attention. Every figure is the platform's
+ * own count (`GET /api/estate`, the same answer the Dashboards read); the
+ * open items come from the attention queue and the approvals inbox.
  */
 
 const DEFAULT_WINDOW: Win = "7d";
@@ -63,7 +53,6 @@ const TOOL_MEASURES: { id: ToolMeasure; label: string }[] = [
   { id: "ms", label: "Time" },
 ];
 
-const plural = (n: number, one: string, many = `${one}s`) => `${fmtCount(n)} ${n === 1 ? one : many}`;
 const percent = (part: number, whole: number) => (whole ? `${((part / whole) * 100).toFixed(part && part / whole < 0.1 ? 1 : 0)}%` : "0%");
 const stamp = (t: number, unit: string) =>
   unit === "hour" ? new Date(t).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
@@ -82,102 +71,59 @@ function Overview() {
   const win: Win = WINDOWS.find((w) => w.id === asked)?.id ?? DEFAULT_WINDOW;
   const setWin = (w: Win) => window.history.replaceState(null, "", w === DEFAULT_WINDOW ? "/overview" : `/overview?window=${w}`);
 
-  const estate = useEstate();
-  const { runs, now, gates, attention } = estate;
+  const figures = useFigures(win);
+  const { gates, gatesError, attention, attentionError } = useWaiting();
+  const f = figures.data;
   const [agentMeasure, setAgentMeasure] = useState<RunMeasure>("runs");
   const [toolMeasure, setToolMeasure] = useState<ToolMeasure>("calls");
-  const [starterMeasure, setStarterMeasure] = useState<RunMeasure>("runs");
+  const [peopleMeasure, setPeopleMeasure] = useState<RunMeasure>("runs");
+  // The clock ages are read against: stamped with each answer, so a render is a function of what was read.
+  const now = figures.at || 0;
 
-  const rows = useMemo(() => (runs ? inWindow(runs, (r) => r.at, now, win) : []), [runs, now, win]);
-  const totals = useMemo(() => totalsOf(rows), [rows]);
-  const live = runs ? inFlight(runs).length : 0;
-  const latest = runs?.[0]?.at ?? null;
-  const loading = runs === null && !estate.runsError;
-  const unread = runs === null && Boolean(estate.runsError);
-  /* A read that failed leaves its figures unset: each tile says it was not read. */
-  const off = unread;
-  const gatesOff = gates === null && Boolean(estate.gatesError);
-  /* A ledger that answered once and then failed: the figures stay as of then, and say so. */
-  const stale = runs !== null && Boolean(estate.runsError);
+  const loading = f === null && !figures.error;
+  const unread = f === null && Boolean(figures.error);
+  /* An answer that came once and has failed since: the figures stay as of then, and say so. */
+  const stale = f !== null && Boolean(figures.error);
   const chip = WINDOWS.find((w) => w.id === win)!.label;
+  const total = f?.runs.total ?? 0;
+  const state = (s: string) => f?.runs.by_state[s] ?? 0;
 
-  /* Rankings. */
-  const agents = useMemo(() => leaders(rankAgents(rows, estate.names, agentMeasure)), [rows, estate.names, agentMeasure]);
-  const starters = useMemo(() => rankStarters(rows, starterMeasure), [rows, starterMeasure]);
-  const startersTop = useMemo(() => leaders(starters.rows), [starters]);
-  const readable = journalsReadable(estate);
-  const toolRuns = useMemo(() => (readable ? rows.slice(0, TOOL_RUNS) : []), [rows, readable]);
-  const toolCalls = useToolCalls(toolRuns);
-  const tools = useMemo(
-    () => leaders(toolCalls.tools.map((t): RankRow => ({ key: t.tool, label: t.tool, value: toolMeasure === "calls" ? t.calls : t.ms, code: true }))),
-    [toolCalls, toolMeasure],
-  );
+  const agents = useMemo(() => (f ? leaders(rankAgents(f, agentMeasure)) : { top: [], of: 0 }), [f, agentMeasure]);
+  const people = useMemo(() => (f ? leaders(rankPeople(f, peopleMeasure)) : { top: [], of: 0 }), [f, peopleMeasure]);
+  const tools = useMemo(() => (f ? leaders(rankTools(f, toolMeasure)) : { top: [], of: 0 }), [f, toolMeasure]);
+  const peak = f ? Math.max(...f.trend.failed) : 0;
 
-  /* Latency and failures. */
-  const latency = useMemo(() => latencyOf(estate, rows, win), [estate, rows, win]);
-  const trend = useMemo(() => {
-    const earliest = runs?.length ? Date.parse(runs[runs.length - 1].at) : null;
-    return failureTrend(rows, now, win, earliest);
-  }, [rows, runs, now, win]);
-  const peak = Math.max(...trend.points);
-
-  /* What needs a person. */
-  const needs = useMemo(() => needsOf(attention, gates, now), [attention, gates, now]);
-  const waiting = gates && gates.length ? oldestGate(gates, now) : null;
-  const nobodyAnswered = attention === null && gates === null && Boolean(estate.attentionError || estate.gatesError);
+  const needs = useMemo(() => needsOf(attention, gates, now || Date.now()), [attention, gates, now]);
+  const oldest = f?.now.oldest_gate_since ? now - Date.parse(f.now.oldest_gate_since) : null;
+  const nobodyAnswered = attention === null && gates === null && Boolean(attentionError || gatesError);
+  const latest = f?.now.last_run_at ?? null;
 
   usePageFacts(
-    runs
+    f
       ? {
           page: "Overview",
           window: win,
-          runs_in_window: totals.runs,
-          failed_in_window: totals.failed,
-          spend_in_window_usd: totals.unpriced ? null : Number(totals.spend.toFixed(4)),
-          runs_not_priced: totals.unpriced,
-          running_now: live,
-          awaiting_approval: gates?.length ?? null,
-          p50_ms: latency?.p50 ?? null,
-          p95_ms: latency?.p95 ?? null,
+          runs_in_window: total,
+          failed_in_window: state("failed"),
+          spend_in_window_usd: f.spend.cost_usd,
+          model_calls_with_no_price: f.spend.unpriced_calls,
+          running_now: f.now.running,
+          awaiting_approval: f.now.at_gate,
+          p50_ms: f.latency?.p50 ?? null,
+          p95_ms: f.latency?.p95 ?? null,
           open_attention_items: needs.length,
         }
       : null,
   );
 
-  /** What a ranking says in place of rows (null when it has rows to show): `ranks` is what the list will hold once there are runs, `none` what it says of runs that give it nothing. */
+  /** What a ranking says in place of rows (null when it has rows to show): `ranks` is what the list will hold, `none` what it says of a window that gives it nothing. */
   const noRows = (has: boolean, ranks: string, none: string) => {
-    if (loading) return <Nothing>Reading the run ledger.</Nothing>;
-    if (unread) return <Nothing>The run ledger could not be read.</Nothing>;
-    if (!rows.length) return <Nothing>{runs?.length ? `No runs in ${windowWords(win)}.` : `No runs yet. ${ranks}`}</Nothing>;
+    if (loading) return <Nothing>Reading the figures.</Nothing>;
+    if (unread) return <Nothing>The figures could not be read.</Nothing>;
+    if (!total && !has) return <Nothing>{latest ? `No runs in ${windowWords(win)}.` : `No runs yet. ${ranks}`}</Nothing>;
     return has ? null : <Nothing>{none}</Nothing>;
   };
-
-  const toolsBody =
-    noRows(true, "Tools rank here by calls, or by the time spent in them.", "") ??
-    (tools.top.length ? null : !estate.observed ? (
-      <Nothing>Reading the run journals.</Nothing>
-    ) : toolCalls.pending ? (
-      <Nothing>Reading tool calls from {plural(toolRuns.length, "run")}.</Nothing>
-    ) : !readable || (toolCalls.read === 0 && toolCalls.unread > 0) ? (
-      <Nothing>The run trace is not read on this deployment, so tool calls are not counted.</Nothing>
-    ) : (
-      <Nothing>These runs made no tool calls.</Nothing>
-    ));
-  const toolsNote = [
-    tools.top.length ? `${tools.top.length} of ${plural(tools.of, "tool")}` : "",
-    toolRuns.length && rows.length > toolRuns.length ? `the ${toolRuns.length} most recent of ${fmtCount(rows.length)} runs` : "",
-    toolCalls.unread ? `${plural(toolCalls.unread, "run")} not readable` : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
-
-  /* People only where the records name them: in the window, or (an empty window) anywhere in the ledger; an empty ledger keeps the list's intended name. */
-  const people = rows.length ? starters.people : !runs?.length || runs.some(namesPerson);
-  const startersNote = !people
-    ? "Run records name a source, not a person"
-    : startersTop.top.length
-      ? [`${startersTop.top.length} of ${plural(startersTop.of, "person", "people")}`, starters.unnamed ? `${plural(starters.unnamed, "run")} name no person` : ""].filter(Boolean).join(" · ")
-      : "Who started the runs";
+  const sub = (said: string) => (loading ? "reading the figures" : unread ? "figures not read" : said);
 
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7" data-hue="blue">
@@ -190,31 +136,31 @@ function Overview() {
           </span>
         }
       >
-        What the estate is doing and what is waiting on a person. Each figure is counted from the run ledger and the approvals inbox, and leads to the page behind it.
+        What the estate is doing and what is waiting on a person. Each figure is counted by the platform from its records, and leads to the page behind it.
       </PageHeader>
 
       {unread && (
-        <Banner tone="err" title="The run ledger could not be read">
-          {estate.runsError}. The figures below stay empty until it answers.
+        <Banner tone="err" title="The figures could not be read">
+          {figures.error}. The figures below stay empty until the platform answers.
         </Banner>
       )}
       {stale && (
-        <Banner tone="err" title="The run ledger stopped answering">
-          {estate.runsError}. The figures below are stale: they are as the ledger last answered, at {new Date(estate.runsAt).toLocaleTimeString("en-GB")}.
+        <Banner tone="err" title="The figures stopped answering">
+          {figures.error}. The figures below are stale: they are as the platform last answered, at {new Date(figures.at).toLocaleTimeString("en-GB")}.
         </Banner>
       )}
-      {estate.gatesError && gates !== null && (
+      {gatesError && gates !== null && (
         <Banner tone="err" title="The approvals inbox stopped answering">
-          {estate.gatesError}. The gates below are as it last answered.
+          {gatesError}. The gates below are as it last answered.
         </Banner>
       )}
-      {runs && runs.length === 0 && (
+      {f && !latest && (
         <p className="rounded-md border border-line bg-surface px-3 py-2 text-[12px] leading-[1.5] text-dim">No agent has run on this deployment yet. The figures and lists below fill in from the first run.</p>
       )}
-      {runs && runs.length > 0 && rows.length === 0 && latest && (
+      {f && latest && total === 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-md border border-line bg-surface px-3 py-2">
           <p className="min-w-0 grow text-[12px] leading-[1.5] text-dim">
-            No runs in {windowWords(win)}. The latest run finished {fmtAge(now - Date.parse(latest))} ago.
+            No runs in {windowWords(win)}. The latest run was asked for {fmtAge(now - Date.parse(latest))} ago.
           </p>
           <Button size="sm" variant="solid" tone="ink" onClick={() => setWin("all")}>
             Show all runs
@@ -225,32 +171,32 @@ function Overview() {
       {/* ── figures ── */}
       <div className="@container">
         <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-line bg-surface elev-1 @min-[460px]:grid-cols-3 @min-[760px]:grid-cols-5">
-          <FigureTile label="Runs" chip={chip} href="/runs" value={runs ? fmtCount(totals.runs) : null} off={off} sub={loading ? "reading the ledger" : unread ? "ledger not read" : totals.runs ? `${fmtCount(totals.done)} complete` : "none in this window"} />
-          <FigureTile label="Running now" href="/runs" value={runs ? fmtCount(live) : null} off={off} tone={live ? "run" : undefined} sub={loading ? "reading the ledger" : unread ? "ledger not read" : live ? "in flight" : "nothing in flight"} />
+          <FigureTile label="Runs" chip={chip} href="/runs" value={f ? fmtCount(total) : null} off={unread} sub={sub(total ? `${fmtCount(state("done"))} complete` : "none in this window")} />
+          <FigureTile label="Running now" href="/runs" value={f ? fmtCount(f.now.running) : null} off={unread} tone={f?.now.running ? "run" : undefined} sub={sub(f?.now.running ? "in flight" : "nothing in flight")} />
           <FigureTile
             label="Awaiting approval"
             href="/approvals"
-            value={gates ? fmtCount(gates.length) : null}
-            off={gatesOff}
-            tone={gates?.length ? "warn" : undefined}
-            sub={gates === null ? (estate.gatesError ? "inbox not read" : "reading the inbox") : gates.length ? (waiting !== null ? `oldest waiting ${fmtAge(waiting)}` : "gates open") : "no gates open"}
+            value={f ? fmtCount(f.now.at_gate) : null}
+            off={unread}
+            tone={f?.now.at_gate ? "warn" : undefined}
+            sub={sub(f?.now.at_gate ? (oldest !== null ? `oldest waiting ${fmtAge(oldest)}` : "gates open") : "no gates open")}
           />
           <FigureTile
             label="Failed"
             chip={chip}
             href="/runs"
-            value={runs ? fmtCount(totals.failed) : null}
-            off={off}
-            tone={totals.failed ? "err" : undefined}
-            sub={loading ? "reading the ledger" : unread ? "ledger not read" : totals.runs ? [`${percent(totals.failed, totals.runs)} of runs`, totals.killed ? `${fmtCount(totals.killed)} killed` : ""].filter(Boolean).join(" · ") : "none in this window"}
+            value={f ? fmtCount(state("failed")) : null}
+            off={unread}
+            tone={state("failed") ? "err" : undefined}
+            sub={sub(total ? [`${percent(state("failed"), total)} of runs`, state("killed") ? `${fmtCount(state("killed"))} killed` : ""].filter(Boolean).join(" · ") : "none in this window")}
           />
           <FigureTile
             label="Spend"
             chip={chip}
             href="/finops"
-            value={runs ? (totals.unpriced ? "Not priced" : fmtMoney(totals.spend)) : null}
-            off={off}
-            sub={loading ? "reading the ledger" : unread ? "ledger not read" : !totals.runs ? "nothing spent in this window" : totals.unpriced ? `${plural(totals.unpriced, "run")} of ${fmtCount(totals.runs)} used a model with no price set` : totals.estimated ? `${plural(totals.estimated, "run")} priced by estimate` : `across ${plural(totals.runs, "run")}`}
+            value={f ? spendText(f.spend) : null}
+            off={unread}
+            sub={sub(!f?.spend.calls ? "no model call in this window" : f.spend.unpriced_calls ? `${unpricedWords(f.spend)}, not counted` : `across ${plural(f.spend.calls, "model call")}`)}
           />
         </div>
       </div>
@@ -263,14 +209,19 @@ function Overview() {
             action={<MeasureSwitch label="Rank agents by" value={agentMeasure} onChange={setAgentMeasure} options={RUN_MEASURES} />}
             footer={
               <>
-                <FootNote>{agents.top.length ? `${agents.top.length} of ${plural(agents.of, "agent")}` : "By runs or spend"}</FootNote>
+                <FootNote>
+                  {agents.top.length ? `${agents.top.length} of ${plural(agents.of, "agent")}` : "By runs or spend"}
+                  {agentMeasure === "spend" && f && unpricedIn(f.rank.agents) ? ` · ${plural(unpricedIn(f.rank.agents), "call")} with no price not counted` : ""}
+                </FootNote>
                 <Button size="sm" href="/agents">
                   View all
                 </Button>
               </>
             }
           >
-            {noRows(agents.top.length > 0, "Agents rank here by runs, or by spend.", totals.unpriced ? "Not priced: these runs used a model with no price set." : "No spend recorded for these runs.") ?? <RankList rows={agents.top} format={agentMeasure === "runs" ? fmtCount : fmtMoney} measure={agentMeasure === "runs" ? "runs" : "spent"} />}
+            {noRows(agents.top.length > 0, "Agents rank here by runs, or by spend.", f?.spend.unpriced_calls ? "No priced spend: these runs' calls had no price set." : "No spend recorded in this window.") ?? (
+              <RankList rows={agents.top} format={agentMeasure === "runs" ? fmtCount : fmtMoney} measure={agentMeasure === "runs" ? "runs" : "spent"} />
+            )}
           </Card>
 
           <Card
@@ -278,33 +229,33 @@ function Overview() {
             action={<MeasureSwitch label="Rank tools by" value={toolMeasure} onChange={setToolMeasure} options={TOOL_MEASURES} />}
             footer={
               <>
-                <FootNote>
-                  <span title={toolsNote}>{toolsNote || "By calls or time in the tool"}</span>
-                </FootNote>
-                <Button size="sm" href="/configuration">
+                <FootNote>{tools.top.length ? `${tools.top.length} of ${plural(tools.of, "tool")}` : "By calls, or time in the tool"}</FootNote>
+                <Button size="sm" href={`/explore?kind=tool_call&window=${win}`}>
                   View all
                 </Button>
               </>
             }
           >
-            {toolsBody ?? <RankList rows={tools.top} format={toolMeasure === "calls" ? fmtCount : fmtMs} measure={toolMeasure === "calls" ? "calls" : "in the tool"} />}
+            {noRows(tools.top.length > 0, "Tools rank here by calls, or by the time spent in them.", "No tool was called in this window.") ?? (
+              <RankList rows={tools.top} format={toolMeasure === "calls" ? fmtCount : fmtMs} measure={toolMeasure === "calls" ? "calls" : "in the tool"} />
+            )}
           </Card>
 
           <Card
-            title={people ? "Top people" : "Top sources"}
-            action={<MeasureSwitch label={people ? "Rank people by" : "Rank sources by"} value={starterMeasure} onChange={setStarterMeasure} options={RUN_MEASURES} />}
+            title="Top people"
+            action={<MeasureSwitch label="Rank people by" value={peopleMeasure} onChange={setPeopleMeasure} options={RUN_MEASURES} />}
             footer={
               <>
-                <FootNote>
-                  <span title={startersNote}>{startersNote}</span>
-                </FootNote>
-                <Button size="sm" href={people ? "/iam" : "/runs"}>
+                <FootNote>{people.top.length ? `${people.top.length} of ${plural(people.of, "person", "people")}, keys and services included` : "Who started the runs and made the calls"}</FootNote>
+                <Button size="sm" href="/iam">
                   View all
                 </Button>
               </>
             }
           >
-            {noRows(startersTop.top.length > 0, "Whoever starts runs ranks here, as far as the run records name them.", totals.unpriced ? "Not priced: these runs used a model with no price set." : "No spend recorded for these runs.") ?? <RankList rows={startersTop.top} format={starterMeasure === "runs" ? fmtCount : fmtMoney} measure={starterMeasure === "runs" ? "runs" : "spent"} />}
+            {noRows(people.top.length > 0, "Whoever starts runs ranks here, a person, a key or a service.", f?.spend.unpriced_calls ? "No priced spend: these calls had no price set." : "No spend recorded in this window.") ?? (
+              <RankList rows={people.top} format={peopleMeasure === "runs" ? fmtCount : fmtMoney} measure={peopleMeasure === "runs" ? "runs" : "spent"} />
+            )}
           </Card>
 
           <Card
@@ -312,34 +263,32 @@ function Overview() {
             meta="run duration"
             footer={
               <>
-                <FootNote>{latency ? `${plural(latency.runs, "run")}, from ${latency.basis === "traces" ? "the run journals" : "the run ledger"}` : "Start to finish, per run"}</FootNote>
+                <FootNote>{f?.latency ? `${plural(f.latency.runs, "ended run")}, each run's own working time` : "Each ended run's working time"}</FootNote>
                 <Button size="sm" href="/runs">
                   View runs
                 </Button>
               </>
             }
           >
-            {off ? (
-              <Nothing>The run ledger could not be read.</Nothing>
+            {unread ? (
+              <Nothing>The figures could not be read.</Nothing>
             ) : (
               <>
                 <div className="grid grid-cols-3 gap-4 px-4 pt-4 pb-3">
-                  <CardFigure label="p50" value={latency ? fmtMs(latency.p50) : "—"} />
-                  <CardFigure label="p95" value={latency ? fmtMs(latency.p95) : "—"} />
-                  <CardFigure label="Slowest" value={latency ? fmtMs(latency.max) : "—"} />
+                  <CardFigure label="p50" value={f?.latency ? fmtMs(f.latency.p50) : "—"} />
+                  <CardFigure label="p95" value={f?.latency ? fmtMs(f.latency.p95) : "—"} />
+                  <CardFigure label="Slowest" value={f?.latency ? fmtMs(f.latency.max) : "—"} />
                 </div>
                 <p className="px-4 pb-4 text-[12px] leading-[1.55] text-faint">
-                  {latency
-                    ? `Half the runs finished within ${fmtMs(latency.p50)}, 95 in 100 within ${fmtMs(latency.p95)}.`
+                  {f?.latency
+                    ? `Half the ended runs took ${fmtMs(f.latency.p50)} or less, 95 in 100 took ${fmtMs(f.latency.p95)} or less.`
                     : loading
-                      ? "Reading the run ledger."
-                      : unread
-                        ? "The run ledger could not be read."
-                        : rows.length
-                          ? "These runs carry no recorded duration."
-                          : runs?.length
-                            ? `No runs in ${windowWords(win)}, so there is no duration to measure.`
-                            : "No runs yet, so there is no duration to measure."}
+                      ? "Reading the figures."
+                      : total
+                        ? "No run of this window has ended yet, so there is no duration to measure."
+                        : latest
+                          ? `No runs in ${windowWords(win)}, so there is no duration to measure.`
+                          : "No runs yet, so there is no duration to measure."}
                 </p>
               </>
             )}
@@ -347,32 +296,30 @@ function Overview() {
 
           <Card
             title="Failed runs"
-            meta={`per ${trend.unit}`}
+            meta={f ? `per ${f.trend.unit}` : undefined}
             footer={
               <>
-                <FootNote>{totals.runs ? `${fmtCount(totals.failed)} of ${plural(totals.runs, "run")} failed` : "Runs that ended in the failed state"}</FootNote>
+                <FootNote>{total ? `${fmtCount(state("failed"))} of ${plural(total, "run")} failed` : "Runs that ended in the failed state"}</FootNote>
                 <Button size="sm" href="/runs">
                   View runs
                 </Button>
               </>
             }
           >
-            {off ? (
-              <Nothing>The run ledger could not be read.</Nothing>
+            {unread || !f ? (
+              <Nothing>{unread ? "The figures could not be read." : "Reading the figures."}</Nothing>
             ) : (
               <>
                 <div className="grid grid-cols-3 gap-4 px-4 pt-4 pb-3">
-                  <CardFigure label="Failure rate" value={totals.runs ? percent(totals.failed, totals.runs) : "—"} tone={totals.failed ? "err" : undefined} />
-                  <CardFigure label={`Most in one ${trend.unit === "30 days" ? "span" : trend.unit}`} value={totals.runs ? fmtCount(peak) : "—"} />
+                  <CardFigure label="Failure rate" value={total ? percent(state("failed"), total) : "—"} tone={state("failed") ? "err" : undefined} />
+                  <CardFigure label={`Most in one ${f.trend.unit === "30 days" ? "span" : f.trend.unit}`} value={total ? fmtCount(peak) : "—"} />
                 </div>
-                {totals.failed > 0 ? (
+                {state("failed") > 0 ? (
                   <div className="px-4 pb-4">
-                    <TrendBars points={trend.points} from={stamp(trend.from, trend.unit)} to="now" />
+                    <TrendBars points={f.trend.failed} from={stamp(Date.parse(f.trend.from), f.trend.unit)} to="now" />
                   </div>
                 ) : (
-                  <p className="px-4 pb-4 text-[12px] leading-[1.55] text-faint">
-                    {loading ? "Reading the run ledger." : unread ? "The run ledger could not be read." : rows.length ? `No run failed in ${windowWords(win)}.` : runs?.length ? `No runs in ${windowWords(win)}.` : "No runs yet."}
-                  </p>
+                  <p className="px-4 pb-4 text-[12px] leading-[1.55] text-faint">{total ? `No run failed in ${windowWords(win)}.` : latest ? `No runs in ${windowWords(win)}.` : "No runs yet."}</p>
                 )}
               </>
             )}
@@ -384,7 +331,7 @@ function Overview() {
             meta={needs.length ? `${fmtCount(needs.length)} open` : undefined}
             footer={
               <>
-                <FootNote>{needs.length > 5 ? `5 of ${fmtCount(needs.length)}, most urgent first` : estate.attentionError && !nobodyAnswered ? "The attention queue was not read" : "Open items and pending gates"}</FootNote>
+                <FootNote>{needs.length > 5 ? `5 of ${fmtCount(needs.length)}, most urgent first` : attentionError && !nobodyAnswered ? "The attention queue was not read" : "Open items and pending gates"}</FootNote>
                 <Button size="sm" href="/control">
                   Control
                 </Button>
@@ -396,15 +343,15 @@ function Overview() {
           >
             {nobodyAnswered ? (
               <div className="flex flex-col gap-2 p-4">
-                {estate.attentionError && <Failure what="The attention queue could not be read" message={estate.attentionError} />}
-                {estate.gatesError && <Failure what="The approvals inbox could not be read" message={estate.gatesError} />}
+                {attentionError && <Failure what="The attention queue could not be read" message={attentionError} />}
+                {gatesError && <Failure what="The approvals inbox could not be read" message={gatesError} />}
               </div>
             ) : attention === null && gates === null ? (
               <Nothing>Reading the attention queue.</Nothing>
-            ) : needs.length === 0 && (estate.attentionError || estate.gatesError) ? (
+            ) : needs.length === 0 && (attentionError || gatesError) ? (
               <div className="flex flex-col gap-2 p-4">
-                {estate.attentionError && <Failure what="The attention queue could not be read" message={estate.attentionError} />}
-                {estate.gatesError && <Failure what="The approvals inbox could not be read" message={estate.gatesError} />}
+                {attentionError && <Failure what="The attention queue could not be read" message={attentionError} />}
+                {gatesError && <Failure what="The approvals inbox could not be read" message={gatesError} />}
               </div>
             ) : needs.length === 0 ? (
               <Nothing>Nothing is waiting on a person.</Nothing>
