@@ -8,12 +8,14 @@ import { getAutonomyTiers, type AgentTier, type AutonomyTiers } from "@/lib/api/
 import { requirementLabel, requirementState, tierDocLine, tierLine, tierTag } from "@/lib/autonomy";
 
 /**
- * The autonomy tier on an agent, with the controls it lacks (phase L9). A
- * spec's `metadata.autonomy` declares L0 to L5; the promotion gate's autonomy
- * condition holds it to every control its tier requires, each named here with
- * who judges it, for what production runs, else the latest version. The tier
- * is declared in the Builder; a requirement the estate supplies (the guardian)
- * is changed on the Policy page. The tiers themselves are the runtime's.
+ * The autonomy tier on an agent, with the controls it lacks (phase 8). The
+ * tier is the one its use case was registered and approved with; an agent
+ * that runs no workload with a registered use case is held to the tier its
+ * definition declares (`metadata.autonomy`), and to none when it declares
+ * none. A deploy to production holds it to every control its tier requires,
+ * each named here with what it is judged from, for what production runs,
+ * else the latest version. The tiers and their controls are the platform's
+ * (agentfactory/autonomy.py).
  */
 
 /** A tier as a tag on an agent's row. */
@@ -26,6 +28,20 @@ export function TierTag({ tier }: { tier: AgentTier }) {
 export function AutonomyPanelView({ tiers }: { tiers: AutonomyTiers }) {
   const a = tiers.agent;
   if (!a) return null;
+  // No tier applies (no use case for its workload, and its definition declares none): nothing to judge, so nothing is missing.
+  if (!a.tier)
+    return (
+      <div className="flex flex-col gap-1.5">
+        <span className="flex flex-wrap items-center gap-2">
+          <Tag>no tier</Tag>
+          <span className="text-[12px] text-dim">{a.problem}</span>
+        </span>
+        <p className="text-[11px] leading-[1.5] text-faint">
+          A tier applies once its workload has a registered use case, or its definition declares one (metadata.autonomy); a deploy to production is then held to
+          every control that tier requires.
+        </p>
+      </div>
+    );
   const tier = tiers.tiers.find((t) => t.tier === a.tier);
   return (
     <div className="flex flex-col gap-3">
@@ -40,6 +56,10 @@ export function AutonomyPanelView({ tiers }: { tiers: AutonomyTiers }) {
         </span>
       </span>
       <p className="text-[11.5px] leading-[1.55] text-dim">{tierLine(a, tiers.requirements)}</p>
+      <p className="text-[11px] leading-[1.5] text-faint">
+        The tier is the one its use case was registered and approved with; an agent that runs no workload with a registered use case is held to the tier its
+        definition declares. A deploy to production goes ahead only when every control below is met.
+      </p>
       {tier && <p className="text-[11px] leading-[1.5] text-faint">{tier.description}</p>}
       {tier && <p className="text-[10.5px] leading-[1.5] text-ghost">{tierDocLine(tier)}</p>}
       {a.requires.length > 0 && (

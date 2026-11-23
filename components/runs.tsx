@@ -532,7 +532,7 @@ function Launcher() {
                 <button
                   onClick={() => setHideShadows((h) => !h)}
                   aria-pressed={hideShadows}
-                  title="A shadow run is a canary's mirror of a production run: nothing above read executed, and it counts toward no production figure."
+                  title="A shadow run is a canary's mirror of a production run: its calls at or above write and calls that act outside were recorded as would-call, not made."
                   className={`focusable ml-2 cursor-pointer rounded-sm px-2 py-0.5 text-[11px] transition-colors ${hideShadows ? "bg-raise font-semibold text-fg" : "font-medium text-faint hover:text-dim"}`}
                 >
                   {hideShadows ? `Show shadow runs (${shadows})` : `Hide shadow runs (${shadows})`}
@@ -974,7 +974,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
             <Link href={`/runs?id=${encodeURIComponent(shadowRun)}`} className="focusable rounded-sm font-mono text-fg underline">
               {shadowRun}
             </Link>
-            : nothing above read executes there, and it counts toward no production figure. The pair is compared on the lifecycle page.
+            : its calls at or above write and calls that act outside are recorded there, not made. The pair is compared on the lifecycle page.
           </Banner>
         ) : null
       }

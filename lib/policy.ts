@@ -174,6 +174,8 @@ export const GATE_CHOICES = [
 const FIXED: Record<string, Pick<ProposalField, "kind" | "choices" | "hint" | "star">> = {
   "attached.grants": { kind: "list", hint: "registry tools, as server.tool" },
   "attached.gate_at": { kind: "choice", choices: GATE_CHOICES },
+  "attached.gates": { kind: "json", hint: "a JSON list of gate rules, written as an agent definition writes them" },
+  "attached.scope": { kind: "json", hint: "a JSON object: each granted tool, the argument values it may be called with" },
   "attestation.period_days": { kind: "number", hint: "days; the default is 90" },
   "guardian.agents": { kind: "list", hint: "agent ids; * for every agent", star: true },
   "peer.data_class": { kind: "choice", choices: dataClassChoices("undeclared"), hint: "what it returns; a task it sends in starts at this class or higher" },
@@ -193,7 +195,9 @@ export function fieldsOf(t: Pick<TargetKind, "kind" | "fields" | "labels">, curr
     const label = `${said.charAt(0).toUpperCase()}${said.slice(1)}`;
     if (fixed) return { name, label, ...fixed };
     const v = current?.[name];
-    const kind: FieldKind = typeof v === "boolean" ? "bool" : Array.isArray(v) ? "list" : typeof v === "string" ? "text" : v && typeof v === "object" ? "json" : "number";
+    // A list of words is edited as chips; a list of objects (gate rules) or an object is edited as JSON.
+    const kind: FieldKind =
+      typeof v === "boolean" ? "bool" : Array.isArray(v) ? (v.some((x) => x !== null && typeof x === "object") ? "json" : "list") : typeof v === "string" ? "text" : v && typeof v === "object" ? "json" : "number";
     const nullable = v === null || v === undefined;
     // An agent's own limit, shown so it can be cleared: empty goes back to the estate's.
     if (inherits && kind === "number") return { name, label, kind, hint: `empty inherits the estate's: ${String(inherits[name] ?? "unset")}` };
@@ -235,11 +239,11 @@ function value(f: ProposalField, raw: DraftValue): { ok: true; value: unknown } 
   if (f.kind === "json") {
     try {
       const parsed = JSON.parse(text || "{}") as unknown;
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return { ok: true, value: parsed };
+      if (parsed && typeof parsed === "object") return { ok: true, value: parsed };
     } catch {
       /* said below */
     }
-    return { ok: false, problem: "a JSON object, please" };
+    return { ok: false, problem: "a JSON object or list, please" };
   }
   return { ok: true, value: String(raw) };
 }

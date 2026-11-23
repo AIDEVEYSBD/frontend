@@ -19,15 +19,17 @@ import { listAgents, type AgentSummary } from "@/lib/api/l2";
 import { attestAgent, listAttestations, listStandings, type Attestation, type AttestationList, type Standing, type Standings } from "@/lib/api/l9";
 import { attestationLine, deployedNote, diffLine, dueLine, mayAttest, ownerLine, standingState } from "@/lib/attestations";
 import { whenText } from "@/lib/lifecycle";
+import { isPlatformAdmin } from "@/lib/permissions";
 import { diffSections, type VersionView } from "@/lib/versions";
 
 /**
- * Owner attestations (phase L9). An agent's owner says, on the record, that it
+ * Owner attestations (phase 8). An agent's owner says, on the record, that it
  * still does what was approved. Each attestation names the version and carries
- * what changed in the spec since the last one, so the owner reads a diff rather
- * than a blank form. Deployed agents fall due on their period (90 days unless a
- * policy change says otherwise, and every 30 at L5); an overdue one is raised as
- * attention. Only the owner or an administrator attests. The doors are
+ * what changed in the definition since the last one, so the owner reads a diff
+ * rather than a blank form. Deployed agents fall due on the period the
+ * deployment sets (ATTESTATION_PERIOD_DAYS, 90 days unless set otherwise); an
+ * L5 tier requires one within 30 days before a production deploy. Overdue ones
+ * are listed first. Only the owner or a platform admin attests. The doors are
  * lib/api/l9.ts, the words lib/attestations.ts.
  */
 
@@ -126,7 +128,10 @@ function AttestForm({ agent, list, onDone }: { agent: string; list: AttestationL
   }, [agent]);
   const choices = versionChoices(versions);
   const chosen = digest || versions.find((v) => v.deployed)?.digest || choices[0]?.value || "";
-  const { may, why } = mayAttest(session, list.owner);
+  // The platform lets a platform admin attest for the owner; the shared helper knows that role under an older name.
+  const owner = mayAttest(session, list.owner);
+  const may = owner.may || isPlatformAdmin(session?.appRoles);
+  const why = owner.why;
   const attest = async () => {
     setBusy(true);
     setError("");
@@ -151,7 +156,7 @@ function AttestForm({ agent, list, onDone }: { agent: string; list: AttestationL
         </Field>
       </div>
       <span className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="solid" tone="ink" disabled={!may || !chosen || !statement.trim()} loading={busy} onClick={attest}>
+        <Button size="sm" variant="solid" tone="ink" permission="deploy" disabled={!may || !chosen || !statement.trim()} loading={busy} onClick={attest}>
           Attest
         </Button>
         {!may && <span className="text-[11px] text-faint">{why}.</span>}
@@ -234,7 +239,7 @@ function AttestationsPage() {
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
       <GroupHeader group="assurance" tab="attestations">
-        Each deployed agent&rsquo;s owner says, on a schedule, that it still does what was approved. The record carries what changed in its spec since the last time, and an overdue attestation is raised as attention.
+        Each deployed agent&rsquo;s owner says, on a schedule, that it still does what was approved. The record carries what changed in its definition since the last time; overdue attestations are listed first.
       </GroupHeader>
       {error && (
         <Banner tone="err" title="Could not read the attestations">

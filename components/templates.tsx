@@ -32,14 +32,13 @@ import {
 } from "@/lib/templates";
 
 /**
- * Templates and lineage (phase L8, second round).
+ * Templates and lineage (phase 8).
  *
  * A template is one saved version's document, made by someone who may
  * deploy (`POST /api/templates`), `pending` until a certifier signs it: one
- * who holds the certifier role (`TEMPLATE_CERTIFIER_ROLE`, default
- * `template-certifier`; an administrator passes the role) and is not one of
- * its authors (whoever made it, whoever saved a version carrying its digest;
- * administrator or not). An agent is cut from a certified template only
+ * who holds the approve permission (the role the list names) and is not one
+ * of its authors (whoever made it, whoever saved a version carrying its
+ * digest; administrator or not). An agent is cut from a certified template only
  * (`POST /api/agents {from_template, id, params}`), its `${param:name}`
  * references filled, and records its lineage. On the agent's lifecycle
  * page, the lineage shows the template, the cut and the drift since, in the

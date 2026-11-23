@@ -10,7 +10,7 @@ import { Button, Mono, Status, Tag } from "./ui";
 import { Banner } from "./overlays";
 import { Field, Input, Textarea } from "./forms";
 import { Pick } from "./select";
-import { DeployDialog, DeployedReceipt } from "./deploy-gate";
+import { DeployDialog, DeployedReceipt, GateConditions } from "./deploy-gate";
 import { UnsupportedParts } from "./unsupported";
 import { unsupportedHeading, unsupportedReason } from "@/lib/unsupported";
 import { useDoorBuilt, useDoorOff } from "@/lib/use-doors";
@@ -18,7 +18,6 @@ import { CanaryPanel } from "./canary";
 import { LineageView } from "./templates";
 import { AutonomyPanel } from "./autonomy";
 import { getLineage, type Lineage } from "@/lib/api/l8b";
-import { declaredTierLabel } from "@/lib/autonomy";
 import { hueFor } from "@/lib/hue";
 import { soon } from "@/lib/soon";
 import { useSession } from "@/lib/use-session";
@@ -27,6 +26,7 @@ import { listAgents, listVersions, type AgentSummary, type VersionView } from "@
 import {
   getAgentDetail,
   getBenchmark,
+  gateRefusalOf,
   getLifecycle,
   listDeployments,
   listReviews,
@@ -40,6 +40,7 @@ import {
   type Deployed,
   type Deployment,
   type DeploymentList,
+  type GateRefusal,
   type Lifecycle,
   type Retired,
   type Retirement,
@@ -55,7 +56,6 @@ import {
   retiredLine,
   reviewAccess,
   reviewRefusalText,
-  rollbackLine,
   rollbackProblem,
   rollbackTargets,
   shortDigest,
@@ -68,28 +68,27 @@ import {
 } from "@/lib/lifecycle";
 
 /**
- * An agent's lifecycle (phase L8, first round), from design to retirement,
- * each stage lit only by its own record:
+ * An agent's lifecycle (phase 8), from design to retirement, each stage lit
+ * only by its own record:
  *
- *   designed  a saved version carrying the digest
- *   reviewed  an approving policy review of it by someone who did not author it
- *   approved  a promotion-gate decision that passed for it
- *   canary    a canary deployment of it (the second half of L8)
- *   deployed  a production deployment row of it
+ *   designed  the first saved version carrying the digest
+ *   reviewed  the newest review of it approves it, by someone who did not author it
+ *   approved  a production deploy of it whose conditions all held
+ *   canary    a canary or shadow deployment of it beside production
+ *   deployed  a production deployment of it
  *   retired   the agent's retirement
  *
- * The spine is drawn for one digest (the latest version's, or one picked),
- * with what production runs beside it, and where the digest stands now
- * (`current`: the furthest stage lit that still holds). Below: the
- * benchmark of what production runs; the policy reviews, and a review to
- * sign (the approve permission, the reviewer role, and never by an author of
- * the version: separation of duties); the deployments per environment; a
- * rollback to a version that ran in production before, with the runs it
- * flags; canary and shadow beside production (L8, second round:
- * components/canary.tsx); the lineage of an agent cut from a template, with
- * the drift since (components/templates.tsx); and retirement, after which
- * the agent refuses new work everywhere and its records stay readable. Every
- * door is the backend's (lib/api/l8.ts, lib/api/l8b.ts).
+ * The spine is drawn for one digest (the latest version's, or one
+ * picked), with what production runs beside it, and where the digest stands
+ * now (`current`: the furthest stage lit that still holds). Below: the
+ * benchmark of what production runs; the reviews, and a review to sign (the
+ * approve permission, and never by an author of the version); the
+ * deployments per environment; a rollback to a version that ran in
+ * production before, through every condition again, listing the runs of the
+ * version rolled back from; the lineage of an agent cut from a template, with
+ * the drift since (components/templates.tsx); and retirement, after which the
+ * platform refuses its new runs, versions and deploys and its records stay
+ * readable. Every door is the backend's (lib/api/l8.ts, lib/api/l8b.ts).
  */
 
 const STAGE_TONE: Record<SpineStage["tone"], { dot: string; text: string }> = {
@@ -107,7 +106,7 @@ export function SpineView({ lifecycle }: { lifecycle: Lifecycle }) {
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[12.5px] leading-[1.55] text-dim">{spineHeadline(lifecycle)}</p>
-      <ol className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-6">
+      <ol className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {stages.map((st, i) => {
           const tone = STAGE_TONE[st.tone];
           return (
@@ -205,7 +204,7 @@ function DeploymentRow({ d }: { d: Deployment }) {
       {d.override && <span className="w-full text-[11px] text-warn">{overrideLine(d.override)}</span>}
       {d.flagged.length > 0 && (
         <span className="flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 text-[10.5px]">
-          <span className="text-faint">{d.flagged.length} run{d.flagged.length === 1 ? "" : "s"} of version {d.previous?.version ?? "?"} flagged:</span>
+          <span className="text-faint">{d.flagged.length} run{d.flagged.length === 1 ? "" : "s"} of version {d.previous?.version ?? "?"} listed for review:</span>
           {d.flagged.map((r) => (
             <Link key={r} href={`/runs?id=${encodeURIComponent(r)}`} className="focusable rounded-sm font-mono text-dim hover:underline">
               {r}
@@ -244,10 +243,10 @@ export function DeploymentsView({ list }: { list: DeploymentList }) {
               {now ? <Mono className="text-[10.5px] text-dim">runs version {now.version ?? "?"} ({shortDigest(now.digest)})</Mono> : <span className="text-[10.5px] text-faint">nothing current</span>}
               {env === "canary" || env === "shadow" ? (
                 <span className="text-[10.5px] text-faint">
-                  {env === "shadow" ? "mirrored beside production in shadow mode" : "a share of queued starts beside production"}; current only while its canary stands
+                  {env === "shadow" ? "mirrored beside production in shadow mode" : "a share of new starts beside production"}; current only while its canary stands
                 </span>
               ) : (
-                env !== "production" && <span className="text-[10.5px] text-faint">recorded only: what production runs does not move</span>
+                env !== "production" && <span className="text-[10.5px] text-faint">a record: nothing runs it, and what production runs does not move</span>
               )}
             </span>
             <ul className="flex flex-col overflow-hidden rounded-md border border-line">
@@ -266,7 +265,7 @@ export function DeploymentsView({ list }: { list: DeploymentList }) {
 export function RollbackReceipt({ r }: { r: RollbackResult }) {
   return (
     <Banner tone="warn" title={`Rolled back to version ${r.to.version ?? "?"}`}>
-      {rollbackLine(r)}
+      {`Rolled back from version ${r.from.version ?? "?"} to ${r.to.version ?? "?"}${r.by ? ` by ${r.by}` : ""}: ${r.reason}. ${r.count ? `${r.count} run${r.count === 1 ? "" : "s"} of version ${r.from.version ?? "?"} listed on the rollback for review` : `No run of version ${r.from.version ?? "?"} to list`}.`}
       {r.flagged.length > 0 && (
         <span className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5">
           {r.flagged.map((run) => (
@@ -334,7 +333,7 @@ function ReviewForm({ agent, versions, defaultDigest, role, who, onDone }: { age
   const options = versionChoices(versions);
   return (
     <div className="flex flex-col gap-2.5 rounded-md border border-line bg-canvas/60 p-3">
-      <span className="text-[12.5px] font-semibold text-fg">Sign a policy review</span>
+      <span className="text-[12.5px] font-semibold text-fg">Sign a review</span>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="The version reviewed">
           <Pick value={digest} onChange={setDigest} options={options.length ? options : [{ value: digest, label: shortDigest(digest) }]} />
@@ -398,6 +397,7 @@ function RollbackForm({ agent, list, onDone }: { agent: string; list: Deployment
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [gate, setGate] = useState<GateRefusal | null>(null);
   const [tried, setTried] = useState(false);
   if (!targets.length) return <p className="text-[12px] text-faint">Nothing to roll back to: no other version has run in production.</p>;
   const problem = rollbackProblem(to, reason);
@@ -405,8 +405,8 @@ function RollbackForm({ agent, list, onDone }: { agent: string; list: Deployment
     <div className="flex flex-col gap-2.5 rounded-md border border-line bg-canvas/60 p-3">
       <span className="text-[12.5px] font-semibold text-fg">Roll back production</span>
       <span className="text-[11.5px] leading-[1.5] text-dim">
-        Reinstates a version that ran in production before, as a new deployment, without the gate (its eval is on record). Every run of the version rolled back from,
-        since it was deployed, is flagged for review.
+        Reinstates a version that ran in production before, as a new production deployment. Every condition is read again, as for any deploy, and a refusal lists
+        them. Every run of the version rolled back from, since it was deployed, is listed on the rollback for review.
       </span>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Reinstate">
@@ -422,6 +422,7 @@ function RollbackForm({ agent, list, onDone }: { agent: string; list: Deployment
       </div>
       {tried && problem && <span className="text-[11px] text-err">{problem}</span>}
       {error && (<span className="text-[11.5px] text-err">{error}</span>)}
+      {gate && <GateConditions refusal={gate} agent={agent} />}
       <span className="flex items-center gap-2">
         <span className="grow" />
         <Button
@@ -435,13 +436,16 @@ function RollbackForm({ agent, list, onDone }: { agent: string; list: Deployment
             if (problem || to === null) return;
             setBusy(true);
             setError("");
+            setGate(null);
             try {
               onDone(await rollback(agent, { to_version: to, reason: reason.trim() }));
               setReason("");
               setTried(false);
             } catch (e) {
               const gone = retiredRefusalOf(e);
-              setError(gone ? `${agent} is retired. ${retiredLine(gone)}` : (e as Error).message);
+              const held = gateRefusalOf(e);
+              if (held && !gone) setGate(held);
+              setError(gone ? `${agent} is retired. ${retiredLine(gone)}` : held ? `Version ${to} is not reinstated: ${held.unmet.map((u) => u.condition.replace(/_/g, " ")).join(", ")} ${held.unmet.length === 1 ? "does" : "do"} not hold. Production runs what it ran.` : (e as Error).message);
             } finally {
               setBusy(false);
             }
@@ -468,8 +472,8 @@ function RetireForm({ agent, others, onDone }: { agent: string; others: string[]
     <div className="flex flex-col gap-2.5 rounded-md border border-line bg-canvas/60 p-3">
       <span className="text-[12.5px] font-semibold text-fg">Retire {agent}</span>
       <span className="text-[11.5px] leading-[1.5] text-dim">
-        After it, every door that starts work for it refuses (runs, triggers, webhooks, A2A tasks, evals, deploys, rollbacks), its schedules stop and its queued jobs are
-        cancelled with the reason. Its runs, versions and journals stay readable and replayable.
+        After it, the platform refuses every new run of it, and every new version, deploy, rollback, review and attestation. Runs already started are not stopped.
+        Its runs, versions and records stay readable.
       </span>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Reason" error={tried && !reason.trim() ? "A retirement needs a reason." : undefined}>
@@ -608,12 +612,12 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
         id={agent}
         agent={data?.detail ? { ...data.detail, retired } : null}
         actions={
-          <Button size="sm" variant="solid" tone="ink" permission="deploy" disabled={Boolean(retired) || latest === null || unsupported.length > 0} title={unsupported.length ? unsupportedReason(unsupported) : undefined} onClick={() => setDeployAsk(true)}>
+          <Button size="sm" variant="solid" tone="ink" permission="deploy" disabled={Boolean(retired) || latest === null} title={unsupported.length ? `${unsupportedReason(unsupported)}; staging takes it` : undefined} onClick={() => setDeployAsk(true)}>
             Deploy version {latest ?? "?"}…
           </Button>
         }
       >
-        This agent from design to retirement: each stage lit only by its own record, with its reviews, deployments, rollback and retirement. No promotion gate runs before a deploy on this deployment.
+        This agent from design to retirement: each stage lit only by its own record, with its reviews, deployments, rollback and retirement. A deploy to production goes ahead only when every condition holds; the answer lists each.
       </AgentHeader>
 
       {unsupported.length > 0 && <UnsupportedParts parts={unsupported} heading={unsupportedHeading(data?.detail?.version, data?.detail?.deployed_version)} />}
@@ -663,11 +667,10 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
       {data?.error && !data.detail && !data.lifecycle ? <>
         {[
           { title: "Spine", meta: "each stage lit only by its own record", line: "The stages from designed to retired are drawn here, each lit by its own record." },
-          { title: "Autonomy tier", meta: "what its metadata.autonomy declares, and the controls it lacks", line: "The tier the agent declares is shown here beside the controls that tier requires." },
+          { title: "Autonomy tier", meta: "the tier of its use case, else what its definition declares, and the controls it lacks", line: "The agent's tier is shown here beside the controls that tier requires." },
           { title: "Benchmark", meta: "the latest eval of what production runs, on the spec's own suite", line: "The latest evaluation of the version production runs is shown here with its score and threshold." },
           { title: "Policy reviews", meta: "a reviewer never reviews a version they saved", line: "Reviews are listed here with the version reviewed, the reviewer and the decision." },
-          { title: "Deployments", meta: "per environment; production is gated, and is what runs", line: "Deployments are listed here per environment, newest first, with the rollback to an earlier version." },
-          { title: "Canary and shadow", meta: "a version beside production: a share of starts, or a mirror in shadow mode", line: "A version running beside production is shown here with its share of starts and how it compares." },
+          { title: "Deployments", meta: "per environment; production is held to every condition, and is what runs", line: "Deployments are listed here per environment, newest first, with the rollback to an earlier version." },
         ].map((x) => (
           <Section key={x.title} title={x.title} meta={x.meta}>
             <p className="text-[12px] text-faint">{x.line}</p>
@@ -693,7 +696,7 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
         {data?.lifecycle ? <SpineView lifecycle={data.lifecycle} /> : <p className="text-[12px] text-faint">{data ? "No spine to draw." : "Reading the lifecycle…"}</p>}
       </Section>
 
-      <Section id="autonomy" title="Autonomy tier" meta="what its metadata.autonomy declares, and the controls it lacks">
+      <Section id="autonomy" title="Autonomy tier" meta="the tier of its use case, else what its definition declares, and the controls it lacks">
         <AutonomyPanel agent={agent} tick={deployed ? 1 : 0} />
       </Section>
 
@@ -701,7 +704,7 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
         {data?.failed.benchmark ? <Failure what="The benchmark could not be read" message={data.failed.benchmark} /> : data ? <BenchmarkView benchmark={data.benchmark} agent={agent} /> : <p className="text-[12px] text-faint">Reading…</p>}
       </Section>
 
-      <Section id="reviews" title="Policy reviews" meta={data?.reviews ? `${data.reviews.count} on record · a reviewer holds the "${data.reviews.role}" role and never reviews a version they saved` : undefined}>
+      <Section id="reviews" title="Reviews" meta={data?.reviews ? `${data.reviews.count} on record · a reviewer holds the "${data.reviews.role}" role and never reviews a version they saved` : undefined}>
         {data?.failed.reviews && <Failure what="The reviews could not be read" message={data.failed.reviews} />}
         {data?.reviews && <ReviewsView list={data.reviews} />}
         {data && !retired && !notBuiltDoorOf(data.failed.reviews) && reviewBuilt !== false && (
@@ -780,7 +783,7 @@ export function LifecycleIndexView({ agents }: { agents: AgentSummary[] }) {
                 <Status tone="queue">Not deployed</Status>
               )}
               {!retired && a.version !== null && a.version !== undefined && deployedV !== null && a.version !== deployedV && <Tag tone="warn">draft version {a.version}</Tag>}
-              {!retired && <Tag>{declaredTierLabel(a.autonomy)}</Tag>}
+              {!retired && <Tag>{a.autonomy ? `declares ${a.autonomy}` : "declares no tier"}</Tag>}
               <span className="grow" />
               {retired && <span className="text-[11px] text-faint">{retired.reason}{retired.replacement ? ` · replaced by ${retired.replacement}` : ""}</span>}
             </Link>
@@ -805,7 +808,7 @@ function LifecycleIndex() {
   return (
     <div className="flex flex-col gap-4">
       <ChooseAgentHeader title="Versions">
-        Choose an agent to open its versions: each one from design to retirement (designed, reviewed, approved, canary, deployed, retired), every stage lit only by its own record. No promotion gate runs before a deploy on this deployment.
+        Choose an agent to open its versions: each one from design to retirement (designed, reviewed, approved, deployed, retired), every stage lit only by its own record. A deploy to production goes ahead only when every condition holds.
       </ChooseAgentHeader>
       {error && (
         <Banner tone="err" title="Could not read the registry">

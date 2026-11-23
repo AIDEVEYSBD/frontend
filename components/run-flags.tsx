@@ -43,8 +43,9 @@ export function RunMarkers({ run }: { run: MarkedRun }) {
  * - the eval it is a case of (`eval: {id, case, set}`), which drift leaves
  *   out of production's windows;
  * - (L8, second round) a shadow run (`shadow: true`): a canary's candidate
- *   mirroring a production run, where nothing above read executed, counted
- *   in no production figure; and the canary arm a run used (`canary`).
+ *   mirroring a production run, whose calls at or above write and calls
+ *   that act outside were recorded, not made; and the canary arm a run used
+ *   (`canary`).
  */
 export function RunFlagsBanner({ flags, agent }: { flags: RunFlags; agent: string }) {
   const [job, setJob] = useState<Schemas["JobView"] | null>(null);
@@ -66,8 +67,8 @@ export function RunFlagsBanner({ flags, agent }: { flags: RunFlags; agent: strin
   return (
     <div className="flex shrink-0 flex-col gap-2 border-b border-line bg-canvas px-4 py-2.5">
       {flags.shadow && (
-        <Banner tone="neutral" title="A shadow run: nothing above read executed">
-          {flags.canary ? canaryRunLine(flags.canary, true) : "Nothing above read executed: each call it would have made is journalled as would-call. It counts toward no production figure."}
+        <Banner tone="neutral" title="A shadow run: nothing at or above write was carried out">
+          {flags.canary ? canaryRunLine(flags.canary, true) : "Each call at or above write and each call that acts outside is journalled as would-call, not made. It asks no one."}
           {flags.canary?.of && (
             <>
               {" "}

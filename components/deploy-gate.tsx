@@ -2,64 +2,63 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Button, Mono, Status, Tag } from "./ui";
+import { Button, Mono, Tag, Status } from "./ui";
 import { Banner } from "./overlays";
-import { Field, Textarea } from "./forms";
-import { useSession } from "@/lib/use-session";
+import { useDoorBuilt } from "@/lib/use-doors";
 import { DoorError } from "@/lib/api/l5";
 import { unsupportedOf, unsupportedReason, type UnsupportedPart } from "@/lib/unsupported";
 import { UnsupportedParts } from "./unsupported";
-import { deploy, gateRefusalOf, retiredRefusalOf, type Condition, type Deployed, type GateRefusal } from "@/lib/api/l8";
-import {
-  CONDITION_ASKS,
-  EMPTY_OVERRIDE,
-  canOverride,
-  conditionLabel,
-  findingHref,
-  gateSummary,
-  itemLine,
-  overrideBody,
-  overrideChoices,
-  overrideLine,
-  overrideOutcome,
-  overrideProblem,
-  retiredLine,
-  shortDigest,
-  whenText,
-  type OverrideForm,
-} from "@/lib/lifecycle";
-import type { ConditionName } from "@/lib/api/l8";
+import { deploy, gateRefusalOf, retiredRefusalOf, type Condition, type Deployed, type GateRefusal, type OverrideRequest } from "@/lib/api/l8";
+import { conditionLabel, findingHref, itemLine, retiredLine, shortDigest, whenText } from "@/lib/lifecycle";
 
 /**
- * The promotion gate, as a person meets it (phase L8). A deploy to
- * production is held to five conditions read for exactly the digest being
- * deployed: an eval on the spec's own suite at or above its threshold, an
- * approving policy review by someone who did not author it, nothing open
- * for the agent, no regression against the deployed predecessor, and (L9)
- * every control its declared autonomy tier requires. A
- * refusal (409) names every unmet condition with its detail and the items
- * the gate read; this shows them, and every condition beside them. An
- * administrator may deploy past the gate with a reason, passing every unmet
- * condition or only the ones named; the override is recorded on the
- * deployment, audited and raised as attention. Anyone else is told who may.
+ * Deploying a version, as a person meets it (phase 8). A deploy to
+ * production is held to its conditions, read for exactly the digest being
+ * deployed, and the platform answers every one with whether it holds and why:
+ *
+ *   review       the newest review of the digest approves it, by someone who did not author it
+ *   supported    the definition uses no part the platform does not carry out
+ *   retrieval    its retrieval tools name the knowledge stores they read
+ *   not retired  the agent is not retired
+ *   use case     the use case of the workload it runs is approved, and each gate it registers has its await node
+ *   autonomy     every control the agent's autonomy tier requires is met
+ *   eval         the latest evaluation of the digest meets the release threshold
+ *
+ * A deploy to staging needs the review only (and the agent not retired): it
+ * is a record, and nothing runs it. A refusal (409) lists every condition;
+ * this shows the ones that do not hold first. There is no override: a
+ * version is deployed only when every condition holds.
  */
 
-function ConditionRow({ c, agent }: { c: Pick<Condition, "condition" | "detail" | "items"> & { met?: boolean; overridden?: boolean }; agent: string }) {
-  const asks = CONDITION_ASKS[c.condition as ConditionName];
+type Environment = "production" | "staging";
+
+/** What each condition asks, in the platform's terms. */
+const ASKS: Record<string, string> = {
+  review: "an approving review of this digest by someone who did not author it",
+  supported: "no part of the definition the platform does not carry out",
+  retrieval: "every retrieval tool names the knowledge stores it reads",
+  not_retired: "the agent is not retired",
+  use_case: "its use case approved, and every gate it registers held by an await node with that approver and no longer a timeout",
+  autonomy: "every control its autonomy tier requires: the tier of its use case, else the one its definition declares",
+  eval: "the latest evaluation of this digest at or above the agent's release threshold",
+};
+
+/** Where a person goes to make a condition hold. */
+const MEND: Record<string, { href: (agent: string) => string; says: string }> = {
+  review: { href: (a) => `/lifecycle?agent=${encodeURIComponent(a)}#reviews`, says: "Its reviews" },
+  use_case: { href: () => "/workloads#use-cases", says: "The use cases" },
+  autonomy: { href: (a) => `/lifecycle?agent=${encodeURIComponent(a)}#autonomy`, says: "Its tier, and what it lacks" },
+  eval: { href: (a) => `/evals?agent=${encodeURIComponent(a)}`, says: "Its evaluations" },
+};
+
+function ConditionRow({ c, agent }: { c: Pick<Condition, "condition" | "detail" | "items"> & { met?: boolean }; agent: string }) {
+  const mend = MEND[c.condition];
   return (
     <li className="flex flex-col gap-1 border-b border-line/70 px-3 py-2 last:border-b-0">
       <span className="flex flex-wrap items-center gap-2">
         <span className="text-[12.5px] font-semibold text-fg">{conditionLabel(c.condition)}</span>
-        {c.met === undefined ? (
-          <Status tone="err">unmet</Status>
-        ) : c.overridden ? (
-          <Status tone="warn">passed by override</Status>
-        ) : c.met ? (
-          <Status tone="ok">met</Status>
-        ) : (
-          <Status tone="err">unmet</Status>
-        )}
-        {asks && <span className="text-[10.5px] text-faint">{asks}</span>}
+        {c.met ? <Status tone="ok">holds</Status> : <Status tone="err">does not hold</Status>}
+        {ASKS[c.condition] && <span className="text-[10.5px] text-faint">{ASKS[c.condition]}</span>}
       </span>
       <span className="text-[11.5px] leading-[1.5] text-dim">{c.detail}</span>
       {c.items.length > 0 && (
@@ -80,41 +79,30 @@ function ConditionRow({ c, agent }: { c: Pick<Condition, "condition" | "detail" 
           })}
         </ul>
       )}
-      {c.condition === "eval" && c.met !== true && !c.overridden && (
-        <Link href={`/evals?agent=${encodeURIComponent(agent)}`} className="focusable w-fit rounded-sm text-[11px] font-medium text-fg underline">
-          Run its eval
-        </Link>
-      )}
-      {c.condition === "review" && c.met !== true && !c.overridden && (
-        <Link href={`/lifecycle?agent=${encodeURIComponent(agent)}#reviews`} className="focusable w-fit rounded-sm text-[11px] font-medium text-fg underline">
-          Its reviews
-        </Link>
-      )}
-      {c.condition === "autonomy" && c.met !== true && !c.overridden && (
-        <Link href={`/lifecycle?agent=${encodeURIComponent(agent)}#autonomy`} className="focusable w-fit rounded-sm text-[11px] font-medium text-fg underline">
-          Its tier, and what it lacks
+      {mend && !c.met && (
+        <Link href={mend.href(agent)} className="focusable w-fit rounded-sm text-[11px] font-medium text-fg underline">
+          {mend.says}
         </Link>
       )}
     </li>
   );
 }
 
-/** The conditions as the gate read them: the unmet ones first (with what they read), then the rest. */
+/** The conditions as the platform read them: those that do not hold first (with what they read), then the rest. */
 export function GateConditions({ refusal, agent }: { refusal: Pick<GateRefusal, "unmet" | "conditions">; agent: string }) {
   const unmet = new Set(refusal.unmet.map((u) => u.condition));
   const rest = refusal.conditions.filter((c) => !unmet.has(c.condition));
-  const full = new Map(refusal.conditions.map((c) => [c.condition, c]));
   return (
     <div className="flex flex-col gap-2">
-      <span className="text-[11px] font-semibold text-dim">Unmet</span>
+      <span className="text-[11px] font-semibold text-dim">Does not hold</span>
       <ul className="overflow-hidden rounded-md border border-err-line bg-surface">
         {refusal.unmet.map((u) => (
-          <ConditionRow key={u.condition} c={{ ...u, met: full.get(u.condition)?.met ?? false, overridden: full.get(u.condition)?.overridden ?? false }} agent={agent} />
+          <ConditionRow key={u.condition} c={{ ...u, met: false }} agent={agent} />
         ))}
       </ul>
       {rest.length > 0 && (
         <>
-          <span className="text-[11px] font-semibold text-dim">The rest of the gate</span>
+          <span className="text-[11px] font-semibold text-dim">Holds</span>
           <ul className="overflow-hidden rounded-md border border-line bg-surface">
             {rest.map((c) => (
               <ConditionRow key={c.condition} c={c} agent={agent} />
@@ -126,130 +114,52 @@ export function GateConditions({ refusal, agent }: { refusal: Pick<GateRefusal, 
   );
 }
 
-/** An administrator's override: a reason, and every unmet condition or the ones picked. */
-export function OverrideForm({
-  refusal,
-  busy,
-  error,
-  onSubmit,
-}: {
-  refusal: Pick<GateRefusal, "unmet">;
-  busy: boolean;
-  error: string;
-  onSubmit: (body: ReturnType<typeof overrideBody>) => void;
-}) {
-  const [form, setForm] = useState<OverrideForm>(EMPTY_OVERRIDE);
-  const [tried, setTried] = useState(false);
-  const choices = overrideChoices(refusal);
-  const problem = overrideProblem(form);
-  const outcome = overrideOutcome(form, refusal);
-  return (
-    <div className="flex flex-col gap-2.5 rounded-md border border-warn-line bg-warn-bg/30 p-3">
-      <span className="text-[12.5px] font-semibold text-fg">Deploy past the gate</span>
-      <span className="text-[11.5px] leading-[1.5] text-dim">
-        An administrator&rsquo;s override passes the conditions it names. It is recorded on the deployment and the gate&rsquo;s decision, audited, and raised as
-        attention for seven days, so the gate is made whole on its own records afterwards.
-      </span>
-      <Field label="Reason" error={tried && !form.reason.trim() ? "An override needs a reason." : undefined} hint="Recorded with your name on the deployment and in the audit trail.">
-        <Textarea rows={2} value={form.reason} onChange={(v) => setForm((f) => ({ ...f, reason: v }))} disabled={busy} placeholder="Why this version ships without what the gate asks." />
-      </Field>
-      <div className="flex flex-col gap-1.5">
-        <label className="flex cursor-pointer items-center gap-2 text-[12px] text-fg">
-          <input type="radio" name="af-override-scope" checked={form.all} onChange={() => setForm((f) => ({ ...f, all: true }))} disabled={busy} />
-          Pass every unmet condition ({refusal.unmet.map((u) => conditionLabel(u.condition).toLowerCase()).join(", ")})
-        </label>
-        <label className="flex cursor-pointer items-center gap-2 text-[12px] text-fg">
-          <input type="radio" name="af-override-scope" checked={!form.all} onChange={() => setForm((f) => ({ ...f, all: false }))} disabled={busy} />
-          Pass only these:
-        </label>
-        {!form.all && (
-          <span className="flex flex-wrap gap-3 pl-6">
-            {choices.map((c) => (
-              <label key={c} className="flex cursor-pointer items-center gap-1.5 text-[12px] text-dim">
-                <input
-                  type="checkbox"
-                  checked={form.picked.includes(c)}
-                  onChange={(e) => setForm((f) => ({ ...f, picked: e.target.checked ? [...f.picked, c] : f.picked.filter((x) => x !== c) }))}
-                  disabled={busy}
-                />
-                {conditionLabel(c)}
-              </label>
-            ))}
-          </span>
-        )}
-      </div>
-      {outcome.holds.length > 0 && (
-        <span className="text-[11px] text-err">Still unmet after it: {outcome.holds.map((c) => conditionLabel(c).toLowerCase()).join(", ")}. The gate refuses the deploy again.</span>
-      )}
-      {tried && problem && <span className="text-[11px] text-err">{problem}</span>}
-      {error && <span className="text-[11.5px] text-err">{error}</span>}
-      <span className="flex items-center gap-2">
-        <span className="grow" />
-        <Button
-          size="sm"
-          variant="solid"
-          tone="warn"
-          permission="deploy"
-          loading={busy}
-          onClick={() => {
-            setTried(true);
-            if (problem) return;
-            onSubmit(overrideBody(form));
-          }}
-        >
-          Deploy with override
-        </Button>
-      </span>
-    </div>
-  );
-}
-
-/** A refusal and, for an administrator, the override. Presentational: the caller sends the deploy. */
+/**
+ * A refused deploy: which version, which conditions do not hold, and every
+ * condition. Presentational. `admin`, `busy`, `error` and `onOverride` are
+ * kept for the callers written when an override existed; the platform has
+ * none, so no override is offered.
+ */
 export function GatePanel({
   refusal,
   agent,
-  admin,
-  busy,
   error,
-  onOverride,
 }: {
   refusal: GateRefusal;
   agent: string;
   admin: boolean;
   busy: boolean;
   error: string;
-  onOverride: (body: ReturnType<typeof overrideBody>) => void;
+  onOverride: (body: OverrideRequest) => void;
 }) {
+  const what = refusal.version !== null ? `version ${refusal.version} (${shortDigest(refusal.digest)})` : shortDigest(refusal.digest);
+  const unmet = refusal.unmet.map((u) => conditionLabel(u.condition).toLowerCase());
+  const kept = refusal.saved ? ` Version ${refusal.saved.version ?? "?"} is saved${refusal.saved.draft ? " as a draft" : ""}.` : "";
   return (
     <div className="flex flex-col gap-3">
       <Banner tone="err" title="The platform refused this deploy">
-        {gateSummary(refusal)}
-        <span className="mt-0.5 block font-mono text-[10.5px] text-faint">
-          decision {refusal.decision || "not recorded"} · digest {shortDigest(refusal.digest)}
-        </span>
+        {`${what} is not deployed to ${refusal.environment}: ${unmet.join(", ") || "a condition"} ${unmet.length === 1 ? "does" : "do"} not hold. Nothing that runs changed.${kept}`}
+        <span className="mt-0.5 block font-mono text-[10.5px] text-faint">decision {refusal.decision || "not recorded"}</span>
       </Banner>
       <GateConditions refusal={refusal} agent={agent} />
-      {admin ? (
-        <OverrideForm refusal={refusal} busy={busy} error={error} onSubmit={onOverride} />
-      ) : (
-        <p className="text-[11.5px] leading-[1.5] text-faint">Only an administrator may deploy past the gate, with a reason. Meet the conditions above, then deploy again.</p>
-      )}
+      {error && <span className="text-[11.5px] text-err">{error}</span>}
+      <p className="text-[11.5px] leading-[1.5] text-faint">There is no override: meet the conditions above, then deploy again.</p>
     </div>
   );
 }
 
-/** A deploy that went through: where, which version, the gate's decision, and any override. */
+/** A deploy that went through: where, which version, the decision, and the conditions it was held to. */
 export function DeployedReceipt({ d }: { d: Deployed }) {
-  // Fields the platform names as not built are said to be so, never shown as an empty list or a blank.
-  const unbuilt = (f: string) => d.not_built.includes(f);
-  const env = unbuilt("environment") ? "production" : d.environment;
+  const production = d.environment === "production";
   return (
-    <Banner tone={d.override ? "warn" : "ok"} title={`Version ${d.version ?? "?"} deployed${unbuilt("environment") ? "" : ` to ${env}`}`}>
-      {env === "production" ? (d.override ? overrideLine(d.override) : "Deployed. New runs of this agent use this version.") : "Recorded for that environment; production runs what it ran."}
-      {unbuilt("conditions") && <span className="mt-0.5 block text-[11.5px] text-dim">No condition was checked before the deploy: a promotion gate is not built.</span>}
+    <Banner tone="ok" title={`Version ${d.version ?? "?"} deployed to ${d.environment}`}>
+      {production ? "Every condition held. New runs of this agent use this version." : "The review held. Recorded for staging: nothing runs it, and production runs what it ran."}
+      {d.conditions.length > 0 && (
+        <span className="mt-0.5 block text-[11.5px] text-dim">Held: {d.conditions.map((c) => conditionLabel(c.condition).toLowerCase()).join(", ")}.</span>
+      )}
       <span className="mt-0.5 block font-mono text-[10.5px] text-faint">
         digest {shortDigest(d.digest)}
-        {unbuilt("deployment") ? "" : ` · deployment ${d.deployment}`}
+        {d.deployment ? ` · deployment ${d.deployment}` : ""}
         {d.decision ? ` · decision ${d.decision}` : ""} · {whenText(d.at)}
       </span>
     </Banner>
@@ -257,10 +167,9 @@ export function DeployedReceipt({ d }: { d: Deployed }) {
 }
 
 /**
- * Deploy one version to production through the gate, as a dialog: from the
- * Control page's lifecycle strip and the lifecycle page. It asks first,
- * then sends the deploy; a refusal shows the gate and, for an
- * administrator, the override, sent as the same deploy with `override`.
+ * Deploy one version, as a dialog: from the Control page's lifecycle strip
+ * and the lifecycle page. It asks where (production, or staging), then sends
+ * the deploy; a refusal lists every condition with whether it holds.
  */
 export function DeployDialog({
   agent,
@@ -277,17 +186,16 @@ export function DeployDialog({
   label: string;
   onClose: () => void;
   onDeployed: (d: Deployed) => void;
-  /** Parts of the agent's definition the platform does not carry out, when known before the press: Deploy is off, with them listed. */
+  /** Parts of the agent's definition the platform does not carry out, when known before the press: production is off, with them listed. */
   unsupported?: UnsupportedPart[];
 }) {
-  const { session } = useSession();
-  const admin = canOverride(session);
+  const [environment, setEnvironment] = useState<Environment>("production");
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<GateRefusal | null>(null);
   const [error, setError] = useState("");
-  /** What the platform does not carry out, as known up front or as a 409 refusal names it. */
-  const [parts, setParts] = useState<UnsupportedPart[]>(unsupported);
   const [done, setDone] = useState<Deployed | null>(null);
+  // Deploying is offered only while its address is built (GET /api/doors); unknown leaves the button, and a press hears the answer.
+  const built = useDoorBuilt("POST", "/api/agents/{agent}/deploy");
   const close = useRef(onClose);
   useEffect(() => {
     close.current = onClose;
@@ -300,24 +208,21 @@ export function DeployDialog({
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
-  const send = async (override?: ReturnType<typeof overrideBody>) => {
+  const blocked = environment === "production" && unsupported.length > 0;
+  const send = async () => {
     setBusy(true);
     setError("");
+    setRefusal(null);
     try {
-      const d = await deploy(agent, { ...(version ? { version } : {}), ...(override ? { override } : {}) });
+      const d = await deploy(agent, { ...(version ? { version } : {}), environment });
       setDone(d);
-      setRefusal(null);
       onDeployed(d);
     } catch (e) {
       const gate = gateRefusalOf(e);
       const gone = retiredRefusalOf(e);
-      const refused = e instanceof DoorError && e.status === 409 ? unsupportedOf(e.body) : [];
-      if (refused.length) {
-        setParts(refused);
-        setError((e as Error).message);
-      } else if (gate) setRefusal(gate);
+      if (gate) setRefusal(gate);
       else if (gone) setError(`${agent} is retired. ${retiredLine(gone)}`);
-      else if (e instanceof DoorError && e.status === 403 && e.control === "override") setError(`${e.message}. Only an administrator may override the gate.`);
+      else if (e instanceof DoorError && e.status === 409 && unsupportedOf(e.body).length) setError(`${e.message}: ${unsupportedReason(unsupportedOf(e.body))}`);
       else setError((e as Error).message);
     } finally {
       setBusy(false);
@@ -329,32 +234,51 @@ export function DeployDialog({
       <div role="dialog" aria-modal="true" aria-labelledby="af-deploy-title" onClick={(e) => e.stopPropagation()} className="flex max-h-[88vh] w-full max-w-[640px] flex-col rounded-xl border border-line bg-surface elev-3 af-pop">
         <div className="flex flex-col gap-1.5 border-b border-line p-5 pb-4">
           <h3 id="af-deploy-title" className="text-[16px] font-semibold tracking-tight">
-            Deploy {label} to production
+            Deploy {label} to {environment}
           </h3>
           <p className="text-[12.5px] leading-[1.55] text-dim">
-            No promotion gate runs on this deployment: no eval, review or regression is checked before a deploy. The version you deploy becomes what production runs. If the
-            platform refuses the deploy, its reason is shown here.
+            {environment === "production"
+              ? "Production is held to every condition: a review by someone who did not author the version, parts the platform carries out, its use case and the gates it registers, the controls its autonomy tier requires, and the release threshold. The answer lists each with whether it holds; the version becomes what new runs use only when all do."
+              : "Staging needs the review only, by someone who did not author the version. It is a record: nothing runs a staging deployment, and production keeps running what it runs."}
           </p>
+          <div className="mt-1 flex items-center gap-4" role="radiogroup" aria-label="Environment">
+            {(["production", "staging"] as Environment[]).map((env) => (
+              <label key={env} className="flex cursor-pointer items-center gap-1.5 text-[12px] text-fg">
+                <input type="radio" name={`af-deploy-env-${agent}`} checked={environment === env} onChange={() => setEnvironment(env)} disabled={busy || Boolean(done)} />
+                {env}
+                <span className="text-[10.5px] text-faint">{env === "production" ? "every condition" : "the review only"}</span>
+              </label>
+            ))}
+          </div>
         </div>
         <div className="flex min-h-0 grow flex-col gap-3 overflow-y-auto p-5">
-          {!done && parts.length > 0 && <UnsupportedParts parts={parts} />}
-          {done ? <DeployedReceipt d={done} /> : refusal ? <GatePanel refusal={refusal} agent={agent} admin={admin} busy={busy} error={error} onOverride={(o) => send(o)} /> : null}
+          {!done && blocked && <UnsupportedParts parts={unsupported} />}
+          {done ? <DeployedReceipt d={done} /> : refusal ? <GatePanel refusal={refusal} agent={agent} admin={false} busy={busy} error="" onOverride={() => {}} /> : null}
           {!refusal && error && (
             <Banner tone="err" title="The deploy was refused">
               {error}
             </Banner>
           )}
-          {!done && !refusal && !error && !parts.length && <Mono className="text-[11px] text-faint">Nothing is sent until you deploy.</Mono>}
+          {!done && !refusal && !error && !blocked && <Mono className="text-[11px] text-faint">Nothing is sent until you deploy.</Mono>}
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-line px-5 py-3">
-          {refusal && <Tag tone="err">{refusal.unmet.length} unmet</Tag>}
+          {refusal && <Tag tone="err">{refusal.unmet.length} do not hold</Tag>}
           <span className="grow" />
           <Button variant="solid" tone={done ? "neutral" : "err"} size="sm" onClick={onClose} disabled={busy}>
             {done ? "Close" : "Cancel"}
           </Button>
-          {!done && !refusal && (
-            <Button variant="solid" tone="ink" size="sm" permission="deploy" loading={busy} disabled={parts.length > 0} title={parts.length ? unsupportedReason(parts) : undefined} onClick={() => send()}>
-              Deploy
+          {!done && (
+            <Button
+              variant="solid"
+              tone="ink"
+              size="sm"
+              permission="deploy"
+              loading={busy}
+              disabled={blocked || built === false}
+              title={blocked ? unsupportedReason(unsupported) : built === false ? "deploying is not built on this platform" : undefined}
+              onClick={() => send()}
+            >
+              {refusal ? "Deploy again" : "Deploy"}
             </Button>
           )}
         </div>

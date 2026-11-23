@@ -24,6 +24,7 @@ import {
   canaryHeadline,
   canaryProblem,
   canaryRefusalText,
+  callsText,
   outcomeLabel,
   pendingSkippedText,
   productionMoved,
@@ -35,22 +36,20 @@ import { itemLine, shortDigest, whenText } from "@/lib/lifecycle";
 import { useDoorBuilt } from "@/lib/use-doors";
 
 /**
- * Canary and shadow beside production (phase L8, second round), on the
- * lifecycle page.
+ * Canary and shadow beside production (phase 8), on the lifecycle page.
  *
- * Start one: a saved version other than production's, that passed the
- * promotion gate (regression is read and shown, never required), with a
+ * Start one: a saved version other than production's, held to production's
+ * deploy conditions (a shadow does not need the release threshold), with a
  * share and a mode, and an optional end. A canary takes that share of the
- * agent's queued and triggered starts; a shadow mirrors that share of
- * production runs on the same input in shadow mode, where nothing above
- * read executes and every such call is journalled as what it would have
- * called. The live report: for a shadow, the disagreement rate between each
- * production run and its mirror on the spec's `evals.compare` field, with
- * the disagreeing pairs side by side; for a canary, each arm's runs and
- * outcomes; what is still pending, and why pairs were skipped. End it, and
- * its queued shadow jobs are withdrawn and its candidate's queued retries go
- * back to production. The doors are the backend's (lib/api/l8b.ts), the
- * words lib/canary.ts's.
+ * agent's new starts; a shadow mirrors that share of production runs on the
+ * same input, where calls at or above write and calls that act outside are
+ * journalled as what it would have called, not made. The live report: for a
+ * shadow, the disagreement rate between each production run and its mirror
+ * on the candidate's `evals.compare` field, with the disagreeing pairs side
+ * by side, and how their calls compared; each arm's runs, outcomes and cost;
+ * what is still pending, and why pairs were skipped. End it, and no new
+ * start is diverted or mirrored; runs already started go on to their end.
+ * The doors are the backend's (lib/api/l8b.ts), the words lib/canary.ts's.
  */
 
 const pctOf = (x: number | null) => (x === null ? "—" : `${Math.round(x * 1000) / 10}%`);
@@ -87,11 +86,11 @@ export function CanaryConditions({ conditions }: { conditions: CanaryCondition[]
 export function CanaryRefusalView({ refusal }: { refusal: CanaryRefusal }) {
   return (
     <div className="flex flex-col gap-2">
-      <Banner tone="err" title={`The promotion gate holds version ${refusal.version ?? "?"} for ${refusal.environment}`}>
+      <Banner tone="err" title={`Version ${refusal.version ?? "?"} cannot stand as the ${refusal.environment}: a condition does not hold`}>
         {canaryRefusalText(refusal)}
         <span className="mt-0.5 block font-mono text-[10px] text-faint">gate decision {refusal.decision}</span>
       </Banner>
-      <CanaryConditions conditions={refusal.conditions.length ? refusal.conditions : refusal.unmet.map((u) => ({ condition: u.condition, met: false, detail: u.detail, items: u.items, overridden: false, required: u.condition !== "regression" }))} />
+      <CanaryConditions conditions={refusal.conditions.length ? refusal.conditions : refusal.unmet.map((u) => ({ condition: u.condition, met: false, detail: u.detail, items: u.items, overridden: false, required: true }))} />
     </div>
   );
 }
@@ -178,11 +177,73 @@ function ExamplesTable({ canary }: { canary: CanaryView }) {
   );
 }
 
+/** A shadow's pairs whose calls differed: production's calls beside the shadow's (made, or recorded as would-call), and what only one side called. */
+function CallsTable({ canary }: { canary: CanaryView }) {
+  const calls = canary.calls;
+  if (!calls) return null;
+  const line = (c: { tool: string; args: Record<string, unknown>; made: boolean }) => `${c.tool} ${JSON.stringify(c.args)}${c.made ? "" : " (would call)"}`;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <p className="text-[11.5px] text-dim">{callsText(canary)}</p>
+      {calls.pairs.length > 0 && (
+        <div className="overflow-x-auto rounded-md border border-line">
+          <table className="w-full border-collapse text-[11.5px]">
+            <thead>
+              <tr className="border-b border-line text-left text-[10.5px] text-faint">
+                <th className="px-3 py-1.5 font-medium">Production{canary.production ? ` v${canary.production.version ?? "?"}` : ""} called</th>
+                <th className="px-3 py-1.5 font-medium">Shadow v{canary.version ?? "?"} called or would call</th>
+                <th className="px-3 py-1.5 font-medium">Only one side</th>
+              </tr>
+            </thead>
+            <tbody>
+              {calls.pairs.map((p) => (
+                <tr key={`${p.production_run}:${p.shadow_run}`} className="border-b border-line align-top last:border-b-0">
+                  <td className="px-3 py-1.5">
+                    {p.production.map((c, i) => (
+                      <Mono key={i} className="block text-[10.5px] text-fg">
+                        {line(c)}
+                      </Mono>
+                    ))}
+                    <Link href={runHref(p.production_run)} className="focusable rounded-sm font-mono text-[10px] text-dim hover:underline">
+                      {p.production_run}
+                    </Link>
+                  </td>
+                  <td className="px-3 py-1.5">
+                    {p.shadow.map((c, i) => (
+                      <Mono key={i} className={`block text-[10.5px] ${c.made ? "text-fg" : "text-warn"}`}>
+                        {line(c)}
+                      </Mono>
+                    ))}
+                    <Link href={runHref(p.shadow_run)} className="focusable rounded-sm font-mono text-[10px] text-dim hover:underline">
+                      {p.shadow_run}
+                    </Link>
+                  </td>
+                  <td className="px-3 py-1.5">
+                    {p.only_production.map((c, i) => (
+                      <Mono key={`p${i}`} className="block text-[10.5px] text-dim">
+                        production: {c}
+                      </Mono>
+                    ))}
+                    {p.only_shadow.map((c, i) => (
+                      <Mono key={`s${i}`} className="block text-[10.5px] text-warn">
+                        shadow: {c}
+                      </Mono>
+                    ))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** The live report of a canary or a shadow. Presentational, so tests render it from a captured view. */
 export function CanaryReport({ canary }: { canary: CanaryView }) {
   const moved = productionMoved(canary);
   const waiting = pendingSkippedText(canary);
-  const ended = [...canary.cancelled_jobs.map((j) => `shadow job ${j.slice(0, 8)} withdrawn`), ...canary.released_jobs.map((j) => `job ${j.slice(0, 8)} given back to production`)];
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -223,6 +284,7 @@ export function CanaryReport({ canary }: { canary: CanaryView }) {
           </div>
           <p className="text-[11.5px] text-dim">{rateText(canary)}</p>
           <ExamplesTable canary={canary} />
+          <CallsTable canary={canary} />
         </div>
       ) : (
         <div className="flex flex-col gap-2">
@@ -232,10 +294,9 @@ export function CanaryReport({ canary }: { canary: CanaryView }) {
       )}
       {canary.mode === "shadow" && <ArmsTable canary={canary} />}
       {waiting && <p className="text-[11.5px] text-faint">{waiting}.</p>}
-      {ended.length > 0 && <p className="text-[11px] text-faint">Ending it: {ended.join("; ")}.</p>}
       {canary.conditions.length > 0 && (
         <details>
-          <summary className="focusable cursor-pointer text-[11px] text-faint">The promotion gate as read when it was configured</summary>
+          <summary className="focusable cursor-pointer text-[11px] text-faint">The deploy conditions as read when it was configured</summary>
           <div className="mt-2">
             <CanaryConditions conditions={canary.conditions} />
           </div>
@@ -354,7 +415,7 @@ export function CanaryPanel({ agent, versions, production, retired, onChanged }:
           <CanaryReport canary={canary} />
           {canary.active && (
             <span className="flex items-center gap-2">
-              <span className="text-[11px] text-faint">Ending it withdraws its queued shadow jobs and gives its candidate&rsquo;s queued retries back to production.</span>
+              <span className="text-[11px] text-faint">Ending it stops new diversions and mirrors; runs already started go on to their end.</span>
               <span className="grow" />
               <Button size="sm" variant="solid" tone="neutral" onClick={() => void load()}>
                 Refresh
@@ -391,7 +452,7 @@ export function CanaryPanel({ agent, versions, production, retired, onChanged }:
                 <Field label="Candidate">
                   <Pick value={form.version === null ? "" : String(form.version)} onChange={(v) => setForm((f) => ({ ...f, version: v ? Number(v) : null }))} options={choices} />
                 </Field>
-                <Field label="Share (%)" error={tried && problem.startsWith("the share") ? problem : undefined} hint={form.mode === "shadow" ? "of production runs, mirrored" : "of queued and triggered starts"}>
+                <Field label="Share (%)" error={tried && problem.startsWith("the share") ? problem : undefined} hint={form.mode === "shadow" ? "of production runs, mirrored" : "of new starts"}>
                   <Input value={form.share} onChange={(v) => setForm((f) => ({ ...f, share: v }))} mono />
                 </Field>
                 <Field label="Until (optional)" error={tried && problem.startsWith("the end") ? problem : undefined} hint="It ends itself then">

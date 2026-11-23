@@ -131,8 +131,8 @@ export function spineOf(l: Pick<Lifecycle, "stages" | "deployed" | "digest" | "r
           if (s.lit) {
             const env = s_(r.environment) || "canary";
             const parts: string[] = [];
-            // The deployment row's own words: "canary: 0.5 of queued and triggered starts", "shadow: 1 of production runs, mirrored".
-            parts.push(s_(r.reason) || (env === "shadow" ? "shadow: a share of production runs, mirrored" : "canary: a share of queued and triggered starts"));
+            // The deployment row's own words: "canary: 50% of new starts", "shadow: 100% of production runs, mirrored".
+            parts.push(s_(r.reason) || (env === "shadow" ? "shadow: a share of production runs, mirrored" : "canary: a share of new starts"));
             if (r.current === false) {
               tone = "past";
               parts.push(env === "shadow" ? "the shadow has ended" : "the canary has ended");
@@ -563,6 +563,8 @@ export interface CanaryAssignment {
   /** A production run's mirror: its shadow run (in process) or shadow job (on the queue). */
   shadow_run: string;
   shadow_job: string;
+  /** A production run a shadow drew and could not mirror: why the candidate would not start on its input; "" otherwise. */
+  shadow_refused: string;
 }
 
 export function canaryAssignmentOf(v: unknown): CanaryAssignment | null {
@@ -582,6 +584,7 @@ export function canaryAssignmentOf(v: unknown): CanaryAssignment | null {
     of_job: s_(c.of_job),
     shadow_run: s_(c.shadow_run),
     shadow_job: s_(c.shadow_job),
+    shadow_refused: s_(c.shadow_refused),
   };
 }
 
@@ -595,7 +598,7 @@ export interface RunFlags {
   eval: { id: string; case: string; set: string } | null;
   /** The trigger job it ran for (a worker's run). */
   job: string;
-  /** A canary's shadow run (`shadow: true`): nothing above read executed, and it counts toward no production figure. */
+  /** A canary's shadow run (`shadow: true`): its calls at or above write and calls that act outside were recorded as would-call, not made. */
   shadow: boolean;
   /** Which version it used while a canary stood. */
   canary: CanaryAssignment | null;

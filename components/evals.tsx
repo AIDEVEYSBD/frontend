@@ -15,13 +15,13 @@ import { Field, Input, Switch, Textarea } from "./forms";
 import { Banner } from "./overlays";
 import { GroupHeader } from "./page-tabs";
 import { fromDocument, inputKeysOf, type Kind } from "@/lib/spec";
-import { derive, labeledTemplate, INVALID, type Labels, type Matrix, type Reducer } from "@/lib/metrics";
+import { derive, INVALID, type Labels, type Matrix } from "@/lib/metrics";
 import { TriangleGlyph, bestOf, logScore } from "./tradeoff";
 import { CAT, Legend } from "./charts";
 import { RateLimitNote } from "./rate-limit";
 import type { RateLimit } from "@/lib/api/l7";
 import { listAgents } from "@/lib/api/l2";
-import { editableDocument, followEval, retiredOf, retiredRefusalOf, saveAgent, startEval, type EvalCaseResult, type EvalRunView, type ModelSummary, type Retired } from "@/lib/api/l8";
+import { editableDocument, evalRunViewOf, isEvalOver, retiredOf, retiredRefusalOf, saveAgent, startEval, type EvalCaseResult, type EvalRunView, type ModelSummary, type Retired } from "@/lib/api/l8";
 import { historyRowFromView, historyRowOf, lastComparison, liveOf, mergeHistory, mergeSetRows, rowStateText, settleOf, thresholdText, thresholdTone, throttleOf, type CompareResult, type HistoryRow, type SetRow } from "@/lib/evals";
 import { getEvalSet, listEvalSets, type EvalSetDocument } from "@/lib/api/l8b";
 import { retiredLine, savedLine } from "@/lib/lifecycle";
@@ -29,36 +29,54 @@ import { retiredLine, savedLine } from "@/lib/lifecycle";
 /**
  * Evals: build a benchmark beside an agent, run it, keep the score.
  *
- * The builder is a form, not a JSON pasting exercise: pick the agent and the
- * case inputs are derived from its own spec, checks are chosen from a menu,
- * and the default model is part of the set — so "run the benchmark" means
- * the same thing every time. Every case is a real run — same runtime, same
- * journal, same policy engine — graded deterministically, and every score is
- * stamped with the spec digest it measured.
+ * The builder is a form: pick the agent and the case inputs are derived from
+ * its own definition, and checks are chosen from a menu (text, a field, the
+ * run's end state, a JSON Schema, or a question for a model judge). Every
+ * case is a real run of the version evaluated, started through the run
+ * engine in the name of the person who asked, so the lockdown, pauses, rate
+ * limits and use cases apply; a case whose start is refused is recorded as
+ * refused and never counts as passed. The score is the share of cases passed,
+ * stamped with the digest it measured and read against the agent's release
+ * threshold.
  *
- * Phase L8: the runner is the backend's. "Run the benchmark" starts an eval
- * with `POST /api/agents/{id}/evals/run` and follows it by reading `GET
- * /api/evals/runs/{id}` (lib/api/l8.ts followEval): the live table, a rate
- * limit a case waits on, and a comparison's recommendation are read off the
- * eval's view. A deploy gate trusts only a score the backend produced
- * itself, so the score carries the spec's threshold and whether it was met,
- * and who started it. Phase L8 (second round): the sets are read as the
- * backend's runner reads them, through `GET /api/agents/{id}/eval-sets`
- * (agent by agent: the shared table, then the workspace files, with the one
- * each spec names as its suite) and `GET /api/eval-sets/{id}` (a set with
- * its cases), lib/api/l8b.ts. A set's history and its latest finished score
- * stay the console's read of the shared `eval_runs` table (/api/evals: the
- * backend has no door that lists them), and saving or deleting a set stays
- * the console's door too: the backend has none.
+ * The doors: the sets at `/api/evals` (list, one with its evaluations, save,
+ * remove), `/api/agents/{id}/eval-sets` and `/api/eval-sets/{id}` (lib/api/l8b.ts);
+ * an evaluation is started at `POST /api/agents/{id}/evals/run` and followed
+ * at `GET /api/evals/runs/{id}` (read raw here, so each case's grade is kept:
+ * passed, failed, refused, not graded). A model comparison runs the same set
+ * once per candidate, as the runs' default model, and the backend recommends
+ * the cheapest candidate that met the threshold. Labeled benchmarks are not built.
  */
 
 /* ═══════════════════ shapes ═══════════════════ */
 
 interface Check {
-  kind: "contains" | "not_contains" | "field" | "state";
+  kind: "contains" | "not_contains" | "field" | "state" | "schema" | "judge";
   value?: string;
   path?: string;
   equals?: unknown;
+  /** `schema`: the JSON Schema the result must satisfy; `schemaText` is what the form holds until it is saved. */
+  schema?: Record<string, unknown>;
+  schemaText?: string;
+  /** `judge`: what a model decides about the result. */
+  question?: string;
+}
+
+/** A graded case's verdict, as the backend writes it beside each case: passed, failed, refused (its start was), or not graded (a judge could not decide). */
+type Grade = "passed" | "failed" | "refused" | "not_graded";
+const GRADE_TEXT: Record<Grade, string> = { passed: "pass", failed: "fail", refused: "refused", not_graded: "not graded" };
+const gradeOf = (v: unknown): Grade | null => (v === "passed" || v === "failed" || v === "refused" || v === "not_graded" ? v : null);
+
+/** Each case's grade in an evaluation's raw answer (`results[].grade`), by case id: the typed view the lib reads leaves it out. */
+function gradesOf(raw: unknown): Record<string, Grade> {
+  const out: Record<string, Grade> = {};
+  const results = raw && typeof raw === "object" ? (raw as { results?: unknown }).results : null;
+  for (const r of Array.isArray(results) ? results : []) {
+    const o = r && typeof r === "object" ? (r as { id?: unknown; grade?: unknown }) : {};
+    const g = gradeOf(o.grade);
+    if (typeof o.id === "string" && g) out[o.id] = g;
+  }
+  return out;
 }
 
 interface EvalCase {
@@ -108,12 +126,6 @@ async function readSet(id: string): Promise<FullSet | null> {
   }
 }
 
-const REDUCER_KINDS = [
-  { value: "field", label: "Read a result field" },
-  { value: "threshold", label: "Bucket a number by cut points" },
-  { value: "match", label: "Match a pattern per label" },
-] as const;
-
 const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
 
 const CHECK_KINDS = [
@@ -121,7 +133,22 @@ const CHECK_KINDS = [
   { value: "not_contains", label: "Result must not contain" },
   { value: "field", label: "Field equals" },
   { value: "state", label: "Run ends as" },
+  { value: "schema", label: "Result fits a JSON Schema" },
+  { value: "judge", label: "A model judge decides" },
 ] as const;
+
+/** A check as the backend takes it: a schema typed as text is sent parsed; null when it is not a JSON object. */
+function checkForSave(ch: Check): Check | null {
+  const { schemaText, ...rest } = ch;
+  if (ch.kind !== "schema") return rest;
+  if (schemaText === undefined) return rest.schema ? rest : null;
+  try {
+    const parsed: unknown = JSON.parse(schemaText);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? { ...rest, schema: parsed as Record<string, unknown> } : null;
+  } catch {
+    return null;
+  }
+}
 
 const STATE_OPTS = [
   { value: "done", label: "done" },
@@ -139,53 +166,6 @@ const ago = (iso: string) => {
 
 const slug = (s: string) =>
   s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "benchmark";
-
-/**
- * A comma-separated list that commits on blur rather than per keystroke, so
- * a trailing ", " survives typing. The text re-seeds when the committed
- * value changes underneath it (JSON import, toggling labels).
- */
-function ListInput({
-  value,
-  onCommit,
-  placeholder,
-}: {
-  value: string;
-  onCommit: (text: string) => void;
-  placeholder?: string;
-}) {
-  const [text, setText] = useState(value);
-  const [seed, setSeed] = useState(value);
-  if (seed !== value) {
-    setSeed(value);
-    setText(value);
-  }
-  return (
-    <div onBlur={() => onCommit(text)}>
-      <Input mono value={text} onChange={setText} placeholder={placeholder} />
-    </div>
-  );
-}
-
-/** A check or cross beside a pass/fail word, so the state survives without colour. */
-function MarkGlyph({ ok }: { ok: boolean }) {
-  return (
-    <svg
-      width="9"
-      height="9"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="3.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="mr-1 inline-block -translate-y-px"
-      aria-hidden
-    >
-      {ok ? <path d="M4 13l5 5 11-13" /> : <path d="M6 6l12 12M18 6L6 18" />}
-    </svg>
-  );
-}
 
 /* ── CSV round-trip: template out, filled sheet back in ──
    One row per case; check columns are optional and skip when empty. */
@@ -411,7 +391,7 @@ export function Evals() {
           ) : undefined
         }
       >
-        Evaluate an agent on representative cases, graded by fixed checks and tied to the exact version assessed. Each part below says whether the platform builds it yet.
+        Evaluate an agent on representative cases: every case is a real run of the exact version assessed, graded by fixed checks or a model judge, and the score is read against the agent&rsquo;s release threshold.
       </GroupHeader>
 
       {building && (
@@ -483,12 +463,6 @@ function blankCase(n: number, keys: { name: string; kind?: Kind }[], labels?: La
   };
 }
 
-const blankLabels = (): Labels => ({
-  space: ["negative", "positive"],
-  positive: "positive",
-  reducer: { kind: "field", path: "" },
-});
-
 function SetBuilder({
   initial,
   presetAgent,
@@ -514,9 +488,16 @@ function SetBuilder({
 
   useEffect(() => {
     fetch("/api/agents")
-      .then((r) => r.json())
+      .then(async (r) => {
+        const d = await r.json().catch(() => null);
+        if (!r.ok || !d || d.error) throw new Error(errorText(d, r, "GET", "/api/agents"));
+        return d;
+      })
       .then((d) => setAgents((d.agents ?? []).map((a: { id: string; name: string; retired?: unknown }) => ({ id: a.id, name: a.name, retired: Boolean(retiredOf(a.retired)) }))))
-      .catch(() => setAgents([]));
+      .catch((e) => {
+        setAgents([]);
+        setError(`The agents could not be read: ${(e as Error).message}`);
+      });
   }, []);
 
   /* The agent's spec names its own inputs — derive the case form from it.
@@ -554,42 +535,6 @@ function SetBuilder({
   const patchCase = (i: number, patch: Partial<EvalCase>) =>
     setCases((cs) => cs.map((c, j) => (j === i ? { ...c, ...patch } : c)));
 
-  /* Turning labels on gives every case a default expected label; turning
-     them off strips it and restores a check so the case still grades. */
-  const toggleLabels = (on: boolean) => {
-    if (on) {
-      const l = blankLabels();
-      setLabels(l);
-      setCases((cs) => cs.map((c) => ({ ...c, expected: c.expected ?? l.space[0] })));
-    } else {
-      setLabels(null);
-      setCases((cs) =>
-        cs.map((c) => {
-          const { expected: _drop, ...rest } = c;
-          void _drop;
-          return { ...rest, checks: rest.checks.length ? rest.checks : [{ kind: "contains", value: "" }] };
-        }),
-      );
-    }
-  };
-
-  const patchLabels = (patch: Partial<Labels>) => setLabels((l) => l && { ...l, ...patch });
-
-  const setSpace = (text: string) => {
-    const space = text.split(",").map((s) => s.trim()).filter(Boolean);
-    setLabels((l) => {
-      if (!l) return l;
-      const positive = l.positive && space.includes(l.positive) ? l.positive : undefined;
-      const reducer: Reducer =
-        l.reducer.kind === "threshold"
-          ? { ...l.reducer, cuts: l.reducer.cuts.slice(0, Math.max(0, space.length - 1)) }
-          : l.reducer.kind === "match"
-            ? { kind: "match", patterns: Object.fromEntries(space.map((s) => [s, l.reducer.kind === "match" ? (l.reducer.patterns[s] ?? "") : ""])) }
-            : l.reducer;
-      return { ...l, space, positive, reducer };
-    });
-  };
-
   const download = (filename: string, text: string, type: string) => {
     const blob = new Blob([text], { type });
     const url = URL.createObjectURL(blob);
@@ -605,19 +550,20 @@ function SetBuilder({
     setBusy(true);
     setError("");
     try {
+      const unreadable = cases.find((c) => c.checks.some((ch) => ch.kind === "schema" && checkForSave(ch) === null));
+      if (unreadable) throw new Error(`case ${unreadable.id}: a schema check holds a JSON Schema object; what is typed there is not one`);
       const set = {
         id: initial?.id ?? slug(name || `${agent}-bench`),
         agent,
         name: name || `${agent} benchmark`,
         model,
-        ...(labels ? { labels: { ...labels, positive: labels.positive || undefined } } : {}),
         cases: cases.map((c, i) => ({
           ...c,
           id: c.id.trim() || `case-${i + 1}`,
           input: typedInput(c.input, inputKeys),
-          checks: c.checks.filter(
-            (ch) => ch.kind === "state" || (ch.kind === "field" ? ch.path : ch.value),
-          ),
+          checks: c.checks
+            .filter((ch) => ch.kind === "state" || ch.kind === "schema" || (ch.kind === "field" ? ch.path : ch.kind === "judge" ? ch.question?.trim() : ch.value))
+            .map((ch) => checkForSave(ch) as Check),
         })),
       };
       const res = await fetch("/api/evals", {
@@ -637,6 +583,7 @@ function SetBuilder({
   const importJson = () => {
     try {
       const s = JSON.parse(jsonText) as FullSet;
+      if (s.labels) throw new Error("labeled benchmarks are not built on this platform: remove labels and grade each case with checks");
       if (s.agent) setAgent(s.agent);
       if (s.name) setName(s.name);
       if (s.model) setModel(s.model);
@@ -645,7 +592,7 @@ function SetBuilder({
       setShowJson(false);
       setError("");
     } catch (e) {
-      setError(`not valid JSON — ${(e as Error).message}`);
+      setError(e instanceof SyntaxError ? `not valid JSON — ${e.message}` : (e as Error).message);
     }
   };
 
@@ -666,19 +613,6 @@ function SetBuilder({
               }
             >
               CSV template
-            </Button>
-            <Button
-              size="sm"
-              variant="solid"
-              onClick={() =>
-                download(
-                  `${agent}-labeled-benchmark-template.json`,
-                  JSON.stringify(labeledTemplate(agent, inputKeys.map((k) => k.name)), null, 2) + "\n",
-                  "application/json",
-                )
-              }
-            >
-              Labeled template
             </Button>
             <input
               ref={csvRef}
@@ -719,8 +653,7 @@ function SetBuilder({
       {agent && (
         <p className="text-[11px] leading-[1.5] text-faint">
           CSV template — a spreadsheet with this agent&apos;s input columns; fill a row per case and upload it
-          back. Labeled template — label space, positive class, reducer, and cases with expected labels; fill it,
-          then paste it into Edit as JSON.
+          back.
         </p>
       )}
 
@@ -752,7 +685,7 @@ function SetBuilder({
             <Field label="Benchmark name">
               <Input value={name} onChange={setName} placeholder="Disposition accuracy" />
             </Field>
-            <Field label="Runs on">
+            <Field label="Runs on" hint="only an evaluation on the deployment default counts toward release">
               <Pick
                 value={model}
                 onChange={setModel}
@@ -771,111 +704,11 @@ function SetBuilder({
             </p>
           )}
 
-          {/* the label template: space, positive class, reducer */}
           {agent && (
-            <div className="flex flex-col gap-3 rounded-md border border-line bg-canvas/60 p-3">
-              <div className="flex flex-wrap items-center gap-3">
-                <Switch label="Labeled benchmark" checked={!!labels} onChange={toggleLabels} />
-                <span className="text-[11.5px] text-faint">
-                  Each case carries a ground-truth label. Runs return a confusion matrix; precision,
-                  recall and F1 are derived from it.
-                </span>
-              </div>
-
-              {labels && (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="sm:col-span-2">
-                    <Field label="Label space, in order">
-                      <ListInput value={labels.space.join(", ")} onCommit={setSpace} placeholder="low, medium, high" />
-                    </Field>
-                  </div>
-                  <Field label="Positive class (for F1)">
-                    <Pick
-                      value={labels.positive ?? ""}
-                      onChange={(v) => patchLabels({ positive: v || undefined })}
-                      options={[
-                        { value: "", label: "None — report macro-F1" },
-                        ...labels.space.map((s) => ({ value: s, label: s })),
-                      ]}
-                    />
-                  </Field>
-                  <Field label="Output becomes a label by">
-                    <Pick
-                      value={labels.reducer.kind}
-                      onChange={(kind) =>
-                        patchLabels({
-                          reducer:
-                            kind === "threshold"
-                              ? { kind: "threshold", path: "", cuts: labels.space.slice(1).map((_, i) => i + 1) }
-                              : kind === "match"
-                                ? { kind: "match", patterns: Object.fromEntries(labels.space.map((s) => [s, ""])) }
-                                : { kind: "field", path: "" },
-                        })
-                      }
-                      options={REDUCER_KINDS.map((k) => ({ value: k.value, label: k.label }))}
-                    />
-                  </Field>
-                  {(labels.reducer.kind === "field" || labels.reducer.kind === "threshold") && (
-                    <Field label="Result path">
-                      <Input
-                        mono
-                        value={labels.reducer.path}
-                        onChange={(v) => patchLabels({ reducer: { ...labels.reducer, path: v } as Reducer })}
-                        placeholder="recorded.disposition"
-                      />
-                    </Field>
-                  )}
-                  {labels.reducer.kind === "threshold" && (
-                    <Field label={`Cut points (${labels.space.length - 1}, ascending)`}>
-                      <ListInput
-                        value={labels.reducer.cuts.join(", ")}
-                        onCommit={(text) =>
-                          patchLabels({
-                            reducer: {
-                              kind: "threshold",
-                              path: labels.reducer.kind === "threshold" ? labels.reducer.path : "",
-                              cuts: text.split(",").map((s) => Number(s.trim())).filter((n) => Number.isFinite(n)),
-                            },
-                          })
-                        }
-                        placeholder="0.33, 0.66"
-                      />
-                    </Field>
-                  )}
-                  {labels.reducer.kind === "match" && (
-                    <div className="flex flex-col gap-1.5 sm:col-span-3">
-                      <span className="text-[11px] font-semibold text-dim">
-                        One regular expression per label, tested in order against the result text
-                      </span>
-                      {labels.space.map((s) => (
-                        <div key={s} className="flex items-center gap-2">
-                          <Mono className="w-28 shrink-0 truncate text-[11px] text-dim">{s}</Mono>
-                          <div className="min-w-0 grow">
-                            <Input
-                              mono
-                              value={labels.reducer.kind === "match" ? (labels.reducer.patterns[s] ?? "") : ""}
-                              onChange={(v) =>
-                                patchLabels({
-                                  reducer: {
-                                    kind: "match",
-                                    patterns: {
-                                      ...(labels.reducer.kind === "match" ? labels.reducer.patterns : {}),
-                                      [s]: v,
-                                    },
-                                  },
-                                })
-                              }
-                              placeholder={`\\b${s}\\b`}
-                              aria-label={`Pattern for ${s}`}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+            <p className="text-[11.5px] leading-[1.5] text-faint">
+              Labeled benchmarks (a ground-truth label per case, scored with a confusion matrix) are not built on this platform: grade each case with checks,
+              including a model judge where a fixed check cannot say.
+            </p>
           )}
 
           {/* the cases */}
@@ -998,7 +831,11 @@ function SetBuilder({
                                     ? { kind: "state" as const, equals: "done" }
                                     : kind === "field"
                                       ? { kind: "field" as const, path: "", equals: "" }
-                                      : { kind: kind as Check["kind"], value: "" }
+                                      : kind === "schema"
+                                        ? { kind: "schema" as const, schemaText: '{\n  "type": "object"\n}' }
+                                        : kind === "judge"
+                                          ? { kind: "judge" as const, question: "" }
+                                          : { kind: kind as Check["kind"], value: "" }
                                   : x,
                               ),
                             })
@@ -1062,6 +899,36 @@ function SetBuilder({
                           />
                         </div>
                       )}
+                      {ch.kind === "schema" && (
+                        <div className="min-w-0 grow">
+                          <Textarea
+                            mono
+                            rows={3}
+                            value={ch.schemaText ?? JSON.stringify(ch.schema ?? {}, null, 2)}
+                            onChange={(v) =>
+                              patchCase(i, {
+                                checks: c.checks.map((x, y) => (y === j ? { ...x, schemaText: v } : x)),
+                              })
+                            }
+                            invalid={checkForSave(ch) === null}
+                            aria-label="JSON Schema the result must fit"
+                          />
+                        </div>
+                      )}
+                      {ch.kind === "judge" && (
+                        <div className="min-w-0 grow">
+                          <Input
+                            value={ch.question ?? ""}
+                            onChange={(v) =>
+                              patchCase(i, {
+                                checks: c.checks.map((x, y) => (y === j ? { ...x, question: v } : x)),
+                              })
+                            }
+                            placeholder="what the judge decides, e.g. Does the answer name the billing team?"
+                            aria-label="Question for the model judge"
+                          />
+                        </div>
+                      )}
                       <IconButton
                         size="sm"
                         label="Remove check"
@@ -1122,13 +989,40 @@ function SetBuilder({
 
 /* ═══════════════════ one set ═══════════════════ */
 
+/**
+ * Follow evaluations until each is over, reading each one's view in turn: the
+ * typed view, and each case's grade, which the typed view leaves out. A read
+ * that fails ends the following with the reason; the evaluation itself runs on.
+ */
+async function followRaw(
+  ids: string[],
+  opts: { everyMs: number; stopped: () => boolean; onView: (v: EvalRunView, grades: Record<string, Grade>) => void },
+): Promise<EvalRunView[]> {
+  const last = new Map<string, EvalRunView>();
+  const all = () => ids.map((i) => last.get(i)).filter((v): v is EvalRunView => Boolean(v));
+  for (;;) {
+    for (const id of ids) {
+      if (opts.stopped()) return all();
+      const seen = last.get(id);
+      if (seen && isEvalOver(seen)) continue;
+      const res = await fetch(`/api/evals/runs/${encodeURIComponent(id)}`, { cache: "no-store" });
+      const d: unknown = await res.json().catch(() => null);
+      if (!res.ok || !d || (d as { error?: unknown }).error) throw new Error(errorText(d, res, "GET", "/api/evals/runs/{id}"));
+      const v = evalRunViewOf(d);
+      last.set(id, v);
+      opts.onView(v, gradesOf(d));
+    }
+    if (ids.every((id) => isEvalOver(last.get(id) ?? { state: "running" }))) return all();
+    await new Promise((r) => setTimeout(r, opts.everyMs));
+  }
+}
+
 /** A rate limit a case's start waits on, as the card shows it: the limit with the runner's own wait, when it was read, and which case. */
 interface Throttled {
   limit: RateLimit;
   at: number;
   caseId: string;
   attempt: number;
-  of: number;
   /** The eval row it was read on. */
   run: string;
 }
@@ -1149,11 +1043,14 @@ function SetCard({
   onChanged: () => void;
   onEdit: () => void;
 }) {
-  const [detail, setDetail] = useState<{ runs: HistoryRow[]; labels?: Labels } | null>(null);
+  const [detail, setDetail] = useState<{ runs: HistoryRow[] } | null>(null);
   /* The eval being followed: one view per row the request wrote (one, or one per candidate), in the order started; null when none is. */
   const [views, setViews] = useState<EvalRunView[] | null>(null);
   /* What finished in this card, kept until the set's history read holds it. */
   const [seen, setSeen] = useState<HistoryRow[]>([]);
+  /* Each case's grade, by evaluation and case id: passed, failed, refused or not graded. */
+  const [grades, setGrades] = useState<Record<string, Record<string, Grade>>>({});
+  const [historyError, setHistoryError] = useState("");
   const [runError, setRunError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [override, setOverride] = useState("");
@@ -1199,19 +1096,25 @@ function SetCard({
   useEffect(() => {
     if (!open) return;
     let stop = false;
-    // The set's labels from the backend's door; its history from the console's read of the shared table.
-    Promise.all([
-      getEvalSet(row.id).catch(() => null),
-      fetch(`/api/evals?id=${encodeURIComponent(row.id)}`)
-        .then((r) => r.json())
-        .catch(() => ({})),
-    ])
-      .then(([set, d]) => {
-        if (stop) return;
-        const labels = (set?.labels as unknown as Labels | null) ?? (d as { set?: { labels?: Labels } }).set?.labels ?? undefined;
-        setDetail({ runs: (Array.isArray((d as { runs?: unknown[] }).runs) ? (d as { runs: unknown[] }).runs : []).map(historyRowOf), labels });
+    // The set's evaluations, newest first, with each case's grade kept beside the typed history rows.
+    fetch(`/api/evals?id=${encodeURIComponent(row.id)}`, { cache: "no-store" })
+      .then(async (r) => {
+        const d = await r.json().catch(() => null);
+        if (!r.ok || !d || d.error) throw new Error(errorText(d, r, "GET", "/api/evals"));
+        return d as { runs?: unknown[] };
       })
-      .catch(() => !stop && setDetail({ runs: [] }));
+      .then((d) => {
+        if (stop) return;
+        const raw = Array.isArray(d.runs) ? d.runs : [];
+        setGrades((g) => ({ ...g, ...Object.fromEntries(raw.map((x) => [String((x as { id?: unknown }).id ?? ""), gradesOf(x)])) }));
+        setDetail({ runs: raw.map(historyRowOf) });
+        setHistoryError("");
+      })
+      .catch((e) => {
+        if (stop) return;
+        setDetail({ runs: [] });
+        setHistoryError((e as Error).message);
+      });
     return () => {
       stop = true;
     };
@@ -1234,19 +1137,20 @@ function SetCard({
         ...(compare ? { compare: { models: picked } } : {}),
       });
       const latest = new Map<string, EvalRunView>();
-      const final = await followEval(started.runs, {
+      const final = await followRaw(started.runs, {
         everyMs: 1500,
         stopped: () => !mounted.current,
-        onView: (v) => {
+        onView: (v, caseGrades) => {
           latest.set(v.id, v);
           if (!mounted.current) return;
+          setGrades((g) => ({ ...g, [v.id]: caseGrades }));
           setViews(started.runs.map((id) => latest.get(id)).filter((x): x is EvalRunView => Boolean(x)));
           const t = throttleOf(v);
           setThrottled((cur) =>
             t
               ? cur && cur.run === v.id && cur.caseId === t.id && cur.attempt === t.attempt
                 ? cur
-                : { limit: { ...t.limit, retry_after_s: t.wait_s }, at: Date.now(), caseId: t.id, attempt: t.attempt, of: t.of, run: v.id }
+                : { limit: { ...t.limit, retry_after_s: t.wait_s }, at: Date.now(), caseId: t.id, attempt: t.attempt, run: v.id }
               : cur && cur.run === v.id
                 ? null
                 : cur,
@@ -1271,19 +1175,24 @@ function SetCard({
   };
 
   const useModel = async (id: string) => {
-    // Read through the backend's door; the save stays the console's (the backend has no door that writes a set).
+    setRunError("");
     const d = await readSet(row.id);
-    if (!d) return;
-    await fetch("/api/evals", {
+    if (!d) {
+      setRunError(`The set ${row.id} could not be read, so its model was not changed.`);
+      return;
+    }
+    const res = await fetch("/api/evals", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ set: { ...d, model: id } }),
     });
+    const said = await res.json().catch(() => null);
+    if (!res.ok || !said || said.error) setRunError(errorText(said, res, "POST", "/api/evals"));
     onChanged();
   };
 
   const runs = detail ? mergeHistory(detail.runs, seen) : seen;
-  const activeCmp = cmp ?? lastComparison(runs, detail?.labels?.positive);
+  const activeCmp = cmp ?? lastComparison(runs);
   /* Which compared model's run is on screen: the one picked, else the
      recommendation, else the incumbent, else the latest run of all. */
   const viewRun = (() => {
@@ -1297,7 +1206,7 @@ function SetCard({
 
   const score = row.latest;
   const pct = score ? Math.round((score.passed / Math.max(1, score.total)) * 100) : null;
-  const headline = score?.matrix ? derive(score.matrix, detail?.labels?.positive) : null;
+  const headline = score?.matrix ? derive(score.matrix) : null;
 
   return (
     <section className="overflow-hidden rounded-md border border-line bg-surface">
@@ -1433,7 +1342,9 @@ function SetCard({
                   setTimeout(() => setConfirmDelete(false), 3000);
                   return;
                 }
-                await fetch(`/api/evals?id=${encodeURIComponent(row.id)}`, { method: "DELETE" });
+                const res = await fetch(`/api/evals?id=${encodeURIComponent(row.id)}`, { method: "DELETE" });
+                const said = await res.json().catch(() => null);
+                if (!res.ok || !said || said.error) setRunError(errorText(said, res, "DELETE", "/api/evals"));
                 onChanged();
               }}
             >
@@ -1446,11 +1357,12 @@ function SetCard({
               {runError}
             </Banner>
           )}
+          {historyError && <Failure what="The evaluations of this set could not be read" message={historyError} />}
 
           {live && (
             <p className="text-[11.5px] text-dim">
               Measuring <span className="font-mono text-fg">{modelLabel(live.model === "default" ? "" : live.model)}</span>
-              {live.legs > 1 ? `, candidate ${live.leg} of ${live.legs}, every model call pinned to it` : ""}
+              {live.legs > 1 ? `, candidate ${live.leg} of ${live.legs}, as each run's default model` : ""}
               <span className="text-faint"> · on the backend, each case a real run · {live.passed} passed so far</span>
             </p>
           )}
@@ -1458,11 +1370,11 @@ function SetCard({
             <div className="flex flex-col gap-1">
               <RateLimitNote limit={throttled.limit} readAt={throttled.at} />
               <span className="text-[11px] text-faint">
-                Case <span className="font-mono text-dim">{throttled.caseId}</span> waits and is started again (attempt {throttled.attempt} of {throttled.of}); a case refused past that is recorded as refused, naming the limit.
+                Case <span className="font-mono text-dim">{throttled.caseId}</span> waits and is started again (attempt {throttled.attempt}); once its wait would pass the evaluation&rsquo;s allowance (EVAL_RATE_LIMIT_WAIT_SECONDS), the case is recorded as refused, naming the limit, and never counts as passed.
               </span>
             </div>
           )}
-          {live && live.cases.length > 0 && <CaseTable cases={live.cases} />}
+          {live && live.cases.length > 0 && <CaseTable cases={live.cases} grades={grades[live.id]} />}
           {!running && activeCmp && (
             <>
               <Recommendation cmp={activeCmp} models={models} onUse={useModel} currentModel={row.model} onChanged={onChanged} agent={row.agent} />
@@ -1498,9 +1410,9 @@ function SetCard({
                 </span>
               )}
               {shownRun?.matrix && (
-                <ConfusionPanel matrix={shownRun.matrix} positive={detail?.labels?.positive} />
+                <ConfusionPanel matrix={shownRun.matrix} />
               )}
-              <CaseTable cases={shownRun?.results ?? []} />
+              <CaseTable cases={shownRun?.results ?? []} grades={shownRun ? grades[shownRun.id] : undefined} />
               <ScoreTrend runs={runs} modelLabel={(id) => modelLabel(id === "default" ? "" : id)} />
               <div className="flex flex-col gap-1">
                 <span className="text-[11px] font-semibold text-dim">History</span>
@@ -1508,7 +1420,7 @@ function SetCard({
                   <div key={h.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11.5px]">
                     {h.matrix && h.state === "done" && (
                       <span className="tnum font-semibold text-fg">
-                        F1 {derive(h.matrix, detail?.labels?.positive).headlineF1.toFixed(3)}
+                        F1 {derive(h.matrix).headlineF1.toFixed(3)}
                       </span>
                     )}
                     <span className={`tnum ${h.matrix ? "text-dim" : "font-semibold"} ${!h.matrix && h.passed === h.total ? "text-ok" : !h.matrix ? "text-warn" : ""}`}>
@@ -1635,59 +1547,53 @@ function ScoreTrend({ runs, modelLabel }: { runs: HistoryRow[]; modelLabel: (id:
   );
 }
 
-/** A run's cases, graded: what passed, what each check said, the label against the expected one, and the run behind each score. */
-export function CaseTable({ cases }: { cases: CaseResult[] }) {
+/**
+ * A run's cases, graded: passed, failed, refused (its start was refused, so no run) or not graded (a judge could not decide), what each
+ * check said, and the run behind each score. `grades` is each case's grade as the backend wrote it.
+ */
+export function CaseTable({ cases, grades }: { cases: CaseResult[]; grades?: Record<string, Grade> }) {
   const [openCase, setOpenCase] = useState<string | null>(null);
   return (
     <div className="overflow-hidden rounded-md border border-line">
-      {cases.map((c) => (
-        <div key={c.id} className="border-b border-line last:border-b-0">
-          <button
-            type="button"
-            onClick={() => setOpenCase(openCase === c.id ? null : c.id)}
-            className="focusable flex w-full cursor-pointer items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-raise/40"
-          >
-            <span className={`size-1.5 shrink-0 rounded-[2px] ${c.passed ? "bg-ok" : "bg-err"}`} />
-            <span className="min-w-0 grow truncate text-[12.5px] font-medium text-fg">{c.id}</span>
-            {c.expected != null && (
-              <Mono className="hidden shrink-0 text-[10.5px] sm:inline">
-                <span className="text-dim">{c.expected}</span>
-                <span className="text-ghost"> → </span>
-                <span className={c.predicted === c.expected ? "text-ok" : "text-err"}>
-                  <MarkGlyph ok={c.predicted === c.expected} />
-                  {c.predicted ?? INVALID}
-                </span>
-              </Mono>
+      {cases.map((c) => {
+        const grade: Grade = grades?.[c.id] ?? (c.passed ? "passed" : c.state === "refused" ? "refused" : "failed");
+        const tone = grade === "passed" ? "text-ok" : grade === "failed" ? "text-err" : "text-warn";
+        return (
+          <div key={c.id} className="border-b border-line last:border-b-0">
+            <button
+              type="button"
+              onClick={() => setOpenCase(openCase === c.id ? null : c.id)}
+              className="focusable flex w-full cursor-pointer items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-raise/40"
+            >
+              <span className={`size-1.5 shrink-0 rounded-[2px] ${grade === "passed" ? "bg-ok" : grade === "failed" ? "bg-err" : "bg-warn"}`} />
+              <span className="min-w-0 grow truncate text-[12.5px] font-medium text-fg">{c.id}</span>
+              {c.note && <span className="hidden truncate text-[11px] text-faint sm:inline">{c.note}</span>}
+              <Mono className="shrink-0 text-[10px] text-ghost">{c.run_file ? `${(c.duration_ms / 1000).toFixed(1)}s` : "no run"}</Mono>
+              <span className={`shrink-0 text-[11px] font-semibold ${tone}`}>{GRADE_TEXT[grade]}</span>
+            </button>
+            {openCase === c.id && (
+              <div className="flex flex-col gap-1.5 border-t border-line bg-sunken/20 px-3 py-2.5">
+                {c.checks.map((ch, i) => (
+                  <span key={i} className="flex items-baseline gap-2 font-mono text-[10.5px] leading-[1.5]">
+                    <span className={`size-1.5 shrink-0 translate-y-[-1px] rounded-[2px] ${ch.ok ? "bg-ok" : "bg-err"}`} />
+                    <span className={ch.ok ? "text-ok" : "text-err"}>{ch.kind}</span>
+                    <span className="min-w-0 text-dim">{ch.note}</span>
+                  </span>
+                ))}
+                {c.error && <span className={`font-mono text-[10.5px] ${grade === "failed" ? "text-err" : "text-warn"}`}>{c.error}</span>}
+                {c.run_file ? (
+                  <Button size="sm" variant="solid" className="mt-1 self-start" href={`/runs?id=${encodeURIComponent(c.run_file)}`}>
+                    <Icon name="pulse" size={11} />
+                    Open the run behind this score
+                  </Button>
+                ) : (
+                  <span className="text-[10.5px] text-faint">Its start was refused, so there is no run behind it.</span>
+                )}
+              </div>
             )}
-            {c.note && <span className="hidden truncate text-[11px] text-faint sm:inline">{c.note}</span>}
-            <Mono className="shrink-0 text-[10px] text-ghost">{(c.duration_ms / 1000).toFixed(1)}s</Mono>
-            <span className={`shrink-0 text-[11px] font-semibold ${c.passed ? "text-ok" : "text-err"}`}>
-              {c.passed ? "pass" : "fail"}
-            </span>
-          </button>
-          {openCase === c.id && (
-            <div className="flex flex-col gap-1.5 border-t border-line bg-sunken/20 px-3 py-2.5">
-              {c.checks.map((ch, i) => (
-                <span key={i} className="flex items-baseline gap-2 font-mono text-[10.5px] leading-[1.5]">
-                  <span className={`size-1.5 shrink-0 translate-y-[-1px] rounded-[2px] ${ch.ok ? "bg-ok" : "bg-err"}`} />
-                  <span className={ch.ok ? "text-ok" : "text-err"}>{ch.kind}</span>
-                  <span className="min-w-0 text-dim">{ch.note}</span>
-                </span>
-              ))}
-              {c.error && <span className="font-mono text-[10.5px] text-err">{c.error}</span>}
-              <Button
-                size="sm"
-                variant="solid"
-                className="mt-1 self-start"
-                href={`/runs?id=${encodeURIComponent(c.run_file)}`}
-              >
-                <Icon name="pulse" size={11} />
-                Open the run behind this score
-              </Button>
-            </div>
-          )}
-        </div>
-      ))}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1818,11 +1724,11 @@ const fmtCost = (c: number | null) =>
 const fmtMs = (ms: number) => (ms >= 60_000 ? `${(ms / 60_000).toFixed(1)}m` : `${(ms / 1000).toFixed(1)}s`);
 
 /**
- * The same benchmark, one model at a time, with every model call pinned to
- * that model. Cost and time are relative to the best candidate on a log
- * scale, accuracy is the headline metric as measured. The recommendation is
- * the cheapest model that clears the incumbent's quality within a small
- * margin with no invalid outputs; it is a recommendation, never a switch.
+ * The same benchmark, one candidate model at a time, as each run's default
+ * model. Cost and time are relative to the best candidate on a log scale; the
+ * score is the share of cases passed. The recommendation is the backend's:
+ * the cheapest candidate that met the agent's release threshold (none when
+ * none met it, or none that did has a price); a recommendation, never a switch.
  */
 export function ComparePanel({
   cmp,
@@ -1844,7 +1750,7 @@ export function ComparePanel({
     <div className="flex flex-col overflow-hidden rounded-md border border-line">
       <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-3 py-2">
         <span className="text-[12px] font-semibold">Model comparison</span>
-        <span className="text-[11px] text-faint">{cmp.models.length} models, every call pinned, same cases</span>
+        <span className="text-[11px] text-faint">{cmp.models.length} models, same cases, each as the runs&rsquo; default model</span>
         {cmp.digest && <Mono className="text-[10px] text-ghost">spec {cmp.digest.slice(0, 8)}{cmp.at ? ` · ${ago(cmp.at)}` : ""}</Mono>}
         <span className="grow" />
         {cmp.recommended && (
@@ -1984,12 +1890,11 @@ function Recommendation({
   const dCost = pctDelta(rec.cost_per_case, inc.cost_per_case);
   const dTime = pctDelta(rec.avg_ms, inc.avg_ms);
   const reasons = same
-    ? [`${q(inc)} on this benchmark`, "no cheaper model in the comparison clears that quality", `${fmtCost(inc.cost_per_case)} per case`]
+    ? [`${q(inc)} on this benchmark (${inc.passed} of ${inc.total} cases)`, `${fmtCost(inc.cost_per_case)} per case`]
     : [
-        dq >= 0 ? `quality ${dq === 0 ? "matches" : "beats"} the incumbent (${q(rec)} vs ${q(inc)})` : `quality within 0.02 of the incumbent (${q(rec)} vs ${q(inc)})`,
+        `${q(rec)} on this benchmark (${rec.passed} of ${rec.total} cases), against ${q(inc)} for ${label(inc.model)}${dq > 0 ? ": better" : dq < 0 ? ": lower, still at or above the release threshold" : ": the same"}`,
         dCost === null ? `${fmtCost(rec.cost_per_case)} per case` : dCost < 0 ? `${Math.abs(dCost)}% cheaper per case (${fmtCost(rec.cost_per_case)} vs ${fmtCost(inc.cost_per_case)})` : `${dCost}% more per case`,
-        dTime === null ? `${fmtMs(rec.avg_ms)} per case` : dTime <= 0 ? `${Math.abs(dTime)}% faster (${fmtMs(rec.avg_ms)} vs ${fmtMs(inc.avg_ms)})` : `${dTime}% slower (${fmtMs(rec.avg_ms)} vs ${fmtMs(inc.avg_ms)})`,
-        `${rec.invalid === 0 ? "no invalid outputs" : `${rec.invalid} invalid outputs`} across ${rec.total} cases`,
+        rec.avg_ms === null || inc.avg_ms === null || dTime === null ? "time per case not known for both" : dTime <= 0 ? `${Math.abs(dTime)}% faster (${fmtMs(rec.avg_ms)} vs ${fmtMs(inc.avg_ms)})` : `${dTime}% slower (${fmtMs(rec.avg_ms)} vs ${fmtMs(inc.avg_ms)})`,
       ];
   return (
     <div className="flex flex-col gap-2 rounded-md border border-ok-line bg-ok-bg px-3 py-2.5">
@@ -2011,13 +1916,14 @@ function Recommendation({
       </div>
       {applied && <span className="text-[11.5px] text-dim">{applied}</span>}
       {applyError && (<span className="text-[11.5px] text-err">{applyError}</span>)}
+      <p className="text-[11.5px] leading-[1.5] text-fg">{cmp.rationale}</p>
       <ul className="flex flex-col gap-0.5 pl-4 text-[11.5px] leading-[1.5] text-dim">
         {reasons.map((r) => (
           <li key={r} className="list-disc">{r}</li>
         ))}
       </ul>
       <span className="text-[10.5px] text-faint">
-        Every call was pinned to each model on the same {rec.total} cases. Making it the workflow&rsquo;s model pins every model-calling node of {agent} to it in a new saved version (tier routing on those nodes is cleared); once the agent is deployed that version is a draft, and production keeps running until it is deployed through the promotion gate. The benchmark&rsquo;s own model changes only with the other button. Both are explicit: nothing switches on its own.
+        Each candidate ran the same {rec.total} cases as the runs&rsquo; default model: a step that names its own model, or a tier, keeps it, and the comparison says so when that happened. Making it the workflow&rsquo;s model pins every model-calling node of {agent} to it in a new saved version (tier routing on those nodes is cleared); once the agent is deployed that version is a draft, and production keeps running until it is deployed through the promotion gate. The benchmark&rsquo;s own model changes only with the other button. Both are explicit: nothing switches on its own.
       </span>
     </div>
   );

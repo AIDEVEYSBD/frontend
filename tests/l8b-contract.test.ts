@@ -345,16 +345,16 @@ describe("canary mode: a share of queued starts on the candidate, beside product
       ["findings", true, true],
       ["regression", true, false],
     ]);
-    expect(canaryHeadline(c)).toBe("Version 2 (1a2af269) takes 50% of queued and triggered starts beside production's version 1 (90df2dfa), until 2026-10-23 15:23:45 UTC. Configured by Ada <ada@ey.com> 2026-10-21 15:23:45 UTC.");
+    expect(canaryHeadline(c)).toBe("Version 2 (1a2af269) takes 50% of new starts beside production's version 1 (90df2dfa), until 2026-10-23 15:23:45 UTC. Configured by Ada <ada@ey.com> 2026-10-21 15:23:45 UTC.");
     expect(rateText(c)).toBe("Canary mode compares no pairs: each arm's own outcomes are below.");
     const { text } = render(createElement(CanaryReport, { canary: c }));
-    for (const s of ["Canary", "standing", "version 2 · 50%", "1a2af269", "No run of either arm has finished yet", "The promotion gate as read when it was configured", "not required", "regression", "met"]) expect(text, s).toContain(s);
+    for (const s of ["Canary", "standing", "version 2 · 50%", "1a2af269", "No run of either arm has finished yet", "The deploy conditions as read when it was configured", "not required", "regression", "met"]) expect(text, s).toContain(s);
   });
 
   it("the arms: each side's runs and outcomes, read while it stands; the jobs and the run say which version they used", async () => {
     serve("canary_get_arms", "job_canary_candidate", "job_canary_production", "run_canary_candidate");
     const c = (await l8b.getCanary("triage"))!;
-    expect([c.runs, c.compared, c.arms.candidate, c.arms.production]).toEqual([3, 0, { runs: 3, finished: 3, outcomes: { ANALYST_REVIEW: 1, AUTO_CLOSE: 1, ESCALATE: 1 } }, { runs: 5, finished: 5, outcomes: { ESCALATE: 2, ANALYST_REVIEW: 2, AUTO_CLOSE: 1 } }]);
+    expect([c.runs, c.compared, c.arms.candidate, c.arms.production]).toEqual([3, 0, { runs: 3, finished: 3, outcomes: { ANALYST_REVIEW: 1, AUTO_CLOSE: 1, ESCALATE: 1 }, cost_usd: null }, { runs: 5, finished: 5, outcomes: { ESCALATE: 2, ANALYST_REVIEW: 2, AUTO_CLOSE: 1 }, cost_usd: null }]);
     expect(armRows(c.arms).map((r) => [r.label, r.candidate, r.production])).toEqual([
       ["ANALYST_REVIEW", 1, 2],
       ["ESCALATE", 1, 2],
@@ -370,7 +370,7 @@ describe("canary mode: a share of queued starts on the candidate, beside product
     const { data } = await api.GET("/api/runs/{run_id}", { params: { path: { run_id: body("job_canary_candidate").run_id as string } } });
     const flags = runFlagsOf(data);
     expect([flags.shadow, flags.canary?.variant, flags.canary?.version, flags.canary?.production]).toEqual([false, "candidate", 2, { version: 1, digest: V1 }]);
-    expect(canaryRunLine(flags.canary!, false)).toBe(`This run used the candidate, version 2, of canary ${c.id} (50% of queued and triggered starts), instead of production's version 1 (90df2dfa).`);
+    expect(canaryRunLine(flags.canary!, false)).toBe(`This run used the candidate, version 2, of canary ${c.id} (50% of new starts), instead of production's version 1 (90df2dfa).`);
     const banner = render(createElement(RunFlagsBanner, { flags, agent: "triage" }));
     expect(banner.text).toContain("Canary: version 2 ran this");
   });
@@ -395,36 +395,38 @@ describe("canary mode: a share of queued starts on the candidate, beside product
     const e = await refused(l8b.putCanary("triage", { version: 3, share: 0.2, mode: "canary" }));
     const r = l8b.canaryRefusalOf(e)!;
     expect([r.environment, r.version, r.digest, r.decision, r.unmet.map((u) => u.condition)]).toEqual(["canary", 3, V3, body("canary_409_gate").decision, ["eval", "review", "findings"]]);
-    // The 409's conditions carry no `required` (only the 200's do): the console reads it as the contract rules it.
+    // The 409's conditions carry no `required` (only the 200's do): the console reads each as required.
     expect((body("canary_409_gate").conditions as Record<string, unknown>[]).some((c) => "required" in c)).toBe(false);
     expect(r.conditions.map((c) => [c.condition, c.met, c.required, conditionSays(c).text])).toEqual([
       ["eval", false, true, "unmet: holds the canary"],
       ["review", false, true, "unmet: holds the canary"],
       ["findings", false, true, "unmet: holds the canary"],
-      ["regression", false, false, "unmet: read and shown, not required"],
+      ["regression", false, true, "unmet: holds the canary"],
     ]);
-    expect(canaryRefusalText(r)).toBe("The promotion gate holds version 3 (2a3c18c2) for canary: eval, policy review, open findings unmet. A canary or a shadow runs only a version that passed the gate, regression aside. Nothing changed: what stands, stands.");
+    expect(canaryRefusalText(r)).toBe("The deploy conditions hold version 3 (2a3c18c2) back from canary: eval, policy review, open findings unmet. A canary runs only a version that meets production's conditions; a shadow needs all but the release threshold. Nothing changed: what stands, stands.");
     const { text } = render(createElement(CanaryRefusalView, { refusal: r }));
-    for (const s of ["The promotion gate holds version 3 for canary", "unmet: holds the canary", "unmet: read and shown, not required", "not required", "drift in benchmark_labels"]) expect(text, s).toContain(s);
+    for (const s of ["Version 3 cannot stand as the canary: a condition does not hold", "unmet: holds the canary", "drift in benchmark_labels"]) expect(text, s).toContain(s);
+    expect(text).not.toContain("not required");
   });
 
   it("409 again for the candidate the canary runs: its own production runs drifted from the benchmark's labels, an open finding", async () => {
     serve("canary_409_findings");
     const r = l8b.canaryRefusalOf(await refused(l8b.putCanary("triage", { version: 2, share: 1, mode: "canary" })))!;
     expect([r.version, r.unmet.map((u) => u.condition), r.unmet[0].items]).toEqual([2, ["findings"], [{ kind: "drift", ref: "drift:triage", detail: "triage: drift in benchmark_labels" }]]);
-    expect(r.conditions.find((c) => c.condition === "regression")?.required).toBe(false);
+    expect(r.conditions.find((c) => c.condition === "regression")?.required).toBe(true);
   });
 
   it("ended: an operator may not, an administrator does; a second end finds none; the view keeps who and why", async () => {
     serve("canary_delete_403_operator", "canary_delete_canary_200", "canary_delete_404", "canary_get_ended");
     expect((await refused(l8b.endCanary("triage"))).status).toBe(403);
     const ended = await l8b.endCanary("triage");
-    expect([ended.active, ended.ended?.reason, ended.ended?.by, ended.cancelled_jobs, ended.released_jobs]).toEqual([false, "ended by Ada <ada@ey.com>", "Ada <ada@ey.com>", [], []]);
+    expect([ended.active, ended.ended?.reason, ended.ended?.by]).toEqual([false, "ended by Ada <ada@ey.com>", "Ada <ada@ey.com>"]);
+    expect([ended.cancelled_jobs, ended.released_jobs]).toEqual([undefined, undefined]);
     const none = await refused(l8b.endCanary("triage"));
     expect([none.status, none.message]).toEqual([404, body("canary_delete_404").error]);
     const after = (await l8b.getCanary("triage"))!;
     expect([after.active, after.ended?.reason]).toEqual([false, "ended by Ada <ada@ey.com>"]);
-    expect(canaryHeadline(after)).toBe("Version 2 (1a2af269) took 50% of queued and triggered starts beside production's version 1 (90df2dfa). Configured by Ada <ada@ey.com> 2026-10-21 15:23:45 UTC. Ended 2026-10-21 15:23:45 UTC: ended by Ada <ada@ey.com>.");
+    expect(canaryHeadline(after)).toBe("Version 2 (1a2af269) took 50% of new starts beside production's version 1 (90df2dfa). Configured by Ada <ada@ey.com> 2026-10-21 15:23:45 UTC. Ended 2026-10-21 15:23:45 UTC: ended by Ada <ada@ey.com>.");
     expect(render(createElement(CanaryReport, { canary: after })).text).toContain("ended");
   });
 
@@ -438,8 +440,9 @@ describe("canary mode: a share of queued starts on the candidate, beside product
     const pinned = (await api.GET("/api/trigger/{agent}/jobs/{job_id}", { params: { path: { agent: "triage", job_id: job } } })).data!;
     expect([pinned.status, pinned.canary?.variant, pinned.error]).toEqual(["queued", "candidate", "host unreachable"]);
     const ended = await l8b.endCanary("triage");
-    expect(ended.released_jobs).toEqual([job]);
-    expect(render(createElement(CanaryReport, { canary: ended })).text).toContain(`job ${job.slice(0, 8)} given back to production`);
+    // Ending a canary gives no job back: canaryViewOf never fills released_jobs, and the report names none.
+    expect(ended.released_jobs).toBeUndefined();
+    expect(render(createElement(CanaryReport, { canary: ended })).text).not.toContain("given back to production");
     const released = (await api.GET("/api/trigger/{agent}/jobs/{job_id}", { params: { path: { agent: "triage", job_id: job } } })).data!;
     expect([released.status, released.canary, canaryArmOf(released)]).toEqual(["queued", null, ""]);
   });
@@ -473,13 +476,13 @@ describe("shadow mode on the queue: production mirrored, the pairs compared", ()
     const prodId = body("run_shadowed_production").id as string;
     expect([flags.shadow, flags.canary?.variant, flags.canary?.of, flags.canary?.mode]).toEqual([true, "candidate", prodId, "shadow"]);
     expect(canaryRunLine(flags.canary!, true)).toBe(
-      `A shadow run of version 2 (canary ${body("canary_put_shadow_200").id}), mirroring production run ${prodId} on the same input. Nothing above read executed: each call it would have made is journalled as would-call with its arguments, and its outputs were not written. It counts toward no production figure: not the budget, drift, the rate limits or the inbox.`,
+      `A shadow run of version 2 (canary ${body("canary_put_shadow_200").id}), mirroring production run ${prodId} on the same input. Its reads and model calls were made; each call at or above write and each call that acts outside is journalled as would-call with its arguments, not made, so it wrote no deliverable or finding. It asks no one, so it ends where a run would wait for a person. Its cost is its own and counts toward spend and budgets; it counts toward no rate limit, drift window or results summary, and never waits on the Approvals list.`,
     );
     const would = (data!.journal.entries as unknown as { kind: string; data: Record<string, unknown> }[]).map(wouldCallOf).filter((w) => w !== null);
     expect(would.map((w) => [w!.tool, w!.sink, w!.reason])).toEqual([["notify.send", true, "sink"]]);
-    expect(wouldCallLine(would[0]!)).toBe("Would have called notify.send (write, a sink): not executed, as a shadow run makes nothing above read.");
+    expect(wouldCallLine(would[0]!)).toBe("Would have called notify.send (write, it acts outside): not made, as a shadow run carries out nothing at or above write and nothing that acts outside.");
     const { text, html } = render(createElement(RunFlagsBanner, { flags, agent: "triage" }));
-    expect(text).toContain("A shadow run: nothing above read executed");
+    expect(text).toContain("A shadow run: nothing at or above write was carried out");
     expect(hrefs(html)).toEqual([`/runs?id=${encodeURIComponent(prodId)}`, "/lifecycle?agent=triage#canary"]);
     const prod = runFlagsOf((await api.GET("/api/runs/{run_id}", { params: { path: { run_id: prodId } } })).data);
     expect([prod.shadow, prod.canary?.variant, prod.canary?.shadow_job]).toEqual([false, "production", body("job_shadow_queued").job]);
@@ -494,7 +497,7 @@ describe("shadow mode on the queue: production mirrored, the pairs compared", ()
     const done = (await l8b.getCanary("triage"))!;
     expect([done.pending, done.skipped, done.skipped_why]).toEqual([0, 1, { stand_in: 1 }]);
     expect(pendingSkippedText(done)).toBe(
-      "1 pair skipped, not counted: 1 because the shadow only had a stand-in to compare (it failed after a call it could not make, or the compared field is a would-call placeholder)",
+      "1 pair skipped, not counted: 1 because the shadow only had a stand-in to compare (it failed on a would-call placeholder, or the compared field is one)",
     );
     const ex = done.examples[0];
     expect([ex.production, ex.shadow, ex.production_run, ex.shadow_run]).toEqual(["ANALYST_REVIEW", "ESCALATE", body("run_shadowed_production").id, body("run_shadow_queue").id]);
@@ -523,8 +526,9 @@ describe("shadow mode on the queue: production mirrored, the pairs compared", ()
     const waiting = before.jobs.filter((j) => j.shadow && j.status === "queued").map((j) => j.job);
     expect(waiting.length).toBe(1);
     const ended = await l8b.endCanary("triage");
-    expect(ended.cancelled_jobs).toEqual(waiting);
-    expect(render(createElement(CanaryReport, { canary: ended })).text).toContain(`shadow job ${waiting[0].slice(0, 8)} withdrawn`);
+    // Ending a shadow withdraws no job: canaryViewOf never fills cancelled_jobs, and the report names none.
+    expect(ended.cancelled_jobs).toBeUndefined();
+    expect(render(createElement(CanaryReport, { canary: ended })).text).not.toContain("withdrawn");
     const cancelled = await l2.listJobs({ status: "cancelled" });
     expect(cancelled.jobs.map((j) => [j.job, j.cancel_reason, j.error])).toEqual([[waiting[0], `the canary ${ended.id} ended`, null]]);
     expect(jobLine(cancelled.jobs[0])).toBe(`cancelled · from shadow · intake · attempt 0 of 1 · withdrawn: the canary ${ended.id} ended · shadow job (version 2) mirroring job ${String(cancelled.jobs[0].canary?.of_job).slice(0, 8)}: a worker running shadow mode claims it`);
@@ -549,7 +553,7 @@ describe("shadow in process, and the report gate holding production's deliverabl
       ["document.write", "sink", true],
       ["notify.send", "sink", true],
     ]);
-    expect(wouldCallLine(would[0]!)).toBe("Would have called record.write (write, above read): not executed, as a shadow run makes nothing above read.");
+    expect(wouldCallLine(would[0]!)).toBe("Would have called record.write (write, at or above write): not made, as a shadow run carries out nothing at or above write and nothing that acts outside.");
     expect((shadow.journal.entries ?? []).some((e) => e.kind === "tool.call" || e.kind === "deliverable.written")).toBe(false);
     const prod = runFlagsOf((await api.GET("/api/runs/{run_id}", { params: { path: { run_id: data!.run } } })).data);
     expect([prod.shadow, prod.canary?.variant, prod.canary?.shadow_run]).toEqual([false, "production", data!.shadow_run]);
@@ -999,7 +1003,7 @@ describe("what the first round's capture found missing", () => {
     const deployments = await l8.listDeployments("triage");
     expect([Object.keys(deployments.current).sort(), deployments.current.canary?.version]).toEqual([["canary", "production"], 2]);
     const dv = render(createElement(DeploymentsView, { list: deployments })).text;
-    expect(dv).toContain("a share of queued starts beside production; current only while its canary stands");
+    expect(dv).toContain("a share of new starts beside production; current only while its canary stands");
     const ended = await l8.getLifecycle("triage", V2);
     const past = spineOf(ended).find((s) => s.stage === "canary")!;
     expect([ended.current, past.tone, past.now, past.note]).toEqual(["reviewed", "past", false, "canary: 0.5 of queued and triggered starts; the canary has ended"]);

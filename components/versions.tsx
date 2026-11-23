@@ -10,7 +10,7 @@ import { defaultPair, diffCounts, diffSections, versionRows, type DiffSection, t
 /**
  * A workflow's version history, and the difference between any two versions.
  *
- * Every save and every deploy is a version on the backend
+ * Every save that changes what the agent runs is a version on the backend
  * (`GET /api/agents/{id}/versions`): who saved it, when, its digest, and
  * whether it is the one deployed, one deployed before, or a draft. Pick two
  * and the backend's comparison (`GET /api/agents/{id}/diff`) is read in the
@@ -75,13 +75,13 @@ export function VersionHistory({ agent }: { agent: string }) {
     );
   }
   if (rows.length === 0) {
-    return <p className="px-4 py-4 text-[12px] leading-[1.55] text-faint">No version is on record yet. Deploying the workflow writes the first.</p>;
+    return <p className="px-4 py-4 text-[12px] leading-[1.55] text-faint">No version is on record yet. Saving the agent writes the first.</p>;
   }
 
   return (
     <div className="flex flex-col">
       <p className="border-b border-line px-4 py-2.5 text-[11.5px] leading-[1.55] text-faint">
-        {rows.length} version{rows.length === 1 ? "" : "s"}, newest first. Every save and every deploy writes one. Pick a pair with the two columns on the left to see what changed between them.
+        {rows.length} version{rows.length === 1 ? "" : "s"}, newest first. Every save that changes what the agent runs writes one; a deploy writes none. Pick a pair with the two columns on the left to see what changed between them.
       </p>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-[11.5px]">

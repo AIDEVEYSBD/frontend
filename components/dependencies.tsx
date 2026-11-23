@@ -32,12 +32,13 @@ import {
 import { fmtUsd } from "@/lib/run-tree";
 
 /**
- * The dependency map (phase L7, `GET /api/dependencies`): every agent, the
- * tools and servers it calls, the sub-agents it invokes, the peers it hands
- * work to, the models it uses, and the applications built on them. Each
- * edge is declared by the specs, seen in the journals of the window, or
- * both; a dashed edge was declared and never used, an amber one was used
- * without any spec declaring it. Read left to right in the direction of
+ * The dependency map (`GET /api/dependencies`): every agent, the tools it
+ * calls and the servers that serve them, the models it uses, the agents its
+ * runs started, and the applications (registered use cases) that depend on
+ * it. Each edge is declared by the agents' latest versions, seen in the
+ * journals of the window, or both; a dashed edge was declared and never
+ * used, an amber one was used without the latest version declaring it.
+ * Peers are not built. Read left to right in the direction of
  * dependence (lib/dependencies.ts LAYERS).
  *
  * Picking a node shows its neighbourhood and asks the backend for its blast
@@ -133,8 +134,8 @@ function DependenciesInner() {
           </>
         }
       >
-        What every agent depends on, declared by its spec and seen in its runs: the tools it calls and the servers that serve them, the sub-agents it invokes, the peers it hands work to, the
-        models it uses, and the applications built on them. Pick a node for its blast radius: everything that fails if it does.
+        What every agent depends on, declared by its latest version and seen in its runs: the tools it calls and the servers that serve them, the models it uses, the agents its
+        runs started, and the applications (registered use cases) that depend on it. Peers are not built. Pick a node for its blast radius: everything that fails if it does.
       </GroupHeader>
 
 

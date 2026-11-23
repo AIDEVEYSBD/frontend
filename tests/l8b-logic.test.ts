@@ -135,7 +135,7 @@ describe("the canary's report, in words", () => {
   it("why pairs were skipped, each reason; nothing to say when nothing is pending or skipped", () => {
     expect(pendingSkippedText({ pending: 0, skipped: 0, skipped_why: {} })).toBe("");
     expect(pendingSkippedText({ pending: 2, skipped: 3, skipped_why: { await: 1, killed: 1, novel_reason: 1 } })).toBe(
-      "2 pairs pending: either side still in flight. 3 pairs skipped, not counted: 1 because the shadow stopped at the spec's own await node: a shadow run asks no one; 1 because the shadow was killed; 1 because novel reason",
+      "2 pairs pending: either side still in flight. 3 pairs skipped, not counted: 1 because the shadow ended at an await node: a shadow run asks no one; 1 because either run was stopped; 1 because novel reason",
     );
   });
 
@@ -159,7 +159,7 @@ describe("the canary's report, in words", () => {
 
   it("a refusal with no version named; the door's other refusals", () => {
     expect(canaryRefusalText({ version: null, digest: "abcdefabcdef", environment: "shadow", unmet: [] })).toBe(
-      "The promotion gate holds abcdefab for shadow: nothing unmet. A canary or a shadow runs only a version that passed the gate, regression aside. Nothing changed: what stands, stands.",
+      "The deploy conditions hold abcdefab back from shadow: nothing unmet. A canary runs only a version that meets production's conditions; a shadow needs all but the release threshold. Nothing changed: what stands, stands.",
     );
     expect(canaryErrorText({ status: 409, message: "triage is retired", control: "retired" })).toBe("The agent is retired: no canary runs beside it. triage is retired");
     expect(canaryErrorText({ status: 500, message: "boom" })).toBe("boom");
@@ -182,7 +182,7 @@ describe("a run's marks", () => {
       ["taint", "untrusted input", "warn"],
       ["eval", "eval case", "neutral"],
     ]);
-    expect(all[0].title).toBe("A shadow run of version 2, mirroring production run p-1: nothing above read executed, and it counts toward no production figure.");
+    expect(all[0].title).toBe("A shadow run of version 2, mirroring production run p-1: its calls at or above write and calls that act outside were recorded, not made.");
     expect(all[2].title).toBe("Its input came from outside the estate (taint webhook).");
   });
 
@@ -198,15 +198,15 @@ describe("a run's marks", () => {
     expect(canaryRunLine(a, false)).toBe("Production's arm of canary cn-1: it ran version 1, beside the candidate version 2 (aaaaaaaa).");
     const c = canaryAssignmentOf({ id: "cn-1", variant: "candidate", version: 2 })!;
     expect(canaryRunLine(c, false)).toBe("This run used the candidate, version 2, of canary cn-1, instead of production's nothing deployed.");
-    expect(canaryRunLine({ ...c, version: null, id: "" }, true)).toMatch(/^A shadow run of the candidate\. Nothing above read executed/);
+    expect(canaryRunLine({ ...c, version: null, id: "" }, true)).toMatch(/^A shadow run of the candidate\. Its reads and model calls were made/);
   });
 
   it("a shadow's would-call: the tool and why it was held; anything else is not one", () => {
     expect(wouldCallOf({ kind: "tool.call", data: { tool: "x" } })).toBeNull();
     const w = wouldCallOf({ kind: "would_call", data: { placeholder: { would_call: "crm.update", note: "n" } } })!;
     expect(w).toEqual({ tool: "crm.update", args: {}, risk: "", sink: false, reason: "", note: "n" });
-    expect(wouldCallLine(w)).toBe("Would have called crm.update (held): not executed, as a shadow run makes nothing above read.");
-    expect(wouldCallLine({ ...w, tool: "", reason: "mutating_call" })).toBe("Would have called a tool (mutating call): not executed, as a shadow run makes nothing above read.");
+    expect(wouldCallLine(w)).toBe("Would have called crm.update (held): not made, as a shadow run carries out nothing at or above write and nothing that acts outside.");
+    expect(wouldCallLine({ ...w, tool: "", reason: "mutating_call" })).toBe("Would have called a tool (mutating call): not made, as a shadow run carries out nothing at or above write and nothing that acts outside.");
   });
 });
 
@@ -321,7 +321,7 @@ describe("the spine's canary stage and `current`", () => {
     const l = { digest: "d1", deployed: null, retired: null, current: "canary", stages: [stage("canary", true, { environment: "shadow", current: true })] };
     expect(spineOf(l)[0]).toMatchObject({ note: "shadow: a share of production runs, mirrored; mirroring production now", tone: "ok", now: true });
     const unknown = { digest: "d1", deployed: null, retired: null, stages: [stage("canary", true, { environment: "canary" })] };
-    expect(spineOf(unknown)[0]).toMatchObject({ note: "canary: a share of queued and triggered starts", tone: "ok", now: false });
+    expect(spineOf(unknown)[0]).toMatchObject({ note: "canary: a share of new starts", tone: "ok", now: false });
   });
 
   it("past stages are only those beyond `current` whose record no longer holds", () => {
@@ -369,11 +369,11 @@ describe("the Evals page's set list", () => {
 });
 
 describe("the client reads defensively and builds its requests", () => {
-  it("a canary view with nothing in it; a condition's required as the backend says it, else as the contract rules it", () => {
+  it("a canary view with nothing in it; a condition's required as the backend says it, else required", () => {
     const c = l8b.canaryViewOf({});
-    expect([c.mode, c.active, c.ended, c.production, c.rate, c.arms, c.conditions, c.cancelled_jobs]).toEqual(["canary", false, null, null, null, { candidate: { runs: 0, finished: 0, outcomes: {} }, production: { runs: 0, finished: 0, outcomes: {} } }, [], []]);
+    expect([c.mode, c.active, c.ended, c.production, c.rate, c.arms, c.conditions, c.calls]).toEqual(["canary", false, null, null, null, { candidate: { runs: 0, finished: 0, outcomes: {}, cost_usd: null }, production: { runs: 0, finished: 0, outcomes: {}, cost_usd: null } }, [], null]);
     expect(l8b.canaryViewOf({ mode: "shadow", skipped_why: { stand_in: 2, bad: "x" } }).skipped_why).toEqual({ stand_in: 2 });
-    expect([l8b.canaryConditionOf({ condition: "regression" }).required, l8b.canaryConditionOf({ condition: "eval" }).required, l8b.canaryConditionOf({ condition: "eval", required: false }).required]).toEqual([false, true, false]);
+    expect([l8b.canaryConditionOf({ condition: "regression" }).required, l8b.canaryConditionOf({ condition: "eval" }).required, l8b.canaryConditionOf({ condition: "eval", required: false }).required]).toEqual([true, true, false]);
   });
 
   it("templates, deliverables, registers and eval sets with fields missing", () => {

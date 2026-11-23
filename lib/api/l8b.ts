@@ -45,22 +45,22 @@ const enc = encodeURIComponent;
 
 /* ═══════════════════ canary and shadow ═══════════════════ */
 
-/** canary: a share of the agent's queued and triggered starts runs the candidate instead; shadow: a share of production runs is mirrored by a candidate run on the same input, in shadow mode (nothing above read executes). */
+/** canary: a share of the agent's new starts runs the candidate instead; shadow: a share of production runs is mirrored by a candidate run on the same input, whose calls at or above write and calls that act outside are recorded (would_call), not made. */
 export type CanaryMode = "canary" | "shadow";
 export const CANARY_MODES: CanaryMode[] = ["canary", "shadow"];
 
 /** `PUT /api/agents/{id}/canary` */
 export interface CanaryRequest {
-  /** A saved version other than the one production runs, that passed the promotion gate (regression aside). */
+  /** A saved version other than the one production runs, held to production's deploy conditions (a shadow does not need the release threshold). */
   version: number;
-  /** (0, 1]: of queued and triggered starts (canary), or of production runs (shadow). */
+  /** (0, 1]: of new starts (canary), or of production runs (shadow). */
   share: number;
   mode: CanaryMode;
   /** ISO 8601 in the future: the canary ends itself then. */
   until?: string | null;
 }
 
-/** A gate condition as read for the candidate: `required` is false for regression, which is read and shown, never required. */
+/** A deploy condition as read for the candidate: `required` is false only for the release threshold (`eval`) of a shadow, which is read and shown. */
 export type CanaryCondition = Condition & { required: boolean };
 
 /** One shadow pair that disagreed: production's outcome beside the candidate's, each with its run. */
@@ -72,11 +72,39 @@ export interface CanaryExample {
   at: string | null;
 }
 
-/** One side of a canary: its runs, how many finished, and their outcomes (the compared field's value, else `state:<final>`). */
+/** One side of a canary: its runs, how many finished, their outcomes (a canary: `state:<final>`; a shadow: the compared field's value of a run that ended done, else `state:<final>`), and what they cost (null once any used a model with no price set). */
 export interface CanaryArm {
   runs: number;
   finished: number;
   outcomes: Record<string, number>;
+  /** Null once any of the arm's runs used a model with no price set; absent only in a view not read through `canaryViewOf`. */
+  cost_usd?: number | null;
+}
+
+/** One call in a shadow pair: production's `tool.call`, or the shadow's `tool.call` (made) or `would_call` (recorded, not made). */
+export interface CanaryCall {
+  tool: string;
+  args: Record<string, unknown>;
+  made: boolean;
+}
+
+/** A shadow pair whose calls differ: each side's calls in order, and the calls (tool and arguments) only one side has. */
+export interface CanaryCallPair {
+  production_run: string;
+  shadow_run: string;
+  production: CanaryCall[];
+  shadow: CanaryCall[];
+  only_production: string[];
+  only_shadow: string[];
+}
+
+/** Shadow only: the compared pairs' calls, tool and arguments in any order; the pairs that differ, newest first, at most ten. */
+export interface CanaryCalls {
+  compared: number;
+  same: number;
+  differ: number;
+  rate: number | null;
+  pairs: CanaryCallPair[];
 }
 
 /** Why a canary stopped standing: ended by a person, replaced by another, its until passed, promoted, or the agent retired. */
@@ -86,8 +114,8 @@ export interface CanaryEnded {
   reason: string;
 }
 
-/** Why a pair was skipped, not counted: a shadow run that failed after a `would_call`, or a compared field it only has as a stand-in (`stand_in`); stopped at the spec's own await node (`await`); killed (`killed`). */
-export type SkipWhy = "stand_in" | "await" | "killed";
+/** Why a pair was skipped, not counted: the candidate would not start on the input, so there is no shadow run (`candidate_refused`); a shadow that failed on a placeholder, or whose compared field is one (`stand_in`); a shadow that ended where a run would wait for a person: an await node (`await`), a budget (`budget`), a call whose worker died (`interrupted`); either side stopped (`killed`). */
+export type SkipWhy = "candidate_refused" | "stand_in" | "await" | "budget" | "interrupted" | "killed";
 
 /** `GET /api/agents/{id}/canary`, and what PUT and DELETE answer. */
 export interface CanaryView {
@@ -101,14 +129,14 @@ export interface CanaryView {
   until: string | null;
   by: string;
   at: string;
-  /** It stands now: starts are routed (canary) or mirrored (shadow). */
+  /** It stands now: starts are diverted (canary) or mirrored (shadow). */
   active: boolean;
   ended: CanaryEnded | null;
   /** What production ran when it was configured. */
   production: VersionPoint | null;
   /** What production runs now. */
   production_now: VersionPoint | null;
-  /** The spec's `evals.compare` field the pairs are compared on; null to compare the whole result. */
+  /** The candidate's `spec.evals.compare` field shadow pairs are compared on; null to compare the whole result. */
   field: string | null;
   /** The candidate's runs. */
   runs: number;
@@ -123,28 +151,56 @@ export interface CanaryView {
   skipped: number;
   skipped_why: Record<string, number>;
   arms: { candidate: CanaryArm; production: CanaryArm };
-  /** The promotion gate as read for the candidate when it was configured. */
+  /** Shadow only: how the compared pairs' calls compared; null for a canary. */
+  calls: CanaryCalls | null;
+  /** The deploy conditions as read for the candidate when it was configured. */
   conditions: CanaryCondition[];
-  /** The gate decision recorded in the mode's environment. */
+  /** The decision recorded in the mode's environment. */
   decision: string;
   /** The deployment row (environment canary or shadow) that lights the spine's canary stage. */
   deployment: string;
-  /** DELETE (or a PUT that replaced it): its queued shadow jobs withdrawn (`cancel_reason: "the canary <id> ended"`). */
-  cancelled_jobs: string[];
-  /** DELETE: the candidate's queued retries given back to production. */
-  released_jobs: string[];
+  /**
+   * Never sent by this backend, and never filled by `canaryViewOf`: ending a canary withdraws no queued job (runs already started go on to
+   * their end). Kept optional so views captured from the earlier backend still type-check.
+   */
+  cancelled_jobs?: string[];
+  released_jobs?: string[];
 }
 
-/** A condition with `required` as the backend says it, else as the contract rules it: everything but regression. */
+/** A condition with `required` as the backend says it; required when it does not say. */
 export function canaryConditionOf(v: unknown): CanaryCondition {
   const o = obj(v);
   const c = conditionOf(o);
-  return { ...c, required: typeof o.required === "boolean" ? o.required : c.condition !== "regression" };
+  return { ...c, required: typeof o.required === "boolean" ? o.required : true };
 }
 
 const armOf = (v: unknown): CanaryArm => {
   const o = obj(v);
-  return { runs: num(o.runs), finished: num(o.finished), outcomes: counts(o.outcomes) };
+  return { runs: num(o.runs), finished: num(o.finished), outcomes: counts(o.outcomes), cost_usd: numOrNull(o.cost_usd) };
+};
+
+const callOf = (v: unknown): CanaryCall => {
+  const o = obj(v);
+  return { tool: str(o.tool), args: obj(o.args), made: o.made === true };
+};
+
+const callsOf = (v: unknown): CanaryCalls | null => {
+  if (!isObj(v)) return null;
+  const o = obj(v);
+  return {
+    compared: num(o.compared),
+    same: num(o.same),
+    differ: num(o.differ),
+    rate: numOrNull(o.rate),
+    pairs: objs(o.pairs).map((p) => ({
+      production_run: str(p.production_run),
+      shadow_run: str(p.shadow_run),
+      production: objs(p.production).map(callOf),
+      shadow: objs(p.shadow).map(callOf),
+      only_production: strs(p.only_production),
+      only_shadow: strs(p.only_shadow),
+    })),
+  };
 };
 
 export function canaryViewOf(v: unknown): CanaryView {
@@ -175,15 +231,14 @@ export function canaryViewOf(v: unknown): CanaryView {
     skipped: num(o.skipped),
     skipped_why: counts(o.skipped_why),
     arms: { candidate: armOf(arms.candidate), production: armOf(arms.production) },
+    calls: callsOf(o.calls),
     conditions: objs(o.conditions).map(canaryConditionOf),
     decision: str(o.decision),
     deployment: str(o.deployment),
-    cancelled_jobs: strs(o.cancelled_jobs),
-    released_jobs: strs(o.released_jobs),
   };
 }
 
-/** The canary's 409: the promotion gate refusing the candidate in the mode's environment (`canary` or `shadow`), every condition marked required or not. */
+/** The canary's 409: the deploy conditions refusing the candidate in the mode's environment (`canary` or `shadow`), every condition marked required or not. */
 export type CanaryRefusal = Omit<GateRefusal, "conditions"> & { conditions: CanaryCondition[] };
 
 /**
@@ -743,7 +798,7 @@ export async function getCanary(agent: string, id?: string): Promise<CanaryView 
 
 /**
  * `PUT /api/agents/{id}/canary` (deploy): 200, the canary standing (a PUT
- * replaces the one standing). 409 the promotion gate's refusal for the
+ * replaces the one standing). 409 the deploy conditions' refusal for the
  * candidate (canaryRefusalOf), or `field: version` for what production runs
  * and for an agent with nothing deployed; 404 `field: version`; 400 `field:
  * share | mode | until`; 409 retired.
@@ -752,7 +807,7 @@ export async function putCanary(agent: string, body: CanaryRequest): Promise<Can
   return call(L8B.putCanary(agent, body), canaryViewOf);
 }
 
-/** `DELETE /api/agents/{id}/canary` (deploy): the canary ended, with its queued shadow jobs withdrawn and its candidate's queued retries released; 404 when none stands. */
+/** `DELETE /api/agents/{id}/canary` (deploy): the canary ended (runs already started go on to their end); 404 when none stands. */
 export async function endCanary(agent: string): Promise<CanaryView> {
   return call(L8B.endCanary(agent), canaryViewOf);
 }

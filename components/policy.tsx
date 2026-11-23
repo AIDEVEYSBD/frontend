@@ -17,8 +17,7 @@ import { Figures, JsonDetails, Section } from "./section";
 import { GroupHeader } from "./page-tabs";
 import { soon } from "@/lib/soon";
 import { useSession } from "@/lib/use-session";
-import { agentDocument, listAgents, listAttached, type AgentSummary } from "@/lib/api/l2";
-import { listPeers } from "@/lib/api/l7b";
+import { agentDocument, listAgents, type AgentSummary } from "@/lib/api/l2";
 import { DoorError, auditLine } from "@/lib/api/l5";
 import {
   CHANGE_STATES,
@@ -72,24 +71,25 @@ import {
 import { whenText } from "@/lib/lifecycle";
 
 /**
- * Policy as reviewed change (phase L9).
+ * Policy as reviewed change.
  *
- * A policy target is anything whose rules decide what runs may do: an
- * attached agent's grants and gate risk, the guardian's limits, the breakers'
- * thresholds, the rate limits, the screener, retention, redaction, the
- * controls an autonomy tier requires, an attestation period. None of them is
- * written directly any more: a person proposes a change (with its diff in the
- * target's own vocabulary, and when it should take effect), someone other than
- * the proposer approves it, and the scheduler applies it at its time. An
- * applied change can be rolled back in one click: that is an emergency, with
- * no second person, recorded as such and raised for review. A spec's own
- * `policy` block keeps its L8 path through versions and reviews, and is what
- * the simulation rules again, with the runtime's own enforcer, over the calls
- * the journal recorded. Nothing a simulation does executes.
+ * A policy target is a set of rules that decides what runs may do: the
+ * estate's rate limits on starting runs, the breakers' thresholds, the
+ * guardian's limits, and the release threshold (the estate's, or one
+ * agent's own). None is written directly: a person proposes a change (with
+ * its diff in the target's own words, and when it should take effect),
+ * someone other than the proposer approves it, and it applies at its time.
+ * An applied change can be rolled back in one step: a change back, applied
+ * at once with no second person, recorded as an emergency and raised on the
+ * attention queue. Targets later phases own (an attached agent's grants,
+ * peers, retention) are listed as not built. A definition's own `policy`
+ * block keeps its path through versions and reviews, and is what the
+ * simulation decides again, with the run engine's own decision, over the
+ * calls the journals recorded; nothing a simulation does executes.
  *
- * Every move needs the configure permission and a person (a key holds no one's
- * authority); a viewer reads all of it. The doors are lib/api/l9.ts; the words
- * and the form are lib/policy.ts.
+ * Every move needs the configure permission and a person; the auditor reads
+ * all of it and may simulate. The doors are lib/api/l9.ts; the words and the
+ * form are lib/policy.ts.
  */
 
 function DiffTable({ diff }: { diff: PolicyDiff }) {
@@ -379,6 +379,22 @@ function FieldEditor({ field, value, onChange, error, disabled }: { field: Propo
   );
 }
 
+const ACT_CHOICES = [
+  { value: "hold", label: "hold its next call at or above write" },
+  { value: "stop", label: "stop the run" },
+  { value: "raise", label: "only raise it for a person" },
+];
+
+/** The fields of this backend's targets the lib's reading of a value gets wrong: the guardian's acts are a choice, and an empty limit is off. */
+function fieldsFor(target: TargetKind, current: Record<string, unknown> | null, inherits: Record<string, unknown> | null): ProposalField[] {
+  return fieldsOf(target, current, inherits).map((f) => {
+    if (target.kind !== "guardian") return f;
+    if (f.name.startsWith("on_")) return { ...f, kind: "choice", choices: ACT_CHOICES, hint: undefined };
+    if (f.kind === "number") return { ...f, hint: "empty switches this limit off" };
+    return f;
+  });
+}
+
 /** The rules a target holds now, for one of its ids, and what a null in them inherits. */
 async function currentOf(target: TargetKind, id: string): Promise<{ rules: Record<string, unknown> | null; inherits: Record<string, unknown> | null }> {
   if (target.ids === "estate" || id === "estate") return { rules: target.current, inherits: null };
@@ -390,7 +406,7 @@ async function currentOf(target: TargetKind, id: string): Promise<{ rules: Recor
 function ProposalFields({ target, id, current, inherits, onProposed }: { target: TargetKind; id: string; current: Record<string, unknown> | null; inherits: Record<string, unknown> | null; onProposed: (c: PolicyChange) => void }) {
   const { can, loaded } = useSession();
   const editable = !loaded || can("configure");
-  const fields = useMemo(() => fieldsOf(target, current, inherits), [target, current, inherits]);
+  const fields = useMemo(() => fieldsFor(target, current, inherits), [target, current, inherits]);
   const [draft, setDraft] = useState<Draft>(() => draftOf(fields, current));
   const [reason, setReason] = useState("");
   const [effective, setEffective] = useState("");
@@ -398,8 +414,6 @@ function ProposalFields({ target, id, current, inherits, onProposed }: { target:
   const [error, setError] = useState("");
   const [refused, setRefused] = useState<{ field: string; error: string } | null>(null);
   const [sim, setSim] = useState<SimulationResult | null>(null);
-  const [simBusy, setSimBusy] = useState(false);
-  const simDoor = useDoorOff("POST", "/api/policy/simulate");
   const proposeDoor = useDoorOff("POST", "/api/policy/changes");
   const { patch, problems } = patchOf(fields, draft, current);
   const changed = Object.keys(patch);
@@ -420,17 +434,6 @@ function ProposalFields({ target, id, current, inherits, onProposed }: { target:
       else setError((e as Error).message);
     } finally {
       setBusy(false);
-    }
-  };
-  const simulate = async () => {
-    setSimBusy(true);
-    setError("");
-    try {
-      setSim(await simulatePolicy({ target: { kind: "attached", id }, proposed: patch, window: "7d" }));
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSimBusy(false);
     }
   };
   return (
@@ -456,11 +459,6 @@ function ProposalFields({ target, id, current, inherits, onProposed }: { target:
         <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={blocked || proposeDoor.off} title={proposeDoor.why} loading={busy} onClick={propose}>
           {changed.length ? `Propose ${changed.length} change${changed.length === 1 ? "" : "s"}` : "No changes"}
         </Button>
-        {target.kind === "attached" && (
-          <Button size="sm" variant="solid" tone="neutral" disabled={!changed.length || simDoor.off} title={simDoor.why} loading={simBusy} onClick={simulate}>
-            Simulate over the last 7 days
-          </Button>
-        )}
         {changed.length > 0 && !reason.trim() && <span className="text-[11px] text-faint">A change needs a reason.</span>}
         {changed.length > 0 && reason.trim() && <span className="text-[11px] text-faint">Sends only {changed.join(", ")}; the rest keep their value.</span>}
       </span>
@@ -473,20 +471,18 @@ function ProposalFields({ target, id, current, inherits, onProposed }: { target:
 function ProposeForm({ targets, agents, kind, onKind, onProposed }: { targets: TargetKind[]; agents: AgentSummary[]; kind: string; onKind: (k: string) => void; onProposed: (c: PolicyChange) => void }) {
   const target = targets.find((t) => t.kind === kind) ?? targets[0];
   const [id, setId] = useState("estate");
-  const [attached, setAttached] = useState<{ id: string; name: string }[]>([]);
-  const [peers, setPeers] = useState<{ id: string; name: string }[]>([]);
   const [current, setCurrent] = useState<{ key: string; rules: Record<string, unknown> | null; inherits: Record<string, unknown> | null } | null>(null);
   const [error, setError] = useState("");
-  useEffect(() => {
-    listAttached()
-      .then((l) => setAttached(l.agents.map((a) => ({ id: a.id, name: a.name }))))
-      .catch(() => setAttached([]));
-    listPeers()
-      .then((l) => setPeers(l.peers.map((p) => ({ id: p.id, name: p.label }))))
-      .catch(() => setPeers([]));
-  }, []);
+  // A target is the estate's, the estate's or one saved agent's, or one approved attached agent's (listed in the target's by_id).
   const needs = target?.ids ?? "estate";
-  const options = needs === "attached" ? attached.map((a) => ({ value: a.id, label: a.name })) : needs === "peer" ? peers.map((p) => ({ value: p.id, label: p.name })) : needs === "agent" ? agents.map((a) => ({ value: a.id, label: a.name })) : needs === "estate_or_agent" ? [{ value: "estate", label: "The estate" }, ...agents.map((a) => ({ value: a.id, label: a.name }))] : [];
+  const options =
+    needs === "agent"
+      ? agents.map((a) => ({ value: a.id, label: a.name }))
+      : needs === "estate_or_agent"
+        ? [{ value: "estate", label: "The estate" }, ...agents.map((a) => ({ value: a.id, label: a.name }))]
+        : needs === "attached"
+          ? Object.keys(target?.by_id ?? {}).map((a) => ({ value: a, label: a }))
+          : [];
   const picked = needs === "estate" ? "estate" : options.some((o) => o.value === id) ? id : (options[0]?.value ?? "");
   const key = `${kind}:${picked}`;
   useEffect(() => {
@@ -513,7 +509,7 @@ function ProposeForm({ targets, agents, kind, onKind, onProposed }: { targets: T
           <Pick value={kind} onChange={onKind} options={targets.map((t) => ({ value: t.kind, label: targetLabel(t.kind) }))} />
         </Field>
         {needs !== "estate" && (
-          <Field label={needs === "attached" ? "Attached agent" : needs === "peer" ? "Peer" : "Agent"} hint={options.length ? undefined : "none on record"}>
+          <Field label={needs === "estate_or_agent" ? "The estate, or one agent" : "Agent"} hint={options.length ? undefined : "none on record"}>
             <Pick value={picked} onChange={setId} options={options} disabled={!options.length} />
           </Field>
         )}
@@ -604,8 +600,7 @@ export function SimulationView({ result }: { result: SimulationResult }) {
 /** Rule the recorded calls again under a proposal. It writes nothing, so a viewer may run it. */
 function SimulatePanel({ agents, preset, quiet = false }: { agents: AgentSummary[] | null; preset: string | null; quiet?: boolean }) {
   const simDoor = useDoorOff("POST", "/api/policy/simulate");
-  const [subject, setSubject] = useState<"agent" | "attached">("agent");
-  const [attached, setAttached] = useState<{ id: string; name: string; grants: string[]; gate_at: string }[]>([]);
+  const subject = "agent" as const;
   const [id, setId] = useState(preset ?? "");
   const [span, setSpan] = useState("7d");
   const [from, setFrom] = useState("");
@@ -615,16 +610,11 @@ function SimulatePanel({ agents, preset, quiet = false }: { agents: AgentSummary
   const [policy, setPolicy] = useState<{ key: string; text?: string; error?: string } | null>(null);
   const [edited, setEdited] = useState<{ key: string; text: string } | null>(null);
   const [outcome, setOutcome] = useState<{ key: string; result?: SimulationResult; error?: string; door?: boolean } | null>(null);
-  useEffect(() => {
-    listAttached()
-      .then((l) => setAttached(l.agents.map((a) => ({ id: a.id, name: a.name, grants: a.grants, gate_at: a.gate_at }))))
-      .catch(() => setAttached([]));
-  }, []);
-  const options = subject === "agent" ? (agents ?? []).map((a) => ({ value: a.id, label: a.name })) : attached.map((a) => ({ value: a.id, label: a.name }));
+  const options = (agents ?? []).map((a) => ({ value: a.id, label: a.name }));
   const picked = options.some((o) => o.value === id) ? id : (options[0]?.value ?? "");
   const key = `${subject}:${picked}`;
   useEffect(() => {
-    if (subject !== "agent" || !picked) return;
+    if (!picked) return;
     let stop = false;
     agentDocument(picked)
       .then((doc) => {
@@ -636,10 +626,9 @@ function SimulatePanel({ agents, preset, quiet = false }: { agents: AgentSummary
     return () => {
       stop = true;
     };
-  }, [subject, picked]);
+  }, [picked]);
   // The proposal starts from the rules as they stand: a person edits what they mean to change.
-  const row = attached.find((a) => a.id === picked);
-  const seed = subject === "attached" ? (row ? JSON.stringify({ grants: row.grants, gate_at: row.gate_at }, null, 2) : "") : policy?.key === key ? (policy.text ?? "") : "";
+  const seed = policy?.key === key ? (policy.text ?? "") : "";
   const text = edited?.key === key ? edited.text : seed;
   const run = async () => {
     const parsed = parseProposal(text);
@@ -651,7 +640,7 @@ function SimulatePanel({ agents, preset, quiet = false }: { agents: AgentSummary
     setOutcome(null);
     try {
       const w = simWindowOf(span, from, to);
-      setOutcome({ key, result: await simulatePolicy(subject === "agent" ? { agent: picked, proposed: parsed.proposed, window: w } : { target: { kind: "attached", id: picked }, proposed: parsed.proposed, window: w }) });
+      setOutcome({ key, result: await simulatePolicy({ agent: picked, proposed: parsed.proposed, window: w }) });
     } catch (e) {
       const at = e instanceof DoorError && typeof e.body.path === "string" ? ` (${e.body.path})` : "";
       setOutcome({ key, error: `${(e as Error).message}${at}`, door: true });
@@ -664,18 +653,11 @@ function SimulatePanel({ agents, preset, quiet = false }: { agents: AgentSummary
   return (
     <div className="flex flex-col gap-3">
       <div className="grid gap-3 md:grid-cols-3">
-        <Field label="What is proposed for">
-          <Pick
-            value={subject}
-            onChange={(v) => setSubject(v as "agent" | "attached")}
-            options={[
-              { value: "agent", label: "A saved agent's policy" },
-              { value: "attached", label: "An attached agent's grants and gate" },
-            ]}
-          />
+        <Field label="What is proposed for" hint="simulating an attached agent's proposed policy is not built">
+          <Pick value={subject} onChange={() => undefined} options={[{ value: "agent", label: "A saved agent's policy" }]} />
         </Field>
-        <Field label={subject === "agent" ? "Agent" : "Attached agent"} hint={options.length || quiet || (subject === "agent" && agents === null) ? undefined : "none on record"}>
-          <Pick value={picked} onChange={setId} options={options} disabled={!options.length} loading={subject === "agent" && agents === null} />
+        <Field label="Agent" hint={options.length || quiet || agents === null ? undefined : "none on record"}>
+          <Pick value={picked} onChange={setId} options={options} disabled={!options.length} loading={agents === null} />
         </Field>
         <Field label="Over" hint="runs that started in it">
           <Pick value={span} onChange={setSpan} options={SIM_WINDOWS} />
@@ -691,14 +673,14 @@ function SimulatePanel({ agents, preset, quiet = false }: { agents: AgentSummary
           </Field>
         </div>
       )}
-      <Field label="Proposed" hint={subject === "agent" ? "the policy block as it stands: edit it, or paste a whole spec" : "the fields as they stand: edit what you mean to change"}>
+      <Field label="Proposed" hint="the policy block as it stands: edit it, or paste a whole definition">
         <Textarea rows={8} mono value={text} onChange={(v) => setEdited({ key, text: v })} />
       </Field>
       <span className="flex flex-wrap items-center gap-2">
         <Button size="sm" variant="solid" tone="ink" disabled={!picked || !text.trim() || simDoor.off} title={simDoor.why} loading={busy} onClick={run}>
           Simulate
         </Button>
-        <span className="text-[11px] text-faint">{simDoor.off ? simDoor.why : "Nothing is executed. The platform says whether it builds the simulation."}</span>
+        <span className="text-[11px] text-faint">{simDoor.off ? simDoor.why : "Each recorded call is decided again by the run engine's own decision. Nothing is executed or written."}</span>
       </span>
       {error && <Failure inline message={error} />}
       {shown?.result && <SimulationView result={shown.result} />}
@@ -757,6 +739,8 @@ function PolicyPage() {
   const selected = params.get("change");
   const preset = params.get("simulate");
   const [targets, setTargets] = useState<TargetKinds | null>(null);
+  /** Targets later phases own, as the targets door names them (the typed read leaves them out). */
+  const [notBuilt, setNotBuilt] = useState<{ kind: string; what: string; why: string }[]>([]);
   const [list, setList] = useState<PolicyChangeList | null>(null);
   const [change, setChange] = useState<PolicyChange | null>(null);
   const [agents, setAgents] = useState<AgentSummary[] | null>(null);
@@ -778,6 +762,10 @@ function PolicyPage() {
     listPolicyTargets()
       .then(setTargets)
       .catch((e) => setError((e as Error).message));
+    fetch("/api/policy/targets", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setNotBuilt(Array.isArray(d?.not_built) ? d.not_built : []))
+      .catch(() => setNotBuilt([]));
   }, [state, target]);
   useEffect(() => {
     const cancel = soon(load);
@@ -917,6 +905,16 @@ function PolicyPage() {
           <p className="text-[12px] text-faint">Not read.</p>
         ) : (
           <p className="text-[12px] text-faint">Reading…</p>
+        )}
+        {notBuilt.length > 0 && (
+          <div className="mt-3 flex flex-col gap-1">
+            <span className="text-[11px] font-semibold text-dim">Not built</span>
+            {notBuilt.map((t) => (
+              <p key={t.kind} className="text-[11px] leading-[1.5] text-faint">
+                <span className="text-dim">{targetLabel(t.kind)}</span>: {t.what}; {t.why}.
+              </p>
+            ))}
+          </div>
         )}
       </Section>
       </>
