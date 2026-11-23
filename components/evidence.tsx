@@ -14,21 +14,21 @@ import { GroupHeader } from "./page-tabs";
 import { ChainStatus } from "./chain";
 import { soon } from "@/lib/soon";
 import { listAgents, type AgentSummary } from "@/lib/api/l2";
-import { downloadEvidence, getControls, getEvidence, saveFile, type ControlsCatalogue, type EvidencePack } from "@/lib/api/l9";
-import { packChainLine } from "@/lib/chain";
-import { EMPTY_PACK_FORM, decisionLine, noFiringLine, packLine, packProblem, packQuery, periodLine, stampLine, type PackForm } from "@/lib/evidence";
+import { getControls, saveFile, type ControlsCatalogue } from "@/lib/api/l9";
+import { downloadEvidence, getEvidence, listFrameworks, type EvidencePack, type FrameworkInfo } from "@/lib/api/assurance";
+import { EMPTY_PACK_FORM, decisionLine, noFiringLine, packChainLine, packLine, packProblem, packQuery, periodLine, stampLine, type PackForm } from "@/lib/assurance-words";
 import { whenText } from "@/lib/lifecycle";
-import { CHANGE_STATE_META, targetLine } from "@/lib/policy";
 
 /**
- * Evidence packs (phase L9): what an assessor asks for. For a control or a
- * framework's controls, over a period, optionally for one agent: the control's
- * firings, the signed decisions on its gates, the policy versions and changes
- * in force, the identities that acted, and the chain verification of every run
- * cited. The pack reads here as JSON and downloads as a zip with a manifest and
- * a SHA-256 per file, each cited record inside, so a verifier can walk the
- * chain from the zip alone. A pack is read on request, never polled: building
- * one walks every record in the period.
+ * Evidence packs: what an assessor asks for. For a control or a framework's
+ * controls, over a period, optionally for one agent: the firings, the signed
+ * decisions on its gates (each digest checked again, each checked against the
+ * chain), the definitions the cited runs ran and each control's enforcement as
+ * read now, the identities that acted, and the chain of every run cited. The
+ * pack reads here as JSON and downloads as a zip with a manifest and a SHA-256
+ * per file; each cited run's journal is inside as stored, with every field its
+ * hash covers, so a verifier can recompute the chain from the zip alone. A pack
+ * is read on request, never polled. The doors are lib/api/assurance.ts.
  */
 
 function Rows({ head, children, min = 720 }: { head: string[]; children: React.ReactNode; min?: number }) {
@@ -65,6 +65,7 @@ const Run = ({ run, entry }: { run: string; entry?: string }) => (
 export function EvidencePackView({ pack }: { pack: EvidencePack }) {
   const p = pack;
   const chain = packChainLine(p.chain);
+  const notBuilt = Object.entries(p.not_built);
   return (
     <div className="flex flex-col gap-4">
       <p className="text-[11px] text-faint">
@@ -77,7 +78,7 @@ export function EvidencePackView({ pack }: { pack: EvidencePack }) {
         </Banner>
       )}
       <Banner tone={chain.tone} title={chain.title}>
-        {p.chain.reason ? `${chain.line} ${p.chain.reason}.` : chain.line}
+        {chain.line}
         {p.chain.broken.map((b) => (
           <span key={b.run} className="mt-1 block font-mono text-[10.5px] break-words">
             {b.run}: {b.reason}
@@ -85,25 +86,31 @@ export function EvidencePackView({ pack }: { pack: EvidencePack }) {
         ))}
       </Banner>
       {p.truncated && (
-        <Banner tone="warn" title="This pack was cut short">
-          The period holds more than a pack carries: narrow it or name an agent.
+        <Banner tone="warn" title="This pack lists only the first firings">
+          The counts cover every firing in the period; the list holds the first {p.firings.length}. Narrow the period or name an agent to list the rest.
         </Banner>
       )}
 
       {p.controls.length > 0 && (
         <Section title="Controls" hue="control" meta={`${p.controls.length} in the pack`}>
           <ul className="flex flex-col gap-2">
-            {p.controls.map((c) => (
-              <li key={c.id} className="flex flex-col gap-0.5">
-                <span className="flex flex-wrap items-center gap-2">
-                  <ControlRef control={c.id} />
-                  <span className="text-[12px] font-semibold text-fg">{c.title}</span>
-                </span>
-                <span className="text-[11.5px] leading-[1.5] text-dim">{c.statement}</span>
-                <span className="text-[10.5px] leading-[1.5] text-faint">Evidence it leaves: {c.evidence}</span>
-              </li>
-            ))}
+            {p.controls.map((c) => {
+              const enforced = p.policy.platform.find((x) => x.control === c.id);
+              return (
+                <li key={c.id} className="flex flex-col gap-0.5">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <ControlRef control={c.id} />
+                    <span className="text-[12px] font-semibold text-fg">{c.title}</span>
+                    {enforced && <Tag tone={enforced.state === "enforced" ? "ok" : enforced.state === "partly" ? "warn" : "err"}>{enforced.state ? enforced.state.replace("_", " ") : "enforcement unknown"}</Tag>}
+                  </span>
+                  <span className="text-[11.5px] leading-[1.5] text-dim">{c.statement}</span>
+                  <span className="text-[10.5px] leading-[1.5] text-faint">Counted from: {c.evidence}</span>
+                  {enforced?.why && <span className="text-[10.5px] leading-[1.5] text-faint">Enforcement now: {enforced.why}</span>}
+                </li>
+              );
+            })}
           </ul>
+          {p.policy.platform_as_of && <p className="text-[10.5px] text-faint">Enforcement is {p.policy.platform_as_of}.</p>}
         </Section>
       )}
 
@@ -111,7 +118,7 @@ export function EvidencePackView({ pack }: { pack: EvidencePack }) {
         {p.firings.length ? (
           <Rows head={["When", "Run", "Control", "What", "Detail"]}>
             {p.firings.map((f) => (
-              <tr key={`${f.run}:${f.entry}`} className="border-b border-line align-top last:border-0">
+              <tr key={`${f.entry}:${f.key}`} className="border-b border-line align-top last:border-0">
                 <td className="px-3 py-1.5 whitespace-nowrap text-faint">{whenText(f.at)}</td>
                 <td className="px-3 py-1.5">
                   <span className="block text-fg">{f.agent}</span>
@@ -134,96 +141,63 @@ export function EvidencePackView({ pack }: { pack: EvidencePack }) {
         )}
       </Section>
 
-      <Section title="Signed decisions" hue="approvals" meta="each answer stamped with the controls that opened the gate">
+      <Section title="Signed decisions" hue="approvals" meta="each gate answered in the period whose controls are in the pack">
         {p.decisions.length ? (
-          <Rows head={["Run", "Decision", "Controls", "Digest"]}>
+          <Rows head={["Run", "Decision", "Controls", "Record"]}>
             {p.decisions.map((d) => (
               <tr key={d.digest || `${d.run}:${d.gate}`} className="border-b border-line align-top last:border-0">
                 <td className="px-3 py-1.5">
                   <span className="block text-fg">{d.agent}</span>
-                  {/* The signed answer's own entry when it is chained, else the gate it answers. */}
                   <Run run={d.run} entry={d.entry || d.gate} />
                 </td>
                 <td className="max-w-[420px] px-3 py-1.5 leading-[1.5] text-dim">{decisionLine(d)}</td>
                 <td className="px-3 py-1.5">
                   <span className="flex flex-wrap gap-1">{d.control_ids.length ? d.control_ids.map((c) => <ControlRef key={c} control={c} />) : d.controls.map((c) => <Tag key={c}>{c}</Tag>)}</span>
+                </td>
+                <td className="px-3 py-1.5">
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <Tag tone={d.digest_holds ? "ok" : "err"}>{d.digest_holds ? "digest holds" : "digest does not match"}</Tag>
+                    <Tag tone={d.chained ? "ok" : "err"}>{d.chained ? "on the chain" : "not on the chain"}</Tag>
+                    {d.digest && <DigestChip digest={d.digest} label="Decision digest" />}
+                  </span>
                   <span className="mt-0.5 block text-[10.5px] text-ghost">{stampLine(d)}</span>
                 </td>
-                <td className="px-3 py-1.5">{d.digest ? <DigestChip digest={d.digest} label="Decision digest" /> : <span className="text-[11px] text-ghost">read back from the journal</span>}</td>
               </tr>
             ))}
           </Rows>
         ) : (
-          <p className="text-[12px] text-faint">No gate of this control was answered in the period.</p>
+          <p className="text-[12px] text-faint">No gate of these controls was answered in the period.</p>
         )}
       </Section>
 
-      <Section title="Policy in force" hue="guardrail" meta={`${p.policy.versions.length} versions · ${p.policy.deployments.length} deployments · ${p.policy.changes.length} changes`}>
-        {p.policy.versions.length + p.policy.deployments.length + p.policy.changes.length === 0 && <p className="text-[12px] text-faint">No version or policy change touches this period.</p>}
-        {p.policy.versions.length > 0 && (
-          <Rows head={["Agent", "Version", "Digest", "Saved", "Reviews"]} min={620}>
+      <Section title="Definitions run" hue="guardrail" meta="the definition each cited run ran">
+        {p.policy.versions.length > 0 ? (
+          <Rows head={["Agent", "Version", "Digest", "Saved"]} min={620}>
             {p.policy.versions.map((v) => (
               <tr key={`${v.agent}:${v.digest}`} className="border-b border-line align-top last:border-0">
                 <td className="px-3 py-1.5 text-fg">{v.agent}</td>
                 <td className="px-3 py-1.5 text-dim">
-                  {v.version ?? "?"}
-                  {v.deployed && <span className="text-faint"> · deployed</span>}
+                  {v.draft ? "a draft, never saved as a version" : v.version}
+                  {v.deployed && <span className="text-faint"> · deployed now</span>}
                 </td>
                 <td className="px-3 py-1.5">
-                  <DigestChip digest={v.digest} label="Spec digest" />
+                  <DigestChip digest={v.digest} label="Definition digest" />
                 </td>
-                <td className="px-3 py-1.5 text-faint">
-                  {whenText(v.saved_at)} by {v.saved_by}
-                </td>
-                <td className="tnum px-3 py-1.5 text-dim">{v.reviews.length}</td>
+                <td className="px-3 py-1.5 text-faint">{v.draft ? "" : `${whenText(v.saved_at)} by ${v.saved_by}`}</td>
               </tr>
             ))}
           </Rows>
+        ) : (
+          <p className="text-[12px] text-faint">No run is cited, so no definition is.</p>
         )}
-        {p.policy.deployments.length > 0 && (
-          <Rows head={["Agent", "Deployment", "Digest", "When"]} min={620}>
-            {p.policy.deployments.map((d) => (
-              <tr key={d.id} className="border-b border-line align-top last:border-0">
-                <td className="px-3 py-1.5 text-fg">{d.agent}</td>
-                <td className="px-3 py-1.5 text-dim">
-                  {d.kind} of version {d.version ?? "?"} to {d.environment}
-                  {d.in_force_at_start && <span className="text-faint"> · in force when the period began</span>}
-                </td>
-                <td className="px-3 py-1.5">
-                  <DigestChip digest={d.digest} label="Deployed digest" />
-                </td>
-                <td className="px-3 py-1.5 text-faint">
-                  {whenText(d.at)} by {d.by}
-                </td>
-              </tr>
+        {notBuilt.length > 0 && (
+          <ul className="flex flex-col gap-0.5 text-[11px] leading-[1.5] text-faint">
+            {notBuilt.map(([k, why]) => (
+              <li key={k}>
+                <Mono className="text-[10.5px]">{k}</Mono>: {why}.
+              </li>
             ))}
-          </Rows>
-        )}
-        {p.policy.changes.length > 0 && (
-          <Rows head={["Change", "Target", "What", "Who"]}>
-            {p.policy.changes.map((c) => (
-              <tr key={c.id} className="border-b border-line align-top last:border-0">
-                <td className="px-3 py-1.5">
-                  <Link href={`/policy?change=${encodeURIComponent(c.id)}`} className="focusable rounded-sm font-mono text-[10.5px] text-dim hover:underline">
-                    {c.id}
-                  </Link>
-                  {c.emergency && <span className="block text-[10.5px] text-err">emergency rollback</span>}
-                </td>
-                <td className="px-3 py-1.5 text-dim">{targetLine({ kind: c.target_kind, id: c.target_id })}</td>
-                <td className="max-w-[420px] px-3 py-1.5 leading-[1.5] text-dim">
-                  {c.summary.join("; ")}
-                  <span className="block text-[10.5px] text-faint">
-                    {CHANGE_STATE_META[c.state as keyof typeof CHANGE_STATE_META]?.label ?? c.state}
-                    {c.in_force_at_start ? " · in force when the period began" : ""}
-                  </span>
-                </td>
-                <td className="px-3 py-1.5 text-faint">
-                  {c.proposed_by}
-                  {c.approved_by && c.approved_by !== c.proposed_by ? `, approved by ${c.approved_by}` : ""}
-                </td>
-              </tr>
-            ))}
-          </Rows>
+          </ul>
         )}
       </Section>
 
@@ -234,7 +208,6 @@ export function EvidencePackView({ pack }: { pack: EvidencePack }) {
               <li key={i.identity} className="flex flex-wrap items-center gap-2 text-[11.5px]">
                 <span className="font-medium text-fg">{i.identity}</span>
                 <span className="text-dim">{i.acted_as.join(", ")}</span>
-                <span className="tnum text-[10.5px] text-faint">{i.count}</span>
               </li>
             ))}
           </ul>
@@ -243,9 +216,9 @@ export function EvidencePackView({ pack }: { pack: EvidencePack }) {
         )}
       </Section>
 
-      <Section title="Runs cited" hue="ledger" meta={p.excluded.shadow ? `${p.excluded.shadow} shadow runs left out` : undefined}>
+      <Section title="Runs cited" hue="ledger">
         {p.runs.length ? (
-          <Rows head={["Run", "State", "Chain", "Anchor", "Started"]}>
+          <Rows head={["Run", "State", "Chain", "Last hash", "Started"]}>
             {p.runs.map((r) => (
               <tr key={r.id} className="border-b border-line align-top last:border-0">
                 <td className="px-3 py-1.5">
@@ -257,13 +230,13 @@ export function EvidencePackView({ pack }: { pack: EvidencePack }) {
                   <ChainStatus chain={r.chain} />
                   {r.reason && <span className="block text-[10.5px] leading-[1.5] break-words text-faint">{r.reason}</span>}
                 </td>
-                <td className="px-3 py-1.5">{r.anchor ? <DigestChip digest={r.anchor} label="Run anchor" /> : <span className="text-[11px] text-ghost">none</span>}</td>
+                <td className="px-3 py-1.5">{r.anchor ? <DigestChip digest={r.anchor} label="Last hash" /> : <span className="text-[11px] text-ghost">none</span>}</td>
                 <td className="px-3 py-1.5 whitespace-nowrap text-faint">{whenText(r.started_at)}</td>
               </tr>
             ))}
           </Rows>
         ) : (
-          <p className="text-[12px] text-faint">No run is cited: nothing fired in the period.</p>
+          <p className="text-[12px] text-faint">No run is cited: nothing fired and no gate was answered in the period.</p>
         )}
       </Section>
     </div>
@@ -274,6 +247,7 @@ export function EvidencePackView({ pack }: { pack: EvidencePack }) {
 function EvidencePage() {
   const params = useSearchParams();
   const [catalogue, setCatalogue] = useState<ControlsCatalogue | null>(null);
+  const [frameworkList, setFrameworkList] = useState<FrameworkInfo[] | null>(null);
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [form, setForm] = useState<PackForm>(() => ({ ...EMPTY_PACK_FORM, control: params.get("control") ?? "", framework: params.get("framework") ?? "", agent: params.get("agent") ?? "" }));
   const [pack, setPack] = useState<EvidencePack | null>(null);
@@ -302,6 +276,9 @@ function EvidencePage() {
     getControls()
       .then(setCatalogue)
       .catch((e) => setLoadError((e as Error).message));
+    listFrameworks()
+      .then(setFrameworkList)
+      .catch((e) => setLoadError((e as Error).message));
     listAgents()
       .then(setAgents)
       .catch(() => setAgents([]));
@@ -325,30 +302,30 @@ function EvidencePage() {
     }
   };
   const controls = useMemo(() => [{ value: "", label: "No single control" }, ...(catalogue?.controls ?? []).map((c) => ({ value: c.id, label: `${c.id} · ${c.title}` }))], [catalogue]);
-  const frameworks = useMemo(() => [{ value: "", label: "No framework" }, ...(catalogue?.frameworks ?? []).map((f) => ({ value: f.id, label: f.short }))], [catalogue]);
-  const picked = catalogue?.frameworks.find((f) => f.id === form.framework);
+  const frameworks = useMemo(() => [{ value: "", label: "No framework" }, ...(frameworkList ?? []).map((f) => ({ value: f.id, label: f.short }))], [frameworkList]);
+  const picked = frameworkList?.find((f) => f.id === form.framework);
   // A catalogue that did not answer: the failure is shown above, and the form says it was not read.
   const quietDown = Boolean(loadError) && !catalogue;
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
       <GroupHeader group="assurance" tab="evidence">
-        An assessor&rsquo;s pack for a control or a framework over a period: what fired, the decisions, the policy in force, who acted, and the chain verification of every run cited, as a zip with a SHA-256 for each file. The pack is built by the platform, which says below whether it does so yet.
+        An assessor&rsquo;s pack for a control or a framework over a period, built now from the records: what fired, the signed decisions, the definitions the runs ran, who acted, and the chain of every run cited. It downloads as a zip with a SHA-256 for each file and each cited run&rsquo;s journal as stored.
       </GroupHeader>
       {loadError && (
-        <Banner tone="err" title="Could not read the controls catalogue">
+        <Banner tone="err" title="Could not read the controls or the frameworks">
           {loadError}
         </Banner>
       )}
       <>
-      <Section title="Build a pack" hue="control" meta={catalogue ? `${catalogue.count} controls · ${catalogue.frameworks.length} frameworks` : quietDown ? "the catalogue was not read" : "reading the catalogue…"}>
+      <Section title="Build a pack" hue="control" meta={catalogue ? `${catalogue.count} controls · ${frameworkList ? `${frameworkList.length} frameworks` : "frameworks not read"}` : quietDown ? "the catalogue was not read" : "reading the catalogue…"}>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <Field label="Control">
             <Pick value={form.control} onChange={(v) => edit({ control: v })} options={controls} />
           </Field>
-          <Field label="Or a control key" hint="what the journal names, for one the catalogue does not: lockdown, breaker, rate_limit">
+          <Field label="Or a control key" hint="a key the journal names that the catalogue does not map">
             <Input mono value={form.key} onChange={(v) => edit({ key: v })} />
           </Field>
-          <Field label="Framework" hint={picked && !picked.obligations.length ? "nothing is mapped to it: a pack would hold no controls" : undefined}>
+          <Field label="Framework" hint={picked && !picked.obligations.length ? picked.why ?? "nothing is mapped to it: a pack would hold no controls" : undefined}>
             <Pick value={form.framework} onChange={(v) => edit({ framework: v })} options={frameworks} />
           </Field>
           <Field label="From" hint="the door's default is 30 days back">

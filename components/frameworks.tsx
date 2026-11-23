@@ -12,18 +12,20 @@ import { Figures, Section } from "./section";
 import { GroupHeader } from "./page-tabs";
 import { soon } from "@/lib/soon";
 import { listAgents, type AgentSummary } from "@/lib/api/l2";
-import { OBLIGATION_STATUSES, getFrameworkView, listFrameworks, type AgentObligation, type FrameworkAgent, type FrameworkInfo, type RegulatoryView } from "@/lib/api/l9";
-import { CONFIGURATION_META, OBLIGATION_META, frameworkLine, isUnmapped, unmappedLine, viewCounts } from "@/lib/frameworks";
+import { OBLIGATION_STATUSES, getFrameworkView, listFrameworks, type AgentObligation, type FrameworkAgent, type FrameworkInfo, type RegulatoryView } from "@/lib/api/assurance";
+import { CONFIGURATION_META, OBLIGATION_META, frameworkLine, isUnmapped, unmappedLine, viewCounts } from "@/lib/assurance-words";
 import { whenText } from "@/lib/lifecycle";
 
 /**
- * Regulatory views (phase L9): the estate through one framework. Each agent
- * is mapped to the framework's obligations, each obligation reading evidenced
- * (a control fired in the period), configured (none fired, one is declared or
- * platform-enforced), not evidenced, or not applicable, with the evidence that
- * meets it. A framework nobody has mapped to a control (DPDP, SEBI and RBI
- * today) says exactly that, and why: an empty table would read as nothing
- * being wrong. The doors are lib/api/l9.ts, the words lib/frameworks.ts.
+ * Framework views: the estate through one framework. Each saved agent is set
+ * against the framework's obligations, each obligation reading evidenced (a
+ * control answering it is enforced now and fired in the period), configured
+ * (one is enforced now and none fired), or not evidenced (none answering it is
+ * enforced now, or none answers it), with the controls and firings behind it.
+ * Enforcement is read when the view is asked for. The client's own list (the
+ * ABB ICL) is a framework here once it is loaded on the Compliance page, and
+ * says it is not loaded until then. The doors are lib/api/assurance.ts, the
+ * words lib/assurance-words.ts.
  */
 
 /** The plain statement for a framework with no obligations mapped. Renders nothing for one that has them. */
@@ -32,15 +34,6 @@ export function UnmappedNotice({ framework }: { framework: FrameworkInfo }) {
   return (
     <Banner tone="warn" title={`No obligations of ${framework.short} are mapped`}>
       {unmappedLine(framework)} Nothing on this page says an agent meets it.
-      {framework.corpus?.url && (
-        <>
-          {" "}
-          <a href={framework.corpus.url} target="_blank" rel="noreferrer" className="focusable rounded-sm underline">
-            Read it at {framework.corpus.publisher}
-          </a>
-          .
-        </>
-      )}
     </Banner>
   );
 }
@@ -56,6 +49,7 @@ function ObligationRow({ o }: { o: AgentObligation }) {
         <Status tone={m.tone}>{m.label}</Status>
       </summary>
       <ul className="flex flex-col gap-1 border-t border-line bg-raise/20 px-3 py-2">
+        <li className="text-[10.5px] leading-[1.5] text-faint">{o.detail}.</li>
         {o.controls.map((c) => {
           const conf = CONFIGURATION_META[c.configuration] ?? { label: c.configuration, tone: "neutral" as const };
           return (
@@ -63,7 +57,9 @@ function ObligationRow({ o }: { o: AgentObligation }) {
               <ControlRef control={c.id} />
               <span className="text-fg">{c.title}</span>
               <Tag tone={conf.tone}>{conf.label}</Tag>
-              {c.firings > 0 ? (
+              {c.firings === null ? (
+                <span className="text-faint">acts outside a run: no firing is counted</span>
+              ) : c.firings > 0 ? (
                 <Link href={`/evidence?control=${encodeURIComponent(c.id)}`} className="focusable rounded-sm text-dim underline">
                   {c.firings} firing{c.firings === 1 ? "" : "s"}
                   {c.latest ? `, latest ${whenText(c.latest)}` : ""}
@@ -87,13 +83,12 @@ function AgentCard({ a }: { a: FrameworkAgent }) {
         <Link href={`/lifecycle?agent=${encodeURIComponent(a.agent)}`} className="focusable rounded-sm text-[12.5px] font-semibold text-fg hover:underline">
           {a.agent}
         </Link>
-        <Tag>{a.kind}</Tag>
-        {a.autonomy && <Tag>{a.autonomy}</Tag>}
+        {a.deployed && <Tag>deployed version {a.deployed.version}</Tag>}
         <span className="grow" />
         <span className="text-[10.5px] text-faint">{OBLIGATION_STATUSES.filter((s) => a.summary[s]).map((s) => `${a.summary[s]} ${OBLIGATION_META[s].label.toLowerCase()}`).join(" · ") || "no obligations mapped"}</span>
       </div>
       {a.obligations.length ? (
-        a.obligations.map((o) => <ObligationRow key={o.ref} o={o} />)
+        a.obligations.map((o) => <ObligationRow key={`${o.ref}:${o.name}`} o={o} />)
       ) : (
         <p className="px-3 py-2 text-[11px] text-faint">No obligations mapped, so nothing to read for this agent.</p>
       )}
@@ -113,14 +108,20 @@ export function FrameworkViewPanel({ view }: { view: RegulatoryView }) {
         {view.framework.name} · {whenText(view.period.from)} to {whenText(view.period.to)}
         {view.framework.mapping.length ? ` · mapped from ${view.framework.mapping.join(" and ")}` : ""}
       </p>
+      <p className="text-[11px] text-faint">
+        {[view.framework.scope, view.as_of]
+          .filter(Boolean)
+          .map((x) => `${x.charAt(0).toUpperCase()}${x.slice(1)}.`)
+          .join(" ")}
+      </p>
       {view.agents.length ? (
         <div className="grid items-start gap-3 lg:grid-cols-2">
           {view.agents.map((a) => (
-            <AgentCard key={`${a.kind}:${a.agent}`} a={a} />
+            <AgentCard key={a.agent} a={a} />
           ))}
         </div>
       ) : (
-        <p className="text-[12px] text-faint">No agent is saved or attached yet.</p>
+        <p className="text-[12px] text-faint">No agent is saved yet.</p>
       )}
     </div>
   );
@@ -174,7 +175,7 @@ function FrameworksPage() {
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
       <GroupHeader group="assurance" tab="frameworks">
-        The estate through one framework or regulation: each agent against its obligations, with the evidence that meets each. Where no clause has been mapped to a control, this says so rather than showing an empty pass.
+        The estate through one framework or regulation: each saved agent against its obligations, with the controls and firings that answer each. Where no control answers an obligation, or nothing is mapped, this says so rather than showing an empty pass.
       </GroupHeader>
       {error && (
         <Banner tone="err" title="Could not read the framework">

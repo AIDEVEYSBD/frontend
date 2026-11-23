@@ -392,7 +392,7 @@ export function Knowledge() {
             </>
           }
         >
-          The sources people can search here; agents do not retrieve on this deployment yet. A person adds a source, a copy of it is fetched, and a person admits that copy before any of it can be searched. Each
+          The sources people can search here; agents do not retrieve on this deployment yet. A person adds a source, a copy of it is fetched, and a person admits that copy before any of it can be searched; a bucket connector&rsquo;s documents are admitted instead by its rule, which a second person admits once. Each
           engagement has its own corpus; the one open here is <span className="font-mono text-[11.5px] text-fg">{ns}</span>.
         </GroupHeader>
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-4 py-2.5 elev-1">
@@ -651,6 +651,9 @@ export function Knowledge() {
             </div>
           )}
         </section>
+
+        {/* ── connectors: a body of documents ── */}
+        {namespace && <ConnectorsSection namespace={namespace} onDocument={(id) => setReview(id)} />}
 
         {/* ── the public catalogue: offered, not held ── */}
         {(data || off) && (
@@ -1730,6 +1733,473 @@ function UploadDocumentDialog({ namespace, namespaces, onClose, onDone }: { name
           <Pick<string> size="md" value={into} disabled={off} onChange={setInto} options={corpora.map((n) => ({ value: n, label: n }))} />
         </Field>
         {error && (<p role="alert" className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>)}
+      </div>
+    </Frame>
+  );
+}
+
+/* ═══════════════════ connectors: a body of documents under a bucket and prefix ═══════════════════ */
+
+interface ConnectorWho {
+  sub: string;
+  email: string;
+  name: string;
+}
+
+type ObjectState = "queued" | "ingested" | "failed" | "refused" | "withdrawn";
+
+interface Connector {
+  id: string;
+  kind: string;
+  name: string;
+  namespace: string;
+  location: string;
+  bucket: string;
+  prefix: string;
+  data_class: DataClass;
+  entitled: string[];
+  file_types: string[];
+  max_bytes: number;
+  /** The rule as it stands: its digest, and who wrote this version of it (registered the connector or last changed the rule). */
+  rule: { digest: string; by: ConnectorWho | null; at: string };
+  /** True while the latest admission is of the rule as it stands. */
+  admitted: boolean;
+  state: string;
+  admission: { digest: string; current: boolean; by: ConnectorWho | null; at: string; note: string } | null;
+  next_sync_at: string | null;
+  sync_running: boolean;
+  health: {
+    last_sync: { at: string; by: string | null; origin: string; result: "done" | "failed"; listed: number; queued: number; unchanged: number; refused: number; withdrawn: number; error: string | null } | null;
+    objects: Record<ObjectState, number>;
+    seen: number;
+    last_error: { at: string; what: string; object: string | null; reason: string } | null;
+  };
+}
+
+interface ConnectorObject {
+  name: string;
+  address: string;
+  state: ObjectState;
+  reason: string | null;
+  generation: string;
+  size: number;
+  document_id: string | null;
+  changed_at: string;
+  provenance: { document: string; generation: string; md5_hash: string | null; admission: string; rule_digest: string; admitted_by: ConnectorWho | null; admitted_at: string; ingested_at: string } | null;
+}
+
+interface ConnectorAccepts {
+  file_types: string[];
+  max_bytes_most: number;
+  bucket_api: string;
+  note: string;
+}
+
+const OBJECT_TONE: Record<ObjectState, "ok" | "queue" | "err" | "warn" | "neutral"> = { ingested: "ok", queued: "queue", failed: "err", refused: "warn", withdrawn: "neutral" };
+const OBJECT_STATES: ObjectState[] = ["ingested", "queued", "failed", "refused", "withdrawn"];
+const whoName = (w: ConnectorWho | null | undefined) => (w ? w.name || w.email || w.sub : "someone");
+
+/** One fetch of a connector address: the JSON it answered, or an Error carrying the service's own sentence. */
+async function connectorCall<T>(path: string, init?: RequestInit): Promise<T> {
+  const r = await fetch(path, { cache: "no-store", ...init, headers: init?.body ? { "content-type": "application/json" } : undefined });
+  const j = (await r.json().catch(() => null)) as (T & { error?: string; phase?: number }) | null;
+  if (!r.ok || !j) throw new Error(j?.error ? `${j.error}${j.error === "not built" && j.phase ? ` (phase ${j.phase})` : ""}` : `the server answered ${r.status}`);
+  return j;
+}
+
+/**
+ * The connectors feeding this corpus. Each lists the objects under a Cloud
+ * Storage bucket and prefix with the service's own Google identity and
+ * ingests every new or changed object straight to admitted under its rule;
+ * one person registers it and another admits the rule. An object removed
+ * from the bucket is withdrawn from retrieval. Everything shown is read from
+ * the service on each load; the list refreshes while objects are queued.
+ */
+function ConnectorsSection({ namespace, onDocument }: { namespace: string; onDocument: (id: string) => void }) {
+  const [data, setData] = useState<{ connectors: Connector[]; accepts: ConnectorAccepts } | null>(null);
+  const [failed, setFailed] = useState("");
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const [editing, setEditing] = useState<Connector | "new" | null>(null);
+  const [admitting, setAdmitting] = useState<Connector | null>(null);
+  const [shown, setShown] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState<string | null>(null);
+  const { session } = useSession();
+
+  const load = useCallback(() => {
+    connectorCall<{ connectors: Connector[]; accepts: ConnectorAccepts }>(`/api/knowledge/connectors?namespace=${encodeURIComponent(namespace)}`)
+      .then((d) => {
+        setData(d);
+        setFailed("");
+      })
+      .catch((e: Error) => {
+        setData(null);
+        setFailed(e.message || "the request did not reach the server");
+      });
+  }, [namespace]);
+  useEffect(() => {
+    setData(null);
+    setNotice(null);
+    setShown(null);
+    load();
+  }, [load]);
+  const working = Boolean(data?.connectors.some((c) => c.health.objects.queued > 0 || c.sync_running));
+  useEffect(() => {
+    if (!working) return;
+    const t = setInterval(load, 4000);
+    return () => clearInterval(t);
+  }, [working, load]);
+
+  const syncNow = async (c: Connector) => {
+    setSyncing(c.id);
+    try {
+      const d = await connectorCall<{ listed: number; queued: number; unchanged: number; refused: number; withdrawn: number }>(`/api/knowledge/connectors/${c.id}/sync`, { method: "POST" });
+      setNotice({ ok: true, text: `${c.name}: listed ${d.listed} object${d.listed === 1 ? "" : "s"}; ${d.queued} queued to be read, ${d.unchanged} unchanged, ${d.refused} refused by the rule, ${d.withdrawn} withdrawn.` });
+    } catch (e) {
+      setNotice({ ok: false, text: `${c.name} was not synced: ${(e as Error).message}` });
+    } finally {
+      setSyncing(null);
+      load();
+    }
+  };
+
+  const connectors = data?.connectors ?? [];
+  return (
+    <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-raise/55 px-4 py-2.5">
+        <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Bucket connectors</span>
+        <span className="tnum text-[11px] text-faint">{data ? count(connectors.length) : ""}</span>
+        <span className="text-[11px] leading-[1.55] text-faint">a body of documents under a Cloud Storage bucket and prefix, ingested by a rule one person registers and another admits</span>
+        <span className="grow" />
+        <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={!data} onClick={() => setEditing("new")}>
+          Register a connector
+        </Button>
+      </div>
+      {data?.accepts?.note && <p className="border-b border-line px-4 py-2 text-[11px] leading-[1.5] text-warn">{data.accepts.note}</p>}
+      {failed && <Failure what="The connectors could not be read" message={failed} className="px-4 py-3" />}
+      {!data && !failed && <p className="px-4 py-4 text-[12px] text-faint">Reading the connectors…</p>}
+      {notice && <p className={`border-b border-line px-4 py-2 text-[11.5px] leading-[1.5] ${notice.ok ? "text-faint" : "text-err"}`}>{notice.text}</p>}
+      {data && connectors.length === 0 && (
+        <p className="px-4 py-4 text-[12px] leading-[1.55] text-faint">
+          No connector feeds the &ldquo;{namespace}&rdquo; corpus. A connector reads every document under a bucket and prefix; it ingests nothing until a second person admits its rule.
+        </p>
+      )}
+      {connectors.map((c) => {
+        const mine = Boolean(session && c.rule.by && session.sub === c.rule.by.sub);
+        const h = c.health;
+        return (
+          <div key={c.id} className="flex flex-col gap-2.5 border-b border-line px-4 py-3 last:border-0">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="text-[13px] font-semibold text-fg">{c.name}</span>
+              <span className="font-mono text-[11px] text-faint">{c.id}</span>
+              <Status tone={c.admitted ? "ok" : "warn"}>{c.state}</Status>
+              {c.sync_running && <Status tone="run">syncing</Status>}
+              <span className="grow" />
+              <span className="flex flex-wrap gap-1.5">
+                <Button size="sm" variant="solid" tone="ok" permission="configure" disabled={c.admitted || mine} title={c.admitted ? "This rule is admitted." : mine ? "You wrote this rule, so another person must admit it." : undefined} onClick={() => setAdmitting(c)}>
+                  Admit rule
+                </Button>
+                <Button size="sm" variant="solid" tone="neutral" permission="configure" disabled={!c.admitted || c.sync_running || syncing !== null} loading={syncing === c.id} title={c.admitted ? undefined : "Nothing is listed until the rule is admitted."} onClick={() => syncNow(c)}>
+                  Sync now
+                </Button>
+                <Button size="sm" variant="solid" tone="neutral" permission="configure" onClick={() => setEditing(c)}>
+                  Change rule
+                </Button>
+                <Button size="sm" variant="solid" tone="neutral" onClick={() => setShown(shown === c.id ? null : c.id)}>
+                  {shown === c.id ? "Hide objects" : "Objects"}
+                </Button>
+              </span>
+            </div>
+            <div className="grid gap-x-6 gap-y-1 text-[11.5px] sm:grid-cols-2">
+              <Row k="Location" v={c.location} mono />
+              <Row k="Data class" v={`${c.data_class}${c.entitled.length ? ` · entitled: ${c.entitled.join(", ")}` : " · no names entitled"}`} />
+              <Row k="Takes" v={`${c.file_types.join(" ")} · at most ${bytesText(c.max_bytes)}`} />
+              <Row k="Rule" v={`${c.rule.digest.slice(0, 12)} · by ${whoName(c.rule.by)} ${ago(c.rule.at)}`} mono />
+            </div>
+            <p className="text-[11px] leading-[1.5] text-faint">
+              {c.admission
+                ? c.admitted
+                  ? `Admitted by ${whoName(c.admission.by)} ${ago(c.admission.at)}${c.admission.note ? `: “${c.admission.note}”` : ""}. Every object ingested under it records this admission.`
+                  : `The rule admitted by ${whoName(c.admission.by)} ${ago(c.admission.at)} was changed by ${whoName(c.rule.by)}; nothing new is ingested until a person other than ${whoName(c.rule.by)} admits the change.`
+                : `Not admitted. Nothing is listed or ingested until a person other than ${whoName(c.rule.by)} admits the rule.`}
+            </p>
+            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-md border border-line bg-canvas px-3 py-2 text-[11px]">
+              <span className="text-faint">
+                Last sync{" "}
+                <span className="text-fg">
+                  {h.last_sync ? `${ago(h.last_sync.at)} · ${h.last_sync.result === "done" ? `listed ${h.last_sync.listed}` : "failed"} · ${h.last_sync.origin === "clock" ? "by the clock" : `by ${h.last_sync.by ?? "a person"}`}` : "never"}
+                </span>
+              </span>
+              <span className="text-faint">
+                Seen <span className="tnum text-fg">{count(h.seen)}</span>
+              </span>
+              {OBJECT_STATES.map((s) => (
+                <span key={s} className="text-faint">
+                  {s} <span className={`tnum ${h.objects[s] && s !== "ingested" && s !== "withdrawn" ? (s === "queued" ? "text-queue" : s === "failed" ? "text-err" : "text-warn") : "text-fg"}`}>{count(h.objects[s] ?? 0)}</span>
+                </span>
+              ))}
+              {c.admitted && c.next_sync_at && <span className="text-ghost">next sync by the clock {new Date(c.next_sync_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</span>}
+            </div>
+            {h.last_error && (
+              <p className="text-[11px] leading-[1.5] text-err">
+                Last error, {ago(h.last_error.at)} ({h.last_error.what}{h.last_error.object ? ` ${h.last_error.object}` : ""}): {h.last_error.reason}
+              </p>
+            )}
+            {shown === c.id && <ConnectorObjects id={c.id} refresh={h} onDocument={onDocument} />}
+          </div>
+        );
+      })}
+      {editing && data && (
+        <ConnectorDialog
+          connector={editing === "new" ? null : editing}
+          namespace={namespace}
+          accepts={data.accepts}
+          onClose={() => setEditing(null)}
+          onDone={(text) => {
+            setEditing(null);
+            setNotice({ ok: true, text });
+            load();
+          }}
+        />
+      )}
+      {admitting && (
+        <AdmitConnectorDialog
+          connector={admitting}
+          onClose={() => setAdmitting(null)}
+          onDone={(text) => {
+            setAdmitting(null);
+            setNotice({ ok: true, text });
+            load();
+          }}
+        />
+      )}
+    </section>
+  );
+}
+
+/** The objects one connector has seen, failures first, each with its state, the reason when it was not ingested, and its provenance when it was. */
+function ConnectorObjects({ id, refresh, onDocument }: { id: string; refresh: unknown; onDocument: (id: string) => void }) {
+  const [data, setData] = useState<{ objects: ConnectorObject[]; total: number; shown: number } | null>(null);
+  const [failed, setFailed] = useState("");
+  const key = JSON.stringify(refresh);
+  useEffect(() => {
+    connectorCall<{ objects: ConnectorObject[]; total: number; shown: number }>(`/api/knowledge/connectors/${id}`)
+      .then((d) => {
+        setData(d);
+        setFailed("");
+      })
+      .catch((e: Error) => setFailed(e.message));
+  }, [id, key]);
+  if (failed) return <Failure what="The objects could not be read" message={failed} />;
+  if (!data) return <p className="text-[11.5px] text-faint">Reading the objects…</p>;
+  if (data.objects.length === 0) return <p className="text-[11.5px] text-faint">The connector has seen no object yet: nothing is listed until it is synced.</p>;
+  return (
+    <div className="max-h-[420px] overflow-auto rounded-md border border-line">
+      <table className="w-full min-w-[860px] border-collapse text-left">
+        <thead className="sticky top-0 z-10 bg-surface">
+          <tr className="border-b border-line text-[10.5px] text-faint">
+            <th className="px-3 py-2 font-medium">Object</th>
+            <th className="px-3 py-2 font-medium">State</th>
+            <th className="px-3 py-2 font-medium">Generation</th>
+            <th className="px-3 py-2 font-medium">Size</th>
+            <th className="px-3 py-2 font-medium">Why, or what it rests on</th>
+            <th className="px-3 py-2 font-medium" />
+          </tr>
+        </thead>
+        <tbody>
+          {data.objects.map((o) => (
+            <tr key={o.name} className="border-b border-line align-top last:border-0">
+              <td className="max-w-[300px] px-3 py-2">
+                <span className="block truncate font-mono text-[11px] text-fg" title={o.address}>{o.name}</span>
+                <span className="text-[10px] text-ghost">changed {ago(o.changed_at)}</span>
+              </td>
+              <td className="px-3 py-2 whitespace-nowrap"><Status tone={OBJECT_TONE[o.state]}>{o.state}</Status></td>
+              <td className="px-3 py-2 font-mono text-[10.5px] whitespace-nowrap text-faint">{o.generation}</td>
+              <td className="tnum px-3 py-2 text-[11px] whitespace-nowrap text-faint">{bytesText(o.size)}</td>
+              <td className="max-w-[380px] px-3 py-2 text-[11px] leading-[1.45]">
+                {o.reason && <span className={`block ${o.state === "failed" ? "text-err" : o.state === "refused" ? "text-warn" : "text-faint"}`}>{o.reason}</span>}
+                {o.provenance && (
+                  <span className="block text-faint">
+                    Generation {o.provenance.generation}
+                    {o.provenance.md5_hash ? ` (MD5 ${o.provenance.md5_hash})` : ""}, admitted under rule {o.provenance.rule_digest.slice(0, 12)} as admitted by {whoName(o.provenance.admitted_by)} {ago(o.provenance.admitted_at)}; ingested {ago(o.provenance.ingested_at)}.
+                  </span>
+                )}
+              </td>
+              <td className="px-3 py-2 text-right whitespace-nowrap">
+                {o.document_id && (
+                  <Button size="sm" variant="solid" tone="neutral" onClick={() => onDocument(o.document_id!)}>
+                    Open
+                  </Button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {data.total > data.shown && <p className="border-t border-line px-3 py-2 text-[11px] text-faint">{data.shown} of {count(data.total)} objects shown, failures first.</p>}
+    </div>
+  );
+}
+
+/** Register a connector, or change its rule. A changed rule must be admitted again, by someone other than the person who changed it. */
+function ConnectorDialog({ connector, namespace, accepts, onClose, onDone }: { connector: Connector | null; namespace: string; accepts: ConnectorAccepts; onClose: () => void; onDone: (text: string) => void }) {
+  const [name, setName] = useState(connector?.name ?? "");
+  const [bucket, setBucket] = useState(connector?.bucket ?? "");
+  const [prefix, setPrefix] = useState(connector?.prefix ?? "");
+  const [cls, setCls] = useState<DataClass | null>(connector?.data_class ?? null);
+  const [entitled, setEntitled] = useState((connector?.entitled ?? []).join(", "));
+  const [types, setTypes] = useState<string[]>(connector?.file_types ?? []);
+  const [megabytes, setMegabytesText] = useState(connector ? String(Math.round((connector.max_bytes / 1024 ** 2) * 1000) / 1000) : "");
+  /** Whether the person edited the size cap: a cap shown rounded to megabytes is sent back only then, so saving another change keeps it exact. */
+  const [sizeEdited, setSizeEdited] = useState(!connector);
+  const setMegabytes = (v: string) => {
+    setMegabytesText(v);
+    setSizeEdited(true);
+  };
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const most = accepts.max_bytes_most;
+  const bytes = Math.round(Number(megabytes) * 1024 ** 2);
+  const badSize = sizeEdited && megabytes.trim() !== "" && (!Number.isFinite(bytes) || bytes < 1 || bytes > most);
+  const missing = [!name.trim() && "a name", !bucket.trim() && "a bucket", !cls && "a data class", types.length === 0 && "a file type", !megabytes.trim() && "a size cap"].filter(Boolean) as string[];
+  const toggle = (t: string) => setTypes((now) => (now.includes(t) ? now.filter((x) => x !== t) : [...now, t].sort()));
+
+  const save = async () => {
+    if (missing.length || badSize || !cls) return;
+    setBusy(true);
+    setError("");
+    const body = { name: name.trim(), bucket: bucket.trim(), prefix, data_class: cls, entitled: namesOf(entitled), file_types: types, ...(sizeEdited ? { max_bytes: bytes } : {}), ...(connector ? {} : { namespace }) };
+    try {
+      if (connector) {
+        await connectorCall(`/api/knowledge/connectors/${connector.id}`, { method: "PATCH", body: JSON.stringify(body) });
+        onDone(`${body.name}: the change is saved. Nothing new is ingested until a person other than you admits it.`);
+      } else {
+        const d = await connectorCall<{ connector: Connector }>("/api/knowledge/connectors", { method: "POST", body: JSON.stringify(body) });
+        onDone(`${d.connector.name} was registered for the "${namespace}" corpus as ${d.connector.id}. It lists and ingests nothing until a person other than you admits its rule.`);
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Frame
+      title={connector ? `Change the rule of ${connector.name}` : "Register a connector"}
+      subtitle={connector ? "A changed rule stops ingestion until another person admits it." : "Every document under a bucket and prefix, read with this service's own Google identity. Another person admits its rule before anything is read."}
+      locked={busy}
+      onClose={onClose}
+      footer={
+        <>
+          <span className="min-w-0 grow text-[11.5px] leading-[1.5] text-faint">{missing.length ? `Still needed: ${missing.join(", ")}.` : `Feeds the "${connector?.namespace ?? namespace}" corpus.`}</span>
+          <Button size="sm" variant="solid" tone="err" disabled={busy} onClick={onClose}>Cancel</Button>
+          <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={missing.length > 0 || badSize} loading={busy} onClick={save}>
+            {connector ? "Save the change" : "Register"}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4 p-4">
+        <Field label="Name">
+          <Input value={name} onChange={setName} disabled={busy} autoComplete="off" />
+        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Bucket" hint="The Cloud Storage bucket's name, without gs://.">
+            <Input value={bucket} onChange={setBucket} disabled={busy} mono autoComplete="off" />
+          </Field>
+          <Field label="Prefix" hint="Only objects whose names begin with this are read. Empty: the whole bucket.">
+            <Input value={prefix} onChange={setPrefix} disabled={busy} mono autoComplete="off" />
+          </Field>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span id="connector-class-label" className="text-[12.5px] font-medium text-mist">Data class</span>
+          <ClassChips value={cls} onChange={setCls} disabled={busy} labelledBy="connector-class-label" />
+          <span className="text-[11.5px] text-faint">Every document the connector ingests carries this class.</span>
+        </div>
+        <Field label="Entitled" hint="Names a caller must hold one of, separated by commas (an agent's id, for example). Empty: the class alone decides.">
+          <Input value={entitled} onChange={setEntitled} disabled={busy} autoComplete="off" />
+        </Field>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[12.5px] font-medium text-mist">File types</span>
+          <div className="flex flex-wrap gap-1.5">
+            {accepts.file_types.map((t) => (
+              <button
+                key={t}
+                type="button"
+                aria-pressed={types.includes(t)}
+                disabled={busy}
+                onClick={() => toggle(t)}
+                className={`focusable inline-flex h-8 cursor-pointer items-center rounded-sm border px-3 font-mono text-[12px] transition-colors duration-100 disabled:cursor-not-allowed disabled:opacity-40 ${
+                  types.includes(t) ? "border-transparent bg-ink text-on-ink" : "border-line bg-surface text-dim hover:bg-raise hover:text-fg"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+          <span className="text-[11.5px] text-faint">An object of any other type is recorded as refused, with the reason.</span>
+        </div>
+        <Field label="Size cap (MB)" hint={`An object larger than this is recorded as refused. At most ${bytesText(most)}, the largest document this deployment accepts.`} error={badSize ? `Give a size from 1 byte to ${bytesText(most)}.` : undefined}>
+          <Input value={megabytes} onChange={setMegabytes} disabled={busy} type="number" autoComplete="off" />
+        </Field>
+        {error && <p role="alert" className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>}
+      </div>
+    </Frame>
+  );
+}
+
+/** Admit a connector's rule as it stands, naming the digest shown here: a rule that changed since is refused. Not open to the rule's own author. */
+function AdmitConnectorDialog({ connector, onClose, onDone }: { connector: Connector; onClose: () => void; onDone: (text: string) => void }) {
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const admit = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const d = await connectorCall<{ admitted: { sources_reclassed: number } }>(`/api/knowledge/connectors/${connector.id}/admit`, {
+        method: "POST",
+        body: JSON.stringify({ digest: connector.rule.digest, note: note.trim() }),
+      });
+      const reclassed = d.admitted.sources_reclassed;
+      onDone(`The rule of ${connector.name} is admitted in your name.${reclassed ? ` ${reclassed} document source${reclassed === 1 ? "" : "s"} it already feeds now carr${reclassed === 1 ? "ies" : "y"} its class and entitlement.` : ""} The clock syncs it within a minute, or sync it now.`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Frame
+      title={`Admit the rule of ${connector.name}`}
+      subtitle="Every object read under this rule is admitted in your name, straight into retrieval, without a person reviewing each one."
+      locked={busy}
+      onClose={onClose}
+      footer={
+        <>
+          <span className="min-w-0 grow text-[11.5px] leading-[1.5] text-faint">You admit exactly the rule shown, by its digest.</span>
+          <Button size="sm" variant="solid" tone="err" disabled={busy} onClick={onClose}>Cancel</Button>
+          <Button size="sm" variant="solid" tone="ok" permission="configure" loading={busy} onClick={admit}>Admit rule</Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-3 p-4 text-[12px]">
+        <Row k="Location" v={connector.location} mono />
+        <Row k="Corpus" v={connector.namespace} mono />
+        <Row k="Data class" v={connector.data_class} />
+        <Row k="Entitled" v={connector.entitled.length ? connector.entitled.join(", ") : "no names: the class alone decides"} />
+        <Row k="File types" v={connector.file_types.join(" ")} mono />
+        <Row k="Size cap" v={bytesText(connector.max_bytes)} />
+        <Row k="Written by" v={`${whoName(connector.rule.by)} ${ago(connector.rule.at)}`} />
+        <span className="flex flex-col gap-0.5">
+          <span className="text-faint">Digest</span>
+          <span className="font-mono text-[11px] break-all text-fg">{connector.rule.digest}</span>
+        </span>
+        <Field label="Note" hint="Kept with the admission.">
+          <Input value={note} onChange={setNote} disabled={busy} autoComplete="off" />
+        </Field>
+        {error && <p role="alert" className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>}
       </div>
     </Frame>
   );

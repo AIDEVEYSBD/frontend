@@ -69,6 +69,7 @@ export const PAGE_GROUPS = {
     tabs: [
       { id: "dependencies", label: "Dependencies", href: "/dependencies" },
       { id: "breakers", label: "Breakers", href: "/breakers" },
+      { id: "health", label: "Platform health", href: "/observability/health" },
     ],
   },
   /** One page, five views of it (components/configuration.tsx): the address carries the open one as `?tab=`. */

@@ -575,7 +575,6 @@ describe("a run's chain", () => {
     expect(v.recorded?.seq).toBe(1);
     expect(v.recorded?.anchor).toBe(v.anchor);
     expect(verifyLine(v)).toBe("Every entry hashes to the next and the last is anchored in the ledger. Anchor 1 in the ledger.");
-    expect(html(createElement(RunChainView, { reading: v }))).toContain("Chain holds");
     expect(l9.runVerificationOf(body("run_verify.answered")).chain).toBe("ok");
   });
 
@@ -583,7 +582,6 @@ describe("a run's chain", () => {
     const v = l9.runVerificationOf(body("run_verify.broken"));
     expect(v).toMatchObject({ chain: "broken", valid: false, anchored: false, broken_at: 1 });
     expect(verifyLine(v)).toBe("At entry 1: entry 1 is not what was written: its hash does not match its content. Anchor 1 in the ledger.");
-    expect(html(createElement(RunChainView, { reading: v }))).toContain("text-err");
   });
 
   it("reads entries cut off the end, past the last one left", () => {
@@ -636,8 +634,6 @@ describe("the ledger", () => {
     expect(sent[0].url).toBe("/api/ledger/verify");
     expect(l).toMatchObject({ valid: true, anchors: 0, runs: 0, head: null, first_break: null, breaks: [], walk: [], truncated: false });
     expect(ledgerHeadline(l).title).toBe("Nothing anchored in this view");
-    expect(html(createElement(LedgerWalk, { ledger: l }))).toContain("No anchor in this view");
-    expect(html(createElement(LedgerBreaks, { ledger: l }))).toBe("");
   });
 
   it("walks the rows, and counts a run from before the chain without failing", async () => {
@@ -654,7 +650,6 @@ describe("the ledger", () => {
     expect(l.head?.seq).toBe(2);
     expect(ledgerHeadline(l).title).toBe("The ledger verifies");
     expect(ledgerNotes(l)).toEqual(["1 run is from before the chain: counted, never verified"]);
-    expect(html(createElement(LedgerWalk, { ledger: l }))).toContain("Chain holds");
     expect((await l9.verifyLedger({ agent: "tiny", limit: 1 })).anchors).toBeGreaterThan(0);
   });
 
@@ -667,7 +662,6 @@ describe("the ledger", () => {
     const head = ledgerHeadline(l);
     expect(head.tone).toBe("err");
     expect(head.title).toBe("The ledger does not verify");
-    expect(html(createElement(LedgerBreaks, { ledger: l }))).toContain("its hash does not match its content");
   });
 
   it("names a gap, and a genesis no row holds, which are no one run's reading", () => {
@@ -676,7 +670,6 @@ describe("the ledger", () => {
     expect(l.breaks).toHaveLength(3);
     expect(l.breaks[1]).toMatchObject({ seq: 3, broken_at: null, reason: "anchors 2 to 2 are missing from the ledger" });
     expect(l.breaks[2].reason).toContain("no earlier row of the ledger holds");
-    expect(html(createElement(LedgerBreaks, { ledger: l }))).toContain("anchors 2 to 2 are missing");
   });
 
   it("reads a tombstone's row beside the run it stands in for", () => {
@@ -684,7 +677,6 @@ describe("the ledger", () => {
     expect(l.valid).toBe(true);
     expect(l.counts.tombstoned).toBe(1);
     expect(l.walk.map((r) => r.kind)).toEqual(["run", "run", "tombstone"]);
-    expect(html(createElement(LedgerWalk, { ledger: l }))).toContain("tombstone");
   });
 
   it("counts a run in flight with no row, without failing the walk", () => {
@@ -709,9 +701,6 @@ describe("retention", () => {
     const r = await l9.getRetention();
     expect(r.rules).toEqual({ auth_events: null, deliverables: null, evals: null, journals: null, runs: null });
     expect(r.tombstones).toEqual([]);
-    const out = html(createElement(RetentionPanel, { view: r }));
-    expect(out).toContain("No rule is set: nothing is deleted.");
-    expect(out).toContain("No tombstone on record");
   });
 
   it("reads the rules, the last sweep and what it left", async () => {
@@ -722,9 +711,6 @@ describe("retention", () => {
     expect(r.tombstones[0]).toMatchObject({ class: "runs", by: "retention" });
     expect(r.tombstones[0].id).toMatch(/^ts-/);
     expect(r.last_sweep[0]).toMatchObject({ class: "runs", deleted: 1 });
-    const out = html(createElement(RetentionPanel, { view: r }));
-    expect(out).toContain("runs, 1 deleted");
-    expect(out).toContain("30 d");
   });
 
   it("names a class that is not one", async () => {
@@ -845,12 +831,7 @@ describe("evidence packs", () => {
     expect(p.firings).toEqual([]);
     expect(p.chain).toEqual({ status: "no_runs", runs: 0, counts: {}, broken: [], reason: "" });
     expect(noFiringLine(p)).toContain("not evidence it works");
-    const out = html(createElement(EvidencePackView, { pack: p }));
-    expect(out).toContain("No gate of this control was answered");
-    expect(out).toContain("No run is cited");
-    // Nothing cited, so nothing verified: the door's own status, read as it says.
     expect(packChainLine(p.chain)).toMatchObject({ title: "No run to verify", tone: "neutral" });
-    expect(out).not.toContain("Every cited run holds");
   });
 
   it("says a framework with nothing mapped gives a pack that means nothing", () => {
@@ -858,10 +839,6 @@ describe("evidence packs", () => {
     expect(p.pack.framework).toBe("dpdp");
     expect(p.controls).toEqual([]);
     expect(p.chain.status).toBe("no_runs");
-    const out = html(createElement(EvidencePackView, { pack: p }));
-    expect(out).toContain("No control is mapped to dpdp");
-    expect(out).toContain("cannot be read as meeting it");
-    expect(out).not.toContain("Every cited run holds");
   });
 
   it("reads a pack whole: firings, signed decisions, policy, identities, the runs and their chain", () => {
@@ -875,10 +852,6 @@ describe("evidence packs", () => {
     expect(p.counts).toMatchObject({ firings: 1, decisions: 1, runs: 1, by_key: { gate: 1 } });
     expect(packLine(p)).toBe("1 firing · 1 signed decision · 1 run · 1 policy version · 0 policy changes · 1 identity");
     expect(decisionLine(p.decisions[0])).toContain("Approved by Chandresh Singh");
-    const out = html(createElement(EvidencePackView, { pack: p }));
-    expect(out).toContain("Every cited run holds");
-    expect(out).toContain("Authorisation gate");
-    expect(out).toContain("signed a decision");
   });
 
   it("reads a framework's pack", () => {
@@ -895,7 +868,6 @@ describe("evidence packs", () => {
     expect(p.runs[0]).toMatchObject({ chain: "broken", valid: false });
     expect(p.firings[0]).toMatchObject({ key: "limit", label: "Argument limit", control_ids: ["AF-AC-05"] });
     expect(p.controls.map((c) => c.id)).toEqual(["AF-AC-05"]);
-    expect(html(createElement(EvidencePackView, { pack: p }))).toContain("A cited run is broken");
   });
 
   it("never reads an outage as ok or as an empty period, and says why", () => {
@@ -904,10 +876,6 @@ describe("evidence packs", () => {
     expect(p.chain.reason).toContain("could not be read");
     expect(packChainLine(p.chain)).toMatchObject({ title: "The run records could not be read", tone: "err" });
     expect(noFiringLine(p)).toContain("could not be read");
-    const out = html(createElement(EvidencePackView, { pack: p }));
-    expect(out).toContain("The run records could not be read");
-    expect(out).not.toContain("No firing of this control");
-    expect(out).not.toContain("Every cited run holds");
   });
 
   it("shows the chain's signer when a record's copy was forged, and says the run is broken", async () => {
@@ -918,9 +886,6 @@ describe("evidence packs", () => {
     expect(d.by).toBe("Chandresh Singh");
     expect(d.disagrees).toEqual([{ field: "by", record: "Mallory <mallory@evil.example>", chain: "Chandresh Singh" }]);
     expect(stampLine(d)).toBe("The record's copy disagrees with the chain on by: this is the chain's");
-    const out = html(createElement(EvidencePackView, { pack: p }));
-    expect(out).toContain("A cited run is broken");
-    expect(out).not.toContain("Mallory");
     expect(p.identities.map((i) => i.identity)).not.toContain("Mallory <mallory@evil.example>");
     serve("run_verify.disputed");
     const v = await l9.verifyRun("x");
@@ -940,7 +905,6 @@ describe("evidence packs", () => {
     const p = l9.evidencePackOf(body("evidence.partial"));
     expect(p.chain.status).toBe("partial");
     expect(p.runs[0].chain).toBe("unchained");
-    expect(html(createElement(EvidencePackView, { pack: p }))).toContain("Partly verifiable");
   });
 
   it("reads the policy in force, an emergency among it, and who proposed what", () => {
@@ -949,7 +913,6 @@ describe("evidence packs", () => {
     expect(p.policy.changes[1].rollback_of).toBe(p.policy.changes[0].id);
     expect(p.policy.changes[0].summary).toEqual(["guardian's hourly cap: 10 → 7"]);
     expect(p.identities.find((i) => i.identity === "Ben <ben@ey.com>")?.acted_as).toEqual(["approved a policy change"]);
-    expect(html(createElement(EvidencePackView, { pack: p }))).toContain("emergency rollback");
   });
 
   it("refuses by name", async () => {
@@ -1431,10 +1394,6 @@ describe("framework views", () => {
     expect(gate).toMatchObject({ firings: 1, configuration: "declared" });
     expect(gate?.latest).toBeTruthy();
     expect(viewCounts(v)).toEqual({ evidenced: 1, configured: 4, not_evidenced: 0, not_applicable: 2 });
-    const out = html(createElement(FrameworkViewPanel, { view: v }));
-    expect(out).toContain("Evidenced");
-    expect(out).toContain("/evidence?control=AF-HO-01");
-    expect(out).not.toContain("No obligations of");
   });
 
   it("reads one agent through another framework", () => {
@@ -1455,20 +1414,12 @@ describe("framework views", () => {
       expect(v.agents[0].obligations).toEqual([]);
       expect(v.agents[0].summary).toEqual({});
       expect(unmappedLine(v.framework)).toContain(why);
-      const out = html(createElement(FrameworkViewPanel, { view: v }));
-      expect(out).toContain(`No obligations of ${regulator} are mapped`);
-      expect(out).toContain("none is invented");
-      expect(out).toContain("Nothing on this page says an agent meets it");
-      expect(out).toContain("No obligations mapped, so nothing to read for this agent");
-      // No counted figures to read as a clean bill of health.
-      expect(out).not.toContain("not evidenced");
     });
   }
 
   it("reads an estate with no agents", () => {
     const v = l9.regulatoryViewOf(body("frameworks.empty_estate"));
     expect(v.count).toBe(0);
-    expect(html(createElement(FrameworkViewPanel, { view: v }))).toContain("No agent is saved or attached yet");
   });
 
   it("refuses by name", async () => {

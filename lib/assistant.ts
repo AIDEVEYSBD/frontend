@@ -1,12 +1,12 @@
 /**
- * What the assistant knows about each page of the console.
+ * Each page of the console, as the assistant drawer names it.
  *
- * The assistant is available on every page, and the first thing it needs is
- * where the person is standing. Each route carries a short account of what
- * the page shows and the questions a visitor tends to have there; pages add
- * live facts at runtime through `setPageFacts` in components/assistant.tsx.
- * This module is shared by the client (suggestions, titles) and the server
- * (system prompt), so it holds data only.
+ * The drawer (components/assistant.tsx) shows a page's title and offers its
+ * suggested questions, and sends the service the page's path and title so the
+ * assistant knows where the person stands. `shows` describes the page for
+ * people reading this file: it is not sent to the service, whose assistant
+ * answers from the service's own records, which it reads itself
+ * (agentfactory/assistant in the backend). This module holds data only.
  */
 
 export interface PageInfo {
@@ -25,7 +25,7 @@ export const PAGES: Record<string, PageInfo> = {
   "/finops": {
     title: "Costs",
     shows:
-      "Model spend by provider, workflow and step, computed from every journalled model call at the configured price, over a selectable window with per-card overrides. It shows hand-off candidates (steps whose call profile and eval evidence suit a smaller or local model), a calculator that replays the workload on any model, per-step model routing that outranks the spec, the providers the deployment can reach (Foundry, Vertex, Bedrock, vLLM, Ollama, LM Studio) and billing against budget.",
+      "Model spend by provider, workflow and step, computed from every journalled model call at the configured price, over a selectable window with per-card overrides. It shows hand-off candidates (steps whose call profile and eval evidence suit a smaller or local model), a calculator that replays the workload on any model, per-step model routing that outranks the spec, the model endpoints the deployment can reach and billing against budget.",
     suggested: ["Which steps could move to a local model?", "What would this month cost on a smaller model?", "How does routing precedence work?"],
   },
   "/agents": {
@@ -126,8 +126,8 @@ export const PAGES: Record<string, PageInfo> = {
   "/knowledge": {
     title: "Knowledge base",
     shows:
-      "The pipeline and curated register for content available to workflows. It shows source licensing, ingestion and indexing stages, content awaiting human admission, and an Ask panel: Search runs the retrieval stages (hybrid search over meaning and words, a cross-encoder rerank, guardrails in the query) and shows the passages; Answer runs the agentic loop (judge the evidence, rewrite and retry the query up to three times, answer from the passages only with every claim cited, check each cited sentence against its passage) and shows the answer with hoverable, clickable citations that open the document at the passage, plus the attempts and the grounding verdicts.",
-    suggested: ["Why is human approval required before indexing?", "How does the answer loop decide to retry?", "Which sources may be cited but not stored?"],
+      "The pipeline and curated register for content available to workflows. It shows source licensing, ingestion and indexing stages, content awaiting human admission, the bucket connectors that ingest a body of documents under a rule a second person admits (with each connector's health and the objects that failed and why), and an Ask panel: Search runs the retrieval stages (hybrid search over meaning and words, re-ranking by the chat model the deployment offers when it offers one, guardrails in the query) and shows the passages; Answer runs the agentic loop (judge the evidence, rewrite and retry the query up to three times, answer from the passages only with every claim cited, check each cited sentence against its passage) and shows the answer with hoverable, clickable citations that open the document at the passage, plus the attempts and the grounding verdicts.",
+    suggested: ["Why is human approval required before indexing?", "Which connector objects failed, and why?", "Which sources may be cited but not stored?"],
   },
   "/guardrails": {
     title: "Controls",

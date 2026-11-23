@@ -12,38 +12,37 @@ import { Markdown } from "./markdown";
 /**
  * The console assistant: a bubble at the bottom right of every page.
  *
- * It knows the platform, it knows the page the person is on, and it can read
- * the deployment through the same APIs the pages use. Pages hand it their
- * live facts through `setPageFacts`, so "what needs my attention" on the
- * control pane is answered from the numbers on screen, not from memory.
+ * It answers questions about what the console shows from the platform
+ * service's own records (`GET` and `POST /api/assistant`): the service reads
+ * them itself with the asking person's permissions and can change nothing.
+ * The drawer sends the conversation and the page's path and title, nothing
+ * else. Every question and its answer, or why there is none, is kept by the
+ * service with who asked.
  *
- * The conversation survives navigation for the session and is per browser;
- * nothing said here is written to the platform.
+ * The bubble is shown whenever the service answers the first read: when no
+ * model is offered, the drawer says so with the service's reason; when the
+ * read fails, it says that.
+ *
+ * The conversation is kept in this browser for the session, so it survives
+ * moving between pages.
  */
 
-/* ── page facts: a tiny store pages write to and the drawer reads ── */
-
-let facts: Record<string, unknown> = {};
-let factsPath = "";
-const listeners = new Set<() => void>();
-
-export function setPageFacts(path: string, next: Record<string, unknown>) {
-  facts = next;
-  factsPath = path;
-  listeners.forEach((l) => l());
+/**
+ * Pages call this with the figures they have loaded. The assistant does not
+ * take them: it reads the service's records itself, as the person asking, so
+ * what a browser holds is never passed off as a record. Kept so that the pages
+ * that call it need no change; it does nothing.
+ */
+export function usePageFacts(next: Record<string, unknown> | null): void {
+  void next;
 }
 
-/** Register the live facts a page has loaded, cleared when the page unmounts. */
-export function usePageFacts(next: Record<string, unknown> | null) {
-  const pathname = usePathname();
-  const key = JSON.stringify(next);
-  useEffect(() => {
-    if (next) setPageFacts(pathname, next);
-    return () => {
-      if (factsPath === pathname) setPageFacts(pathname, {});
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, pathname]);
+/** What `GET /api/assistant` says: whether a model is offered, which, or why not; and the reads the service may make for this person. */
+interface Availability {
+  available: boolean;
+  model: string | null;
+  reason: string | null;
+  reads: { name: string; description: string }[];
 }
 
 /* ── the conversation ── */
@@ -52,26 +51,33 @@ interface Turn { role: "user" | "assistant"; content: string; tools?: string[]; 
 
 const STORE = "af.assistant";
 const TOOL_LABEL: Record<string, string> = {
-  platform_status: "reading the control pane",
-  control_firings: "reading control firings",
-  knowledge_status: "reading the knowledge base",
-  search_knowledge: "searching the corpus",
-  configuration: "reading the configuration",
-  pending_gates: "reading the approval queue",
-  run_record: "reading the run record",
+  overview: "reading the overview",
+  agents: "reading the agents",
+  runs: "reading the runs",
+  run_record: "reading a run record",
+  approvals: "reading the approval queue",
+  attention: "reading the attention queue",
+  knowledge: "reading the knowledge base",
+  search_knowledge: "searching the knowledge passages",
+  connectors: "reading the connectors",
+  models: "reading the models offered",
+  audit_trail: "reading the audit trail",
 };
 
 /** The bubble at the bottom right, and the panel it opens. */
 export function Assistant() {
   const [open, setOpen] = useState(false);
-  // The button is offered only once GET /api/assistant says the assistant is there; while the platform answers 501 (not built), or the read fails, nobody opens a drawer that cannot answer.
-  const [available, setAvailable] = useState(false);
+  // What the service said when asked whether the assistant can answer, or why that could not be read. Null until it has answered.
+  const [state, setState] = useState<{ ok: Availability } | { failed: string } | null>(null);
   useEffect(() => {
     let live = true;
     fetch("/api/assistant", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: { available?: boolean } | null) => live && setAvailable(Boolean(d?.available)))
-      .catch(() => {});
+      .then(async (r) => {
+        const d = (await r.json().catch(() => null)) as (Availability & { error?: string; phase?: number }) | null;
+        if (!r.ok || !d) throw new Error(d?.error ? `${d.error}${d.error === "not built" && d.phase ? ` (phase ${d.phase})` : ""}` : `the server answered ${r.status}`);
+        if (live) setState({ ok: d });
+      })
+      .catch((e: Error) => live && setState({ failed: e.message || "the request did not reach the server" }));
     return () => {
       live = false;
     };
@@ -83,10 +89,11 @@ export function Assistant() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-  if (!available) return null;
+  if (state === null) return null;
+  const cannot = "failed" in state ? `The assistant could not be reached: ${state.failed}` : state.ok.available ? null : state.ok.reason || "The assistant cannot answer on this deployment.";
   return (
     <>
-      <AssistantPanel open={open} onClose={() => setOpen(false)} />
+      <AssistantPanel open={open} onClose={() => setOpen(false)} cannot={cannot} />
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -107,13 +114,12 @@ export function Assistant() {
   );
 }
 
-function AssistantPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
+function AssistantPanel({ open, onClose, cannot }: { open: boolean; onClose: () => void; cannot: string | null }) {
   const pathname = usePathname();
   const page = pageFor(pathname);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
-  const [, tick] = useState(0);
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const abort = useRef<AbortController | null>(null);
@@ -126,11 +132,6 @@ function AssistantPanel({ open, onClose }: { open: boolean; onClose: () => void 
     } catch {
       /* fresh conversation */
     }
-    const l = () => tick((n) => n + 1);
-    listeners.add(l);
-    return () => {
-      listeners.delete(l);
-    };
   }, []);
 
   useEffect(() => {
@@ -163,7 +164,7 @@ function AssistantPanel({ open, onClose }: { open: boolean; onClose: () => void 
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             messages: history.map((t) => ({ role: t.role, content: t.content })),
-            page: { path: pathname, title: page.info.title, facts: factsPath === pathname ? facts : {} },
+            page: { path: pathname, title: page.info.title },
           }),
           signal: ac.signal,
         });
@@ -212,7 +213,7 @@ function AssistantPanel({ open, onClose }: { open: boolean; onClose: () => void 
     },
     [pathname, page.info.title],
   );
-  const ask = useCallback((text: string) => { if (!busy) askFrom(turns, text); }, [askFrom, busy, turns]);
+  const ask = useCallback((text: string) => { if (!busy && !cannot) askFrom(turns, text); }, [askFrom, busy, turns, cannot]);
 
   const clear = () => {
     abort.current?.abort();
@@ -243,11 +244,11 @@ function AssistantPanel({ open, onClose }: { open: boolean; onClose: () => void 
         <span className="grid size-6 place-items-center rounded-md bg-ink text-on-ink"><SparkIcon /></span>
         <span className="flex min-w-0 flex-col leading-tight">
           <span className="text-[12.5px] font-semibold">Assistant</span>
-          <span className="truncate text-[10px] text-faint">knows the platform · reading {page.info.title}</span>
+          <span className="truncate text-[10px] text-faint">reads this deployment&rsquo;s records · on {page.info.title}</span>
         </span>
         <span className="grow" />
         {turns.length > 0 && (
-          <button type="button" onClick={clear} className="focusable text-[10.5px] text-faint hover:text-fg">clear</button>
+          <button type="button" onClick={clear} className="focusable flex h-7 items-center rounded-md bg-raise px-2 text-[11px] font-semibold text-fg hover:brightness-110">Clear</button>
         )}
         <button type="button" onClick={onClose} aria-label="Close" className="focusable flex h-7 items-center gap-1 rounded-md bg-err px-2 text-[11px] font-semibold text-white hover:brightness-110">
           <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
@@ -256,11 +257,14 @@ function AssistantPanel({ open, onClose }: { open: boolean; onClose: () => void 
       </header>
 
       <div ref={scroller} className="min-h-0 grow overflow-y-auto px-3 py-3">
-        {turns.length === 0 && (
+        {cannot && (
+          <p role="alert" className="mb-3 rounded-md border border-err/40 bg-canvas px-3 py-2 text-[12px] leading-[1.55] text-err">{cannot}</p>
+        )}
+        {turns.length === 0 && !cannot && (
           <div className="flex flex-col gap-3">
             <p className="text-[12px] leading-[1.6] text-faint">
-              Ask about anything on this page, or about the platform: how a control works, what a number
-              means, what a step does. Live questions are answered from the record.
+              Ask about what this console shows. Answers are read from this deployment&rsquo;s records with your
+              permissions, and the assistant changes nothing. Every question and answer is kept with your name.
             </p>
             <div className="flex flex-col gap-1.5">
               {page.info.suggested.map((s) => (
@@ -308,7 +312,7 @@ function AssistantPanel({ open, onClose }: { open: boolean; onClose: () => void 
                     <span className="flex flex-wrap items-center gap-2 px-1 text-[11px] leading-[1.5] text-err">
                       {t.error}
                       {i === turns.length - 1 && !busy && (
-                        <button type="button" onClick={retry} className="focusable rounded-sm border border-line bg-surface px-1.5 py-px text-[10.5px] text-fg hover:bg-raise">try again</button>
+                        <button type="button" onClick={retry} disabled={Boolean(cannot)} className="focusable rounded-sm bg-raise px-1.5 py-px text-[10.5px] font-semibold text-fg hover:brightness-110 disabled:opacity-40">Try again</button>
                       )}
                     </span>
                   )}
@@ -337,10 +341,11 @@ function AssistantPanel({ open, onClose }: { open: boolean; onClose: () => void 
             }
           }}
           rows={2}
-          placeholder={`Ask about ${page.info.title.toLowerCase()}…`}
+          disabled={Boolean(cannot)}
+          placeholder={cannot ? "The assistant cannot answer: see above" : `Ask about ${page.info.title.toLowerCase()}…`}
           className="focusable min-h-[40px] grow resize-none rounded-md border border-line bg-canvas px-3 py-2 text-[12.5px] leading-[1.5] text-fg placeholder:text-ghost"
         />
-        <Button size="sm" variant="solid" tone="ink" loading={busy} onClick={() => ask(draft)}>Send</Button>
+        <Button size="sm" variant="solid" tone="ink" loading={busy} disabled={Boolean(cannot)} onClick={() => ask(draft)}>Send</Button>
       </form>
     </aside>
   );

@@ -1,5 +1,4 @@
 "use client";
-import { useDoorOff } from "@/lib/use-doors";
 import { Failure } from "./pending";
 
 import { Suspense, useCallback, useEffect, useState } from "react";
@@ -14,21 +13,21 @@ import { Figures, Section } from "./section";
 import { GroupHeader } from "./page-tabs";
 import { soon } from "@/lib/soon";
 import { listAgents, type AgentSummary } from "@/lib/api/l2";
-import { CHAIN_STATES, getRetention, verifyLedger, verifyRun, type ChainState, type LedgerVerification, type RetentionView, type RunVerification } from "@/lib/api/l9";
-import { CHAIN_META, ledgerHeadline, ledgerNotes, verifyLine } from "@/lib/chain";
+import { getRetention, verifyLedger, verifyRun, type ChainReading, type LedgerVerification, type RetentionView, type RunVerification } from "@/lib/api/assurance";
+import { CHAIN_META, ledgerHeadline, ledgerNotes, verifyLine } from "@/lib/assurance-words";
 import { whenText } from "@/lib/lifecycle";
 
 /**
- * The hash chain (phase L9): every journal entry carries `prev` and `hash`, a
- * run's first entry names the estate's previous anchor, and a run's last hash
- * is recorded in the ledger, in order. RunChain is the reading on a run's own
- * page; LedgerView walks every anchor. A break says where and why, in the
- * door's words. Retention sits here too, since a deletion leaves a tombstone
- * anchor and the chain still has to verify across it. Its rules change on the
- * Policy page. The doors are lib/api/l9.ts, the words lib/chain.ts.
+ * The hash chain. Every journal entry carries the hash of the one before it,
+ * from a genesis bound to the run and its definition, and the run's own row
+ * holds the last hash and the count. RunChain is the reading on a run's own
+ * page; LedgerView checks every run's chain and the audit trail's, and says
+ * where each breaks in the platform's words. Retention sits here too: what is
+ * kept, what the sweep removed, and the tombstones it left. The doors are
+ * lib/api/assurance.ts, the words lib/assurance-words.ts.
  */
 
-export function ChainStatus({ chain }: { chain: ChainState }) {
+export function ChainStatus({ chain }: { chain: ChainReading }) {
   const m = CHAIN_META[chain];
   return <Status tone={m.tone}>{m.label}</Status>;
 }
@@ -77,21 +76,21 @@ export function RunChain({ run, tick = 0 }: { run: string; tick?: number }) {
   return reading ? <RunChainView reading={reading} /> : null;
 }
 
-/** The walk, row by row. Presentational. */
+/** The walk, run by run. Presentational. */
 export function LedgerWalk({ ledger }: { ledger: LedgerVerification }) {
-  if (!ledger.walk.length) return <p className="text-[12px] text-faint">No anchor in this view.</p>;
+  if (!ledger.walk.length) return <p className="text-[12px] text-faint">No run was created in this view.</p>;
   return (
     <div className="overflow-x-auto rounded-md border border-line">
       <table className="w-full min-w-[860px] border-collapse text-[11.5px]">
         <thead>
           <tr className="border-b border-line bg-raise/40 text-left text-[10.5px] text-faint">
-            <th className="px-3 py-1.5 font-medium">Seq</th>
+            <th className="px-3 py-1.5 font-medium">#</th>
             <th className="px-3 py-1.5 font-medium">Run</th>
-            <th className="px-3 py-1.5 font-medium">Row</th>
+            <th className="px-3 py-1.5 font-medium">State</th>
             <th className="px-3 py-1.5 font-medium">Reading</th>
             <th className="px-3 py-1.5 font-medium">Entries</th>
-            <th className="px-3 py-1.5 font-medium">Anchor</th>
-            <th className="px-3 py-1.5 font-medium">At</th>
+            <th className="px-3 py-1.5 font-medium">Last hash</th>
+            <th className="px-3 py-1.5 font-medium">Created</th>
           </tr>
         </thead>
         <tbody>
@@ -104,14 +103,14 @@ export function LedgerWalk({ ledger }: { ledger: LedgerVerification }) {
                   {r.run}
                 </Link>
               </td>
-              <td className="px-3 py-1.5 text-dim">{r.kind === "tombstone" ? "tombstone" : r.state}</td>
+              <td className="px-3 py-1.5 text-dim">{r.state}</td>
               <td className="px-3 py-1.5">
                 <ChainStatus chain={r.chain} />
                 {r.broken_at !== null && <span className="block text-[10.5px] text-err">at entry {r.broken_at}</span>}
               </td>
               <td className="tnum px-3 py-1.5 text-dim">{r.entries}</td>
               <td className="px-3 py-1.5">
-                <DigestChip digest={r.anchor} label={`Anchor ${r.seq}`} />
+                <DigestChip digest={r.anchor} label={`Last hash of ${r.run}`} />
               </td>
               <td className="px-3 py-1.5 whitespace-nowrap text-faint">{whenText(r.at)}</td>
             </tr>
@@ -130,7 +129,6 @@ export function LedgerBreaks({ ledger }: { ledger: LedgerVerification }) {
       {ledger.breaks.map((b, i) => (
         <li key={`${b.seq}-${b.run}-${i}`} className="rounded-md border border-err-line px-3 py-2 text-[11.5px] leading-[1.5] text-fg">
           <span className="font-mono text-[10.5px] text-dim">
-            {b.seq !== null ? `anchor ${b.seq} · ` : ""}
             <Link href={`/runs?id=${encodeURIComponent(b.run)}`} className="focusable rounded-sm hover:underline">
               {b.run}
             </Link>
@@ -143,26 +141,82 @@ export function LedgerBreaks({ ledger }: { ledger: LedgerVerification }) {
   );
 }
 
-const CLASS_LABEL: Record<string, string> = { runs: "Runs", journals: "Journals", evals: "Evals", deliverables: "Deliverables", auth_events: "Auth events" };
+/** The audit trail's chain, walked whole. Presentational. */
+function AuditTrail({ ledger }: { ledger: LedgerVerification }) {
+  const a = ledger.audit;
+  if (!a) return <p className="text-[12px] text-err">The answer did not include the audit trail&rsquo;s reading.</p>;
+  return (
+    <div className="flex flex-col gap-1.5 text-[11.5px] leading-[1.5]">
+      <span className="flex flex-wrap items-center gap-2">
+        <Status tone={a.valid ? "ok" : "err"}>{a.valid ? "Audit trail holds" : "Audit trail broken"}</Status>
+        <span className="tnum text-faint">
+          {a.rows} row{a.rows === 1 ? "" : "s"} checked
+        </span>
+        {a.head && <DigestChip digest={a.head} label="Hash of the last audit row" />}
+      </span>
+      {!a.valid && (
+        <p className="text-err">
+          At row {a.broken_at}: {a.reason}
+        </p>
+      )}
+      <p className="text-faint">{a.scope ? `${a.scope.charAt(0).toUpperCase()}${a.scope.slice(1)}.` : ""}</p>
+    </div>
+  );
+}
 
-/** Days per record class, the last sweep and what it left. Presentational. */
+/** What the checks cannot show, said once under the walk. */
+function Limits({ items }: { items: string[] }) {
+  if (!items.length) return null;
+  return (
+    <ul className="flex list-disc flex-col gap-0.5 pl-4 text-[11px] leading-[1.5] text-faint">
+      {items.map((x) => (
+        <li key={x}>{x}</li>
+      ))}
+    </ul>
+  );
+}
+
+/** Each class of record with its period, the last sweep, and what it left. Presentational. */
 export function RetentionPanel({ view }: { view: RetentionView }) {
   return (
     <div className="flex flex-col gap-3">
-      <Figures items={Object.entries(view.rules).map(([k, d]) => ({ k: CLASS_LABEL[k] ?? k, v: d === null ? "kept" : `${d} d` }))} />
+      <div className="overflow-x-auto rounded-md border border-line">
+        <table className="w-full min-w-[720px] border-collapse text-[11.5px]">
+          <thead>
+            <tr className="border-b border-line bg-raise/40 text-left text-[10.5px] text-faint">
+              <th className="px-3 py-1.5 font-medium">Class</th>
+              <th className="px-3 py-1.5 font-medium">What it holds</th>
+              <th className="px-3 py-1.5 font-medium">Kept</th>
+            </tr>
+          </thead>
+          <tbody>
+            {view.classes.map((c) => (
+              <tr key={c.class} className="border-b border-line align-top last:border-0">
+                <td className="px-3 py-1.5 text-fg">{c.label}</td>
+                <td className="px-3 py-1.5 text-dim">{c.holds}</td>
+                <td className="px-3 py-1.5 text-dim">{c.days !== null ? `${c.days} days, then removed by the sweep` : c.kept_because}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <p className="text-[11px] leading-[1.5] text-faint">
-        {view.set_by ? `Set by ${view.set_by} ${whenText(view.set_at)}.` : "No rule is set: nothing is deleted."}{" "}
-        {view.change && (
-          <>
-            By change{" "}
-            <Link href={`/policy?change=${encodeURIComponent(view.change)}`} className="focusable rounded-sm font-mono hover:underline">
-              {view.change}
-            </Link>
-            .{" "}
-          </>
-        )}
-        {view.last_sweep_at ? `Last swept ${whenText(view.last_sweep_at)}: ${view.last_sweep.map((s) => `${String(s.class)}, ${String(s.deleted)} deleted`).join("; ") || "nothing to delete"}.` : "No sweep has run on this instance."}
+        {[view.changeable, view.not_reached]
+          .filter(Boolean)
+          .map((s) => `${s.charAt(0).toUpperCase()}${s.slice(1)}.`)
+          .join(" ")}
       </p>
+      {view.last_sweep_error ? (
+        <p className="text-[11.5px] leading-[1.5] text-err">
+          The last sweep ({whenText(view.last_sweep_at)}) failed: {view.last_sweep_error}
+        </p>
+      ) : view.last_sweep_at ? (
+        <p className="text-[11px] leading-[1.5] text-faint">
+          Last swept {whenText(view.last_sweep_at)} by the {view.last_sweep_by}: {view.last_sweep.map((s) => s.said).join("; ")}.
+        </p>
+      ) : (
+        <p className="text-[11px] leading-[1.5] text-faint">No sweep is on record: it runs once an hour in a process that runs workers.</p>
+      )}
       {view.tombstones.length > 0 ? (
         <div className="overflow-x-auto rounded-md border border-line">
           <table className="w-full min-w-[720px] border-collapse text-[11.5px]">
@@ -170,8 +224,8 @@ export function RetentionPanel({ view }: { view: RetentionView }) {
               <tr className="border-b border-line bg-raise/40 text-left text-[10.5px] text-faint">
                 <th className="px-3 py-1.5 font-medium">Record</th>
                 <th className="px-3 py-1.5 font-medium">Class</th>
-                <th className="px-3 py-1.5 font-medium">Deleted</th>
-                <th className="px-3 py-1.5 font-medium">Digest of what was deleted</th>
+                <th className="px-3 py-1.5 font-medium">Removed</th>
+                <th className="px-3 py-1.5 font-medium">Digest of what was removed</th>
               </tr>
             </thead>
             <tbody>
@@ -179,14 +233,14 @@ export function RetentionPanel({ view }: { view: RetentionView }) {
                 <tr key={t.id} className="border-b border-line align-top last:border-0">
                   <td className="px-3 py-1.5">
                     <Mono className="text-[10.5px] text-dim">{t.record}</Mono>
-                    <span className="block font-mono text-[10px] text-ghost">{t.id}</span>
+                    {typeof t.detail.name === "string" && <span className="block text-[10.5px] text-faint">{t.detail.name}</span>}
                   </td>
-                  <td className="px-3 py-1.5 text-dim">{CLASS_LABEL[t.class] ?? t.class}</td>
+                  <td className="px-3 py-1.5 text-dim">{view.classes.find((c) => c.class === t.class)?.label ?? t.class}</td>
                   <td className="px-3 py-1.5 whitespace-nowrap text-faint">
-                    {whenText(t.deleted_at)} by {t.by}
+                    {whenText(t.deleted_at)} by the {t.by}
                   </td>
                   <td className="px-3 py-1.5">
-                    <DigestChip digest={t.digest} label="Tombstone digest" />
+                    <DigestChip digest={t.digest} label="Digest of what was removed" />
                   </td>
                 </tr>
               ))}
@@ -194,7 +248,7 @@ export function RetentionPanel({ view }: { view: RetentionView }) {
           </table>
         </div>
       ) : (
-        <p className="text-[12px] text-faint">No tombstone on record.</p>
+        <p className="text-[12px] text-faint">No tombstone on record: the sweep has removed nothing.</p>
       )}
     </div>
   );
@@ -204,14 +258,13 @@ const iso = (local: string): string | undefined => (local && !Number.isNaN(Date.
 
 function LedgerPage() {
   const params = useSearchParams();
-  const proposeDoor = useDoorOff("POST", "/api/policy/changes");
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [agent, setAgent] = useState(params.get("agent") ?? "");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [ledger, setLedger] = useState<LedgerVerification | null>(null);
   const [retention, setRetention] = useState<RetentionView | null>(null);
-  /** The retention door did not answer: a quiet console says so in place of "Reading" for good. */
+  /** The retention door did not answer: said in place of "Reading" for good. */
   const [retentionDown, setRetentionDown] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -245,10 +298,10 @@ function LedgerPage() {
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
       <GroupHeader group="assurance" tab="ledger">
-        Each run&rsquo;s journal is hash-chained. Anchoring each run&rsquo;s last hash in one ledger, and walking that ledger to verify every run, are not built on the platform yet.
+        Each run&rsquo;s journal is hash-chained from a genesis bound to the run and its definition, and the run&rsquo;s own record holds the last hash. This page checks every run&rsquo;s chain and the audit trail&rsquo;s now, and names the first entry where any breaks. The last hashes are kept in this deployment&rsquo;s database only.
       </GroupHeader>
       {error && (
-        <Banner tone="err" title="Could not walk the ledger">
+        <Banner tone="err" title="Could not check the record">
           {error}
         </Banner>
       )}
@@ -257,28 +310,21 @@ function LedgerPage() {
           {head.line}
         </Banner>
       )}
-      <>
-      <Section title="Ledger walk" action={<Button size="sm" variant="solid" tone="neutral" loading={busy} onClick={walk}>Walk again</Button>}>
+      <Section title="Runs" action={<Button size="sm" variant="solid" tone="neutral" loading={busy} onClick={walk}>Check again</Button>}>
         <div className="grid gap-3 md:grid-cols-3">
           <Field label="Agent">
             <Pick value={agent} onChange={setAgent} options={[{ value: "", label: "The whole estate" }, ...agents.map((a) => ({ value: a.id, label: a.name }))]} />
           </Field>
-          <Field label="From" hint="rows recorded at or after it">
+          <Field label="From" hint="runs created at or after it">
             <Input type="datetime-local" value={from} onChange={setFrom} />
           </Field>
-          <Field label="To" hint="rows recorded at or before it">
+          <Field label="To" hint="runs created at or before it">
             <Input type="datetime-local" value={to} onChange={setTo} />
           </Field>
         </div>
         {ledger && (
           <>
-            <Figures items={[{ k: "anchors", v: ledger.anchors }, { k: "runs", v: ledger.runs }, ...CHAIN_STATES.map((c) => ({ k: CHAIN_META[c].label.toLowerCase(), v: ledger.counts[c] }))]} />
-            {ledger.head && (
-              <p className="flex flex-wrap items-center gap-2 text-[11px] text-faint">
-                Head: anchor {ledger.head.seq} of <Mono className="text-[10.5px]">{ledger.head.run}</Mono>, {whenText(ledger.head.at)}
-                <DigestChip digest={ledger.head.anchor} label="Head anchor" />
-              </p>
-            )}
+            <Figures items={[{ k: "runs checked", v: ledger.runs }, { k: "chain holds", v: ledger.counts.ok }, { k: "chain broken", v: ledger.counts.broken }]} />
             {notes.map((n) => (
               <p key={n} className="text-[11px] text-faint">
                 {n}.
@@ -286,25 +332,20 @@ function LedgerPage() {
             ))}
             <LedgerBreaks ledger={ledger} />
             <LedgerWalk ledger={ledger} />
+            <Limits items={ledger.limits} />
           </>
         )}
         {quietDown && (
           <>
-            <Figures items={[{ k: "anchors", v: unread }, { k: "runs", v: unread }, ...CHAIN_STATES.map((c) => ({ k: CHAIN_META[c].label.toLowerCase(), v: unread }))]} />
+            <Figures items={[{ k: "runs checked", v: unread }, { k: "chain holds", v: unread }, { k: "chain broken", v: unread }]} />
             <p className="text-[12px] text-faint">Not read.</p>
           </>
         )}
       </Section>
-      <Section
-        title="Retention"
-        hue="ledger"
-        meta="what is kept, and the tombstones left by what was not"
-        action={
-          <Button size="sm" variant="solid" tone="neutral" href="/policy#propose" disabled={proposeDoor.off} title={proposeDoor.why}>
-            Propose a change
-          </Button>
-        }
-      >
+      <Section title="Audit trail" hue="ledger" meta="sign-ins, every change and every refusal, hash-chained">
+        {ledger ? <AuditTrail ledger={ledger} /> : <p className="text-[12px] text-faint">{quietDown ? "Not read." : "Reading…"}</p>}
+      </Section>
+      <Section title="Retention" hue="ledger" meta="what is kept, and the tombstones left by what was removed">
         {retention ? (
           <RetentionPanel view={retention} />
         ) : retentionDown ? (
@@ -313,7 +354,6 @@ function LedgerPage() {
           <p className="text-[12px] text-faint">Reading…</p>
         )}
       </Section>
-      </>
     </div>
   );
 }
