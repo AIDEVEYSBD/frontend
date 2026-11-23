@@ -120,6 +120,18 @@ export function toolRisk(t: Pick<PinnedTool, "risk">): { risk: ToolRisk; set: bo
 }
 
 /**
+ * Whether the untrusted-content rule holds a pinned tool as sending data
+ * outside, as the platform registers it: its risk (destructive when unset)
+ * is write or above, or the approving platform admin marked it. Content
+ * that came from outside may not reach such a tool. `sends` is null for a
+ * read tool whose mark the backend did not report.
+ */
+export function sendsOutside(t: Pick<PinnedTool, "risk" | "outbound">): { sends: boolean | null; marked: boolean } {
+  if (toolRisk(t).risk !== "read") return { sends: true, marked: t.outbound === true };
+  return typeof t.outbound === "boolean" ? { sends: t.outbound, marked: t.outbound } : { sends: null, marked: false };
+}
+
+/**
  * An entry adopted from before the registry, in a line: where from, and
  * whether it has been screened since. Approving one screens its pinned
  * tools first; a clean screening there leaves no scan on the entry, so an

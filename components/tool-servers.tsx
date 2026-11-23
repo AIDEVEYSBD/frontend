@@ -24,7 +24,7 @@ import {
   type RegisteredServer,
   type ScreenHit,
 } from "@/lib/api/l6";
-import { adoptedLine, approveAccess, changeLine, credentialsWaiting, formProblem, isolationLine, pinChange, pinnedTools, refusedWhen, rescanBlocked, RISKS, STATUS_META, toolHints, toolRisk, type Me } from "@/lib/mcp-registry";
+import { adoptedLine, approveAccess, changeLine, credentialsWaiting, formProblem, isolationLine, pinChange, pinnedTools, refusedWhen, rescanBlocked, RISKS, sendsOutside, STATUS_META, toolHints, toolRisk, type Me } from "@/lib/mcp-registry";
 
 /**
  * The MCP registry: the tool servers this deployment connects, and whether
@@ -288,35 +288,46 @@ const RISK_TEXT: Record<string, string> = {
 };
 
 /**
- * What a platform admin decides when approving a pin: each tool's risk, and
- * the most sensitive class of data the server may be sent. A tool left unset
- * is sent as unset, and the platform counts it destructive: every call to it
- * then waits for a platform admin. The server's own hints are shown beside
- * each tool as its word about itself, and decide nothing.
+ * What a platform admin decides when approving a pin: each tool's risk, the
+ * read tools that send data outside, and the most sensitive class of data
+ * the server may be sent. A tool left unset is sent as unset, and the
+ * platform counts it destructive: every call to it then waits for a platform
+ * admin. A tool at write or above already counts as sending data outside, so
+ * its box is ticked and fixed; only read tools are marked, and only those
+ * are sent. The server's own hints are shown beside each tool as its word
+ * about itself, and decide nothing.
  */
-function RiskApproval({ server: s, busy, onApprove, onCancel }: { server: RegisteredServer; busy: boolean; onApprove: (risks: Record<string, string>, cls: string) => void; onCancel: () => void }) {
+function RiskApproval({ server: s, busy, onApprove, onCancel }: { server: RegisteredServer; busy: boolean; onApprove: (risks: Record<string, string>, cls: string, outbound: string[]) => void; onCancel: () => void }) {
   const tools = pinnedTools(s);
   const [risks, setRisks] = useState<Record<string, string>>(() => Object.fromEntries(tools.map((t) => [t.name, toolRisk(t).set ? toolRisk(t).risk : ""])));
+  const [marked, setMarked] = useState<Record<string, boolean>>(() => Object.fromEntries(tools.map((t) => [t.name, t.outbound === true])));
   const [cls, setCls] = useState(s.max_data_class || "public");
   const unset = tools.filter((t) => !risks[t.name]).length;
+  // A tool counts as read only when its risk is set to read; unset is destructive.
+  const isRead = (name: string) => risks[name] === "read";
   return (
     <div className="flex flex-col gap-2 rounded-md border border-line bg-canvas p-3">
       <span className="flex flex-wrap items-baseline gap-2">
         <span className="text-[12px] font-semibold text-fg">{s.status === "approved" ? "Change the risks of the approved list" : "Approve the pinned list"}</span>
         <span className="text-[11px] text-faint">set each tool&rsquo;s risk; a tool left unset is destructive, and every call to it waits for a platform admin</span>
       </span>
+      <span className="text-[11px] leading-[1.5] text-dim">
+        Tick &ldquo;Sends data outside&rdquo; for a read tool that passes what it is given on to another system (it forwards, notifies or logs it elsewhere): content that came from outside the platform may then never reach it, as for every tool at write or above.
+      </span>
       <div className="overflow-x-auto rounded-sm border border-line">
-        <table className="w-full min-w-[620px] border-collapse text-[11.5px]">
+        <table className="w-full min-w-[720px] border-collapse text-[11.5px]">
           <thead>
             <tr className="border-b border-line bg-raise/60 text-left text-[10.5px] text-faint">
               <th className="px-3 py-1.5 font-medium">Tool</th>
               <th className="px-3 py-1.5 font-medium">The server&rsquo;s hints say</th>
               <th className="px-3 py-1.5 font-medium">Risk</th>
+              <th className="px-3 py-1.5 font-medium">Sends data outside</th>
             </tr>
           </thead>
           <tbody>
             {tools.map((t) => {
               const h = toolHints(t);
+              const read = isRead(t.name);
               return (
                 <tr key={t.name} className="border-b border-line align-top last:border-0">
                   <td className="px-3 py-1.5">
@@ -337,6 +348,22 @@ function RiskApproval({ server: s, busy, onApprove, onCancel }: { server: Regist
                       options={[{ value: "", label: "Not set: destructive" }, ...RISKS.map((r) => ({ value: r, label: RISK_TEXT[r] ?? r }))]}
                     />
                   </td>
+                  <td className="w-[150px] px-3 py-1.5">
+                    <label
+                      className={`inline-flex items-center gap-1.5 ${read ? "cursor-pointer text-fg" : "cursor-not-allowed text-faint"}`}
+                      title={read ? "Tick it when this read tool passes what it is given on to another system" : "At write or above it already counts as sending data outside"}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={read ? marked[t.name] === true : true}
+                        disabled={!read}
+                        onChange={(e) => setMarked((m) => ({ ...m, [t.name]: e.target.checked }))}
+                        aria-label={`${t.name} sends data outside`}
+                        className="accent-[var(--t-fg)]"
+                      />
+                      <span className="text-[11px]">{read ? (marked[t.name] ? "yes, marked" : "no") : "yes, by its risk"}</span>
+                    </label>
+                  </td>
                 </tr>
               );
             })}
@@ -352,7 +379,14 @@ function RiskApproval({ server: s, busy, onApprove, onCancel }: { server: Regist
         <Button size="sm" variant="solid" tone="err" onClick={onCancel} disabled={busy}>
           Cancel
         </Button>
-        <Button size="sm" variant="solid" tone="ink" permission="configure" loading={busy} onClick={() => onApprove(Object.fromEntries(Object.entries(risks).filter(([, v]) => v)), cls)}>
+        <Button
+          size="sm"
+          variant="solid"
+          tone="ink"
+          permission="configure"
+          loading={busy}
+          onClick={() => onApprove(Object.fromEntries(Object.entries(risks).filter(([, v]) => v)), cls, tools.filter((t) => isRead(t.name) && marked[t.name]).map((t) => t.name))}
+        >
           {s.status === "approved" ? "Save the risks" : `Approve${unset ? `, ${unset} left destructive` : ""}`}
         </Button>
       </span>
@@ -419,7 +453,7 @@ function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { ser
   const approval = s.approvals.at(-1);
   const isolated = isolationLine(s);
 
-  const act = async (what: "approve" | "credentials" | "rescan" | "delete", decided?: { risks: Record<string, string>; cls: string }) => {
+  const act = async (what: "approve" | "credentials" | "rescan" | "delete", decided?: { risks: Record<string, string>; cls: string; outbound: string[] }) => {
     setBusy(what);
     setError(null);
     setNotice(null);
@@ -436,9 +470,14 @@ function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { ser
       } else if (what === "approve") {
         const set = Object.keys(decided?.risks ?? {}).length;
         const left = tools.length - set;
-        await approveServer(s.id, decided ? { risks: decided.risks, max_data_class: decided.cls } : undefined);
+        // The marks are sent only when there are any: an approval that names none marks none.
+        const outbound = decided?.outbound ?? [];
+        await approveServer(s.id, decided ? { risks: decided.risks, max_data_class: decided.cls, ...(outbound.length ? { outbound } : {}) } : undefined);
         setDeciding(false);
-        setNotice({ tone: "ok", text: `Approved: its tools attach to runs at the risks set${left ? `; ${left} tool${left === 1 ? " is" : "s are"} left destructive, so every call to ${left === 1 ? "it" : "them"} waits for a platform admin` : ""}.` });
+        setNotice({
+          tone: "ok",
+          text: `Approved: its tools attach to runs at the risks set${left ? `; ${left} tool${left === 1 ? " is" : "s are"} left destructive, so every call to ${left === 1 ? "it" : "them"} waits for a platform admin` : ""}${outbound.length ? `; marked as sending data outside: ${outbound.join(", ")}` : ""}.`,
+        });
       } else if (what === "rescan") {
         const r = await rescanServer(s.id);
         setNotice(
@@ -521,7 +560,7 @@ function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { ser
         <span className="-mt-1 self-end text-[11px] text-warn">{access.reason}</span>
       )}
       {deciding && access.ok && access.credentials && <CredentialsApproval server={s} busy={busy === "credentials"} onCancel={() => setDeciding(false)} onApprove={() => void act("credentials")} />}
-      {deciding && access.ok && !access.credentials && <RiskApproval server={s} busy={busy === "approve"} onCancel={() => setDeciding(false)} onApprove={(risks, cls) => void act("approve", { risks, cls })} />}
+      {deciding && access.ok && !access.credentials && <RiskApproval server={s} busy={busy === "approve"} onCancel={() => setDeciding(false)} onApprove={(risks, cls, outbound) => void act("approve", { risks, cls, outbound })} />}
 
       {where && <Mono className="block truncate text-[10.5px] text-ghost">{where}</Mono>}
       {waiting ? (
@@ -604,11 +643,18 @@ function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { ser
           {tools.map((t) => {
             const h = toolHints(t);
             const r = toolRisk(t);
+            const out = sendsOutside(t);
             const moved = change?.rewritten.includes(t.name) || change?.added.includes(t.name);
+            const outLine =
+              out.sends === null
+                ? ""
+                : out.sends
+                  ? `\nSends data outside${r.risk === "read" ? " (marked when the pin was approved)" : ` (its risk is ${r.risk})`}: untrusted content may not reach it.`
+                  : "\nNot marked as sending data outside: untrusted content may reach it.";
             return (
               <span
                 key={t.name}
-                title={`${t.description || t.name}\n${r.set ? `Risk ${r.risk}, set when the pin was approved.` : "No risk set for this pin: the platform counts it destructive, and every call waits for a platform admin."}\nThe server's hints say ${h.risk}${h.hints.length ? ` (${h.hints.join(", ")})` : ""}.`}
+                title={`${t.description || t.name}\n${r.set ? `Risk ${r.risk}, set when the pin was approved.` : "No risk set for this pin: the platform counts it destructive, and every call waits for a platform admin."}${outLine}\nThe server's hints say ${h.risk}${h.hints.length ? ` (${h.hints.join(", ")})` : ""}.`}
                 className={`inline-flex items-center gap-1 rounded-[3px] border bg-surface px-1 py-px font-mono text-[10px] ${moved ? "border-err text-err" : "border-line text-dim"}`}
               >
                 {t.name}
@@ -616,6 +662,7 @@ function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { ser
                   · {r.risk}
                   {r.set ? "" : " (not set)"}
                 </span>
+                {r.risk === "read" && out.marked && <span className="text-warn">· sends outside</span>}
               </span>
             );
           })}

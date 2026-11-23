@@ -55,6 +55,8 @@ export type PinnedTool = {
   risk?: string | null;
   /** The risk the server's own hints suggest, as the platform reads them; shown beside the setting, never used. */
   risk_from_hints?: string;
+  /** Whether the approving platform admin marked it as sending data outside (untrusted content may then not reach it); absent when the backend did not say. */
+  outbound?: boolean;
 };
 
 /** The tool list a person approves, by its SHA-256 digest (`sha256:…`). */
@@ -212,6 +214,7 @@ export function toolOf(v: unknown): PinnedTool | null {
     ...(typeof t.title === "string" && t.title ? { title: t.title } : {}),
     risk: typeof t.risk === "string" && t.risk ? t.risk : null,
     risk_from_hints: str(t.risk_from_hints),
+    ...(typeof t.outbound === "boolean" ? { outbound: t.outbound } : {}),
   };
 }
 
@@ -466,8 +469,11 @@ export async function addServer(body: NewServer): Promise<RegisteredServer> {
   return call(REGISTRY.add(body), (j) => serverOf(obj(j).server ?? j));
 }
 
-/** What a platform admin sends with an approval: each pinned tool's risk, and the most sensitive class of data the server may be sent. */
-export type ApproveBody = { risks: Record<string, string>; max_data_class?: string };
+/**
+ * What a platform admin sends with an approval: each pinned tool's risk, the read tools marked as sending data outside (left out when none
+ * is: the approval then marks none), and the most sensitive class of data the server may be sent.
+ */
+export type ApproveBody = { risks: Record<string, string>; outbound?: string[]; max_data_class?: string };
 
 /**
  * `POST /api/mcp/{id}/approve`: the pin is approved with the risks the
