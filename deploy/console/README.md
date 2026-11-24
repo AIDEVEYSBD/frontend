@@ -1,7 +1,7 @@
 # Deploying the console
 
-**The whole Google Cloud deployment, both parts together, is in the service's repository: `deploy/GCP.md`.** That
-guide covers the project, AlloyDB, GKE, IAM, the console on Cloud Run behind IAP, the route between the console and the
+**The whole Google Cloud deployment, both parts together, is in [`deploy/GCP.md`](../GCP.md)** (the same file is in the
+service's repository). That guide covers the project, AlloyDB, GKE, IAM, the console on Cloud Run behind IAP, the route between the console and the
 service, and what to verify on the first day. This page is the console's own part.
 
 The console is the pages of Agent Factory, served by Next.js. It is one of two parts:
@@ -86,7 +86,7 @@ gcloud run deploy $SERVICE \
   --iap
 ```
 
-The console must be able to reach `BACKEND_ORIGIN`. For a service on an internal address that means a route into its network (Direct VPC egress, or a Serverless VPC Access connector). Cloud Run cannot resolve the cluster's own names (`…svc.cluster.local`): with the service on GKE, put an internal load balancer on a reserved IP in front of it and use that address. The service's Service listens on port 80, so `BACKEND_ORIGIN` is then `http://THAT_IP`, as `env.cloudrun.yaml` writes it (the service's `deploy/GCP.md`, section 10).
+The console must be able to reach `BACKEND_ORIGIN`. For a service on an internal address that means a route into its network (Direct VPC egress, or a Serverless VPC Access connector). Cloud Run cannot resolve the cluster's own names (`…svc.cluster.local`): with the service on GKE, put an internal load balancer on a reserved IP in front of it and use that address. The service's Service listens on port 80, so `BACKEND_ORIGIN` is then `http://THAT_IP`, as `env.cloudrun.yaml` writes it (`deploy/GCP.md`, section 10).
 
 Let IAP call the console, and let people through IAP:
 

@@ -21,7 +21,9 @@ browser ──► Google IAP ──► console (Next.js) ──► platform serv
 | `NEXT_PUBLIC_ORIGIN` | build | The address people open the console at, in full, no trailing slash. Compiled into the pages. |
 | `BACKEND_ORIGIN` | run | The service's address as the console's server reaches it. |
 
-Sign-in (`IAP_AUDIENCE`, `IAP_ROLE_MAP`, `IAP_SIGNOUT_URL`, `IAP_JWKS_URL`), the machine route (`PUBLIC_API_URL`) and everything else are the service's settings. `.env.example` lists the console's; `deploy/console/README.md` walks through a deployment.
+Sign-in (`IAP_AUDIENCE`, `IAP_ROLE_MAP`, `IAP_SIGNOUT_URL`, `IAP_JWKS_URL`), the machine route (`PUBLIC_API_URL`) and everything else are the service's settings. `.env.example` lists the console's.
+
+**To deploy on Google Cloud, follow [`deploy/GCP.md`](deploy/GCP.md)**: both parts, the console and the service, step by step (the same file is in the service's repository). `deploy/console/README.md` has the console's own part.
 
 ## Run it locally
 
