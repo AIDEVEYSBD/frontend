@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 // The generated client as the browser has it, but on an absolute origin: Node
@@ -60,8 +61,8 @@ describe("lib/api/l2.ts sends what the pages used to send", () => {
     expect(await l2.retireAgent("tiny")).toMatchObject({ removed: true });
     expect(sent[0]).toMatchObject({ method: "DELETE", url: "/api/agents/tiny" });
 
-    sent = answer(200, { deployed: true, id: "tiny", digest: "18fd72f7a3b7e92c", store: "db", at: "2026-10-21T08:23:23.488Z", version: 3, steps: [] });
-    expect((await l2.deployAgent("tiny")).digest).toBe("18fd72f7a3b7e92c");
+    sent = answer(200, { deployed: true, id: "tiny", digest: "0019000000000000", store: "db", at: "2026-10-21T08:23:23.488Z", version: 3, steps: [] });
+    expect((await l2.deployAgent("tiny")).digest).toBe("0019000000000000");
     expect(sent[0]).toMatchObject({ method: "POST", url: "/api/agents/tiny/deploy" });
 
     sent = answer(200, { id: "tiny", versions: [], count: 0, latest: null, deployed: null });
@@ -81,8 +82,9 @@ describe("lib/api/l2.ts sends what the pages used to send", () => {
     let sent = answer(200, { keys: [], mode: "open", store: "db" });
     await l2.listKeys();
     expect(sent[0]).toMatchObject({ method: "GET", url: "/api/keys" });
-    sent = answer(200, { id: "k2", name: "intake", agent: "tiny", prefix: "af_1234", created_at: "2026-10-21T08:00:00Z", key: "af_1234_secret" });
-    expect((await l2.mintKey("intake", "tiny")).key).toBe("af_1234_secret");
+    const minted = `af_1234_${randomBytes(12).toString("hex")}`; // made for this run
+    sent = answer(200, { id: "k2", name: "intake", agent: "tiny", prefix: "af_1234", created_at: "2026-10-21T08:00:00Z", key: minted });
+    expect((await l2.mintKey("intake", "tiny")).key).toBe(minted);
     expect(sent[0]).toEqual({ method: "POST", url: "/api/keys", body: { name: "intake", agent: "tiny" } });
     sent = answer(200, { id: "k1", revoked: true, revoked_at: "2026-10-21T08:00:00Z" });
     await l2.revokeKey("k1");

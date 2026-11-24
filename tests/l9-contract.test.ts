@@ -66,7 +66,11 @@ import { declaredTierLabel } from "@/lib/autonomy";
  * door changes, capture it again and replace the fixture.
  */
 
+/** Vault entries' names, as a peer or an attached agent names the secret it signs with: names only, never values. */
+const VAULT = { x: "x-a2a", soc: "soc-a2a" } as const;
 const FX = JSON.parse(readFileSync(path.join(__dirname, "fixtures", "l9-captures.json"), "utf-8")) as Record<string, { status: number; body: unknown; headers?: Record<string, string>; bytes?: number }>;
+// The vault name peer "soc" was captured with, put back here: in a JSON file a scanner takes any "secret_name" value for a secret.
+(FX["peers.classed"].body as { peers: { secret_name: string }[] }).peers[0].secret_name = VAULT.soc;
 
 const replayed = new Set<string>();
 
@@ -455,7 +459,7 @@ describe("the direct writes the door replaced", () => {
     await l2.setAttachedPolicy({ id: row.id, ...split.direct } as l2.PolicyPatch);
     expect(Object.keys(sent[1].body as object).sort()).toEqual(["id", "injection"]);
     expect(attachedSplit(row, { grants: [], gate_at: "", injection: row.injection, secret_name: "" })).toEqual({ reviewed: {}, direct: {} });
-    expect(attachedSplit(row, { grants: [], gate_at: "", injection: row.injection, secret_name: "x-a2a" }).direct).toEqual({ secret_name: "x-a2a" });
+    expect(attachedSplit(row, { grants: [], gate_at: "", injection: row.injection, secret_name: VAULT.x }).direct).toEqual({ secret_name: VAULT.x });
     const after = (await l2.listAttached()).agents[0];
     expect(after.grants).toEqual(["crm.lookup", "crm.update"]);
     expect(after.gate_at).toBe("write");

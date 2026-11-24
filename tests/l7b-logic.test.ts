@@ -29,8 +29,12 @@ import { JOB_STATUSES, countOf, queueTotals } from "@/lib/queue";
  * responses; these hold the cases a capture does not reach.
  */
 
+/** Typed where a vault name belongs: a value with spaces, refused. */
+const PASTED = "a pasted value with spaces";
+/** Vault entries' names, as a peer or an attached agent names the secret it signs with: names only, never values. */
+const VAULT = { p: "p-a2a", socA2a: "soc-a2a", soc: "soc" } as const;
 const card = (digest: string, body: Record<string, unknown> | null = { name: "Peer", skills: [] }): PeerCard => ({ digest, card: body, at: "2026-10-21T10:00:00Z" });
-const peer = (over: Partial<Peer> = {}): Peer => ({ ...peerOf({ id: "p", label: "P", url: "https://peer.example/a2a", secret_name: "p-a2a", agent: "agent-factory", status: "pending" }), ...over });
+const peer = (over: Partial<Peer> = {}): Peer => ({ ...peerOf({ id: "p", label: "P", url: "https://peer.example/a2a", secret_name: VAULT.p, agent: "agent-factory", status: "pending" }), ...over });
 
 describe("a peer's registration form", () => {
   it("a secret is its vault name, or ${secret:name}, lowercased; anything else is no name", () => {
@@ -43,7 +47,7 @@ describe("a peer's registration form", () => {
   });
 
   it("names its first problem, the way the backend refuses it", () => {
-    const ok = { ...EMPTY_PEER_FORM, label: "SOC peer", url: "https://peer.example/a2a", secret_name: "soc-a2a" };
+    const ok = { ...EMPTY_PEER_FORM, label: "SOC peer", url: "https://peer.example/a2a", secret_name: VAULT.socA2a };
     expect(peerFormProblem(ok)).toBe("");
     expect(peerFormProblem(EMPTY_PEER_FORM)).toBe("Name the peer.");
     expect(peerFormProblem({ ...ok, label: "", id: "Bad-Id" })).toMatch(/An id starts with a lowercase letter/);
@@ -54,7 +58,7 @@ describe("a peer's registration form", () => {
     expect(peerFormProblem({ ...ok, url: "https://peer.example/a2a?token=x" })).toMatch(/no query or fragment/);
     expect(peerFormProblem({ ...ok, url: "https://peer.example/a2a#card" })).toMatch(/no query or fragment/);
     expect(peerFormProblem({ ...ok, secret_name: "" })).toBe("Name the vault secret the two sides share.");
-    expect(peerFormProblem({ ...ok, secret_name: "pasted secret value" })).toMatch(/never the secret itself/);
+    expect(peerFormProblem({ ...ok, secret_name: PASTED })).toMatch(/never the secret itself/);
     expect(peerFormProblem({ ...ok, agent: "Not An Id" })).toBe('"Not An Id" is not an agent id.');
     expect(peerFormProblem({ ...ok, id: "soc", agent: "dlp-triage-v3" })).toBe("");
   });
@@ -62,8 +66,8 @@ describe("a peer's registration form", () => {
   it("sends the contract's body: trimmed, blank optional fields left out", () => {
     const blank = { data_class: "", max_data_class: "" };
     expect(peerBody({ label: " SOC ", id: " ", url: " https://p.example/a2a ", secret_name: " ${secret:soc} ", agent: "", ...blank })).toEqual({ label: "SOC", url: "https://p.example/a2a", secret_name: "${secret:soc}" });
-    expect(peerBody({ label: "", id: "soc", url: "https://p.example/a2a", secret_name: "soc", agent: "triage", ...blank })).toEqual({ label: "", id: "soc", url: "https://p.example/a2a", secret_name: "soc", agent: "triage" });
-    expect(peerBody({ label: "", id: "soc", url: "https://p.example/a2a", secret_name: "soc", agent: "", data_class: "confidential", max_data_class: "internal" })).toEqual({ label: "", id: "soc", url: "https://p.example/a2a", secret_name: "soc", data_class: "confidential", max_data_class: "internal" });
+    expect(peerBody({ label: "", id: "soc", url: "https://p.example/a2a", secret_name: VAULT.soc, agent: "triage", ...blank })).toEqual({ label: "", id: "soc", url: "https://p.example/a2a", secret_name: VAULT.soc, agent: "triage" });
+    expect(peerBody({ label: "", id: "soc", url: "https://p.example/a2a", secret_name: VAULT.soc, agent: "", data_class: "confidential", max_data_class: "internal" })).toEqual({ label: "", id: "soc", url: "https://p.example/a2a", secret_name: VAULT.soc, data_class: "confidential", max_data_class: "internal" });
   });
 });
 

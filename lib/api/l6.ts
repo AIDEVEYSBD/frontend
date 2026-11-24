@@ -416,8 +416,9 @@ export class RegistryError extends Error {
 
 /**
  * A URL's userinfo, masked as the registry masks it (backend/app/mcp_registry.py
- * `mask_userinfo`): `scheme://user:pass@host` and `scheme://token@host` both
- * read `scheme://***@host`, since a token is often sent as the user name. An
+ * `mask_userinfo`): a user name and password before the host, or a token
+ * alone in the user name's place, both read `scheme://***@host`, since a
+ * token is often sent as the user name. An
  * `@` in the query is no userinfo and is left alone, and a URL the backend
  * already masked passes through unchanged. A second lock: the registry masks
  * every URL it returns and refuses one with credentials, but an older

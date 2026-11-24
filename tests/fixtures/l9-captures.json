@@ -95,7 +95,7 @@
      "at": "2026-11-04T13:05:58.481Z",
      "by": "Ada <ada@example.com>",
      "decision": "gd-828f10dc5d2640ec",
-     "digest": "ae164934c963c793",
+     "digest": "0140000000000000",
      "environment": "production",
      "eval_run": "ev-mw24r2cw-rgm2",
      "flagged": [],
@@ -121,19 +121,19 @@
      "review": "rv-d49d834f35394ae5",
      "version": 1
     },
-    "digest": "ae164934c963c793",
+    "digest": "0140000000000000",
     "version": 1
    },
-   "digest": "259166559ed614f7",
+   "digest": "0034000000000000",
    "retired": null,
    "stages": [
     {
      "at": "2026-11-04T13:05:58.535Z",
      "by": "Ada <ada@example.com>",
-     "digest": "259166559ed614f7",
+     "digest": "0034000000000000",
      "lit": true,
      "record": {
-      "digest": "259166559ed614f7",
+      "digest": "0034000000000000",
       "saved_at": "2026-11-04T13:05:58.535Z",
       "saved_by": "Ada <ada@example.com>",
       "version": 2
@@ -144,7 +144,7 @@
     {
      "at": null,
      "by": "",
-     "digest": "259166559ed614f7",
+     "digest": "0034000000000000",
      "lit": false,
      "record": null,
      "stage": "reviewed",
@@ -153,7 +153,7 @@
     {
      "at": null,
      "by": "",
-     "digest": "259166559ed614f7",
+     "digest": "0034000000000000",
      "lit": false,
      "record": null,
      "stage": "approved",
@@ -162,7 +162,7 @@
     {
      "at": null,
      "by": "",
-     "digest": "259166559ed614f7",
+     "digest": "0034000000000000",
      "lit": false,
      "record": null,
      "stage": "canary",
@@ -171,7 +171,7 @@
     {
      "at": null,
      "by": "",
-     "digest": "259166559ed614f7",
+     "digest": "0034000000000000",
      "lit": false,
      "record": null,
      "stage": "deployed",
@@ -197,7 +197,7 @@
    "deployed_digest": "",
    "deployed_version": null,
    "description": "",
-   "digest": "eeb67216625879cb",
+   "digest": "0203000000000000",
    "id": "boxed",
    "lineage": null,
    "name": "boxed",
@@ -324,7 +324,7 @@
     {
      "deployed": false,
      "deployed_at": null,
-     "digest": "eeb67216625879cb",
+     "digest": "0203000000000000",
      "name": "boxed",
      "nodes": 1,
      "saved_at": "2026-11-04T13:05:58.638Z",
@@ -966,7 +966,7 @@
     {
      "action": {
       "body": {
-       "digest": "3a802c629fc8f32b",
+       "digest": "0046000000000000",
        "statement": ""
       },
       "method": "POST",
@@ -980,7 +980,7 @@
      ],
      "data": {
       "deployed": {
-       "digest": "3a802c629fc8f32b",
+       "digest": "0046000000000000",
        "version": 1
       },
       "due_at": "2026-10-05T13:05:58.065Z",
@@ -990,7 +990,7 @@
        "at": "2026-07-07T13:05:58.077Z",
        "by": "Ada <ada@example.com>",
        "deployed": {
-        "digest": "3a802c629fc8f32b",
+        "digest": "0046000000000000",
         "version": 1
        },
        "diff": {
@@ -999,7 +999,7 @@
          "removed": []
         },
         "from": {
-         "digest": "3a802c629fc8f32b",
+         "digest": "0046000000000000",
          "version": 1
         },
         "gates": {
@@ -1045,7 +1045,7 @@
         ],
         "system": [],
         "to": {
-         "digest": "2a7f51eba50c8c12",
+         "digest": "0039000000000000",
          "version": 2
         },
         "tools": {
@@ -1054,7 +1054,7 @@
          "removed": []
         }
        },
-       "digest": "2a7f51eba50c8c12",
+       "digest": "0039000000000000",
        "due_at": "2026-10-05T13:05:58.077Z",
        "id": "at-5ec68146c0a9417e",
        "matches_deployed": false,
@@ -1062,7 +1062,7 @@
        "previous": {
         "at": "2026-11-04T13:05:58.065Z",
         "by": "Owen <owen@example.com>",
-        "digest": "3a802c629fc8f32b",
+        "digest": "0046000000000000",
         "id": "at-0ceeaabc480e4d73",
         "version": 1
        },
@@ -1102,7 +1102,7 @@
      "action": {
       "body": null,
       "method": "GET",
-      "path": "/api/agents/triage/lifecycle?digest=ae164934c963c793",
+      "path": "/api/agents/triage/lifecycle?digest=0140000000000000",
       "says": "review what the override passed: run the eval, sign the review, or close the findings, so the gate holds on its own records"
      },
      "age_s": 0.0,
@@ -1113,7 +1113,7 @@
      "data": {
       "decision": "gd-828f10dc5d2640ec",
       "deployment": "dp-590c5d9f12294564",
-      "digest": "ae164934c963c793",
+      "digest": "0140000000000000",
       "environment": "production",
       "override": {
        "at": "2026-11-04T13:05:58.481Z",
@@ -1199,11 +1199,11 @@
    "at": "2026-11-04T13:05:58.065Z",
    "by": "Owen <owen@example.com>",
    "deployed": {
-    "digest": "3a802c629fc8f32b",
+    "digest": "0046000000000000",
     "version": 1
    },
    "diff": null,
-   "digest": "3a802c629fc8f32b",
+   "digest": "0046000000000000",
    "due_at": "2027-02-02T13:05:58.065Z",
    "id": "at-0ceeaabc480e4d73",
    "matches_deployed": true,
@@ -1254,7 +1254,7 @@
    "at": "2026-11-04T13:05:58.077Z",
    "by": "Ada <ada@example.com>",
    "deployed": {
-    "digest": "3a802c629fc8f32b",
+    "digest": "0046000000000000",
     "version": 1
    },
    "diff": {
@@ -1263,7 +1263,7 @@
      "removed": []
     },
     "from": {
-     "digest": "3a802c629fc8f32b",
+     "digest": "0046000000000000",
      "version": 1
     },
     "gates": {
@@ -1309,7 +1309,7 @@
     ],
     "system": [],
     "to": {
-     "digest": "2a7f51eba50c8c12",
+     "digest": "0039000000000000",
      "version": 2
     },
     "tools": {
@@ -1318,7 +1318,7 @@
      "removed": []
     }
    },
-   "digest": "2a7f51eba50c8c12",
+   "digest": "0039000000000000",
    "due_at": "2027-02-02T13:05:58.077Z",
    "id": "at-5ec68146c0a9417e",
    "matches_deployed": false,
@@ -1326,7 +1326,7 @@
    "previous": {
     "at": "2026-11-04T13:05:58.065Z",
     "by": "Owen <owen@example.com>",
-    "digest": "3a802c629fc8f32b",
+    "digest": "0046000000000000",
     "id": "at-0ceeaabc480e4d73",
     "version": 1
    },
@@ -1368,7 +1368,7 @@
      "at": "2026-11-04T13:05:58.077Z",
      "by": "Ada <ada@example.com>",
      "deployed": {
-      "digest": "3a802c629fc8f32b",
+      "digest": "0046000000000000",
       "version": 1
      },
      "diff": {
@@ -1377,7 +1377,7 @@
        "removed": []
       },
       "from": {
-       "digest": "3a802c629fc8f32b",
+       "digest": "0046000000000000",
        "version": 1
       },
       "gates": {
@@ -1423,7 +1423,7 @@
       ],
       "system": [],
       "to": {
-       "digest": "2a7f51eba50c8c12",
+       "digest": "0039000000000000",
        "version": 2
       },
       "tools": {
@@ -1432,7 +1432,7 @@
        "removed": []
       }
      },
-     "digest": "2a7f51eba50c8c12",
+     "digest": "0039000000000000",
      "due_at": "2027-02-02T13:05:58.077Z",
      "id": "at-5ec68146c0a9417e",
      "matches_deployed": false,
@@ -1440,7 +1440,7 @@
      "previous": {
       "at": "2026-11-04T13:05:58.065Z",
       "by": "Owen <owen@example.com>",
-      "digest": "3a802c629fc8f32b",
+      "digest": "0046000000000000",
       "id": "at-0ceeaabc480e4d73",
       "version": 1
      },
@@ -1453,11 +1453,11 @@
      "at": "2026-11-04T13:05:58.065Z",
      "by": "Owen <owen@example.com>",
      "deployed": {
-      "digest": "3a802c629fc8f32b",
+      "digest": "0046000000000000",
       "version": 1
      },
      "diff": null,
-     "digest": "3a802c629fc8f32b",
+     "digest": "0046000000000000",
      "due_at": "2027-02-02T13:05:58.065Z",
      "id": "at-0ceeaabc480e4d73",
      "matches_deployed": true,
@@ -1491,12 +1491,12 @@
     "tools": 4
    },
    "deployed": false,
-   "digest": "eeb67216625879cb",
+   "digest": "0203000000000000",
    "digests": {
     "cards": {
-     "soc": "sha256:ce361cd000ff594cdecbf11546d5f0b8adb2fb3e63c01923c9ed269632851a4e"
+     "soc": "sha256:0166000000000000000000000000000000000000000000000000000000000000"
     },
-    "spec": "eeb67216625879cb",
+    "spec": "0203000000000000",
     "tool_lists": {
      "crm": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     }
@@ -1528,7 +1528,7 @@
       "name": "soc",
       "version": ""
      },
-     "card_digest": "sha256:ce361cd000ff594cdecbf11546d5f0b8adb2fb3e63c01923c9ed269632851a4e",
+     "card_digest": "sha256:0166000000000000000000000000000000000000000000000000000000000000",
      "data_class": "",
      "effective_max_data_class": "public",
      "id": "soc",
@@ -1744,7 +1744,7 @@
      "properties": [
       {
        "name": "agentfactory:spec_digest",
-       "value": "eeb67216625879cb"
+       "value": "0203000000000000"
       },
       {
        "name": "agentfactory:autonomy",
@@ -1988,7 +1988,7 @@
       },
       {
        "name": "agentfactory:card_digest",
-       "value": "sha256:ce361cd000ff594cdecbf11546d5f0b8adb2fb3e63c01923c9ed269632851a4e"
+       "value": "sha256:0166000000000000000000000000000000000000000000000000000000000000"
       }
      ]
     }
@@ -2012,10 +2012,10 @@
     "tools": 0
    },
    "deployed": false,
-   "digest": "dcab00f2adeab046",
+   "digest": "0185000000000000",
    "digests": {
     "cards": {},
-    "spec": "dcab00f2adeab046",
+    "spec": "0185000000000000",
     "tool_lists": {}
    },
    "generated_at": "2026-11-04T13:05:58.776Z",
@@ -9418,7 +9418,7 @@
      "items": [
       {
        "at": "2026-11-04T13:05:58.456Z",
-       "digest": "ae164934c963c793",
+       "digest": "0140000000000000",
        "id": "ev-mw24r2cw-rgm2",
        "passed": 2,
        "score": 0.6666666666666666,
@@ -9443,7 +9443,7 @@
        ],
        "by": "Rui <rui@example.com>",
        "by_sub": "iap|rui@example.com",
-       "digest": "ae164934c963c793",
+       "digest": "0140000000000000",
        "id": "rv-d49d834f35394ae5",
        "note": "policy holds",
        "verdict": "approved",
@@ -9507,7 +9507,7 @@
    "decision": "gd-828f10dc5d2640ec",
    "deployed": true,
    "deployment": "dp-590c5d9f12294564",
-   "digest": "ae164934c963c793",
+   "digest": "0140000000000000",
    "environment": "production",
    "id": "triage",
    "override": {
@@ -9554,7 +9554,7 @@
      "items": [
       {
        "at": "2026-11-04T13:05:58.259Z",
-       "digest": "ae164934c963c793",
+       "digest": "0140000000000000",
        "id": "ev-mw24r27f-z02q",
        "passed": 2,
        "score": 0.6666666666666666,
@@ -9579,7 +9579,7 @@
        ],
        "by": "Rui <rui@example.com>",
        "by_sub": "iap|rui@example.com",
-       "digest": "ae164934c963c793",
+       "digest": "0140000000000000",
        "id": "rv-7723072ec85f412c",
        "note": "policy holds",
        "verdict": "approved",
@@ -9641,9 +9641,9 @@
     }
    ],
    "decision": "gd-3e411117d0284fc6",
-   "digest": "ae164934c963c793",
+   "digest": "0140000000000000",
    "environment": "production",
-   "error": "the promotion gate is not met for \"triage\" version 1 (ae164934c963c793): autonomy",
+   "error": "the promotion gate is not met for \"triage\" version 1 (0140000000000000): autonomy",
    "unmet": [
     {
      "condition": "autonomy",
@@ -10003,7 +10003,7 @@
    "runs": [
     {
      "agent": "bounded",
-     "anchor": "1573af6690887aa67b8842f8f057ee9bc689d28b564f01625b8bcc220b195f05",
+     "anchor": "0017000000000000000000000000000000000000000000000000000000000000",
      "anchored": false,
      "broken_at": 0,
      "chain": "broken",
@@ -10013,7 +10013,7 @@
      "id": "bounded-2026-11-04T13-05-57-qzqf",
      "reason": "entry 0 is not what was written: its hash does not match its content",
      "source": "console",
-     "spec_digest": "702a10f0766fa4b3",
+     "spec_digest": "0090000000000000",
      "started_at": "2026-11-04T13:05:57.752Z",
      "state": "failed",
      "valid": false
@@ -10176,9 +10176,9 @@
      "controls": [
       "gate"
      ],
-     "digest": "sha256:9b78ca959b178a5e83611e76cf51a0b4e1f32dea259eccbbfe72f594fa60c434",
-     "entry": "bae04478f017",
-     "gate": "e0f61cbd3762",
+     "digest": "sha256:0125000000000000000000000000000000000000000000000000000000000000",
+     "entry": "015000000000",
+     "gate": "018900000000",
      "node": "review",
      "note": "fine",
      "run": "gated-2026-11-04T13-05-57-k3cn",
@@ -10197,7 +10197,7 @@
       "AF-HO-01"
      ],
      "detail": "dlp-lead",
-     "entry": "0473950c8991",
+     "entry": "000600000000",
      "key": "gate",
      "kind": "gate.open",
      "label": "Authorisation gate",
@@ -10235,7 +10235,7 @@
      {
       "agent": "gated",
       "deployed": false,
-      "digest": "1bdcc09ebdcb7a76",
+      "digest": "0025000000000000",
       "reviews": [],
       "saved_at": "2026-11-04T13:05:57.436Z",
       "saved_by": "Asha Rao",
@@ -10246,7 +10246,7 @@
    "runs": [
     {
      "agent": "gated",
-     "anchor": "a511a0ef5646c31dfadd5f3415e1da2e928145b780852cd5616fe49e8b4df6b7",
+     "anchor": "0132000000000000000000000000000000000000000000000000000000000000",
      "anchored": true,
      "broken_at": null,
      "chain": "ok",
@@ -10256,7 +10256,7 @@
      "id": "gated-2026-11-04T13-05-57-k3cn",
      "reason": "",
      "source": "console",
-     "spec_digest": "1bdcc09ebdcb7a76",
+     "spec_digest": "0025000000000000",
      "started_at": "2026-11-04T13:05:57.438Z",
      "state": "done",
      "valid": true
@@ -10586,7 +10586,7 @@
      "controls": [
       "gate"
      ],
-     "digest": "sha256:a0975d1700c6d5914472d7fb3e01d7cfdbb42fdf5eb63d3815c93ac777811f12",
+     "digest": "sha256:0130000000000000000000000000000000000000000000000000000000000000",
      "disagrees": [
       {
        "chain": "Asha Rao",
@@ -10594,8 +10594,8 @@
        "record": "Mallory <mallory@evil.example>"
       }
      ],
-     "entry": "857d4a88cd03",
-     "gate": "7a38f603a752",
+     "entry": "010500000000",
+     "gate": "009700000000",
      "node": "review",
      "note": "fine",
      "run": "gated-2026-11-04T13-05-57-6zej",
@@ -10652,7 +10652,7 @@
      {
       "agent": "gated",
       "deployed": false,
-      "digest": "1bdcc09ebdcb7a76",
+      "digest": "0025000000000000",
       "reviews": [],
       "saved_at": "2026-11-04T13:05:57.540Z",
       "saved_by": "Asha Rao",
@@ -10663,7 +10663,7 @@
    "runs": [
     {
      "agent": "gated",
-     "anchor": "2596df9dea217c6e2571c652d8d775e696b6bbc65c91a238e6312b09684fca90",
+     "anchor": "0035000000000000000000000000000000000000000000000000000000000000",
      "anchored": false,
      "broken_at": 7,
      "chain": "broken",
@@ -10671,7 +10671,7 @@
       {
        "at": 7,
        "chain": "Asha Rao",
-       "entry": "857d4a88cd03",
+       "entry": "010500000000",
        "field": "decisions[0].by",
        "record": "Mallory <mallory@evil.example>"
       }
@@ -10681,7 +10681,7 @@
      "id": "gated-2026-11-04T13-05-57-6zej",
      "reason": "the journal's chain holds, and the record beside it disagrees with what the chain says: decisions[0].by",
      "source": "console",
-     "spec_digest": "1bdcc09ebdcb7a76",
+     "spec_digest": "0025000000000000",
      "started_at": "2026-11-04T13:05:57.541Z",
      "state": "done",
      "valid": false
@@ -13702,9 +13702,9 @@
      "controls": [
       "gate"
      ],
-     "digest": "sha256:9b78ca959b178a5e83611e76cf51a0b4e1f32dea259eccbbfe72f594fa60c434",
-     "entry": "bae04478f017",
-     "gate": "e0f61cbd3762",
+     "digest": "sha256:0125000000000000000000000000000000000000000000000000000000000000",
+     "entry": "015000000000",
+     "gate": "018900000000",
      "node": "review",
      "note": "fine",
      "run": "gated-2026-11-04T13-05-57-k3cn",
@@ -13723,7 +13723,7 @@
       "AF-HO-01"
      ],
      "detail": "dlp-lead",
-     "entry": "0473950c8991",
+     "entry": "000600000000",
      "key": "gate",
      "kind": "gate.open",
      "label": "Authorisation gate",
@@ -13761,7 +13761,7 @@
      {
       "agent": "gated",
       "deployed": false,
-      "digest": "1bdcc09ebdcb7a76",
+      "digest": "0025000000000000",
       "reviews": [],
       "saved_at": "2026-11-04T13:05:57.436Z",
       "saved_by": "Asha Rao",
@@ -13772,7 +13772,7 @@
    "runs": [
     {
      "agent": "gated",
-     "anchor": "a511a0ef5646c31dfadd5f3415e1da2e928145b780852cd5616fe49e8b4df6b7",
+     "anchor": "0132000000000000000000000000000000000000000000000000000000000000",
      "anchored": true,
      "broken_at": null,
      "chain": "ok",
@@ -13782,7 +13782,7 @@
      "id": "gated-2026-11-04T13-05-57-k3cn",
      "reason": "",
      "source": "console",
-     "spec_digest": "1bdcc09ebdcb7a76",
+     "spec_digest": "0025000000000000",
      "started_at": "2026-11-04T13:05:57.438Z",
      "state": "done",
      "valid": true
@@ -14464,9 +14464,9 @@
      "controls": [
       "report"
      ],
-     "digest": "sha256:ed7de82de9ecf8405c71df2dc6c61617fd3de12dc096bd579b87475aaeb50fd7",
-     "entry": "c143d2c3e796",
-     "gate": "1d0c68511930",
+     "digest": "sha256:0201000000000000000000000000000000000000000000000000000000000000",
+     "entry": "015800000000",
+     "gate": "002600000000",
      "node": "file",
      "note": "",
      "run": "quarterly-2026-11-04T13-05-57-uonm",
@@ -14485,7 +14485,7 @@
       "AF-HO-01"
      ],
      "detail": "notify.send is a sink, and this run holds 1 deliverable nobody has reviewed ('Review of C-1'): a person reviews what the run wrote before anything leaves (policy.deliverables.review_before_sinks)",
-     "entry": "1d0c68511930",
+     "entry": "002600000000",
      "key": "report",
      "kind": "gate.open",
      "label": "A deliverable held for a person's review",
@@ -14502,7 +14502,7 @@
       "AF-HO-01"
      ],
      "detail": "notify.send is a sink, and this run holds 1 deliverable nobody has reviewed ('Review of C-1'): a person reviews what the run wrote before anything leaves (policy.deliverables.review_before_sinks)",
-     "entry": "c143d2c3e796",
+     "entry": "015800000000",
      "key": "report",
      "kind": "gate.answer",
      "label": "A deliverable held for a person's review",
@@ -14551,7 +14551,7 @@
    "runs": [
     {
      "agent": "quarterly",
-     "anchor": "bb82bfcbdfe83c27203e644d583280d897c9140bf723d19ec87439e2bf922710",
+     "anchor": "0151000000000000000000000000000000000000000000000000000000000000",
      "anchored": true,
      "broken_at": null,
      "chain": "ok",
@@ -14738,7 +14738,7 @@
   "headers": {
    "content-disposition": "attachment; filename=\"evidence-AF-HO-01-2026-10-05-2026-11-04.zip\"",
    "content-type": "application/zip",
-   "x-evidence-manifest-sha256": "ccd24a05a23a8c822635fc7ba60fc2261608de6c6cff2a85fac94799a0baf6a9"
+   "x-evidence-manifest-sha256": "0164000000000000000000000000000000000000000000000000000000000000"
   },
   "status": 200
  },
@@ -17800,7 +17800,7 @@
    },
    "from": null,
    "head": {
-    "anchor": "1ad353200619749331914275cb1efc623b6ce9a05c2a8b878f09d139e4af9668",
+    "anchor": "0024000000000000000000000000000000000000000000000000000000000000",
     "at": "2026-11-04T13:05:56.711Z",
     "run": "tiny-2026-11-04T13-05-56-fqd0",
     "seq": 2
@@ -17812,7 +17812,7 @@
    "walk": [
     {
      "agent": "tiny",
-     "anchor": "d861cac5628d314ad5046331a539e8f7a85178dae520d3f744102d51bce42c4f",
+     "anchor": "0181000000000000000000000000000000000000000000000000000000000000",
      "at": "2026-11-04T13:05:56.697Z",
      "broken_at": 1,
      "chain": "broken",
@@ -17824,7 +17824,7 @@
     },
     {
      "agent": "tiny",
-     "anchor": "1ad353200619749331914275cb1efc623b6ce9a05c2a8b878f09d139e4af9668",
+     "anchor": "0024000000000000000000000000000000000000000000000000000000000000",
      "at": "2026-11-04T13:05:56.711Z",
      "broken_at": null,
      "chain": "ok",
@@ -17866,7 +17866,7 @@
    "breaks": [
     {
      "broken_at": 3,
-     "reason": "the ledger recorded adbb7f883bd0b3361b827a4b365a211069a0d7de888a04af97ca145984954935 for this run (anchor 1, 5 entries) and it is not on the chain: entries were cut off the end or the journal was rebuilt",
+     "reason": "the ledger recorded 0138000000000000000000000000000000000000000000000000000000000000 for this run (anchor 1, 5 entries) and it is not on the chain: entries were cut off the end or the journal was rebuilt",
      "run": "tiny-2026-11-04T13-05-56-d2uu",
      "seq": 1
     },
@@ -17892,13 +17892,13 @@
    },
    "first_break": {
     "broken_at": 3,
-    "reason": "the ledger recorded adbb7f883bd0b3361b827a4b365a211069a0d7de888a04af97ca145984954935 for this run (anchor 1, 5 entries) and it is not on the chain: entries were cut off the end or the journal was rebuilt",
+    "reason": "the ledger recorded 0138000000000000000000000000000000000000000000000000000000000000 for this run (anchor 1, 5 entries) and it is not on the chain: entries were cut off the end or the journal was rebuilt",
     "run": "tiny-2026-11-04T13-05-56-d2uu",
     "seq": 1
    },
    "from": null,
    "head": {
-    "anchor": "6ed702fff24335feb187b24df685189eaa8657ef362003f07a9b929ee0b06aeb",
+    "anchor": "0088000000000000000000000000000000000000000000000000000000000000",
     "at": "2026-11-04T13:05:56.852Z",
     "run": "tiny-2026-11-04T13-05-56-njcb",
     "seq": 3
@@ -17910,7 +17910,7 @@
    "walk": [
     {
      "agent": "tiny",
-     "anchor": "adbb7f883bd0b3361b827a4b365a211069a0d7de888a04af97ca145984954935",
+     "anchor": "0138000000000000000000000000000000000000000000000000000000000000",
      "at": "2026-11-04T13:05:56.811Z",
      "broken_at": 3,
      "chain": "broken",
@@ -17922,7 +17922,7 @@
     },
     {
      "agent": "tiny",
-     "anchor": "6ed702fff24335feb187b24df685189eaa8657ef362003f07a9b929ee0b06aeb",
+     "anchor": "0088000000000000000000000000000000000000000000000000000000000000",
      "at": "2026-11-04T13:05:56.852Z",
      "broken_at": null,
      "chain": "ok",
@@ -17950,7 +17950,7 @@
    "first_break": null,
    "from": null,
    "head": {
-    "anchor": "1ad353200619749331914275cb1efc623b6ce9a05c2a8b878f09d139e4af9668",
+    "anchor": "0024000000000000000000000000000000000000000000000000000000000000",
     "at": "2026-11-04T13:05:56.711Z",
     "run": "tiny-2026-11-04T13-05-56-fqd0",
     "seq": 2
@@ -17962,7 +17962,7 @@
    "walk": [
     {
      "agent": "tiny",
-     "anchor": "d861cac5628d314ad5046331a539e8f7a85178dae520d3f744102d51bce42c4f",
+     "anchor": "0181000000000000000000000000000000000000000000000000000000000000",
      "at": "2026-11-04T13:05:56.697Z",
      "broken_at": null,
      "chain": "ok",
@@ -17974,7 +17974,7 @@
     },
     {
      "agent": "tiny",
-     "anchor": "1ad353200619749331914275cb1efc623b6ce9a05c2a8b878f09d139e4af9668",
+     "anchor": "0024000000000000000000000000000000000000000000000000000000000000",
      "at": "2026-11-04T13:05:56.711Z",
      "broken_at": null,
      "chain": "ok",
@@ -18002,7 +18002,7 @@
    "first_break": null,
    "from": null,
    "head": {
-    "anchor": "d861cac5628d314ad5046331a539e8f7a85178dae520d3f744102d51bce42c4f",
+    "anchor": "0181000000000000000000000000000000000000000000000000000000000000",
     "at": "2026-11-04T13:05:56.697Z",
     "run": "tiny-2026-11-04T13-05-56-d532",
     "seq": 1
@@ -18014,7 +18014,7 @@
    "walk": [
     {
      "agent": "tiny",
-     "anchor": "d861cac5628d314ad5046331a539e8f7a85178dae520d3f744102d51bce42c4f",
+     "anchor": "0181000000000000000000000000000000000000000000000000000000000000",
      "at": "2026-11-04T13:05:56.697Z",
      "broken_at": null,
      "chain": "ok",
@@ -18042,7 +18042,7 @@
    "first_break": null,
    "from": null,
    "head": {
-    "anchor": "c065b8bfb13cbecee046785af44db0d6e8a0cfa7385e60ce5b9378ac64b9dcf5",
+    "anchor": "0157000000000000000000000000000000000000000000000000000000000000",
     "at": "2026-12-05T13:05:57.020Z",
     "run": "tiny-2026-11-04T13-05-57-odib",
     "seq": 3
@@ -18054,7 +18054,7 @@
    "walk": [
     {
      "agent": "tiny",
-     "anchor": "c065b8bfb13cbecee046785af44db0d6e8a0cfa7385e60ce5b9378ac64b9dcf5",
+     "anchor": "0157000000000000000000000000000000000000000000000000000000000000",
      "at": "2026-11-04T13:05:57.015Z",
      "broken_at": null,
      "chain": "tombstoned",
@@ -18066,7 +18066,7 @@
     },
     {
      "agent": "tiny",
-     "anchor": "70af15a849db692f5efe343c6125bb2120a84d6cb94660eff5868ab0cefa20fb",
+     "anchor": "0093000000000000000000000000000000000000000000000000000000000000",
      "at": "2026-11-04T13:05:57.018Z",
      "broken_at": null,
      "chain": "ok",
@@ -18078,7 +18078,7 @@
     },
     {
      "agent": "tiny",
-     "anchor": "c065b8bfb13cbecee046785af44db0d6e8a0cfa7385e60ce5b9378ac64b9dcf5",
+     "anchor": "0157000000000000000000000000000000000000000000000000000000000000",
      "at": "2026-12-05T13:05:57.020Z",
      "broken_at": null,
      "chain": "tombstoned",
@@ -18131,7 +18131,7 @@
      "last_fetch": null,
      "max_data_class": "internal",
      "previous_card": null,
-     "secret_name": "soc-a2a",
+     "secret_name": "",
      "status": "approved",
      "url": "http://peer.example.invalid/a2a"
     }
@@ -19156,7 +19156,7 @@
     "controls": [
      "gate"
     ],
-    "digest": "sha256:ff5348e4cdffda569f356f6a814599a585a3d6acebc20220c5b076c5bd6c66ac",
+    "digest": "sha256:0211000000000000000000000000000000000000000000000000000000000000",
     "gate": "98a78c909cb0",
     "node": "review",
     "note": "fine",
@@ -19244,7 +19244,7 @@
       "finished_at": "2026-11-04T13:05:57.015Z",
       "state": "done"
      },
-     "digest": "sha256:3ce5401f26b80f2399c4d045d3c618cd25a864abe5c7a3f4786ad81e3ea02ccb",
+     "digest": "sha256:0048000000000000000000000000000000000000000000000000000000000000",
      "id": "ts-c966af2d2a2a4d96",
      "record": "tiny-2026-11-04T13-05-57-odib"
     }
@@ -19402,7 +19402,7 @@
      "controls": [
       "gate"
      ],
-     "digest": "sha256:ff5348e4cdffda569f356f6a814599a585a3d6acebc20220c5b076c5bd6c66ac",
+     "digest": "sha256:0211000000000000000000000000000000000000000000000000000000000000",
      "entry": "d690f42906c0",
      "gate": "98a78c909cb0",
      "node": "review",
@@ -19421,16 +19421,16 @@
       "because": [],
       "data": {
        "record": 2,
-       "spec_digest": "1bdcc09ebdcb7a76",
+       "spec_digest": "0025000000000000",
        "system": "gated",
        "trace_id": "t-b022940b07fb42c5"
       },
       "detail": "",
-      "hash": "5787950d380b409dcc2c00c00949bf72f2964937aa4fcbb3f90d49b8808c8541",
+      "hash": "0068000000000000000000000000000000000000000000000000000000000000",
       "id": "7811780b80fd",
       "kind": "run.start",
       "node": "",
-      "prev": "5e28a1ac8f7488fb4bf1f6554f6b6a54b1ba436efee7cbb63c097c04fb4a0cd8",
+      "prev": "0077000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Run gated-2026-11-04T13-05-57-tt3y"
@@ -19445,18 +19445,18 @@
        }
       },
       "detail": "sequence · 1 steps",
-      "hash": "3457a623a13aa5a6faf563916fe74fb05317b2cfb6efec97c1a05c3005b87721",
-      "id": "9718a983c2e1",
+      "hash": "0042000000000000000000000000000000000000000000000000000000000000",
+      "id": "012100000000",
       "kind": "node.enter",
       "node": "decide",
-      "prev": "5787950d380b409dcc2c00c00949bf72f2964937aa4fcbb3f90d49b8808c8541",
+      "prev": "0068000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Decide"
      },
      {
       "because": [
-       "9718a983c2e1"
+       "012100000000"
       ],
       "data": {
        "intents": [],
@@ -19468,18 +19468,18 @@
        }
       },
       "detail": "benign",
-      "hash": "93f16a186a29969a4b6aa098c3abdb536c89b1dd9fb6b8b88d49ee1ddb80a359",
+      "hash": "0117000000000000000000000000000000000000000000000000000000000000",
       "id": "dd5ffcb9bd5a",
       "kind": "model.call",
       "node": "decide",
-      "prev": "3457a623a13aa5a6faf563916fe74fb05317b2cfb6efec97c1a05c3005b87721",
+      "prev": "0042000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "scripted"
      },
      {
       "because": [
-       "9718a983c2e1",
+       "012100000000",
        "dd5ffcb9bd5a"
       ],
       "data": {
@@ -19488,18 +19488,18 @@
        }
       },
       "detail": "",
-      "hash": "1aad0da25378888c16587aa7400d26c7ab5929a14e3d998f470e1843c6aba4bd",
-      "id": "af02abdf84c9",
+      "hash": "0023000000000000000000000000000000000000000000000000000000000000",
+      "id": "014100000000",
       "kind": "node.exit",
       "node": "decide",
-      "prev": "93f16a186a29969a4b6aa098c3abdb536c89b1dd9fb6b8b88d49ee1ddb80a359",
+      "prev": "0117000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Decide complete"
      },
      {
       "because": [
-       "9718a983c2e1",
+       "012100000000",
        "dd5ffcb9bd5a"
       ],
       "data": {
@@ -19515,11 +19515,11 @@
        "timeout_s": 86400.0
       },
       "detail": "awaiting approval from dlp-lead",
-      "hash": "78b14d2dbb87222a5d734fa61cf9bf9d03be591ca8cd228a5d605853d60feeac",
+      "hash": "0096000000000000000000000000000000000000000000000000000000000000",
       "id": "98a78c909cb0",
       "kind": "suspend",
       "node": "review",
-      "prev": "1aad0da25378888c16587aa7400d26c7ab5929a14e3d998f470e1843c6aba4bd",
+      "prev": "0023000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Analyst review"
@@ -19537,18 +19537,18 @@
        "shape": "decision"
       },
       "detail": "dlp-lead",
-      "hash": "e3dd797a315f811d57870337d50fa3944b4f2980d877a0a729445a112530dd82",
+      "hash": "0191000000000000000000000000000000000000000000000000000000000000",
       "id": "1d9e5e9548fe",
       "kind": "gate.open",
       "node": "review",
-      "prev": "78b14d2dbb87222a5d734fa61cf9bf9d03be591ca8cd228a5d605853d60feeac",
+      "prev": "0096000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Awaiting a human decision"
      },
      {
       "because": [
-       "9718a983c2e1",
+       "012100000000",
        "dd5ffcb9bd5a",
        "1d9e5e9548fe"
       ],
@@ -19563,11 +19563,11 @@
        }
       },
       "detail": "approved by Asha Rao",
-      "hash": "7dc1f12b84db0f74fd1b4ba68587e659572443837e65ab7484459fd9b24c00cf",
+      "hash": "0100000000000000000000000000000000000000000000000000000000000000",
       "id": "164151774629",
       "kind": "resume",
       "node": "review",
-      "prev": "e3dd797a315f811d57870337d50fa3944b4f2980d877a0a729445a112530dd82",
+      "prev": "0191000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Analyst review resumed"
@@ -19586,11 +19586,11 @@
        "opened": "1d9e5e9548fe"
       },
       "detail": "Asha Rao: fine",
-      "hash": "70a19f5d08594b78ffc149cd5c4463e004fc8d559ce4a8ca10b449d5d27951e2",
+      "hash": "0092000000000000000000000000000000000000000000000000000000000000",
       "id": "d690f42906c0",
       "kind": "gate.answer",
       "node": "review",
-      "prev": "7dc1f12b84db0f74fd1b4ba68587e659572443837e65ab7484459fd9b24c00cf",
+      "prev": "0100000000000000000000000000000000000000000000000000000000000000",
       "t": 1,
       "tainted": false,
       "title": "Approved"
@@ -19605,11 +19605,11 @@
        }
       },
       "detail": "",
-      "hash": "7abc42b3348b51cc6ccd50b03eb15303e2eafc10d1dd0f495fe336159d3a7807",
+      "hash": "0099000000000000000000000000000000000000000000000000000000000000",
       "id": "4ef267d007d0",
       "kind": "node.exit",
       "node": "review",
-      "prev": "70a19f5d08594b78ffc149cd5c4463e004fc8d559ce4a8ca10b449d5d27951e2",
+      "prev": "0092000000000000000000000000000000000000000000000000000000000000",
       "t": 1,
       "tainted": false,
       "title": "Analyst review complete"
@@ -19624,23 +19624,23 @@
        "result": {
         "approved": true
        },
-       "result_digest": "sha256:20ec2f38fc96bc7d416a9af537493ae0bae26c5ad4c5a0f2d94f56f9c3e04958",
+       "result_digest": "sha256:0029000000000000000000000000000000000000000000000000000000000000",
        "skipped": [],
-       "values_digest": "sha256:85d63dd1a67aed33f8c3c8ed10d5969935d01047f296cb23b1d5720629b7192c"
+       "values_digest": "sha256:0106000000000000000000000000000000000000000000000000000000000000"
       },
       "detail": "2 nodes ran, 0 skipped, 0 refused actions",
-      "hash": "6bcfaad05908da3b242960182c9bb9a59e285d14f0a7f5de95ccb8bba8430aba",
+      "hash": "0086000000000000000000000000000000000000000000000000000000000000",
       "id": "c4a717fc1477",
       "kind": "run.end",
       "node": "",
-      "prev": "7abc42b3348b51cc6ccd50b03eb15303e2eafc10d1dd0f495fe336159d3a7807",
+      "prev": "0099000000000000000000000000000000000000000000000000000000000000",
       "t": 1,
       "tainted": false,
       "title": "Run complete"
      }
     ],
     "run_id": "gated-2026-11-04T13-05-57-tt3y",
-    "spec_digest": "1bdcc09ebdcb7a76",
+    "spec_digest": "0025000000000000",
     "system": "gated"
    },
    "kill": null,
@@ -19716,7 +19716,7 @@
      ]
     }
    },
-   "spec_digest": "1bdcc09ebdcb7a76",
+   "spec_digest": "0025000000000000",
    "spent": {
     "cost_usd": 0.0,
     "tokens": 0,
@@ -19763,8 +19763,8 @@
      "controls": [
       "gate"
      ],
-     "digest": "sha256:69eaf10d487bf65583738da0681029a10b968b001cd544f13e88713763a7deb2",
-     "gate": "417259598bfd",
+     "digest": "sha256:0084000000000000000000000000000000000000000000000000000000000000",
+     "gate": "005400000000",
      "node": "review",
      "note": "fine",
      "shape": "decision",
@@ -19780,16 +19780,16 @@
      {
       "because": [],
       "data": {
-       "spec_digest": "1bdcc09ebdcb7a76",
+       "spec_digest": "0025000000000000",
        "system": "gated",
        "trace_id": "t-9f62e44230a74342"
       },
       "detail": "",
-      "hash": "3cda19108b8484ff71413eaca312eebcfa4fe43fca0fa7549ef329ba12b617a0",
-      "id": "ab8b52414bd9",
+      "hash": "0047000000000000000000000000000000000000000000000000000000000000",
+      "id": "013500000000",
       "kind": "run.start",
       "node": "",
-      "prev": "5d204bb439e2124053cf2b5d9b8f33c0f67b9e2195fa70226cc82be976a00f14",
+      "prev": "0073000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Run gated-2026-11-04T11-03-17-ntb5"
@@ -19802,18 +19802,18 @@
        }
       },
       "detail": "sequence · 1 steps",
-      "hash": "2cc1b94cf6902a2b28c88f50153526723e0c0a8f094e9dda1ed3c29bd154a50b",
-      "id": "0b4519322894",
+      "hash": "0041000000000000000000000000000000000000000000000000000000000000",
+      "id": "001300000000",
       "kind": "node.enter",
       "node": "decide",
-      "prev": "3cda19108b8484ff71413eaca312eebcfa4fe43fca0fa7549ef329ba12b617a0",
+      "prev": "0047000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Decide"
      },
      {
       "because": [
-       "0b4519322894"
+       "001300000000"
       ],
       "data": {
        "intents": [],
@@ -19825,19 +19825,19 @@
        }
       },
       "detail": "benign",
-      "hash": "66242133162a1f8d0b7cac548c8bff2307dc938f9652995a49b8e315d985f459",
-      "id": "d3b6d2a9217d",
+      "hash": "0080000000000000000000000000000000000000000000000000000000000000",
+      "id": "017200000000",
       "kind": "model.call",
       "node": "decide",
-      "prev": "2cc1b94cf6902a2b28c88f50153526723e0c0a8f094e9dda1ed3c29bd154a50b",
+      "prev": "0041000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "scripted"
      },
      {
       "because": [
-       "0b4519322894",
-       "d3b6d2a9217d"
+       "001300000000",
+       "017200000000"
       ],
       "data": {
        "emitted": {
@@ -19845,19 +19845,19 @@
        }
       },
       "detail": "",
-      "hash": "c43c09090ed71a02f41daf73fc4a83670c04717cade49af00c7f52cf48f2200d",
+      "hash": "0160000000000000000000000000000000000000000000000000000000000000",
       "id": "7b09deb9aa7c",
       "kind": "node.exit",
       "node": "decide",
-      "prev": "66242133162a1f8d0b7cac548c8bff2307dc938f9652995a49b8e315d985f459",
+      "prev": "0080000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Decide complete"
      },
      {
       "because": [
-       "0b4519322894",
-       "d3b6d2a9217d"
+       "001300000000",
+       "017200000000"
       ],
       "data": {
        "deadline": "2026-11-05T11:03:17Z",
@@ -19872,18 +19872,18 @@
        "timeout_s": 86400.0
       },
       "detail": "awaiting approval from dlp-lead",
-      "hash": "f42606e8b21f98384209e70a54cb58d73f5a50bf59e4246b7da629822ca262bb",
-      "id": "417259598bfd",
+      "hash": "0207000000000000000000000000000000000000000000000000000000000000",
+      "id": "005400000000",
       "kind": "suspend",
       "node": "review",
-      "prev": "c43c09090ed71a02f41daf73fc4a83670c04717cade49af00c7f52cf48f2200d",
+      "prev": "0160000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Analyst review"
      },
      {
       "because": [
-       "417259598bfd"
+       "005400000000"
       ],
       "data": {
        "approvers": [
@@ -19894,11 +19894,11 @@
        "shape": "decision"
       },
       "detail": "dlp-lead",
-      "hash": "44daf5de3c067aede77aedd65c9d969b595fbfe7034f17fc46cab66d9c25a6c6",
-      "id": "b7f7cf699a0d",
+      "hash": "0056000000000000000000000000000000000000000000000000000000000000",
+      "id": "014800000000",
       "kind": "gate.open",
       "node": "review",
-      "prev": "f42606e8b21f98384209e70a54cb58d73f5a50bf59e4246b7da629822ca262bb",
+      "prev": "0207000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Awaiting a human decision"
@@ -19916,11 +19916,11 @@
        }
       },
       "detail": "approved by Asha Rao",
-      "hash": "95033042f3c58de928ca3b1bdf4bd25f0f4b774568332e4c6b0ebbe776742f9e",
+      "hash": "0118000000000000000000000000000000000000000000000000000000000000",
       "id": "69c79fc44b74",
       "kind": "resume",
       "node": "review",
-      "prev": "44daf5de3c067aede77aedd65c9d969b595fbfe7034f17fc46cab66d9c25a6c6",
+      "prev": "0056000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Analyst review resumed"
@@ -19935,11 +19935,11 @@
        "note": "fine"
       },
       "detail": "Asha Rao: fine",
-      "hash": "8219000a9c0f16cc50b82f8d961f8381c7b58a5dd74f4c07c39ecc20cd1e56af",
-      "id": "452517687c0b",
+      "hash": "0102000000000000000000000000000000000000000000000000000000000000",
+      "id": "005700000000",
       "kind": "gate.answer",
       "node": "review",
-      "prev": "95033042f3c58de928ca3b1bdf4bd25f0f4b774568332e4c6b0ebbe776742f9e",
+      "prev": "0118000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Approved"
@@ -19954,11 +19954,11 @@
        }
       },
       "detail": "",
-      "hash": "e17c160e0061cac499bbf1e432c246230eab60701397d05de4c7b62b3b933d8a",
-      "id": "6840af2cdbe6",
+      "hash": "0190000000000000000000000000000000000000000000000000000000000000",
+      "id": "008300000000",
       "kind": "node.exit",
       "node": "review",
-      "prev": "8219000a9c0f16cc50b82f8d961f8381c7b58a5dd74f4c07c39ecc20cd1e56af",
+      "prev": "0102000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Analyst review complete"
@@ -19973,18 +19973,18 @@
        "skipped": []
       },
       "detail": "2 nodes ran, 0 skipped, 0 refused actions",
-      "hash": "4034c92a8c267c7bcd10b43415453b0069909ee25eef6115d8bd6c204badc960",
-      "id": "f371b7aec87a",
+      "hash": "0049000000000000000000000000000000000000000000000000000000000000",
+      "id": "020500000000",
       "kind": "run.end",
       "node": "",
-      "prev": "e17c160e0061cac499bbf1e432c246230eab60701397d05de4c7b62b3b933d8a",
+      "prev": "0190000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Run complete"
      }
     ],
     "run_id": "gated-2026-11-04T11-03-17-ntb5",
-    "spec_digest": "1bdcc09ebdcb7a76",
+    "spec_digest": "0025000000000000",
     "system": "gated"
    },
    "kill": null,
@@ -20059,7 +20059,7 @@
      ]
     }
    },
-   "spec_digest": "1bdcc09ebdcb7a76",
+   "spec_digest": "0025000000000000",
    "spent": {
     "cost_usd": 0.0,
     "tokens": 0,
@@ -20105,16 +20105,16 @@
       "because": [],
       "data": {
        "record": 2,
-       "spec_digest": "7a3d5befd5ad5f10",
+       "spec_digest": "0098000000000000",
        "system": "reader",
        "trace_id": "t-749c07eabfaa4cdf"
       },
       "detail": "",
-      "hash": "67d36e3774f99d89c0010c514372db645e8f22b3cb18f3defd425341bbaa64be",
+      "hash": "0082000000000000000000000000000000000000000000000000000000000000",
       "id": "c5d7777425e1",
       "kind": "run.start",
       "node": "",
-      "prev": "a69e5200fae8b62a93dbf9d4a635ae988101b6a09a1b85ce168de954d3483ada",
+      "prev": "0133000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Run reader-2026-11-04T13-05-57-84yi"
@@ -20129,18 +20129,18 @@
        }
       },
       "detail": "sequence · 2 steps",
-      "hash": "c5983cbfdedd66d160358154e46a7827faf9522d81a7737ff8b442ff42928fdd",
-      "id": "8779d422fbb0",
+      "hash": "0162000000000000000000000000000000000000000000000000000000000000",
+      "id": "010700000000",
       "kind": "node.enter",
       "node": "act",
-      "prev": "67d36e3774f99d89c0010c514372db645e8f22b3cb18f3defd425341bbaa64be",
+      "prev": "0082000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Act"
      },
      {
       "because": [
-       "8779d422fbb0"
+       "010700000000"
       ],
       "data": {
        "args": {
@@ -20149,11 +20149,11 @@
        "tool": "retrieval.search"
       },
       "detail": "",
-      "hash": "368d98c91217383723690b244adc628528ca88d291b2c9c0e72cf17da1ae8c92",
+      "hash": "0043000000000000000000000000000000000000000000000000000000000000",
       "id": "cb4961c18c91",
       "kind": "tool.call",
       "node": "act",
-      "prev": "c5983cbfdedd66d160358154e46a7827faf9522d81a7737ff8b442ff42928fdd",
+      "prev": "0162000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "retrieval.search"
@@ -20192,19 +20192,19 @@
        }
       },
       "detail": "",
-      "hash": "8168ae70357f6d76fec0b5480c4b71dcaa5f56effce96d078ff47aade1c04ef7",
-      "id": "41dc29d7730f",
+      "hash": "0101000000000000000000000000000000000000000000000000000000000000",
+      "id": "005500000000",
       "kind": "tool.result",
       "node": "act",
-      "prev": "368d98c91217383723690b244adc628528ca88d291b2c9c0e72cf17da1ae8c92",
+      "prev": "0043000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "retrieval.search returned"
      },
      {
       "because": [
-       "8779d422fbb0",
-       "41dc29d7730f"
+       "010700000000",
+       "005500000000"
       ],
       "data": {
        "args": {
@@ -20239,11 +20239,11 @@
        "tool": "store.put"
       },
       "detail": "store.put's arguments carry restricted content, and store.put takes internal at most (max_data_class)",
-      "hash": "6010e60e0b2d445a8788a64f1f589c44a9cd9002bf24520d9796cde59751db64",
+      "hash": "0078000000000000000000000000000000000000000000000000000000000000",
       "id": "75fbfff656c5",
       "kind": "denied",
       "node": "act",
-      "prev": "8168ae70357f6d76fec0b5480c4b71dcaa5f56effce96d078ff47aade1c04ef7",
+      "prev": "0101000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Refused store.put"
@@ -20252,18 +20252,18 @@
       "because": [],
       "data": {},
       "detail": "data_class: store.put's arguments carry restricted content, and store.put takes internal at most (max_data_class)",
-      "hash": "57e7225940688940075ecfa295927d945f584f19ae3cf1363e30ebecd3a7b652",
-      "id": "ec24977f8b0e",
+      "hash": "0069000000000000000000000000000000000000000000000000000000000000",
+      "id": "019900000000",
       "kind": "error",
       "node": "act",
-      "prev": "6010e60e0b2d445a8788a64f1f589c44a9cd9002bf24520d9796cde59751db64",
+      "prev": "0078000000000000000000000000000000000000000000000000000000000000",
       "t": 1,
       "tainted": false,
       "title": "Refused"
      }
     ],
     "run_id": "reader-2026-11-04T13-05-57-84yi",
-    "spec_digest": "7a3d5befd5ad5f10",
+    "spec_digest": "0098000000000000",
     "system": "reader"
    },
    "kill": null,
@@ -20362,7 +20362,7 @@
      ]
     }
    },
-   "spec_digest": "7a3d5befd5ad5f10",
+   "spec_digest": "0098000000000000",
    "spent": {
     "cost_usd": 0.0,
     "tokens": 0,
@@ -20401,16 +20401,16 @@
       "because": [],
       "data": {
        "record": 2,
-       "spec_digest": "ef3937da73c53440",
+       "spec_digest": "0204000000000000",
        "system": "acts",
        "trace_id": "t-99dff3f1d7b54745"
       },
       "detail": "",
-      "hash": "96e65e9637b344c3a69a4b88d66a42dfae94798d33e9694ca46c340d52e08ef8",
+      "hash": "0119000000000000000000000000000000000000000000000000000000000000",
       "id": "94a9719c8f59",
       "kind": "run.start",
       "node": "",
-      "prev": "c262f3d5cf20395f011ede1cd2927cdc603d971fca5308cb663d981a1bf66873",
+      "prev": "0159000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Run acts-2026-11-04T13-05-57-hlcc"
@@ -20428,18 +20428,18 @@
        ]
       },
       "detail": "delegate · 1 tools · max 4 steps",
-      "hash": "23ac6b6df82959b6d21ea32b8247e37251f8eed374504317e6c7ce2e088f5f3e",
-      "id": "e9c378c0bac1",
+      "hash": "0033000000000000000000000000000000000000000000000000000000000000",
+      "id": "019400000000",
       "kind": "node.enter",
       "node": "act",
-      "prev": "96e65e9637b344c3a69a4b88d66a42dfae94798d33e9694ca46c340d52e08ef8",
+      "prev": "0119000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Act"
      },
      {
       "because": [
-       "e9c378c0bac1"
+       "019400000000"
       ],
       "data": {
        "intents": [
@@ -20459,18 +20459,18 @@
        }
       },
       "detail": "calling",
-      "hash": "de96ea114e4f4eefcb760aefd18296c58cd3444ae3d9cae708db5c92ef0cf1e4",
-      "id": "e65fa1998ff3",
+      "hash": "0188000000000000000000000000000000000000000000000000000000000000",
+      "id": "019300000000",
       "kind": "model.call",
       "node": "act",
-      "prev": "23ac6b6df82959b6d21ea32b8247e37251f8eed374504317e6c7ce2e088f5f3e",
+      "prev": "0033000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "scripted"
      },
      {
       "because": [
-       "e65fa1998ff3"
+       "019300000000"
       ],
       "data": {
        "args": {
@@ -20481,18 +20481,18 @@
        "tool": "store.put"
       },
       "detail": "",
-      "hash": "1939f5a3b1ddab9862be608fe109617601361b83838e4c52dfe7138581fd10a3",
-      "id": "5de019c99f70",
+      "hash": "0020000000000000000000000000000000000000000000000000000000000000",
+      "id": "007600000000",
       "kind": "tool.call",
       "node": "act",
-      "prev": "de96ea114e4f4eefcb760aefd18296c58cd3444ae3d9cae708db5c92ef0cf1e4",
+      "prev": "0188000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "store.put"
      },
      {
       "because": [
-       "5de019c99f70"
+       "007600000000"
       ],
       "data": {
        "ms": 0,
@@ -20504,20 +20504,20 @@
        }
       },
       "detail": "",
-      "hash": "fe6188b4a8b2e7c65a4c5e8a973d7f641eb12d5b1b8c7cf4896e864741a602e6",
-      "id": "dce03f9ab352",
+      "hash": "0210000000000000000000000000000000000000000000000000000000000000",
+      "id": "018600000000",
       "kind": "tool.result",
       "node": "act",
-      "prev": "1939f5a3b1ddab9862be608fe109617601361b83838e4c52dfe7138581fd10a3",
+      "prev": "0020000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "store.put returned"
      },
      {
       "because": [
-       "e9c378c0bac1",
-       "e65fa1998ff3",
-       "dce03f9ab352"
+       "019400000000",
+       "019300000000",
+       "018600000000"
       ],
       "data": {
        "intents": [],
@@ -20529,21 +20529,21 @@
        }
       },
       "detail": "{\"verdict\": \"done\"}",
-      "hash": "0648dfa09033f431d354a924eeb09a45360e644b6efb4092ebf846abb0c27639",
-      "id": "706995fc30d3",
+      "hash": "0009000000000000000000000000000000000000000000000000000000000000",
+      "id": "009100000000",
       "kind": "model.call",
       "node": "act",
-      "prev": "fe6188b4a8b2e7c65a4c5e8a973d7f641eb12d5b1b8c7cf4896e864741a602e6",
+      "prev": "0210000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "scripted"
      },
      {
       "because": [
-       "e9c378c0bac1",
-       "e65fa1998ff3",
-       "dce03f9ab352",
-       "706995fc30d3"
+       "019400000000",
+       "019300000000",
+       "018600000000",
+       "009100000000"
       ],
       "data": {
        "emitted": {
@@ -20551,45 +20551,45 @@
        }
       },
       "detail": "settled after 2 model calls",
-      "hash": "27b949f7b6fa0376e4eae9f4f484404bae3a6c77fd27123596c235a7c9f8e4ef",
-      "id": "af7be789207d",
+      "hash": "0036000000000000000000000000000000000000000000000000000000000000",
+      "id": "014300000000",
       "kind": "node.exit",
       "node": "act",
-      "prev": "0648dfa09033f431d354a924eeb09a45360e644b6efb4092ebf846abb0c27639",
+      "prev": "0009000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Act complete"
      },
      {
       "because": [
-       "e9c378c0bac1",
-       "e65fa1998ff3",
-       "dce03f9ab352",
-       "706995fc30d3",
-       "af7be789207d"
+       "019400000000",
+       "019300000000",
+       "018600000000",
+       "009100000000",
+       "014300000000"
       ],
       "data": {
        "denied": 0,
        "result": {
         "verdict": "done"
        },
-       "result_digest": "sha256:5d2c88f356bcafe6f06f38c57007daf97a6ceb0ab19b1da9f135a45de48075ae",
+       "result_digest": "sha256:0074000000000000000000000000000000000000000000000000000000000000",
        "skipped": [],
-       "values_digest": "sha256:d7f05b54231fa58308f0836b436ff24ea3d56fec99bbe8d2176f8f8c9ffdbd42"
+       "values_digest": "sha256:0180000000000000000000000000000000000000000000000000000000000000"
       },
       "detail": "1 nodes ran, 0 skipped, 0 refused actions",
-      "hash": "a168ec54a7ae49c66c4f03213efd4529bc63a888a8140b40973b9a377a2d193a",
-      "id": "cea8c13f1d79",
+      "hash": "0131000000000000000000000000000000000000000000000000000000000000",
+      "id": "016700000000",
       "kind": "run.end",
       "node": "",
-      "prev": "27b949f7b6fa0376e4eae9f4f484404bae3a6c77fd27123596c235a7c9f8e4ef",
+      "prev": "0036000000000000000000000000000000000000000000000000000000000000",
       "t": 1,
       "tainted": false,
       "title": "Run complete"
      }
     ],
     "run_id": "acts-2026-11-04T13-05-57-hlcc",
-    "spec_digest": "ef3937da73c53440",
+    "spec_digest": "0204000000000000",
     "system": "acts"
    },
    "kill": null,
@@ -20653,7 +20653,7 @@
      ]
     }
    },
-   "spec_digest": "ef3937da73c53440",
+   "spec_digest": "0204000000000000",
    "spent": {
     "cost_usd": 0.0,
     "tokens": 0,
@@ -20704,7 +20704,7 @@
      "controls": [
       "gate"
      ],
-     "digest": "sha256:a0975d1700c6d5914472d7fb3e01d7cfdbb42fdf5eb63d3815c93ac777811f12",
+     "digest": "sha256:0130000000000000000000000000000000000000000000000000000000000000",
      "disagrees": [
       {
        "chain": "Asha Rao",
@@ -20712,8 +20712,8 @@
        "record": "Mallory <mallory@evil.example>"
       }
      ],
-     "entry": "857d4a88cd03",
-     "gate": "7a38f603a752",
+     "entry": "010500000000",
+     "gate": "009700000000",
      "node": "review",
      "note": "fine",
      "shape": "decision",
@@ -20730,23 +20730,23 @@
       "because": [],
       "data": {
        "record": 2,
-       "spec_digest": "1bdcc09ebdcb7a76",
+       "spec_digest": "0025000000000000",
        "system": "gated",
        "trace_id": "t-b4fbeb7a20dc4a8f"
       },
       "detail": "",
-      "hash": "09caa6bc94d06e13544ec8e1800786057bfb06c9be88f0f471bd766366e451b5",
-      "id": "dac7be39577f",
+      "hash": "0011000000000000000000000000000000000000000000000000000000000000",
+      "id": "018200000000",
       "kind": "run.start",
       "node": "",
-      "prev": "46c4fc633141d1c1bc980235c8e7d4dce6329e8d2b4f4d0859f1bd9a469eaa5d",
+      "prev": "0058000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Run gated-2026-11-04T13-05-57-6zej"
      },
      {
       "because": [
-       "dac7be39577f"
+       "018200000000"
       ],
       "data": {
        "inputs": {
@@ -20754,18 +20754,18 @@
        }
       },
       "detail": "sequence · 1 steps",
-      "hash": "be83b24a592041a14fc4ca386d6550432dc078ab585319d07fe888d95d4db53f",
-      "id": "9df0e62a0134",
+      "hash": "0155000000000000000000000000000000000000000000000000000000000000",
+      "id": "012700000000",
       "kind": "node.enter",
       "node": "decide",
-      "prev": "09caa6bc94d06e13544ec8e1800786057bfb06c9be88f0f471bd766366e451b5",
+      "prev": "0011000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Decide"
      },
      {
       "because": [
-       "9df0e62a0134"
+       "012700000000"
       ],
       "data": {
        "intents": [],
@@ -20777,19 +20777,19 @@
        }
       },
       "detail": "benign",
-      "hash": "4090fb20ec04efb763173e693d6f86109738ad3fb49c567d3dcaa0f881a9ba33",
-      "id": "daefbd735661",
+      "hash": "0050000000000000000000000000000000000000000000000000000000000000",
+      "id": "018400000000",
       "kind": "model.call",
       "node": "decide",
-      "prev": "be83b24a592041a14fc4ca386d6550432dc078ab585319d07fe888d95d4db53f",
+      "prev": "0155000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "scripted"
      },
      {
       "because": [
-       "9df0e62a0134",
-       "daefbd735661"
+       "012700000000",
+       "018400000000"
       ],
       "data": {
        "emitted": {
@@ -20797,19 +20797,19 @@
        }
       },
       "detail": "",
-      "hash": "ee3b49cb0297a82ffbabeb42d513b55f56d66ce9e76baafa5035fa4530ded572",
-      "id": "63996f7b2ef1",
+      "hash": "0202000000000000000000000000000000000000000000000000000000000000",
+      "id": "007900000000",
       "kind": "node.exit",
       "node": "decide",
-      "prev": "4090fb20ec04efb763173e693d6f86109738ad3fb49c567d3dcaa0f881a9ba33",
+      "prev": "0050000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Decide complete"
      },
      {
       "because": [
-       "9df0e62a0134",
-       "daefbd735661"
+       "012700000000",
+       "018400000000"
       ],
       "data": {
        "deadline": "2026-11-05T13:05:57Z",
@@ -20824,18 +20824,18 @@
        "timeout_s": 86400.0
       },
       "detail": "awaiting approval from dlp-lead",
-      "hash": "e50ca57b1e3e2bcbf05656a812eb55c6412d7eec8fea9a712ee451c408993b06",
-      "id": "7a38f603a752",
+      "hash": "0192000000000000000000000000000000000000000000000000000000000000",
+      "id": "009700000000",
       "kind": "suspend",
       "node": "review",
-      "prev": "ee3b49cb0297a82ffbabeb42d513b55f56d66ce9e76baafa5035fa4530ded572",
+      "prev": "0202000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Analyst review"
      },
      {
       "because": [
-       "7a38f603a752"
+       "009700000000"
       ],
       "data": {
        "approvers": [
@@ -20846,19 +20846,19 @@
        "shape": "decision"
       },
       "detail": "dlp-lead",
-      "hash": "d3f187c0774990b5b3ce16c7eb11dc62440274198e9f09170d47c75d53314323",
+      "hash": "0173000000000000000000000000000000000000000000000000000000000000",
       "id": "eaa95169878a",
       "kind": "gate.open",
       "node": "review",
-      "prev": "e50ca57b1e3e2bcbf05656a812eb55c6412d7eec8fea9a712ee451c408993b06",
+      "prev": "0192000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Awaiting a human decision"
      },
      {
       "because": [
-       "9df0e62a0134",
-       "daefbd735661",
+       "012700000000",
+       "018400000000",
        "eaa95169878a"
       ],
       "data": {
@@ -20872,11 +20872,11 @@
        }
       },
       "detail": "approved by Asha Rao",
-      "hash": "96f9144267861ec33de9a32a07e086c7144187522fa93aace355a4ad0d17787f",
+      "hash": "0120000000000000000000000000000000000000000000000000000000000000",
       "id": "839bcf89301b",
       "kind": "resume",
       "node": "review",
-      "prev": "d3f187c0774990b5b3ce16c7eb11dc62440274198e9f09170d47c75d53314323",
+      "prev": "0173000000000000000000000000000000000000000000000000000000000000",
       "t": 1,
       "tainted": false,
       "title": "Analyst review resumed"
@@ -20895,11 +20895,11 @@
        "opened": "eaa95169878a"
       },
       "detail": "Asha Rao: fine",
-      "hash": "224ce38976eca75565f54c6fa2d19144f67cdae0563dc99eff3b5d0ddc8137f7",
-      "id": "857d4a88cd03",
+      "hash": "0030000000000000000000000000000000000000000000000000000000000000",
+      "id": "010500000000",
       "kind": "gate.answer",
       "node": "review",
-      "prev": "96f9144267861ec33de9a32a07e086c7144187522fa93aace355a4ad0d17787f",
+      "prev": "0120000000000000000000000000000000000000000000000000000000000000",
       "t": 1,
       "tainted": false,
       "title": "Approved"
@@ -20914,11 +20914,11 @@
        }
       },
       "detail": "",
-      "hash": "1799dc6a74ffea3595e9b8cc9814ea7afcc9fcd4ae1f22547e648ff4715be777",
-      "id": "1a0460417ef8",
+      "hash": "0018000000000000000000000000000000000000000000000000000000000000",
+      "id": "002100000000",
       "kind": "node.exit",
       "node": "review",
-      "prev": "224ce38976eca75565f54c6fa2d19144f67cdae0563dc99eff3b5d0ddc8137f7",
+      "prev": "0030000000000000000000000000000000000000000000000000000000000000",
       "t": 1,
       "tainted": false,
       "title": "Analyst review complete"
@@ -20926,30 +20926,30 @@
      {
       "because": [
        "839bcf89301b",
-       "1a0460417ef8"
+       "002100000000"
       ],
       "data": {
        "denied": 0,
        "result": {
         "approved": true
        },
-       "result_digest": "sha256:20ec2f38fc96bc7d416a9af537493ae0bae26c5ad4c5a0f2d94f56f9c3e04958",
+       "result_digest": "sha256:0029000000000000000000000000000000000000000000000000000000000000",
        "skipped": [],
-       "values_digest": "sha256:85d63dd1a67aed33f8c3c8ed10d5969935d01047f296cb23b1d5720629b7192c"
+       "values_digest": "sha256:0106000000000000000000000000000000000000000000000000000000000000"
       },
       "detail": "2 nodes ran, 0 skipped, 0 refused actions",
-      "hash": "2596df9dea217c6e2571c652d8d775e696b6bbc65c91a238e6312b09684fca90",
+      "hash": "0035000000000000000000000000000000000000000000000000000000000000",
       "id": "992552771a85",
       "kind": "run.end",
       "node": "",
-      "prev": "1799dc6a74ffea3595e9b8cc9814ea7afcc9fcd4ae1f22547e648ff4715be777",
+      "prev": "0018000000000000000000000000000000000000000000000000000000000000",
       "t": 1,
       "tainted": false,
       "title": "Run complete"
      }
     ],
     "run_id": "gated-2026-11-04T13-05-57-6zej",
-    "spec_digest": "1bdcc09ebdcb7a76",
+    "spec_digest": "0025000000000000",
     "system": "gated"
    },
    "kill": null,
@@ -21025,7 +21025,7 @@
      ]
     }
    },
-   "spec_digest": "1bdcc09ebdcb7a76",
+   "spec_digest": "0025000000000000",
    "spent": {
     "cost_usd": 0.0,
     "tokens": 0,
@@ -21071,23 +21071,23 @@
       "because": [],
       "data": {
        "record": 2,
-       "spec_digest": "6b31553ba73ff68c",
+       "spec_digest": "0085000000000000",
        "system": "tiny",
        "trace_id": "t-4772d8a5d76b43db"
       },
       "detail": "",
-      "hash": "543f00e5f9dea4bdc4fd792ec845d0c579c852b06ae5ed72ab0b949f91f236af",
-      "id": "913c3c46b82b",
+      "hash": "0067000000000000000000000000000000000000000000000000000000000000",
+      "id": "011500000000",
       "kind": "run.start",
       "node": "",
-      "prev": "d4c7235bb9323664b0f3330d7bc1c6e2f8cf2af9b393dec6c76028f785fbf947",
+      "prev": "0174000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Run tiny-2026-11-04T13-05-58-ok7p"
      },
      {
       "because": [
-       "913c3c46b82b"
+       "011500000000"
       ],
       "data": {
        "inputs": {
@@ -21095,11 +21095,11 @@
        }
       },
       "detail": "sequence · 1 steps",
-      "hash": "a89dd1b2b5b872b2291dccaea098b0b0f9bedc483f0ad8b90700c70f66f106ea",
+      "hash": "0134000000000000000000000000000000000000000000000000000000000000",
       "id": "ce82ba8b6c8b",
       "kind": "node.enter",
       "node": "decide",
-      "prev": "543f00e5f9dea4bdc4fd792ec845d0c579c852b06ae5ed72ab0b949f91f236af",
+      "prev": "0067000000000000000000000000000000000000000000000000000000000000",
       "redacted": [
        {
         "path": "data.inputs.case",
@@ -21124,11 +21124,11 @@
        }
       },
       "detail": "noted",
-      "hash": "73496d61d87dc34c3465da10d647e72800c64ede8c97866dedf03de0d1a9dafb",
+      "hash": "0095000000000000000000000000000000000000000000000000000000000000",
       "id": "a92e0f9edb29",
       "kind": "model.call",
       "node": "decide",
-      "prev": "a89dd1b2b5b872b2291dccaea098b0b0f9bedc483f0ad8b90700c70f66f106ea",
+      "prev": "0134000000000000000000000000000000000000000000000000000000000000",
       "redacted": [
        {
         "path": "data.prompt",
@@ -21150,11 +21150,11 @@
        }
       },
       "detail": "",
-      "hash": "d1664ccb5ed20e99c736fe3ccc0273f68438f928aca045d32e13c15c0a359f80",
-      "id": "d51af723e685",
+      "hash": "0171000000000000000000000000000000000000000000000000000000000000",
+      "id": "017500000000",
       "kind": "node.exit",
       "node": "decide",
-      "prev": "73496d61d87dc34c3465da10d647e72800c64ede8c97866dedf03de0d1a9dafb",
+      "prev": "0095000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Decide complete"
@@ -21163,30 +21163,30 @@
       "because": [
        "ce82ba8b6c8b",
        "a92e0f9edb29",
-       "d51af723e685"
+       "017500000000"
       ],
       "data": {
        "denied": 0,
        "result": {
         "verdict": "noted"
        },
-       "result_digest": "sha256:0a5974e64a32c2eea61edb1934f62d3abbfa4b2dc375a2f958de00f94ff1e1fd",
+       "result_digest": "sha256:0012000000000000000000000000000000000000000000000000000000000000",
        "skipped": [],
-       "values_digest": "sha256:153cbadd561d99a0157709ca09d7105c95c428a30aa7a18dbce15578652a39f1"
+       "values_digest": "sha256:0016000000000000000000000000000000000000000000000000000000000000"
       },
       "detail": "1 nodes ran, 0 skipped, 0 refused actions",
-      "hash": "8bef15b1310d9432ecdd53fdab7a5739401d68efbd5fdeb6db5f4e37da718b73",
+      "hash": "0110000000000000000000000000000000000000000000000000000000000000",
       "id": "be79e57f35ef",
       "kind": "run.end",
       "node": "",
-      "prev": "d1664ccb5ed20e99c736fe3ccc0273f68438f928aca045d32e13c15c0a359f80",
+      "prev": "0171000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Run complete"
      }
     ],
     "run_id": "tiny-2026-11-04T13-05-58-ok7p",
-    "spec_digest": "6b31553ba73ff68c",
+    "spec_digest": "0085000000000000",
     "system": "tiny"
    },
    "kill": null,
@@ -21241,7 +21241,7 @@
      ]
     }
    },
-   "spec_digest": "6b31553ba73ff68c",
+   "spec_digest": "0085000000000000",
    "spent": {
     "cost_usd": 0.0,
     "tokens": 0,
@@ -21283,16 +21283,16 @@
       "because": [],
       "data": {
        "record": 2,
-       "spec_digest": "1bdcc09ebdcb7a76",
+       "spec_digest": "0025000000000000",
        "system": "gated",
        "trace_id": "t-b022940b07fb42c5"
       },
       "detail": "",
-      "hash": "5787950d380b409dcc2c00c00949bf72f2964937aa4fcbb3f90d49b8808c8541",
+      "hash": "0068000000000000000000000000000000000000000000000000000000000000",
       "id": "7811780b80fd",
       "kind": "run.start",
       "node": "",
-      "prev": "5e28a1ac8f7488fb4bf1f6554f6b6a54b1ba436efee7cbb63c097c04fb4a0cd8",
+      "prev": "0077000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Run gated-2026-11-04T13-05-57-tt3y"
@@ -21307,18 +21307,18 @@
        }
       },
       "detail": "sequence · 1 steps",
-      "hash": "3457a623a13aa5a6faf563916fe74fb05317b2cfb6efec97c1a05c3005b87721",
-      "id": "9718a983c2e1",
+      "hash": "0042000000000000000000000000000000000000000000000000000000000000",
+      "id": "012100000000",
       "kind": "node.enter",
       "node": "decide",
-      "prev": "5787950d380b409dcc2c00c00949bf72f2964937aa4fcbb3f90d49b8808c8541",
+      "prev": "0068000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Decide"
      },
      {
       "because": [
-       "9718a983c2e1"
+       "012100000000"
       ],
       "data": {
        "intents": [],
@@ -21330,18 +21330,18 @@
        }
       },
       "detail": "benign",
-      "hash": "93f16a186a29969a4b6aa098c3abdb536c89b1dd9fb6b8b88d49ee1ddb80a359",
+      "hash": "0117000000000000000000000000000000000000000000000000000000000000",
       "id": "dd5ffcb9bd5a",
       "kind": "model.call",
       "node": "decide",
-      "prev": "3457a623a13aa5a6faf563916fe74fb05317b2cfb6efec97c1a05c3005b87721",
+      "prev": "0042000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "scripted"
      },
      {
       "because": [
-       "9718a983c2e1",
+       "012100000000",
        "dd5ffcb9bd5a"
       ],
       "data": {
@@ -21350,18 +21350,18 @@
        }
       },
       "detail": "",
-      "hash": "1aad0da25378888c16587aa7400d26c7ab5929a14e3d998f470e1843c6aba4bd",
-      "id": "af02abdf84c9",
+      "hash": "0023000000000000000000000000000000000000000000000000000000000000",
+      "id": "014100000000",
       "kind": "node.exit",
       "node": "decide",
-      "prev": "93f16a186a29969a4b6aa098c3abdb536c89b1dd9fb6b8b88d49ee1ddb80a359",
+      "prev": "0117000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Decide complete"
      },
      {
       "because": [
-       "9718a983c2e1",
+       "012100000000",
        "dd5ffcb9bd5a"
       ],
       "data": {
@@ -21377,11 +21377,11 @@
        "timeout_s": 86400.0
       },
       "detail": "awaiting approval from dlp-lead",
-      "hash": "78b14d2dbb87222a5d734fa61cf9bf9d03be591ca8cd228a5d605853d60feeac",
+      "hash": "0096000000000000000000000000000000000000000000000000000000000000",
       "id": "98a78c909cb0",
       "kind": "suspend",
       "node": "review",
-      "prev": "1aad0da25378888c16587aa7400d26c7ab5929a14e3d998f470e1843c6aba4bd",
+      "prev": "0023000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Analyst review"
@@ -21399,18 +21399,18 @@
        "shape": "decision"
       },
       "detail": "dlp-lead",
-      "hash": "e3dd797a315f811d57870337d50fa3944b4f2980d877a0a729445a112530dd82",
+      "hash": "0191000000000000000000000000000000000000000000000000000000000000",
       "id": "1d9e5e9548fe",
       "kind": "gate.open",
       "node": "review",
-      "prev": "78b14d2dbb87222a5d734fa61cf9bf9d03be591ca8cd228a5d605853d60feeac",
+      "prev": "0096000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "Awaiting a human decision"
      }
     ],
     "run_id": "gated-2026-11-04T13-05-57-tt3y",
-    "spec_digest": "1bdcc09ebdcb7a76",
+    "spec_digest": "0025000000000000",
     "system": "gated"
    },
    "kill": null,
@@ -21418,7 +21418,7 @@
    "model": "scripted",
    "provenance": {
     "decide": [
-     "9718a983c2e1",
+     "012100000000",
      "dd5ffcb9bd5a"
     ]
    },
@@ -21490,7 +21490,7 @@
      ]
     }
    },
-   "spec_digest": "1bdcc09ebdcb7a76",
+   "spec_digest": "0025000000000000",
    "spent": {
     "cost_usd": 0.0,
     "tokens": 0,
@@ -21559,28 +21559,28 @@
      {
       "because": [],
       "data": {
-       "anchor": "6f871754eae0d260607877ef2fa966f91d0ce33a9fc01f517c95f7d3a69ab091",
+       "anchor": "0089000000000000000000000000000000000000000000000000000000000000",
        "by": "retention",
        "count": 5,
        "deleted_at": "2026-11-15T13:05:57.125Z",
-       "digest": "sha256:dd4d3eca837182bc10abd11ad2b971b002b9e98e89f998f081080317c4b47316",
+       "digest": "sha256:0187000000000000000000000000000000000000000000000000000000000000",
        "first": "93b2fda234a2",
-       "last": "d5d37980beeb",
+       "last": "017900000000",
        "record": "journals"
       },
       "detail": "journals, by retention",
-      "hash": "7150c078b1fe69d68a84d404cd85d96791c3156a2e2171fe02c3de780820a32b",
-      "id": "38342bc71fa0",
+      "hash": "0094000000000000000000000000000000000000000000000000000000000000",
+      "id": "004500000000",
       "kind": "tombstone",
       "node": "",
-      "prev": "525635b3b8874148649e26493930d8c8ace8aa83964ed82bdfe017a93fc40ca5",
+      "prev": "0065000000000000000000000000000000000000000000000000000000000000",
       "t": 0,
       "tainted": false,
       "title": "5 entries deleted"
      }
     ],
     "run_id": "tiny-2026-11-04T13-05-57-d85g",
-    "spec_digest": "6b31553ba73ff68c",
+    "spec_digest": "0085000000000000",
     "system": "tiny"
    },
    "kill": null,
@@ -21630,7 +21630,7 @@
      ]
     }
    },
-   "spec_digest": "6b31553ba73ff68c",
+   "spec_digest": "0085000000000000",
    "spent": {
     "cost_usd": 0.0,
     "tokens": 0,
@@ -21659,18 +21659,18 @@
  "run_verify.answered": {
   "body": {
    "agent": "gated",
-   "anchor": "6bcfaad05908da3b242960182c9bb9a59e285d14f0a7f5de95ccb8bba8430aba",
+   "anchor": "0086000000000000000000000000000000000000000000000000000000000000",
    "anchored": true,
    "broken_at": null,
    "chain": "ok",
    "disagrees": [],
    "entries": 10,
-   "genesis": "5e28a1ac8f7488fb4bf1f6554f6b6a54b1ba436efee7cbb63c097c04fb4a0cd8",
+   "genesis": "0077000000000000000000000000000000000000000000000000000000000000",
    "pending": 0,
    "previous": "",
    "reason": "",
    "recorded": {
-    "anchor": "6bcfaad05908da3b242960182c9bb9a59e285d14f0a7f5de95ccb8bba8430aba",
+    "anchor": "0086000000000000000000000000000000000000000000000000000000000000",
     "at": "2026-11-04T13:05:57.185Z",
     "entries": 10,
     "seq": 2,
@@ -21685,18 +21685,18 @@
  "run_verify.broken": {
   "body": {
    "agent": "tiny",
-   "anchor": "bb9633b0ff56a5dd7870b7a5309c2af5128be6492f58066f113662170f992687",
+   "anchor": "0152000000000000000000000000000000000000000000000000000000000000",
    "anchored": false,
    "broken_at": 1,
    "chain": "broken",
    "disagrees": [],
    "entries": 5,
-   "genesis": "dacf9772515d5d9c7e031ba66e4589cfcdf612493e9470517ad2056506c7e2cb",
+   "genesis": "0183000000000000000000000000000000000000000000000000000000000000",
    "pending": 0,
    "previous": "",
    "reason": "entry 1 is not what was written: its hash does not match its content",
    "recorded": {
-    "anchor": "d861cac5628d314ad5046331a539e8f7a85178dae520d3f744102d51bce42c4f",
+    "anchor": "0181000000000000000000000000000000000000000000000000000000000000",
     "at": "2026-11-04T13:05:56.697Z",
     "entries": 5,
     "seq": 1,
@@ -21711,18 +21711,18 @@
  "run_verify.broken_cut": {
   "body": {
    "agent": "tiny",
-   "anchor": "be9b5ce7c6d367536db1b1b2271d736300f73063539e7d24814a3776240032e0",
+   "anchor": "0156000000000000000000000000000000000000000000000000000000000000",
    "anchored": false,
    "broken_at": 3,
    "chain": "broken",
    "disagrees": [],
    "entries": 3,
-   "genesis": "5c30f753bee5bb5e08214e39ffb8ae5c68d8e2b1e97666b38f4eb24c53534684",
+   "genesis": "0071000000000000000000000000000000000000000000000000000000000000",
    "pending": 0,
    "previous": "",
-   "reason": "the ledger recorded adbb7f883bd0b3361b827a4b365a211069a0d7de888a04af97ca145984954935 for this run (anchor 1, 5 entries) and it is not on the chain: entries were cut off the end or the journal was rebuilt",
+   "reason": "the ledger recorded 0138000000000000000000000000000000000000000000000000000000000000 for this run (anchor 1, 5 entries) and it is not on the chain: entries were cut off the end or the journal was rebuilt",
    "recorded": {
-    "anchor": "adbb7f883bd0b3361b827a4b365a211069a0d7de888a04af97ca145984954935",
+    "anchor": "0138000000000000000000000000000000000000000000000000000000000000",
     "at": "2026-11-04T13:05:56.811Z",
     "entries": 5,
     "seq": 1,
@@ -21737,7 +21737,7 @@
  "run_verify.disputed": {
   "body": {
    "agent": "gated",
-   "anchor": "2596df9dea217c6e2571c652d8d775e696b6bbc65c91a238e6312b09684fca90",
+   "anchor": "0035000000000000000000000000000000000000000000000000000000000000",
    "anchored": false,
    "broken_at": 7,
    "chain": "broken",
@@ -21745,18 +21745,18 @@
     {
      "at": 7,
      "chain": "Asha Rao",
-     "entry": "857d4a88cd03",
+     "entry": "010500000000",
      "field": "decisions[0].by",
      "record": "Mallory <mallory@evil.example>"
     }
    ],
    "entries": 10,
-   "genesis": "46c4fc633141d1c1bc980235c8e7d4dce6329e8d2b4f4d0859f1bd9a469eaa5d",
+   "genesis": "0058000000000000000000000000000000000000000000000000000000000000",
    "pending": 0,
    "previous": "",
    "reason": "the journal's chain holds, and the record beside it disagrees with what the chain says: decisions[0].by",
    "recorded": {
-    "anchor": "2596df9dea217c6e2571c652d8d775e696b6bbc65c91a238e6312b09684fca90",
+    "anchor": "0035000000000000000000000000000000000000000000000000000000000000",
     "at": "2026-11-04T13:05:57.548Z",
     "entries": 10,
     "seq": 2,
@@ -21777,18 +21777,18 @@
  "run_verify.ok": {
   "body": {
    "agent": "tiny",
-   "anchor": "d861cac5628d314ad5046331a539e8f7a85178dae520d3f744102d51bce42c4f",
+   "anchor": "0181000000000000000000000000000000000000000000000000000000000000",
    "anchored": true,
    "broken_at": null,
    "chain": "ok",
    "disagrees": [],
    "entries": 5,
-   "genesis": "dacf9772515d5d9c7e031ba66e4589cfcdf612493e9470517ad2056506c7e2cb",
+   "genesis": "0183000000000000000000000000000000000000000000000000000000000000",
    "pending": 0,
    "previous": "",
    "reason": "",
    "recorded": {
-    "anchor": "d861cac5628d314ad5046331a539e8f7a85178dae520d3f744102d51bce42c4f",
+    "anchor": "0181000000000000000000000000000000000000000000000000000000000000",
     "at": "2026-11-04T13:05:56.697Z",
     "entries": 5,
     "seq": 1,
@@ -21803,7 +21803,7 @@
  "run_verify.tombstoned": {
   "body": {
    "agent": "tiny",
-   "anchor": "c065b8bfb13cbecee046785af44db0d6e8a0cfa7385e60ce5b9378ac64b9dcf5",
+   "anchor": "0157000000000000000000000000000000000000000000000000000000000000",
    "anchored": true,
    "broken_at": null,
    "chain": "tombstoned",
@@ -21814,7 +21814,7 @@
    "previous": "",
    "reason": "retention deleted this run (runs, 2026-12-05T13:05:57.020Z); its tombstone anchor stands in for it",
    "recorded": {
-    "anchor": "c065b8bfb13cbecee046785af44db0d6e8a0cfa7385e60ce5b9378ac64b9dcf5",
+    "anchor": "0157000000000000000000000000000000000000000000000000000000000000",
     "at": "2026-11-04T13:05:57.015Z",
     "entries": 5,
     "seq": 1,
@@ -21825,7 +21825,7 @@
     "at": "2026-12-05T13:05:57.020Z",
     "class": "runs",
     "count": 5,
-    "digest": "sha256:3ce5401f26b80f2399c4d045d3c618cd25a864abe5c7a3f4786ad81e3ea02ccb",
+    "digest": "sha256:0048000000000000000000000000000000000000000000000000000000000000",
     "seq": 3,
     "tombstone": "ts-c966af2d2a2a4d96"
    },
@@ -21836,18 +21836,18 @@
  "run_verify.tombstoned_journal": {
   "body": {
    "agent": "tiny",
-   "anchor": "6f871754eae0d260607877ef2fa966f91d0ce33a9fc01f517c95f7d3a69ab091",
+   "anchor": "0089000000000000000000000000000000000000000000000000000000000000",
    "anchored": true,
    "broken_at": null,
    "chain": "tombstoned",
    "disagrees": [],
    "entries": 1,
-   "genesis": "525635b3b8874148649e26493930d8c8ace8aa83964ed82bdfe017a93fc40ca5",
+   "genesis": "0065000000000000000000000000000000000000000000000000000000000000",
    "pending": 0,
    "previous": "",
    "reason": "retention deleted 5 entries of this journal; the chain verifies around them and the ledger holds the deletion",
    "recorded": {
-    "anchor": "6f871754eae0d260607877ef2fa966f91d0ce33a9fc01f517c95f7d3a69ab091",
+    "anchor": "0089000000000000000000000000000000000000000000000000000000000000",
     "at": "2026-11-04T13:05:57.124Z",
     "entries": 5,
     "seq": 1,
@@ -21858,7 +21858,7 @@
     "at": "2026-11-15T13:05:57.125Z",
     "class": "journals",
     "count": 5,
-    "digest": "sha256:dd4d3eca837182bc10abd11ad2b971b002b9e98e89f998f081080317c4b47316",
+    "digest": "sha256:0187000000000000000000000000000000000000000000000000000000000000",
     "seq": 2,
     "tombstone": "ts-8bff01ec5b7a4739"
    },
@@ -21869,13 +21869,13 @@
  "run_verify.unanchored": {
   "body": {
    "agent": "tiny",
-   "anchor": "2846fd015bb115c2193a233a71f258078d375f6f15d688f3643b2c0d7bdbfd34",
+   "anchor": "0037000000000000000000000000000000000000000000000000000000000000",
    "anchored": false,
    "broken_at": null,
    "chain": "unanchored",
    "disagrees": [],
    "entries": 2,
-   "genesis": "919c2c31c2be49ebd77641f31aff159c4940543636c3b50051c232b62fa59ba0",
+   "genesis": "0116000000000000000000000000000000000000000000000000000000000000",
    "pending": 1,
    "previous": "",
    "reason": "the run is still being written",
@@ -21895,7 +21895,7 @@
    "chain": "unchained",
    "disagrees": [],
    "entries": 1,
-   "genesis": "b26800630c3cac05537bd0ab6fc1f2a9c4bef377a7787344f527afa33104f432",
+   "genesis": "0145000000000000000000000000000000000000000000000000000000000000",
    "pending": 0,
    "previous": "",
    "reason": "no entry carries a hash: the record was written before the journal was chained",
@@ -21980,7 +21980,7 @@
    "changed": [
     {
      "control": "limit",
-     "entry": "8cb26b38f54a",
+     "entry": "011100000000",
      "node": "act",
      "reason": "refused by limit as it stands; the proposed policy allows it",
      "redacted_args": null,
@@ -22091,7 +22091,7 @@
    "changed": [
     {
      "control": "gate",
-     "entry": "d537231013be",
+     "entry": "017600000000",
      "node": "act",
      "reason": "store.put is classified write and this system gates write and above",
      "redacted_args": null,
@@ -22161,7 +22161,7 @@
    "changed": [
     {
      "control": "capability",
-     "entry": "229cfa8bb54b",
+     "entry": "003100000000",
      "node": "act",
      "reason": "node 'act' was not granted 'store.put' (holds: nothing)",
      "redacted_args": [
@@ -22261,7 +22261,7 @@
    "changed": [
     {
      "control": "capability",
-     "entry": "d537231013be",
+     "entry": "017600000000",
      "node": "act",
      "reason": "node 'act' was not granted 'store.put' (holds: nothing)",
      "redacted_args": null,
@@ -22335,7 +22335,7 @@
     {
      "agent": "triage",
      "deployed": {
-      "digest": "3a802c629fc8f32b",
+      "digest": "0046000000000000",
       "version": 1
      },
      "due_at": "2027-02-02T13:05:58.065Z",
@@ -22345,7 +22345,7 @@
       "at": "2026-11-04T13:05:58.077Z",
       "by": "Ada <ada@example.com>",
       "deployed": {
-       "digest": "3a802c629fc8f32b",
+       "digest": "0046000000000000",
        "version": 1
       },
       "diff": {
@@ -22354,7 +22354,7 @@
         "removed": []
        },
        "from": {
-        "digest": "3a802c629fc8f32b",
+        "digest": "0046000000000000",
         "version": 1
        },
        "gates": {
@@ -22400,7 +22400,7 @@
        ],
        "system": [],
        "to": {
-        "digest": "2a7f51eba50c8c12",
+        "digest": "0039000000000000",
         "version": 2
        },
        "tools": {
@@ -22409,7 +22409,7 @@
         "removed": []
        }
       },
-      "digest": "2a7f51eba50c8c12",
+      "digest": "0039000000000000",
       "due_at": "2027-02-02T13:05:58.077Z",
       "id": "at-5ec68146c0a9417e",
       "matches_deployed": false,
@@ -22417,7 +22417,7 @@
       "previous": {
        "at": "2026-11-04T13:05:58.065Z",
        "by": "Owen <owen@example.com>",
-       "digest": "3a802c629fc8f32b",
+       "digest": "0046000000000000",
        "id": "at-0ceeaabc480e4d73",
        "version": 1
       },
@@ -22452,7 +22452,7 @@
     {
      "agent": "triage",
      "deployed": {
-      "digest": "3a802c629fc8f32b",
+      "digest": "0046000000000000",
       "version": 1
      },
      "due_at": "2027-02-02T13:05:57.995Z",
@@ -22477,7 +22477,7 @@
     {
      "agent": "triage",
      "deployed": {
-      "digest": "3a802c629fc8f32b",
+      "digest": "0046000000000000",
       "version": 1
      },
      "due_at": "2026-10-05T13:05:58.065Z",
@@ -22487,7 +22487,7 @@
       "at": "2026-07-07T13:05:58.077Z",
       "by": "Ada <ada@example.com>",
       "deployed": {
-       "digest": "3a802c629fc8f32b",
+       "digest": "0046000000000000",
        "version": 1
       },
       "diff": {
@@ -22496,7 +22496,7 @@
         "removed": []
        },
        "from": {
-        "digest": "3a802c629fc8f32b",
+        "digest": "0046000000000000",
         "version": 1
        },
        "gates": {
@@ -22542,7 +22542,7 @@
        ],
        "system": [],
        "to": {
-        "digest": "2a7f51eba50c8c12",
+        "digest": "0039000000000000",
         "version": 2
        },
        "tools": {
@@ -22551,7 +22551,7 @@
         "removed": []
        }
       },
-      "digest": "2a7f51eba50c8c12",
+      "digest": "0039000000000000",
       "due_at": "2026-10-05T13:05:58.077Z",
       "id": "at-5ec68146c0a9417e",
       "matches_deployed": false,
@@ -22559,7 +22559,7 @@
       "previous": {
        "at": "2026-11-04T13:05:58.065Z",
        "by": "Owen <owen@example.com>",
-       "digest": "3a802c629fc8f32b",
+       "digest": "0046000000000000",
        "id": "at-0ceeaabc480e4d73",
        "version": 1
       },
@@ -22586,7 +22586,7 @@
     {
      "agent": "triage",
      "deployed": {
-      "digest": "3a802c629fc8f32b",
+      "digest": "0046000000000000",
       "version": 1
      },
      "due_at": "2026-10-05T13:05:58.065Z",
@@ -22596,7 +22596,7 @@
       "at": "2026-07-07T13:05:58.077Z",
       "by": "Ada <ada@example.com>",
       "deployed": {
-       "digest": "3a802c629fc8f32b",
+       "digest": "0046000000000000",
        "version": 1
       },
       "diff": {
@@ -22605,7 +22605,7 @@
         "removed": []
        },
        "from": {
-        "digest": "3a802c629fc8f32b",
+        "digest": "0046000000000000",
         "version": 1
        },
        "gates": {
@@ -22651,7 +22651,7 @@
        ],
        "system": [],
        "to": {
-        "digest": "2a7f51eba50c8c12",
+        "digest": "0039000000000000",
         "version": 2
        },
        "tools": {
@@ -22660,7 +22660,7 @@
         "removed": []
        }
       },
-      "digest": "2a7f51eba50c8c12",
+      "digest": "0039000000000000",
       "due_at": "2026-10-05T13:05:58.077Z",
       "id": "at-5ec68146c0a9417e",
       "matches_deployed": false,
@@ -22668,7 +22668,7 @@
       "previous": {
        "at": "2026-11-04T13:05:58.065Z",
        "by": "Owen <owen@example.com>",
-       "digest": "3a802c629fc8f32b",
+       "digest": "0046000000000000",
        "id": "at-0ceeaabc480e4d73",
        "version": 1
       },
@@ -24675,7 +24675,7 @@
   "body": {
    "agent": {
     "agent": "triage",
-    "digest": "ae164934c963c793",
+    "digest": "0140000000000000",
     "met": false,
     "missing": [
      "owner",
@@ -24948,7 +24948,7 @@
   "body": {
    "agent": {
     "agent": "triage",
-    "digest": "ae164934c963c793",
+    "digest": "0140000000000000",
     "met": false,
     "missing": [
      "owner",

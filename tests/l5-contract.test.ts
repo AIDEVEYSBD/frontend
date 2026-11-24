@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -33,6 +34,9 @@ interface Fixture {
   body: unknown;
 }
 
+/** A signed answer link's token, made for this run in the service's shape: id, expiry, signature. */
+const LINK_TOKEN = `${randomBytes(8).toString("hex")}.1792568563.${randomBytes(32).toString("base64url")}`;
+
 const FX: Record<string, Fixture> = {
   "approvals_list": {
     "status": 200,
@@ -47,15 +51,15 @@ const FX: Record<string, Fixture> = {
             "decided": {"verdict": "benign"}, "presented": {"verdict": "benign"}, "tainted_by": [],
             "trail": [
               {
-                "id": "c4f68925e6bb", "t": 0, "kind": "node.enter", "node": "decide", "title": "Decide", "detail": "sequence · 1 steps", "tool": "",
+                "id": "016100000000", "t": 0, "kind": "node.enter", "node": "decide", "title": "Decide", "detail": "sequence · 1 steps", "tool": "",
                 "summary": "sequence · 1 steps", "tainted": false
               },
               {
-                "id": "53931b2d402d", "t": 0, "kind": "model.call", "node": "decide", "title": "scripted", "detail": "benign", "tool": "",
+                "id": "006600000000", "t": 0, "kind": "model.call", "node": "decide", "title": "scripted", "detail": "benign", "tool": "",
                 "summary": "scripted answered \"benign\"", "tainted": false
               },
               {
-                "id": "043801dc9510", "t": 0, "kind": "suspend", "node": "review", "title": "Analyst review", "detail": "awaiting approval from dlp-lead",
+                "id": "000500000000", "t": 0, "kind": "suspend", "node": "review", "title": "Analyst review", "detail": "awaiting approval from dlp-lead",
                 "tool": "", "summary": "awaiting approval from dlp-lead", "tainted": false
               }
             ]
@@ -80,11 +84,11 @@ const FX: Record<string, Fixture> = {
                 "summary": "sequence · 1 steps", "tainted": false
               },
               {
-                "id": "233b5ffcac8e", "t": 0, "kind": "model.call", "node": "decide", "title": "scripted", "detail": "benign", "tool": "",
+                "id": "003200000000", "t": 0, "kind": "model.call", "node": "decide", "title": "scripted", "detail": "benign", "tool": "",
                 "summary": "scripted answered \"benign\"", "tainted": false
               },
               {
-                "id": "590d8bce8c66", "t": 0, "kind": "suspend", "node": "review", "title": "Risk review", "detail": "awaiting approval from risk-lead",
+                "id": "007000000000", "t": 0, "kind": "suspend", "node": "review", "title": "Risk review", "detail": "awaiting approval from risk-lead",
                 "tool": "", "summary": "awaiting approval from risk-lead", "tainted": false
               }
             ]
@@ -160,11 +164,11 @@ const FX: Record<string, Fixture> = {
             "decided": {}, "presented": {}, "tainted_by": [],
             "trail": [
               {
-                "id": "af2084180f73", "t": 2, "kind": "model.call", "node": "decide", "title": "scripted", "detail": "one", "tool": "",
+                "id": "014200000000", "t": 2, "kind": "model.call", "node": "decide", "title": "scripted", "detail": "one", "tool": "",
                 "summary": "scripted answered \"one\"", "tainted": false
               },
               {
-                "id": "6733821fdeb7", "t": 2, "kind": "gate.open", "node": "decide", "title": "Awaiting a human decision on records.write",
+                "id": "008100000000", "t": 2, "kind": "gate.open", "node": "decide", "title": "Awaiting a human decision on records.write",
                 "detail": "held by Asha Rao: the next call at or above write waits for a human", "tool": "records.write",
                 "summary": "held by Asha Rao: the next call at or above write waits for a human", "tainted": false
               }
@@ -233,10 +237,10 @@ const FX: Record<string, Fixture> = {
   "link_minted": {
     "status": 201,
     "body": {
-      "url": "/answer/f92bc7463cf2406c.1792568563.hnSnvT0vel8iktKFCNV1zBJ2XugCf2jKFdzRXjAEaWY",
-      "path": "/api/answer/f92bc7463cf2406c.1792568563.hnSnvT0vel8iktKFCNV1zBJ2XugCf2jKFdzRXjAEaWY",
-      "token": "f92bc7463cf2406c.1792568563.hnSnvT0vel8iktKFCNV1zBJ2XugCf2jKFdzRXjAEaWY", "run": "formed-2026-10-21T06-42-43-alog",
-      "gate": "review#590d8bce8c66", "email": "counsel@vendor.com", "expires_at": "2026-10-21T07:42:43Z", "deadline": "2026-10-21T07:42:43Z",
+      "url": `/answer/${LINK_TOKEN}`,
+      "path": `/api/answer/${LINK_TOKEN}`,
+      "token": LINK_TOKEN, "run": "formed-2026-10-21T06-42-43-alog",
+      "gate": "review#007000000000", "email": "counsel@vendor.com", "expires_at": "2026-10-21T07:42:43Z", "deadline": "2026-10-21T07:42:43Z",
       "by": "Asha Rao"
     }
   },
@@ -363,11 +367,11 @@ const FX: Record<string, Fixture> = {
             "summary": "sequence · 1 steps", "tainted": false
           },
           {
-            "id": "233b5ffcac8e", "t": 0, "kind": "model.call", "node": "decide", "title": "scripted", "detail": "benign", "tool": "",
+            "id": "003200000000", "t": 0, "kind": "model.call", "node": "decide", "title": "scripted", "detail": "benign", "tool": "",
             "summary": "scripted answered \"benign\"", "tainted": false
           },
           {
-            "id": "590d8bce8c66", "t": 0, "kind": "suspend", "node": "review", "title": "Risk review", "detail": "awaiting approval from risk-lead", "tool": "",
+            "id": "007000000000", "t": 0, "kind": "suspend", "node": "review", "title": "Risk review", "detail": "awaiting approval from risk-lead", "tool": "",
             "summary": "awaiting approval from risk-lead", "tainted": false
           }
         ]
@@ -456,13 +460,13 @@ const FX: Record<string, Fixture> = {
       {
         "t": 2, "kind": "note", "node": "decide", "title": "Held at the operator's request",
         "detail": "records.write is write; Asha Rao asked that the next such call wait for a human",
-        "data": {"control": "operator.hold", "by": "Asha Rao", "tool": "records.write"}, "id": "040cbed2578e", "tainted": false
+        "data": {"control": "operator.hold", "by": "Asha Rao", "tool": "records.write"}, "id": "000400000000", "tainted": false
       },
       {
         "t": 2, "kind": "gate.open", "node": "decide", "title": "Awaiting a human decision on records.write",
         "detail": "held by Asha Rao: the next call at or above write waits for a human",
         "data": {"tool": "records.write", "args": {"type": "finding", "fields": {"title": "x"}}, "control": "operator.hold", "approvers": ["owner"]},
-        "id": "6733821fdeb7", "tainted": false
+        "id": "008100000000", "tainted": false
       }
     ]
   },
@@ -476,7 +480,7 @@ const FX: Record<string, Fixture> = {
           "control": "operator.steer", "by": "Asha Rao", "at": "2026-10-21T06:42:44.103Z", "guidance": "Check the sender's domain first",
           "hold_at_next_gate": true, "delivery": "worker"
         },
-        "id": "97641bb4ec55", "tainted": false
+        "id": "012200000000", "tainted": false
       }
     ]
   },
@@ -704,9 +708,9 @@ describe("links and the external answer door", () => {
     const m = await l5.mintLink("r", "Counsel@Vendor.com", 604800);
     expect(calls[0].body).toEqual({ email: "Counsel@Vendor.com", expires_s: 604800 });
     // The backend had no PUBLIC_ORIGIN, so it answered the page's path; the console's public origin goes before it.
-    expect(m.url).toBe(`${PUBLIC_ORIGIN}/answer/f92bc7463cf2406c.1792568563.hnSnvT0vel8iktKFCNV1zBJ2XugCf2jKFdzRXjAEaWY`);
+    expect(m.url).toBe(`${PUBLIC_ORIGIN}/answer/${LINK_TOKEN}`);
     expect(m).toMatchObject({ email: "counsel@vendor.com", expires_at: "2026-10-21T07:42:43Z", deadline: "2026-10-21T07:42:43Z" });
-    expect(m.path).toBe("/api/answer/f92bc7463cf2406c.1792568563.hnSnvT0vel8iktKFCNV1zBJ2XugCf2jKFdzRXjAEaWY");
+    expect(m.path).toBe(`/api/answer/${LINK_TOKEN}`);
     expect(l5.absoluteLink("https://agentfactory.example/answer/t")).toBe("https://agentfactory.example/answer/t");
   });
 

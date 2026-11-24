@@ -35,15 +35,15 @@ describe("the recorded stream", () => {
     const first = entries[0];
     if (first.type !== "entry") throw new Error("not an entry");
     expect(first.entry.kind).toBe("run.start");
-    expect(first.entry.id).toBe("4dabb94f1c3f");
+    expect(first.entry.id).toBe("006200000000");
     expect(first.entry.t).toBe(0);
-    expect(first.entry.data).toEqual({ system: "controls-testing", spec_digest: "04c680ce3174e59b" });
+    expect(first.entry.data).toEqual({ system: "controls-testing", spec_digest: "0007000000000000" });
     expect("type" in first.entry).toBe(false);
     // The tool call's because-chain points at the step that made it.
     const call = entries[2];
     if (call.type !== "entry") throw new Error("not an entry");
     expect(call.entry.kind).toBe("tool.call");
-    expect(call.entry.because).toEqual(["12ef90a77d60"]);
+    expect(call.entry.because).toEqual(["001400000000"]);
     expect(call.entry.node).toBe("register");
   });
 

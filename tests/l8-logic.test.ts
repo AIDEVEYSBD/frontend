@@ -51,7 +51,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("times and digests, as the console prints them", () => {
   it("a record's time to the second, in UTC; a digest short", () => {
     expect([whenText("2026-10-21T14:19:46.293Z"), whenText("2026-10-21T14:19:46Z"), whenText(""), whenText(null)]).toEqual(["2026-10-21 14:19:46 UTC", "2026-10-21 14:19:46 UTC", "", ""]);
-    expect([shortDigest("90df2dfa5e202811"), shortDigest("sha256:d54fe85d6e25e058188e")]).toEqual(["90df2dfa", "sha256:d54fe85d6e25"]);
+    expect([shortDigest("0114000000000000"), shortDigest("sha256:01780000000000000000")]).toEqual(["01140000", "sha256:017800000000"]);
     expect([stageLabel("canary"), stageLabel("shadow_mode"), conditionLabel("regression"), conditionLabel("new_rule")]).toEqual(["Canary", "shadow mode", "No regression", "new rule"]);
   });
 });

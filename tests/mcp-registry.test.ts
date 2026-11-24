@@ -29,8 +29,8 @@ import { approveAccess, changeLine, formProblem, heldReason, pinChange, railOf, 
  * `previous_pin`); tests/l6-contract.test.ts replays the real responses.
  */
 
-const PIN = "sha256:9f2c4e1a7b3d5f60718293a4b5c6d7e8f9012345678901234567890abcdef12";
-const SCAN = "sha256:0011223344556677889900aabbccddeeff00112233445566778899aabbccddee";
+const PIN = "sha256:012900000000000000000000000000000000000000000000000000000000000";
+const SCAN = "sha256:0001000000000000000000000000000000000000000000000000000000000000";
 
 function server(over: Partial<McpServer> = {}): McpServer {
   return serverOf({

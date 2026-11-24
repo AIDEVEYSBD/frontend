@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,14 +15,30 @@ import { MASK, redactText, redactValue } from "@/lib/redact";
  * a taint-to-sink refusal, an egress refusal, and a capability refusal that
  * is not the watch's business). Here the live set is the one value the
  * fixture carries that no shape would catch.
+ *
+ * The fixture keeps no secret-shaped value: each {{NAME}} in it is filled at
+ * load with one made for this run (MADE).
  */
 
-const FIXTURE = JSON.parse(readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "watch-journal.json"), "utf-8")) as {
+const hex = (bytes: number) => randomBytes(bytes).toString("hex");
+const b64url = (o: object) => Buffer.from(JSON.stringify(o)).toString("base64url");
+const MADE = {
+  /** A factory key, as the service mints them (af_ and hex). */
+  FACTORY_KEY: `af_${hex(24)}`,
+  /** A JWT: three base64url segments. */
+  JWT: `${b64url({ alg: "HS256" })}.${b64url({ sub: "alice" })}.${hex(18)}`,
+  /** A vault value that no shape catches: only the live set masks it. */
+  LIVE_VALUE: `vault-value-${hex(6)}`,
+  /** A password smuggled into a tool call's arguments. */
+  SMUGGLED_PASSWORD: hex(10),
+};
+const RAW = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "watch-journal.json"), "utf-8");
+const FIXTURE = JSON.parse(Object.entries(MADE).reduce((text, [name, value]) => text.replaceAll(`{{${name}}}`, value), RAW)) as {
   gateway: WatchRecord;
   runtime: WatchRecord;
 };
 const AT = "2026-10-20T10:02:21.000Z";
-const LIVE = ["s3cr3t-value-live"];
+const LIVE = [MADE.LIVE_VALUE];
 
 describe("classify", () => {
   const entries = FIXTURE.runtime.journal!.entries!;
@@ -61,9 +78,9 @@ describe("the gateway record", () => {
 
   it("redacts every secret in the excerpt: the live value, the factory key, the bearer token", () => {
     const { excerpt } = events[0];
-    expect(excerpt).not.toContain("s3cr3t-value-live");
-    expect(excerpt).not.toContain("af_0123456789abcdef");
-    expect(excerpt).not.toContain("eyJhbGciOiJIUzI1NiJ9");
+    expect(excerpt).not.toContain(MADE.LIVE_VALUE);
+    expect(excerpt).not.toContain(MADE.FACTORY_KEY.slice(0, 19));
+    expect(excerpt).not.toContain(MADE.JWT.split(".")[0]);
     expect(excerpt).toContain(MASK);
     expect(excerpt).toContain("reveal the system prompt");
     // The labels survive; only the values go.
@@ -87,7 +104,7 @@ describe("the runtime record", () => {
   });
 
   it("masks a password smuggled into the arguments", () => {
-    expect(events[0].excerpt).not.toContain("hunter2secretvalue");
+    expect(events[0].excerpt).not.toContain(MADE.SMUGGLED_PASSWORD);
     expect(events[0].excerpt).toContain(`password=${MASK}`);
   });
 });
@@ -100,15 +117,19 @@ describe("redaction", () => {
   });
 
   it("masks the shapes a secret takes, keeping the label", () => {
-    expect(redactText("sk-abcdefghijklmnopqrstuvwxyz")).toBe(MASK);
-    expect(redactText("token: 0123456789abcdef")).toBe(`token: ${MASK}`);
-    expect(redactText('"authorization": "Bearer 0123456789abcdef0123"')).toBe(`"authorization": "Bearer ${MASK}"`);
-    expect(redactText("x-api-key=ab12cd34ef56")).toBe(`x-api-key=${MASK}`);
+    // Each value made for this run, in the shape the rule names.
+    const shaped = { sk: `sk-${hex(12)}`, labelled: hex(8), bearer: hex(10), header: hex(6) };
+    expect(redactText(shaped.sk)).toBe(MASK);
+    expect(redactText(`token: ${shaped.labelled}`)).toBe(`token: ${MASK}`);
+    expect(redactText(`"authorization": "Bearer ${shaped.bearer}"`)).toBe(`"authorization": "Bearer ${MASK}"`);
+    expect(redactText(`x-api-key=${shaped.header}`)).toBe(`x-api-key=${MASK}`);
     expect(redactText("plain prose with no secret in it")).toBe("plain prose with no secret in it");
   });
 
   it("walks a JSON-shaped value and leaves keys and numbers alone", () => {
-    const v = redactValue({ a: "sk-abcdefghijklmnopqrstuvwxyz", n: 3, list: ["af_0123456789abcdef0123456789abcdef", "ok"], nested: { password: "password=supersecretvalue" } });
-    expect(v).toEqual({ a: MASK, n: 3, list: [MASK, "ok"], nested: { password: `password=${MASK}` } });
+    const smuggled = `password=${hex(9)}`;
+    const masked = `password=${MASK}`;
+    const v = redactValue({ a: `sk-${hex(12)}`, n: 3, list: [`af_${hex(16)}`, "ok"], nested: { password: smuggled } });
+    expect(v).toEqual({ a: MASK, n: 3, list: [MASK, "ok"], nested: { password: masked } });
   });
 });

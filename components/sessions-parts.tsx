@@ -43,7 +43,7 @@ export const attachedKey = (s: Session): boolean => s.kind === "agent" && s.clie
 
 const CLIENT_WORD: Record<string, string> = {
   browser: "Browser",
-  api_key: "API key",
+  api_key: "API key", // pragma: allowlist secret (a client kind and its label)
   workload: "Workload sign-in",
   sdk: "SDK",
   mcp_client: "Tool client",

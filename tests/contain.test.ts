@@ -57,7 +57,7 @@ describe("the L6 controls", () => {
   });
 });
 
-const MANIFEST = "sha256:4b1d0c9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c";
+const MANIFEST = "sha256:0061000000000000000000000000000000000000000000000000000000000000";
 const RESULT = { exit: 0, stdout: "42\n", stderr: "", truncated: false, isolator: "docker", manifest_digest: MANIFEST, duration_ms: 1234 };
 
 describe("an isolated sandbox.execute", () => {
@@ -87,7 +87,7 @@ describe("an isolated sandbox.execute", () => {
     expect(facts.map((f) => f.k)).toEqual(["Isolator", "Exit", "Duration", "Output", "Manifest"]);
     expect(facts.find((f) => f.k === "Exit")).toMatchObject({ v: "2", tone: "err" });
     expect(facts.find((f) => f.k === "Output")).toMatchObject({ v: "truncated at the bound", tone: "warn" });
-    expect(facts.find((f) => f.k === "Manifest")).toEqual({ k: "Manifest", v: "sha256:4b1d0c9e8f7a…", full: MANIFEST });
+    expect(facts.find((f) => f.k === "Manifest")).toEqual({ k: "Manifest", v: "sha256:006100000000…", full: MANIFEST });
   });
 
   it("is found on a tool result of sandbox.execute, or on an entry of its own, and nowhere else", () => {
@@ -106,9 +106,9 @@ describe("an isolated sandbox.execute", () => {
 
 describe("digests, short", () => {
   it("keeps the algorithm and twelve hex digits", () => {
-    expect(shortDigest(MANIFEST)).toBe("sha256:4b1d0c9e8f7a…");
+    expect(shortDigest(MANIFEST)).toBe("sha256:006100000000…");
     expect(shortDigest("sha256:abc")).toBe("sha256:abc");
-    expect(shortDigest("0123456789abcdef0123")).toBe("0123456789ab…");
+    expect(shortDigest("00020000000000000000")).toBe("000200000000…");
     expect(shortDigest("")).toBe("");
   });
 });
