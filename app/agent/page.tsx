@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { AgentConfigView } from "@/components/agent-config";
 
 export const metadata = {
-  title: "Agent configuration — Agent Factory",
+  title: "Agent configuration — Saros",
   description: "One agent's limits, bounds and gates, with the tools each step was granted; a change is saved as a new version and deployed from its Versions tab.",
 };
 

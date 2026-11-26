@@ -36,7 +36,7 @@ export type SnippetLanguage = "python" | "typescript";
 
 export const MODE_META: Record<AttachMode, { label: string; blurb: string; enforcement: string }> = {
   sdk: {
-    label: "Agent Factory SDK",
+    label: "Saros SDK",
     blurb: "For an agent whose code you own. The SDK opens a run, reports its steps, sends its model calls through the gateway and its tool calls through the broker, and waits at a gate for a person.",
     enforcement: "gateway + broker",
   },

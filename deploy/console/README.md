@@ -4,7 +4,7 @@
 service's repository). That guide covers the project, AlloyDB, GKE, IAM, the console on Cloud Run behind IAP, the route between the console and the
 service, and what to verify on the first day. This page is the console's own part.
 
-The console is the pages of Agent Factory, served by Next.js. It is one of two parts:
+The console is the pages of Saros, served by Next.js. It is one of two parts:
 
 - **The console** (this repository): serves the pages and forwards every `/api` request, and the agent card at `/.well-known/agent.json`, to the platform's service. It keeps no data and no session, decides nothing, and reads two settings.
 - **The platform's service** (the backend): answers every `/api` request. It verifies Google Identity-Aware Proxy's signed assertion (`x-goog-iap-jwt-assertion`) on every request, gives each person their role from its own role map, and answers sign-in itself (`/api/auth/session`, `/api/auth/login`). Its deployment, and the second route machines use to reach it, are described in the service's own `deploy/README.md` and `.env.example`.
@@ -135,6 +135,6 @@ Anyone else IAP lets through holds no role and no permission; there is no defaul
 | Plain text: "This console has no service to talk to: BACKEND_ORIGIN is not set on this deployment." | `BACKEND_ORIGIN` is not set on the console. |
 | "This console is reached through Google sign-in" | The request reached the service without IAP's header: IAP is not on the console. |
 | "Your Google sign-in could not be verified" | The service's `IAP_AUDIENCE` does not match the console's IAP resource, or the service cannot reach Google's keys (see `IAP_JWKS_URL`). |
-| "A role is required to access Agent Factory" | Google signed the person in, but the service's `IAP_ROLE_MAP` gives them no role that may open the console. |
+| "A role is required to access Saros" | Google signed the person in, but the service's `IAP_ROLE_MAP` gives them no role that may open the console. |
 | Every page shows its reads failing with status 500 ("Internal Server Error") | The console could not connect to `BACKEND_ORIGIN`. The console's log has the reason (for example `connect ECONNREFUSED` with the address it tried). |
 | A button answers "cross-origin writes are refused" | The image was built with a `NEXT_PUBLIC_ORIGIN` that is not the address being used. Rebuild with the right one. |

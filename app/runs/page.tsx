@@ -1,7 +1,7 @@
 import { Runs } from "@/components/runs";
 
 export const metadata = {
-  title: "Runs — Agent Factory",
+  title: "Runs — Saros",
   description: "Launch workflows and review their execution journals, tool activity, decisions and outputs.",
 };
 

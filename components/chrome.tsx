@@ -351,7 +351,7 @@ function Sidebar({ groups, auto, onAuto, who }: { groups: NavGroup[]; auto: Grou
   if (rail) {
     return (
       <aside className={`relative z-30 hidden w-14 shrink-0 flex-col items-center lg:flex ${SIDE}`} data-sidebar="rail">
-        <Link href="/" aria-label="Agent Factory, home" className={`${SIDE_FOCUS} flex h-16 w-full shrink-0 items-center justify-center border-b border-white/10`}>
+        <Link href="/" aria-label="Saros, home" className={`${SIDE_FOCUS} flex h-16 w-full shrink-0 items-center justify-center border-b border-white/10`}>
           <ABBWordmark height={13} />
         </Link>
         <nav aria-label="Main" className="flex grow flex-col items-center gap-1.5 py-3">
@@ -366,7 +366,7 @@ function Sidebar({ groups, auto, onAuto, who }: { groups: NavGroup[]; auto: Grou
   }
   return (
     <aside className={`relative z-30 hidden w-[232px] shrink-0 flex-col lg:flex ${SIDE}`} data-sidebar="full">
-      <Link href="/" aria-label="Agent Factory, home" className={`${SIDE_FOCUS} flex h-16 shrink-0 items-center border-b border-white/10 px-4`}>
+      <Link href="/" aria-label="Saros, home" className={`${SIDE_FOCUS} flex h-16 shrink-0 items-center border-b border-white/10 px-4`}>
         <BrandLockup onDark />
       </Link>
       <NavGroups groups={groups} auto={auto} onAuto={onAuto} />
@@ -512,7 +512,7 @@ export function Chrome({ children }: { children: React.ReactNode }) {
           >
             <NavIcon name="menu" size={15} />
           </button>
-          <Link href="/" aria-label="Agent Factory, home" className="focusable flex shrink-0"><ABBWordmark height={13} /></Link>
+          <Link href="/" aria-label="Saros, home" className="focusable flex shrink-0"><ABBWordmark height={13} /></Link>
           <span className="truncate text-[13px] font-semibold text-fg">{hereGroup && hereGroup.items.length === 1 ? here?.group : here?.label}</span>
         </header>
         <Assistant />

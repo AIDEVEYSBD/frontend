@@ -1,6 +1,6 @@
-# Agent Factory console
+# Saros console
 
-The console is the pages of Agent Factory: a Next.js app (app router, React 19) that runs in the browser and calls the platform's service for everything it shows or changes. It keeps no data, no session and no setting of its own beyond the two below. It has no API routes of its own: its only server-side logic is `proxy.ts`, which forwards.
+The console is the pages of Saros: a Next.js app (app router, React 19) that runs in the browser and calls the platform's service for everything it shows or changes. It keeps no data, no session and no setting of its own beyond the two below. It has no API routes of its own: its only server-side logic is `proxy.ts`, which forwards.
 
 ## How it fits
 

@@ -15,7 +15,7 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Agent Factory",
+  title: "Saros",
   description: "The console for security workloads carried out by agents: approvals by named roles, limits enforced outside the model, and a record of every decision.",
 };
 

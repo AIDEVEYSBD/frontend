@@ -1,4 +1,4 @@
-# The Agent Factory console: the pages, served by Next.js. It keeps no data
+# The Saros console: the pages, served by Next.js. It keeps no data
 # and no session, and decides nothing. Every /api request goes to the
 # platform's service at BACKEND_ORIGIN with its headers unchanged; the service
 # verifies the Google Identity-Aware Proxy assertion on each one and answers

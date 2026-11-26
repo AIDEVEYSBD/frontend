@@ -1,7 +1,7 @@
 import { ExploreView } from "@/components/explore";
 
 export const metadata = {
-  title: "Explore — Agent Factory",
+  title: "Explore — Saros",
   description: "Filter and read everything the platform recorded: tool calls, what each agent did, and what the controls and people stopped.",
 };
 

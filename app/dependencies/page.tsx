@@ -1,7 +1,7 @@
 import { Dependencies } from "@/components/dependencies";
 
 export const metadata = {
-  title: "Dependencies — Agent Factory",
+  title: "Dependencies — Saros",
   description: "What every agent depends on, declared by its spec and seen in its runs, and the blast radius of any tool, server, peer, model or agent.",
 };
 

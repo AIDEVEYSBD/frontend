@@ -1,6 +1,6 @@
 import { NoAccess } from "@/components/login";
 
-export const metadata = { title: "No access — Agent Factory" };
+export const metadata = { title: "No access — Saros" };
 export const dynamic = "force-dynamic";
 
 export default async function NoAccessPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {

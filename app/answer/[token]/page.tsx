@@ -9,7 +9,7 @@ import { AnswerPage } from "@/components/answer";
  * platform lets the link answer only for the address it was made for, once.
  */
 
-export const metadata = { title: "Answer a gate — Agent Factory" };
+export const metadata = { title: "Answer a gate — Saros" };
 export const dynamic = "force-dynamic";
 
 export default async function Page({ params }: { params: Promise<{ token: string }> }) {

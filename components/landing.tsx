@@ -38,7 +38,7 @@ export function LandingHeader() {
     <header className="sticky top-0 z-40 border-b border-line bg-surface/95 backdrop-blur-md">
       <a href="#main-content" className="focusable sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-4 focus:z-50 focus:bg-surface focus:p-4">Skip to content</a>
       <div className={`${WRAP} flex h-20 items-center justify-between gap-3`}>
-        <Link href="/" aria-label="ABB Agent Factory home" className="focusable min-w-0 rounded-sm"><BrandLockup height={22} /></Link>
+        <Link href="/" aria-label="ABB Saros home" className="focusable min-w-0 rounded-sm"><BrandLockup height={22} /></Link>
         <nav aria-label="On this page" className="hidden items-center gap-7 text-[13px] font-medium text-dim lg:flex">
           <a className="focusable py-3 hover:text-fg" href="#workloads">Security workloads</a>
           <a className="focusable py-3 hover:text-fg" href="#controls">Platform controls</a>
@@ -60,7 +60,7 @@ export function Hero() {
             AI-powered security.<br /><span className="text-dim">Human-led control.</span>
           </h1>
           <p className="mt-7 max-w-[47ch] text-[17px] leading-[1.65] text-dim">
-            Bring AI to security operations with clear accountability. Agent Factory brings four security workloads together, with defined approvals, controlled execution and traceable evidence.
+            Bring AI to security operations with clear accountability. Saros brings four security workloads together, with defined approvals, controlled execution and traceable evidence.
           </p>
           <div className="mt-9 flex flex-wrap items-center gap-x-7 gap-y-5">
             <OpenConsole primary />

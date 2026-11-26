@@ -1,6 +1,6 @@
 import { BrandLockup } from "@/components/brand";
 
-export const metadata = { title: "Sign in — Agent Factory" };
+export const metadata = { title: "Sign in — Saros" };
 export const dynamic = "force-dynamic";
 
 /**

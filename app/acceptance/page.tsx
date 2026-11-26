@@ -1,7 +1,7 @@
 import { AcceptanceView } from "@/components/acceptance";
 
 export const metadata = {
-  title: "Acceptance — Agent Factory",
+  title: "Acceptance — Saros",
   description: "The acceptance record of each use case: criteria and results, outstanding issues and sign-offs by role.",
 };
 

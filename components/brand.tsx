@@ -140,7 +140,7 @@ export function BrandMark({
 }
 
 /**
- * The Agent Factory mark.
+ * The Saros mark.
  *
  * Three chevrons, stacked — the platform's own thesis drawn once: layers of
  * governance, ascending, each resting on the one beneath. Depth is graded by
@@ -201,7 +201,7 @@ export function ABBWordmark({ height = 15, className = "" }: { height?: number; 
 }
 
 /** What the console calls itself beside the wordmark, in one place. */
-export const PRODUCT = { name: "Agent Factory", line: "AI SecOps Platform" };
+export const PRODUCT = { name: "Saros", line: "AI SecOps Platform" };
 
 /**
  * The lockup: whose console this is, a rule, then what it is. `onDark` is the

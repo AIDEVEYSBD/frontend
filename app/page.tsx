@@ -3,7 +3,7 @@ import { Closing, Controls, Hero, LandingFooter, LandingHeader, Passage, Workloa
 import { LandingMotion } from "@/components/landing-motion";
 
 export const metadata = {
-  title: "Agent Factory — ABB AI SecOps Platform",
+  title: "Saros — ABB AI SecOps Platform",
   description:
     "AI-powered security. Human-led control. Coordinate code analysis, penetration testing, firewall rule review and threat hunting with defined approvals and traceable evidence.",
 };

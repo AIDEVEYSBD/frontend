@@ -1,7 +1,9 @@
 # Deploying on Google Cloud
 
-This guide is for the DevOps engineers who deploy Agent Factory into their own Google Cloud project, using the two
+This guide is for the DevOps engineers who deploy Saros into their own Google Cloud project, using the two
 repositories and this guide. It assumes you know Google Cloud, GKE and Cloud Run. It explains only the product.
+The product is Saros; its machine names are `agentfactory`: the Python package, the image names, the Kubernetes
+namespaces and objects, and the Google Cloud resources this guide creates. Use them as written.
 
 **The same file is in both repositories, at `deploy/GCP.md`**: the backend (the service) and the console. Follow either
 copy. File paths in this guide are in the backend repository, except those under `deploy/console/` and those this guide
@@ -499,7 +501,7 @@ section 10.
 ### 4.4 The backend's Google service account
 
 ```sh
-gcloud iam service-accounts create agentfactory-backend --display-name="Agent Factory backend"
+gcloud iam service-accounts create agentfactory-backend --display-name="Saros backend"
 
 gcloud iam service-accounts add-iam-policy-binding $BACKEND_GSA \
     --role roles/iam.workloadIdentityUser \
@@ -850,7 +852,7 @@ gcloud projects add-iam-policy-binding $PROJECT_ID --member=serviceAccount:$BACK
 
 # The IAP access list (optional):
 gcloud iam roles create agentfactoryIapReader --project=$PROJECT_ID \
-    --title="Agent Factory IAP access reader" --description="Reads IAP access lists" \
+    --title="Saros IAP access reader" --description="Reads IAP access lists" \
     --permissions="iap.webServices.getIamPolicy,iap.webTypes.getIamPolicy,iap.web.getIamPolicy" --stage=GA
 gcloud projects add-iam-policy-binding $PROJECT_ID --member=serviceAccount:$BACKEND_GSA \
   --role=projects/$PROJECT_ID/roles/agentfactoryIapReader --condition=None
@@ -870,7 +872,7 @@ annotation. In Kubernetes it holds no Role; the Role in `sandbox.yaml` is bound 
 ### 5.3 The console: `CONSOLE_GSA`
 
 ```sh
-gcloud iam service-accounts create agentfactory-console --display-name="Agent Factory console"
+gcloud iam service-accounts create agentfactory-console --display-name="Saros console"
 ```
 
 No roles. The console calls no Google API. The person or pipeline that deploys it needs `roles/run.developer`,
@@ -1424,7 +1426,7 @@ zone for the one host name, with the record at its apex. A private zone for the 
 name under it inside the VPC, and hide your other hosts there.
 
 ```sh
-gcloud dns managed-zones create agentfactory-api --description="Agent Factory machine route" \
+gcloud dns managed-zones create agentfactory-api --description="Saros machine route" \
   --dns-name=$API_HOST. --networks=$NETWORK --visibility=private
 gcloud dns record-sets create $API_HOST. --zone=agentfactory-api --type=A --ttl=300 --rrdatas=GATEWAY_IP
 ```

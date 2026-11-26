@@ -215,7 +215,7 @@ const TITLES: Record<string, string> = {
   models: "Models",
   registry: "Tool servers",
   tools: "Tool registry",
-  mcp: "Agent Factory as an MCP server",
+  mcp: "Saros as an MCP server",
   sources: "Connected sources",
   peers: "Peers",
   agents: "Third-party agents",
@@ -545,7 +545,7 @@ function ConfigurationTabs() {
           gates: data.gates,
           models: data.models.map((m) => m.id),
           defaultModel: data.defaultModel,
-          agentFactoryMcp: { endpoint: machineLine(machine, MCP_PATH, mcpUnreachable), tools: mcp ? mcp.tools.map((t) => t.name) : mcpEndpoint ? "described at the endpoint" : "not listed: the server answers no description while no machine address is set" },
+          sarosMcp: { endpoint: machineLine(machine, MCP_PATH, mcpUnreachable), tools: mcp ? mcp.tools.map((t) => t.name) : mcpEndpoint ? "described at the endpoint" : "not listed: the server answers no description while no machine address is set" },
           toolServers: registry.servers
             ? {
                 twoPersonApproval: registry.twoPerson,

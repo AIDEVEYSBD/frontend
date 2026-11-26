@@ -1,7 +1,7 @@
 import { ApplicationDashboard } from "@/components/application-dashboard";
 
 export const metadata = {
-  title: "Application — Agent Factory",
+  title: "Application — Saros",
   description: "Volume, cost, latency, refusals, screened hits and the model mix of one governed application, with every conversation replayable.",
 };
 

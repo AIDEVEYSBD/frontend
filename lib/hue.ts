@@ -17,7 +17,7 @@ const RULES: [RegExp, Hue][] = [
   [/approv|gate|sign|person|people|human|queue/i, "amber"],
   [/risk|threat/i, "red"],
   [/knowledge|source|corpus|retriev|pipeline|document|admission|telemetry/i, "violet"],
-  [/identit|credential|key|vault|ingress|mcp|attached|agent factory as|audit|privilege/i, "teal"],
+  [/identit|credential|key|vault|ingress|mcp|attached|saros as|audit|privilege/i, "teal"],
   [/latency|observ|trace|routing|peer|roster|ledger|journal/i, "indigo"],
   [/artifact|output|report/i, "violet"],
   [/activity|health/i, "blue"],
