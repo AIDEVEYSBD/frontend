@@ -16,7 +16,6 @@ import {
   fmtMs,
   leaders,
   needsOf,
-  NotIncludedNote,
   plural,
   rankAgents,
   rankPeople,
@@ -155,7 +154,6 @@ function Overview() {
           {gatesError}. The gates below are as it last answered.
         </Banner>
       )}
-      {f && <NotIncludedNote list={f.not_included} />}
       {f && !latest && (
         <p className="rounded-md border border-line bg-surface px-3 py-2 text-[12px] leading-[1.5] text-dim">No agent has run on this deployment yet. The figures and lists below fill in from the first run.</p>
       )}

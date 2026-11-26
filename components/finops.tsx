@@ -203,15 +203,6 @@ export function FinOps() {
         </header>
 
         {error && <Failure what="The costs could not be read" message={error} />}
-        {d && d.not_included.length > 0 && (
-          <div className="rounded-md border border-warn/40 bg-surface px-4 py-2.5 text-[12px] leading-[1.55] text-warn">
-            {d.not_included.map((n) => (
-              <p key={n.what}>
-                <span className="font-medium">Not in any figure: {n.what}.</span> {n.why}.
-              </p>
-            ))}
-          </div>
-        )}
 
         {d && s && (
           <>
@@ -624,11 +615,6 @@ function PlanningView({ plan, error, name }: { plan: Planning | null; error: str
       <div className="flex flex-col gap-1 border-t border-line px-3 py-2 text-[10.5px] leading-[1.5] text-faint">
         <span>{plan.basis}</span>
         {plan.unpriced_models.length > 0 && <span className="text-warn">Given no figure, because no price is set: {plan.unpriced_models.join(", ")}.</span>}
-        {!plan.could_take_it.built && (
-          <span>
-            <span className="font-medium text-dim">Not built: whether a smaller model could take a step.</span> {plan.could_take_it.why}
-          </span>
-        )}
       </div>
     </div>
   );

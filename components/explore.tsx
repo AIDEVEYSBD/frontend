@@ -288,7 +288,6 @@ function Explore() {
             meta={[
               `${count(first.total)} ${first.total === 1 ? "entry" : "entries"}, newest first`,
               first.visible === "every run" ? "" : `only ${first.visible}`,
-              ...first.not_included.map((n) => `${n.what} are not included: ${n.why}`),
             ]
               .filter(Boolean)
               .join(" · ")}

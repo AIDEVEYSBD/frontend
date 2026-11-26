@@ -128,24 +128,6 @@ async function readFigures(win: Win): Promise<EstateFigures> {
   return body;
 }
 
-/**
- * The model calls the platform's figures leave out (`not_included`), each with
- * why: shown above every spend figure, so a total never reads as the whole
- * when the platform says it is not. Renders nothing when the answer names none.
- */
-export function NotIncludedNote({ list }: { list: readonly { what: string; why: string }[] | undefined }) {
-  if (!list?.length) return null;
-  return (
-    <div className="rounded-md border border-warn/40 bg-surface px-4 py-2.5 text-[12px] leading-[1.55] text-warn">
-      {list.map((n) => (
-        <p key={n.what}>
-          <span className="font-medium">Not in any spend figure: {n.what}.</span> {n.why}
-        </p>
-      ))}
-    </div>
-  );
-}
-
 export interface Figures {
   data: EstateFigures | null;
   error: string;
