@@ -798,6 +798,8 @@ function AgentForm({ edit, saved, onSaved }: { edit: EditableDocument; saved: Ag
 function AgentConfig({ id }: { id: string }) {
   const [state, setState] = useState<{ edit: EditableDocument; n: number } | null>(null);
   const [error, setError] = useState("");
+  // An attached (SDK) agent has no saved definition: the agents door answers 404, so its page points to its runs and settings instead.
+  const [attached, setAttached] = useState<{ name: string } | null>(null);
   const [saved, setSaved] = useState<AgentSaved | null>(null);
   const [tick, setTick] = useState(0);
 
@@ -809,7 +811,17 @@ function AgentConfig({ id }: { id: string }) {
         setError("");
         setState({ edit, n: tick });
       })
-      .catch((e: Error) => live && setError(e.message || "the agents door did not answer"));
+      .catch((e: Error) => {
+        if (!live) return;
+        setError(e.message || "the agents door did not answer");
+        fetch("/api/attached", { cache: "no-store" })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((j: { agents?: { id: string; name?: string; detached_at?: string | null }[] } | null) => {
+            const found = j?.agents?.find((a) => a.id === id && !a.detached_at);
+            if (live && found) setAttached({ name: found.name || found.id });
+          })
+          .catch(() => undefined);
+      });
     return () => {
       live = false;
     };
@@ -821,7 +833,19 @@ function AgentConfig({ id }: { id: string }) {
         <AgentHeader tab="configuration" id={id} agent={null}>
           {ABOUT}
         </AgentHeader>
-        {error ? (
+        {attached ? (
+          <Banner
+            title={`${attached.name} is an attached third-party agent`}
+            action={
+              <span className="flex gap-2">
+                <Button size="sm" variant="solid" tone="neutral" href={`/runs?agent=${encodeURIComponent(id)}`}>Its runs</Button>
+                <Button size="sm" variant="solid" tone="neutral" href="/configuration?tab=connections">Its access and limits</Button>
+              </span>
+            }
+          >
+            It runs outside Saros through the SDK; its runs and findings are recorded here.
+          </Banner>
+        ) : error ? (
           <Banner tone="err" title="This agent could not be read" action={<Button size="sm" variant="solid" tone="neutral" href="/agents">All agents</Button>}>
             {error}
           </Banner>
