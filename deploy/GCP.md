@@ -218,6 +218,29 @@ gcloud compute routers nats create agentfactory-nat --router=agentfactory-router
 Sources: [Cloud Router](https://docs.cloud.google.com/network-connectivity/docs/router/how-to/create-router-vpc-network),
 [Cloud NAT](https://docs.cloud.google.com/nat/docs/set-up-manage-network-address-translation).
 
+**Model Armor from private nodes.** Private Google Access carries `*.googleapis.com` and `www.gstatic.com`, but not the
+regional endpoints (`*.rep.googleapis.com`): without Cloud NAT, a call to `modelarmor.LOCATION.rep.googleapis.com`
+times out, and with `SCREENER_UNAVAILABLE=block` every model call is then refused. With Cloud NAT the public endpoint
+should answer over NAT; that was not tested. Without NAT, or under VPC Service Controls, give it a Private Service
+Connect regional endpoint and a private DNS zone that only your VPC sees:
+
+```sh
+gcloud services enable networkconnectivity.googleapis.com --project=$PROJECT_ID
+gcloud network-connectivity regional-endpoints create agentfactory-modelarmor --region=$GCP_REGION \
+  --network=projects/$PROJECT_ID/global/networks/$NETWORK \
+  --subnetwork=projects/$PROJECT_ID/regions/$GCP_REGION/subnetworks/gke-nodes \
+  --target-google-api=modelarmor.$GCP_REGION.rep.googleapis.com
+MA_IP=$(gcloud network-connectivity regional-endpoints describe agentfactory-modelarmor --region=$GCP_REGION \
+  --format='value(address)')
+gcloud dns managed-zones create agentfactory-modelarmor --dns-name=modelarmor.$GCP_REGION.rep.googleapis.com. \
+  --networks=$NETWORK --visibility=private --description="Model Armor through Private Service Connect"
+gcloud dns record-sets create modelarmor.$GCP_REGION.rep.googleapis.com. --rrdatas=$MA_IP --type=A --ttl=300 \
+  --zone=agentfactory-modelarmor
+```
+
+Source: [regional endpoints through Private Service Connect](https://docs.cloud.google.com/vpc/docs/access-regional-google-apis-endpoints).
+A first real run used exactly this, and preflight's screener check then passed without NAT.
+
 The sandbox nodes pull `SANDBOX_IMAGE` (section 4.3). Mirror it into Artifact Registry so that private nodes do not
 need Docker Hub.
 
@@ -258,10 +281,10 @@ Sources: [create a cluster](https://docs.cloud.google.com/alloydb/docs/cluster-c
 - `--password` sets the password of AlloyDB's `postgres` user ("Initial postgres user password to set up during
   cluster creation", [flags](https://docs.cloud.google.com/sdk/gcloud/reference/alloydb/clusters/create)), which you
   need once in 3.2. It is made in the shell and never written into a file.
-- **Postgres 16** is the version the backend was rehearsed on, with pgvector 0.8.6. AlloyDB's own default version is
-  newer, and its pgvector is `0.8.5.google-1`
-  ([extensions](https://docs.cloud.google.com/alloydb/docs/reference/extensions)). Neither has been run against this
-  backend.
+- **Postgres 16** is the version the backend was rehearsed on, with pgvector 0.8.6. On AlloyDB for PostgreSQL 16 the
+  extension reported `0.8.7.google-1` (November 2026), and every migration applied on it. AlloyDB's own default version
+  is newer and has not been run against this backend
+  ([extensions](https://docs.cloud.google.com/alloydb/docs/reference/extensions)).
 - Private Service Connect is an alternative to private services access. Replace `--network` with
   `--enable-private-service-connect` and follow the cluster page.
 
@@ -403,6 +426,27 @@ gcloud container clusters get-credentials $CLUSTER --location=$GCP_REGION --proj
 
 Add your organization's private-cluster and node service account flags. Every node pool that runs the backend must
 use the GKE metadata server (`--workload-metadata=GKE_METADATA`; Google's page shows the flag for pools that lack it).
+
+Check the organization policies that apply to the project before you create the cluster
+(`gcloud resource-manager org-policies describe constraints/NAME --project=$PROJECT_ID --effective`). Two that a
+first real run met:
+
+- `constraints/compute.requireShieldedVm`: GKE does not turn Secure Boot on by default, so every node fails to start
+  ("Secure Boot is not enabled in the 'shielded_instance_config' field") and the cluster ends in `ERROR`. Add
+  `--shielded-secure-boot --shielded-integrity-monitoring` to the cluster and to every node pool, the sandbox pool (4.2)
+  included.
+- `constraints/compute.vmExternalIpAccess`: nodes may not have external addresses. Add `--enable-private-nodes`;
+  outbound traffic then needs Cloud NAT (2.4). Google APIs are reached through Private Google Access on the subnet.
+
+A cluster created with `--enable-private-nodes` has authorized networks switched on with no network listed, so
+`kubectl` from outside the VPC hangs. Either list your administrators' ranges
+(`--master-authorized-networks`), or use the DNS-based endpoint, which admits only callers with IAM permission on the
+cluster:
+
+```sh
+gcloud container clusters update $CLUSTER --location=$GCP_REGION --enable-dns-access
+gcloud container clusters get-credentials $CLUSTER --location=$GCP_REGION --project=$PROJECT_ID --dns-endpoint
+```
 
 Sources: [`clusters create` reference](https://docs.cloud.google.com/sdk/gcloud/reference/container/clusters/create),
 [Workload Identity Federation for GKE](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/workload-identity),
