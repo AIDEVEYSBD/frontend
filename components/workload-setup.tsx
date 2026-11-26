@@ -182,9 +182,9 @@ export function WorkloadSetup({
   else for (const p of problems) reasons.push(p.problem);
 
   const lines: Record<SetupStep, string> = {
-    inputs: !form.open ? "Not open yet" : required.length ? `${count(given)} of ${count(required.length)} required given` : form.inputs.length ? "Nothing required" : "Takes no input",
+    inputs: !form.open ? (reading.attached ? "Taken by the agent itself" : "Not open yet") : required.length ? `${count(given)} of ${count(required.length)} required given` : form.inputs.length ? "Nothing required" : "Takes no input",
     gates: `${gates.gates.length === 0 ? "No gate" : gates.gates.length === 1 ? "1 gate" : `${count(gates.gates.length)} gates`}${gates.from === "default" ? ", from the requirements" : ""}`,
-    limits: reading.agent ? `The limits of ${reading.agent}` : "Agent not named yet",
+    limits: reading.agent ? `The limits of ${reading.agent}` : reading.attached ? `The policy of ${reading.attached}` : "Agent not named yet",
     review: canStart ? "Ready to start" : "Not ready to start",
     "first-run": run ? "Following a run" : "No run started yet",
   };
@@ -220,7 +220,16 @@ export function WorkloadSetup({
       <div className="flex min-w-0 flex-col gap-4">
         {step === "inputs" && (
           <Card title="What it runs on" hue="source" meta={form.from === "door" ? "as the control plane names them" : "the default set-up"}>
-            {!form.open && <WhyDefault reading={reading} what="This is the form the workload is set up with, shown so you can see what will be asked. It opens once the workload is available." />}
+            {!form.open && (
+              <WhyDefault
+                reading={reading}
+                what={
+                  reading.attached
+                    ? "This is the form the workload is set up with, shown for reference: the attached agent that runs it takes its input in the runs it opens itself, so the form does not open here."
+                    : "This is the form the workload is set up with, shown so you can see what will be asked. It opens once the workload is available."
+                }
+              />
+            )}
             {form.inputs.length === 0 ? (
               <p className="text-[12.5px] leading-[1.6] text-dim">{form.from === "door" ? "This workload takes no input: it can be started as it is." : "The control plane has not named what this workload takes."}</p>
             ) : (
@@ -245,7 +254,11 @@ export function WorkloadSetup({
                 <GateRows gates={gates.gates} />
               ) : (
                 <p className="rounded-md border border-line bg-canvas px-3 py-2.5 text-[12px] leading-[1.55] text-dim">
-                  {gates.from === "door" ? "The control plane lists no gate for this workload: a run goes from start to finish without waiting for a person." : "The requirements name no gate before or during a run of this workload. The control plane lists any gate the deployed agent carries."}
+                  {gates.from === "door" && reading.attached
+                    ? "The attached agent's approved policy holds none of its tool calls for a person. It can still stop its own run for a person (a gate it opens through the SDK, answered in Approvals), and a destructive call always waits for a platform admin."
+                    : gates.from === "door"
+                      ? "The control plane lists no gate for this workload: a run goes from start to finish without waiting for a person."
+                      : "The requirements name no gate before or during a run of this workload. The control plane lists any gate the deployed agent carries."}
                 </p>
               )}
               {gates.from === "default" && gates.gates.length > 0 && <Note>{fromDefault}</Note>}
@@ -277,10 +290,17 @@ export function WorkloadSetup({
 
         {step === "limits" && (
           <Card title="Limits" hue="budget" meta={reading.agent ? "the agent's own" : undefined}>
-            <p className="max-w-[86ch] text-[12.5px] leading-[1.6] text-dim">
-              A run of this workload is held to the budget and the bounds of the agent that runs it. They are set on the agent, not here, and they apply to every run it makes. A run that reaches its cost budget pauses for a
-              person to decide; a run that reaches another bound stops. Its journal names which.
-            </p>
+            {reading.attached ? (
+              <p className="max-w-[86ch] text-[12.5px] leading-[1.6] text-dim">
+                A run of this workload is held to the policy of the attached agent that runs it. The platform refuses a model call through its gateway past the requests per minute, tokens per day or cost per day the policy
+                sets, and refuses a new run past a budget that applies to it.
+              </p>
+            ) : (
+              <p className="max-w-[86ch] text-[12.5px] leading-[1.6] text-dim">
+                A run of this workload is held to the budget and the bounds of the agent that runs it. They are set on the agent, not here, and they apply to every run it makes. A run that reaches its cost budget pauses for a
+                person to decide; a run that reaches another bound stops. Its journal names which.
+              </p>
+            )}
             {reading.agent ? (
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-line bg-canvas px-3 py-2.5">
                 <span className="text-[12px] text-dim">Run by</span>
@@ -288,6 +308,16 @@ export function WorkloadSetup({
                 <span className="grow" />
                 <Button size="sm" variant="solid" tone="neutral" href={`/agent?id=${encodeURIComponent(reading.agent)}`}>
                   Open the agent&rsquo;s configuration
+                </Button>
+              </div>
+            ) : reading.attached ? (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-line bg-canvas px-3 py-2.5">
+                <span className="max-w-[86ch] text-[12px] leading-[1.55] text-dim">
+                  Run by the attached agent <span className="font-mono text-[11px] break-all">{reading.attached}</span>. Its limits (requests per minute, tokens and cost per day) are in its policy; once its attachment is approved, they change only through a reviewed policy change.
+                </span>
+                <span className="grow" />
+                <Button size="sm" variant="solid" tone="neutral" href="/configuration?tab=connections#agents">
+                  Open Third-party agents
                 </Button>
               </div>
             ) : (
@@ -321,7 +351,13 @@ export function WorkloadSetup({
               {gates.gates.length ? (
                 <GateRows gates={gates.gates} />
               ) : (
-                <Note>{gates.from === "door" ? "The control plane lists no gate: the run does not wait for a person." : "The requirements name no gate for this workload."}</Note>
+                <Note>
+                  {gates.from === "door" && reading.attached
+                    ? "The attached agent's approved policy holds none of its tool calls for a person; the agent can still open a gate of its own."
+                    : gates.from === "door"
+                      ? "The control plane lists no gate: the run does not wait for a person."
+                      : "The requirements name no gate for this workload."}
+                </Note>
               )}
               {gates.from === "default" && gates.gates.length > 0 && <Note>{fromDefault}</Note>}
             </div>
@@ -334,7 +370,7 @@ export function WorkloadSetup({
                     Held to the budget and bounds of <AgentLink agent={reading.agent} />.
                   </>
                 ) : (
-                  "Held to the budget and bounds of the agent that runs it, once one is named."
+                  reading.attached ? `Held to the limits in the policy of the attached agent ${reading.attached}, in the runs it opens itself.` : "Held to the budget and bounds of the agent that runs it, once one is named."
                 )}
               </p>
             </div>
@@ -344,7 +380,7 @@ export function WorkloadSetup({
                 <Button variant="solid" tone="ink" permission="run" disabled={!canStart} loading={busy} onClick={start}>
                   Start the run
                 </Button>
-                <span className="text-[12px] text-dim">{canStart ? `Starts a run of ${reading.agent} on what is listed above.` : "Start is not available yet."}</span>
+                <span className="text-[12px] text-dim">{canStart ? `Starts a run of ${reading.agent} on what is listed above.` : reading.attached ? "A run of this workload is not started from this console." : "Start is not available yet."}</span>
               </span>
               {!canStart && reasons.length > 0 && (
                 <ul className="flex flex-col gap-1" data-start-reasons>

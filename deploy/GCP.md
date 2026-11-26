@@ -1579,17 +1579,24 @@ The Workloads page (`/workloads`) shows the four workloads the console knows: `s
 | `WORKLOAD_URLS` | JSON, workload id → the http(s) address of that workload's own console. A workload named here is one the deployment offers. One not named shows as not offered. |
 | `WORKLOAD_AGENTS` | JSON, workload id → the id of the agent that runs it. A workload not named here is run by the agent with the workload's own id. `threat_hunt` must be named, because agent ids cannot contain `_`. |
 
+The agent named may also be an **attached agent** (Configuration → Connections → Third-party agents): its own code,
+running outside the platform and using the SDK (`sdk/`). It runs the workload: the runs it opens are filed under the
+workload, and so are the findings it records with `finding.record`, once that tool is in its grants. The platform
+never starts it; a start asked for from the console is refused, saying so.
+
 Each offered workload shows a status, read from the database on every load:
 
-- `not_deployed`: its agent has no deployed version;
+- `not_deployed`: its agent has no deployed version (and is not an attached agent);
+- for an attached agent: `attachment_awaiting_approval` (a second person has not approved it), `attachment_detached`,
+  `attachment_blocked`, or `locked_down`;
 - `no_use_case`;
 - `use_case_draft`, or `use_case_awaiting_approval`;
-- `available`: its agent is deployed and its use case approved by a second person.
+- `available`: its agent is deployed (or attached and approved) and its use case approved by a second person.
 
 **Adding agents is out of scope for this build, and the backend repository ships no agent definitions for the four
 workloads.** On a new deployment, every offered workload therefore reads `not_deployed` until the agents that run them
-are delivered and deployed. The four workload consoles are separate products, and the backend does not check their
-addresses.
+are delivered and deployed, or attached and approved. The four workload consoles are separate products, and the backend
+does not check their addresses.
 
 ---
 

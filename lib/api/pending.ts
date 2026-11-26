@@ -473,11 +473,29 @@ export interface WorkloadOffer {
    * refused by: `available` only when its agent is deployed and not retired
    * and its use case is registered and approved; otherwise `not_deployed`,
    * `no_use_case`, `use_case_<state>` (`use_case_draft`,
-   * `use_case_awaiting_approval`) or `not_readable`, with `reason`.
+   * `use_case_awaiting_approval`) or `not_readable`, with `reason`. For an
+   * attached agent, `available` needs its attachment approved by a second
+   * person, not detached or blocked, no lockdown and the use case approved;
+   * otherwise `attachment_detached`, `attachment_awaiting_approval`,
+   * `attachment_blocked`, `locked_down` or a use case status.
    */
-  status: "available" | "not_deployed" | "no_use_case" | "not_readable" | `use_case_${string}`;
+  status:
+    | "available"
+    | "not_deployed"
+    | "no_use_case"
+    | "not_readable"
+    | "attachment_detached"
+    | "attachment_awaiting_approval"
+    | "attachment_blocked"
+    | "locked_down"
+    | `use_case_${string}`;
   /** Why it is not available, in a sentence; null when it is. */
   reason?: string | null;
+  /**
+   * The attached agent that runs it, when one does: written and run outside the platform, it opens its own runs through
+   * the SDK, so no run is started from this console. Absent when an agent saved on the platform runs it.
+   */
+  attached?: string;
   /**
    * How each kind is sent in the run's input: `dataset` as a DatasetRef, `date_range` as
    * `{from, to}` in UTC ISO time, `list` as an array of strings, `choice` and `text` as a

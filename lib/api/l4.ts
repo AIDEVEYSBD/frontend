@@ -604,7 +604,9 @@ reply = client.chat.completions.create(
 )
 print(reply.choices[0].message.content)
 # Refusals: 400 screened or a leaked system prompt, 402 budget, 403 a model the policy does not list
-# or not cleared for its data class, 423 blocked, 429 rate limit (with Retry-After). Streaming and tools are not built.`,
+# or not cleared for its data class, 423 blocked, 429 rate limit (with Retry-After).
+# tools (type function) and stream=True pass through; each tool call and tool result is screened and journalled, and a
+# stream arrives whole, after screening, not token by token. n above 1 and /responses are not built.`,
 
   typescript: (c: SnippetContext) => `import OpenAI from "openai";
 
@@ -620,5 +622,7 @@ const reply = await client.chat.completions.create(
 );
 console.log(reply.choices[0].message.content);
 // Refusals: 400 screened or a leaked system prompt, 402 budget, 403 a model the policy does not list
-// or not cleared for its data class, 423 blocked, 429 rate limit (with Retry-After). Streaming and tools are not built.`,
+// or not cleared for its data class, 423 blocked, 429 rate limit (with Retry-After).
+// tools (type function) and stream: true pass through; each tool call and tool result is screened and journalled, and a
+// stream arrives whole, after screening, not token by token. n above 1 and /responses are not built.`,
 } as const;

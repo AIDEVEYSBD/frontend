@@ -148,7 +148,8 @@ export function workloadHref(id: string, q: { tab?: WorkloadTab; step?: SetupSte
 
 /* ═══════════════════ what the door says ═══════════════════ */
 
-export type OfferState = "reading" | "pending" | "error" | "available" | "not_deployed" | "not_listed";
+/** `runs_outside`: an attached agent runs it, written and run outside the platform; it opens its own runs, so none is started here. */
+export type OfferState = "reading" | "pending" | "error" | "available" | "not_deployed" | "not_listed" | "runs_outside";
 export type OfferTone = "neutral" | "ok" | "err" | "queue";
 
 export interface OfferReading {
@@ -161,6 +162,8 @@ export interface OfferReading {
   short: string;
   offer: WorkloadOffer | null;
   agent: string;
+  /** The attached agent that runs it, when one does (the door's `attached`); empty otherwise. */
+  attached: string;
   door?: Door;
 }
 
@@ -171,7 +174,7 @@ const words = (raw: string): string => {
 
 /** One workload's state, from the workloads door's answer. */
 export function readOffer(answer: Answer<WorkloadList> | null, id: string): OfferReading {
-  const none = { offer: null, agent: "" };
+  const none = { offer: null, agent: "", attached: "" };
   if (answer === null) return { state: "reading", label: "Reading", tone: "neutral", why: "The control plane has not answered yet.", short: "", ...none };
   if (answer.state === "pending") return { state: "pending", label: "Not built", tone: "neutral", why: "The platform does not answer the workloads address yet, so no agent is named to run it.", short: "No agent is named to run it yet.", door: answer.door, ...none };
   if (answer.state === "error") return { state: "error", label: "Could not be read", tone: "err", why: `The workloads could not be read: ${answer.message}`, short: "Its state could not be read.", ...none };
@@ -179,16 +182,22 @@ export function readOffer(answer: Answer<WorkloadList> | null, id: string): Offe
   const offer = list.find((w) => w && w.id === id) ?? null;
   if (!offer) return { state: "not_listed", label: "Not offered", tone: "neutral", why: "The control plane does not list this workload on this deployment.", short: "Not listed by the control plane.", ...none };
   const agent = typeof offer.agent === "string" ? offer.agent : "";
+  const attached = typeof offer.attached === "string" ? offer.attached : "";
+  if (offer.status === "available" && attached) {
+    // An attached agent runs outside the platform and opens its own runs through the SDK: the platform refuses a start of it, so none is offered here.
+    const why = `Run by the attached agent ${attached}, written and run outside the platform: it opens its own runs through the SDK, so a run is not started from this page. Its runs and findings are filed under this workload.`;
+    return { state: "runs_outside", label: "Attached agent", tone: "ok", why, short: why, offer, agent: "", attached };
+  }
   if (offer.status === "available") {
     // `available` means the workload's agent is deployed. The platform does not name that agent, so a run is not started from this page; chat starts one by the workload's name.
-    if (!agent) return { state: "not_deployed", label: "Deployed", tone: "ok", why: "The platform says this workload's agent is deployed and does not name the agent, so a run is not started from this page.", short: "Its agent is deployed; it is not named here.", offer, agent };
-    return { state: "available", label: "Available", tone: "ok", why: "", short: "", offer, agent };
+    if (!agent) return { state: "not_deployed", label: "Deployed", tone: "ok", why: "The platform says this workload's agent is deployed and does not name the agent, so a run is not started from this page.", short: "Its agent is deployed; it is not named here.", offer, agent, attached };
+    return { state: "available", label: "Available", tone: "ok", why: "", short: "", offer, agent, attached };
   }
   // Not available: the status in words, and the platform's own reason (no deployed agent, no use case, a use case not yet approved).
   const said = typeof offer.reason === "string" && offer.reason.trim() ? offer.reason.trim() : "";
   const known = offer.status === "not_deployed";
   const why = said ? `${said[0].toUpperCase()}${said.slice(1)}.` : known ? "No agent is deployed to run this workload yet." : `The control plane reports this workload as ${words(String(offer.status)).toLowerCase() || "not available"}, and gives no reason.`;
-  return { state: "not_deployed", label: known ? "Not deployed" : words(String(offer.status).replace(/^use_case_/, "use case ")) || "Not available", tone: "queue", why, short: why, offer, agent };
+  return { state: "not_deployed", label: known ? "Not deployed" : words(String(offer.status).replace(/^use_case_/, "use case ")) || "Not available", tone: "queue", why, short: why, offer, agent, attached };
 }
 
 /** The offers the door lists beyond the four the product knows. */
@@ -204,10 +213,10 @@ export function formOf(profile: WorkloadProfile, r: OfferReading): { inputs: Wor
   return { inputs: profile.inputs, from: "default", open: false };
 }
 
-/** The gates: the door's once it names them, the requirements' until then. */
+/** The gates: the door's once it names them, the requirements' until then. An attached agent's are its approved policy's. */
 export function gatesOf(profile: WorkloadProfile, r: OfferReading): { gates: WorkloadGate[]; from: "door" | "default" } {
   const said = r.offer && Array.isArray(r.offer.gates) ? r.offer.gates.filter((g) => g && typeof g.name === "string") : null;
-  if (said && (said.length > 0 || r.state === "available")) return { gates: said, from: "door" };
+  if (said && (said.length > 0 || r.state === "available" || r.state === "runs_outside")) return { gates: said, from: "door" };
   return { gates: profile.gates, from: "default" };
 }
 

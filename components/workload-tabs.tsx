@@ -208,7 +208,8 @@ export function WorkloadFindings({ profile, selected }: { profile: WorkloadProfi
 
 export function WorkloadReport({ profile, reading }: { profile: WorkloadProfile; reading: OfferReading }) {
   const router = useRouter();
-  const agent = reading.agent;
+  // The agent whose deliverables are the workload's reports: the saved agent the door names, or the attached agent that runs it.
+  const agent = reading.agent || reading.attached;
   const [got, setGot] = useState<{ agent: string; list: DeliverableList | null; error: string } | null>(null);
   const [tick, setTick] = useState(0);
 

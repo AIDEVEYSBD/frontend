@@ -217,7 +217,7 @@ POST ${c.origin}${PATHS.ingest}/<run id>/finish   { "state": "done", "result": {
   },
   {
     title: "Route its model calls through the gateway",
-    body: "Point the agent's OpenAI-compatible base URL at the gateway and give it the key. Every completion is screened, priced at the configured price and recorded; send X-Agentfactory-Run to record it in the run. The model may be auto, a tier or a model its policy lets it name. Streaming and tool calling through the gateway are not built.",
+    body: "Point the agent's OpenAI-compatible base URL at the gateway and give it the key. Every completion is screened, priced at the configured price and recorded; send X-Agentfactory-Run to record it in the run. The model may be auto, a tier or a model its policy lets it name. Tool calling and streaming pass through: each tool call the model proposes and each tool result is screened and recorded in the run, a tool result marks the run untrusted, and a stream arrives whole, after screening. A tool the agent runs itself is outside the broker and cannot be gated: route sensitive tools through the broker.",
     snippet: (c) => `# OpenAI SDKs and anything that honours these
 OPENAI_BASE_URL=${c.origin}${PATHS.gateway}
 OPENAI_API_KEY=${KEY(c)}
