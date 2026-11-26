@@ -948,13 +948,23 @@ From that base, the backend makes these calls:
   only. Check each model's page before you choose. Chat, embeddings and the model lists all use the one location
   `REGION` names, so the embedding model must be served there too.
 
-**Publishers.** Every chat call goes to `…/endpoints/openapi/chat/completions`. Google documents Gemini there, and some
-open models served as a service. It documents Anthropic's models on Vertex AI only through `rawPredict` with
-Anthropic's own request format
-([Claude on Vertex AI](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/partner-models/claude/use-claude)).
-A model listed under a publisher is therefore not proof that it answers here. Set `VERTEX_PUBLISHERS=google`, and add
-another publisher only after one of its models has answered a run. Partner and open models must first be enabled on
-their Model Garden card.
+**Publishers.** Chat calls go to `…/endpoints/openapi/chat/completions`, where Google documents Gemini, except Claude.
+A Claude model (`anthropic/claude-opus-5-5`, `anthropic/claude-sonnet-5-5`) is served through the Claude connector:
+`…/publishers/anthropic/models/{model}:rawPredict` with Anthropic's Messages API, at the same host and location, as
+the same identity ([Claude on Vertex AI](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/partner-models/claude/use-claude)).
+It answers 404 until Claude is enabled for the project: open the model's card in Model Garden and click **Enable**
+(this needs the Consumer Procurement Entitlement Manager role; the backend's identity needs `aiplatform.endpoints.predict`,
+which Vertex AI User holds). Claude Opus 5.5 and Sonnet 5.5 are served on `global` and the `us` and `eu` multi-regions,
+not on a single region. Add `anthropic` to `VERTEX_PUBLISHERS` to list them.
+
+Other publishers are called in the form Google documents for each (`vertex_form` in `providers/endpoints.py`):
+the open models served as a service (`openai/gpt-oss-120b-maas`, `deepseek-ai/…-maas`, `zai-org/…-maas`,
+`meta/llama-4-…-maas`) and xAI (`xai/grok-4.7`) on the OpenAI-compatible endpoint; Mistral
+(`mistralai/mistral-medium-3`) through `rawPredict`, at `us-central1` or `europe-west4` only; Muse models from Meta
+(`meta/muse-wonder-1.0`, `global` only) and OpenAI's partner models (`openai/gpt-6.1-sol`, Private Preview) through
+their Responses API. Each must be enabled on its Model Garden card first. None of these has been called on Google
+Cloud from this backend, only against a stand-in: add a publisher to `VERTEX_PUBLISHERS` after one of its models has
+answered a run.
 
 ### 6.2 Offering models and setting their prices
 
