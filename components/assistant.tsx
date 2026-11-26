@@ -21,6 +21,8 @@ import { Markdown } from "./markdown";
  * a table whose rows open their records, bars, a chart, steps, links,
  * choices) that the service filled from the reads it made in the same turn;
  * each block names its read in a quiet footer (components/answer-blocks.tsx).
+ * A question about the product itself is answered from the service's
+ * description of Saros and its console (the `describe_platform` read).
  * The drawer sends the conversation and the page's path and title, nothing
  * else. Every question and its answer, or why there is none, is kept by the
  * service with who asked.
@@ -58,6 +60,7 @@ interface Turn { role: "user" | "assistant"; content: string; tools?: string[]; 
 const STORE = "af.assistant";
 const SIZE_STORE = "af.assistant.size";
 const TOOL_LABEL: Record<string, string> = {
+  describe_platform: "reading what Saros is",
   overview: "reading the overview",
   agents: "reading the agents",
   runs: "reading the runs",
@@ -452,12 +455,7 @@ function AssistantPanel({
           )}
           {turns.length === 0 && !cannot && (
             <div className="flex flex-col gap-3">
-              <p className="text-[12px] leading-[1.6] text-dim">
-                Ask about what this console shows. Answers are read from this deployment&rsquo;s records with your
-                permissions, and the assistant changes nothing. Its model is sent only the classes of data it is cleared
-                for: what is above is withheld, and the answer says what. Figures in an answer&rsquo;s blocks are filled by the
-                service from the records it read, and each block says which. Every question and answer is kept with your name.
-              </p>
+              <p className="text-[12px] leading-[1.6] text-dim">Ask about Saros or this deployment. Answers come from its records, read with your permissions.</p>
               <div className="flex flex-col gap-1.5">
                 {page.info.suggested.map((s) => (
                   <AskButton key={s} text={s} onSend={ask} full />

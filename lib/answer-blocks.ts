@@ -5,10 +5,10 @@
  * An answer is `{text, blocks, followups}`. The console assistant's blocks are
  * filled by the service from reads it made in the same turn and name them in
  * `source`; a registered chatbot's blocks hold the chatbot's own words and
- * carry no source. The service validates every block before it sends it; a
- * block it refused arrives in `refused` with the reason. What the assistant's
- * reads withheld from its model, because the model is not cleared for that
- * class of data, arrives in `withheld`, each with the read and the reason.
+ * carry no source. The service validates every block before it sends it. The
+ * assistant's answer also carries, for the record, the blocks the service
+ * refused and what its reads withheld from its model; the service keeps both
+ * with the exchange, and this console reads neither.
  *
  * `answerOf` reads what arrived field by field. A block of a type this console
  * does not draw, or one whose shape is not the vocabulary's, is not dropped:
@@ -67,16 +67,10 @@ export interface ChoicesBlock extends Common {
 }
 export type Block = TilesBlock | TableBlock | BarsBlock | ChartBlock | StepsBlock | LinksBlock | ChoicesBlock;
 
-/** A block the service refused (and the model did not correct), or one this console could not read: shown with the reason. */
+/** A block this console could not read, with the reason: drawn where the block would have been. */
 export interface RefusedBlock {
   block: string;
   reason: string;
-}
-
-/** What a read of the console assistant withheld from its model, or was refused, because the model is not cleared for that class of data. */
-export interface WithheldNote {
-  read: string;
-  note: string;
 }
 
 export interface Answer {
@@ -84,8 +78,6 @@ export interface Answer {
   blocks: Block[];
   followups: string[];
   refused: RefusedBlock[];
-  /** The console assistant only; empty for a chatbot's answer. Absent from a turn kept before this field existed. */
-  withheld?: WithheldNote[];
   /** A chatbot's answer: the reply format the model endpoint took ("json_schema"), or the form it was asked again in when it refused the schema. */
   replyFormat: string | null;
 }
@@ -182,7 +174,7 @@ export function answerOf(v: unknown): Answer | null {
   if (!v || typeof v !== "object") return null;
   const a = rec(v);
   const blocks: Block[] = [];
-  const refused: RefusedBlock[] = arr(a.refused).map((r) => ({ block: str(rec(r).block) || "block", reason: str(rec(r).reason) || "no reason was given" }));
+  const refused: RefusedBlock[] = [];
   arr(a.blocks).forEach((raw, i) => {
     try {
       blocks.push(blockOf(raw));
@@ -190,10 +182,7 @@ export function answerOf(v: unknown): Answer | null {
       refused.push({ block: str(rec(raw).type) || `block ${i + 1}`, reason: `The console could not draw it: ${(e as Error).message}.` });
     }
   });
-  const withheld: WithheldNote[] = arr(a.withheld)
-    .map((w) => ({ read: str(rec(w).read), note: str(rec(w).note) }))
-    .filter((w) => w.note);
-  return { text: str(a.text), blocks, followups: arr(a.followups).map(str).filter(Boolean), refused, withheld, replyFormat: strOrNull(a.reply_format) };
+  return { text: str(a.text), blocks, followups: arr(a.followups).map(str).filter(Boolean), refused, replyFormat: strOrNull(a.reply_format) };
 }
 
 /** The read a source names, in words: its name and the arguments it was made with. */

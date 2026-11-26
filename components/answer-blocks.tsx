@@ -18,10 +18,13 @@ import { readWords, type Answer, type BarsBlock, type Block, type BlockFormat, t
  * blocks hold the chatbot's own words; they are marked as written by it and
  * link nothing but console pages.
  *
- * A block the service refused, or one this console could not read, is shown
- * where it would have been, in red, with the reason. A value that is null in
- * the record is shown as "none" (an amount in US dollars as "no price set",
- * which is what a null cost means on this platform), never as 0.
+ * The console assistant's blocks the service refused, and what its reads
+ * withheld from its model, arrive for the record (the service keeps both with
+ * the exchange) and are not drawn; the text still answers. A block that
+ * arrived and this console could not read is shown where it would have been,
+ * in red, with the reason. A value that is null in the record is shown as
+ * "none" (an amount in US dollars as "no price set", which is what a null cost
+ * means on this platform), never as 0.
  */
 
 const SERIES = ["var(--t-c2)", "var(--t-c5)"];
@@ -357,46 +360,28 @@ export function BlockView({ b, origin, onSend, onNavigate, busy }: { b: Block; o
 /* ═══════════════════ an answer ═══════════════════ */
 
 /**
- * The blocks of one answer, its refusals, what was withheld from the
- * assistant's model for its clearance, and its follow-up questions. The text
- * is drawn by the chat itself, above this. `onSend` sends a choice or a
- * follow-up as the next message; `onNavigate` is called before a link opens a
- * page (the assistant steps its panel back to the small size).
+ * The blocks of one answer, those this console could not read, and its
+ * follow-up questions. The text is drawn by the chat itself, above this. `onSend` sends a choice or a follow-up as the next
+ * message; `onNavigate` is called before a link opens a page (the assistant
+ * steps its panel back to the small size).
  */
 export function AnswerBlocks({ answer, origin, onSend, onNavigate, busy = false, followups = true }: { answer: Answer; origin: Origin; onSend: (text: string) => void; onNavigate?: () => void; busy?: boolean; followups?: boolean }) {
   const fellBack = origin.kind === "chatbot" && answer.replyFormat && answer.replyFormat !== "json_schema";
-  const withheld = answer.withheld ?? [];
-  if (!answer.blocks.length && !answer.refused.length && !withheld.length && !(followups && answer.followups.length) && !fellBack) return null;
+  // Only blocks this console could not read (lib/answer-blocks.ts `answerOf`); the service's refusals are not read.
+  const refused = answer.refused;
+  if (!answer.blocks.length && !refused.length && !(followups && answer.followups.length) && !fellBack) return null;
   return (
     <div className="@container flex min-w-0 flex-col gap-2">
       {origin.kind === "chatbot" && answer.blocks.length > 0 && (
-        <p className="text-[10.5px] leading-[1.45] text-faint">
-          Written by {origin.name}: these blocks are the chatbot&rsquo;s own words, not figures from this platform&rsquo;s records.
-        </p>
+        <p className="text-[10.5px] leading-[1.45] text-faint">Written by {origin.name}, not read from this platform&rsquo;s records.</p>
       )}
-      {fellBack && (
-        <p className="text-[10.5px] leading-[1.45] text-warn">
-          The model endpoint refused the answer&rsquo;s schema and was asked again for plain JSON ({answer.replyFormat}); the service checked the answer all the same.
-        </p>
-      )}
+      {fellBack && <p className="text-[10.5px] leading-[1.45] text-warn">Answered as plain JSON ({answer.replyFormat}), checked by the service.</p>}
       {answer.blocks.map((b, i) => (
         <BlockBoundary key={i} what={`The ${b.type} block`}>
           <BlockView b={b} origin={origin} onSend={onSend} onNavigate={onNavigate} busy={busy} />
         </BlockBoundary>
       ))}
-      {withheld.length > 0 && (
-        <div data-withheld role="note" className="relative flex flex-col gap-1 overflow-hidden rounded-md border border-warn-line bg-surface py-1.5 pr-3 pl-4 text-[11.5px] leading-[1.5]">
-          <span className="absolute inset-y-0 left-0 w-[3px] bg-warn" aria-hidden />
-          <span className="font-semibold text-warn">Withheld from the assistant&rsquo;s model: it is not cleared for this class of data.</span>
-          {withheld.map((w, i) => (
-            <span key={i} className="text-dim">
-              <span className="font-mono text-[10.5px] text-faint">{w.read}</span> {w.note}
-            </span>
-          ))}
-          <span className="text-faint">The answer above does not draw on it; open the record&rsquo;s page to read it.</span>
-        </div>
-      )}
-      {answer.refused.map((r, i) => (
+      {refused.map((r, i) => (
         <div key={`refused-${i}`} role="alert" data-refused={r.block} className="relative overflow-hidden rounded-md border border-err-line bg-surface py-1.5 pr-3 pl-4 text-[11.5px] leading-[1.5]">
           <span className="absolute inset-y-0 left-0 w-[3px] bg-err" aria-hidden />
           <span className="font-semibold text-err">{r.block === "followups" ? "The follow-up questions were refused." : `A ${r.block} block was refused.`}</span> <span className="text-dim">{r.reason}</span>
