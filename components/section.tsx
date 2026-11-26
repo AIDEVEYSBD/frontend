@@ -37,13 +37,13 @@ export function Figures({ items }: { items: { k: string; v: ReactNode }[] }) {
   );
 }
 
-/** A page's title and what it is for. */
-export function PageHeader({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
+/** A page's title and, at most, one short line on what it is for. */
+export function PageHeader({ title, children, action }: { title: string; children?: ReactNode; action?: ReactNode }) {
   return (
     <header className="flex flex-wrap items-end gap-3">
       <div className="flex max-w-[86ch] min-w-0 flex-col gap-1.5">
         <h1 className="text-[24px] font-semibold tracking-[-0.02em]">{title}</h1>
-        <p className="text-[13.5px] leading-relaxed text-dim">{children}</p>
+        {children && <p className="text-[13.5px] leading-relaxed text-dim">{children}</p>}
       </div>
       {action && (
         <>

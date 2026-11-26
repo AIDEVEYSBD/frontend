@@ -112,7 +112,7 @@ export const LICENCE_NOTE: Record<Licence, string> = {
   open: "Redistributable. Held in the index and quoted in full.",
   registration: "Free but account-bound. Held only where your organisation's licence covers it.",
   licensed: "Paid or restricted. Cited by reference; no text is stored.",
-  unstated: "Licence not stated. Nobody said under what licence it is held: an upload, a connector's object, or a source added without one.",
+  unstated: "Licence not stated. No one named a licence for it.",
 };
 
 export const SOURCE_BY_ID = new Map(SOURCES.map((s) => [s.id, s]));

@@ -128,7 +128,7 @@ export function AccessLogView() {
           </Button>
         }
       >
-        Who opened which run, evidence pack, deliverable or document, and when. This is the record of reads; changes and refusals are on the audit trail of the Identity page.
+        Who opened which run, evidence pack, deliverable or document, and when.
       </PageHeader>
 
       <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface px-4 py-3 elev-1">
@@ -186,10 +186,10 @@ export function AccessLogView() {
             setLimit(PAGE);
           }}
         />
-        {personOptions.length === 1 && <span className="text-[11px] text-faint">People appear in the person filter once the identity provider or the log itself names them.</span>}
+        {personOptions.length === 1 && <span className="text-[11px] text-faint">No people to filter by yet.</span>}
         {teamUnbuilt && (
           <span className="flex items-baseline gap-1.5 text-[11px] text-faint">
-            Team: <NotBuiltValue field="events[].who.team" />. Nothing records a person&rsquo;s team, so the log is not filtered or grouped by one.
+            Team: <NotBuiltValue field="events[].who.team" />
           </span>
         )}
       </div>
@@ -262,9 +262,7 @@ export function AccessLogView() {
           <div className="px-4 py-4 empty:hidden">
             {shown === null && <p className="text-[12px] text-faint">Reading the access log…</p>}
             {pending && shown?.state === "pending" && (
-              <NotConnected door={shown.door} compact>
-                The record of who opened which run, evidence pack, deliverable or document, and when. Each open, download and export will be a row here, under the filters above.
-              </NotConnected>
+              <NotConnected door={shown.door} compact />
             )}
             {shown?.state === "error" && <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">The access log could not be read: {shown.message}</p>}
             {shown?.state === "ok" && events.length === 0 && <p className="text-[12px] text-faint">{filtered ? "No access was recorded for these filters." : "No access has been recorded in this time range."}</p>}

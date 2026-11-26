@@ -91,25 +91,22 @@ export function targetPhrase(s: Session): string {
 /** What ending this one session does, in the platform's terms: ending stops the caller from its next request. */
 export function consequence(s: Session): string {
   const who = s.principal.name || s.principal.id;
-  if (s.kind === "person")
-    return `${who} is held out of ${targetPhrase(s)}: every request of theirs is refused until an administrator lets them back. This service cannot end their Google sign-in, and their API keys keep working until revoked.`;
-  if (s.kind === "agent" && s.client.kind === "api_key") return `The API key ${who} is revoked: its next request is refused, and a revoked key cannot be restored. Mint a new key to replace it.`;
-  if (s.kind === "agent" && s.client.kind === "workload")
-    return `Every token issued to ${who} until now is refused. A token its issuer issues later signs it in again; to keep it out, remove its subject from the issuer.`;
-  if (attachedKey(s))
-    return `${who} is an attached agent: its session is not ended here. Block it to refuse its key until it is unblocked, or detach it to revoke its key and stop its runs in flight, both on Configuration, Third-party agents.`;
-  if (s.kind === "tool_server")
-    return `This is a run's record of its calls to ${s.target.name || "a tool server"}: nothing is held open, so there is no session to end. Remove the server from the registry (Configuration, Tools) to stop calls to it.`;
+  if (s.kind === "person") return `${who} is held out of ${targetPhrase(s)} until an administrator lets them back.`;
+  if (s.kind === "agent" && s.client.kind === "api_key") return `The API key ${who} is revoked for good.`;
+  if (s.kind === "agent" && s.client.kind === "workload") return `Every token issued to ${who} until now is refused.`;
+  if (attachedKey(s)) return `${who} is an attached agent: block or detach it on Configuration.`;
+  if (s.kind === "tool_server") return "Nothing is held open; remove the server in Configuration, Tools.";
   return `${who} is stopped from its next request.`;
 }
 
-/** What ending several does: one sentence for each kind of caller among them. */
-export function consequences(rows: Session[]): string[] {
+/** What ending several does, in one line: a few words for each kind of caller among them; "" when none applies. */
+export function consequences(rows: Session[]): string {
   const out: string[] = [];
-  if (rows.some((s) => s.kind === "person")) out.push("People are held out until an administrator lets them back; their API keys keep working until revoked.");
-  if (rows.some((s) => s.kind === "agent" && s.client.kind === "api_key")) out.push("API keys are revoked, for good.");
-  if (rows.some((s) => s.kind === "agent" && s.client.kind === "workload")) out.push("Workload services have every token issued to them until now refused; a later token signs them in again.");
-  return out;
+  if (rows.some((s) => s.kind === "person")) out.push("people are held out");
+  if (rows.some((s) => s.kind === "agent" && s.client.kind === "api_key")) out.push("API keys are revoked");
+  if (rows.some((s) => s.kind === "agent" && s.client.kind === "workload")) out.push("workload tokens are refused");
+  const line = out.join(", ");
+  return line ? `${line[0].toUpperCase()}${line.slice(1)}.` : "";
 }
 
 /** The mark beside a name: a person's initials on the ink, a letter for an agent or a tool server connection. */
@@ -250,9 +247,7 @@ export function SessionPanel({
             {s.client.registration && (
               <Fact k="Client registration">
                 <Mono className="text-[11px] break-all text-fg">{s.client.registration}</Mono>
-                <span className={sub}>
-                  {issuedToClient.length === 1 ? "This is the only live session issued to it." : `${issuedToClient.length.toLocaleString("en-GB")} live sessions are issued to it.`} Ending the registration ends every one of them.
-                </span>
+                <span className={sub}>{issuedToClient.length === 1 ? "The only live session issued to it." : `${issuedToClient.length.toLocaleString("en-GB")} live sessions issued to it.`}</span>
               </Fact>
             )}
             <Fact k="Connected to">
@@ -312,7 +307,7 @@ export function SessionPanel({
               {activity && <span className="tnum text-[11px] text-faint">{activity.length.toLocaleString("en-GB")}</span>}
             </div>
             {activity === undefined && (
-              <p className="px-4 py-3 text-[12px] text-faint">{activityUnbuilt ? "Not built: the platform keeps no record of what a session did. The audit trail on People and agents holds every change a caller made." : "The record carries no activity for this session."}</p>
+              <p className="px-4 py-3 text-[12px] text-faint">{activityUnbuilt ? "Not built" : "The record carries no activity for this session."}</p>
             )}
             {activity && activity.length === 0 && <p className="px-4 py-3 text-[12px] text-faint">Nothing has been recorded on this session yet.</p>}
             {(activity ?? []).map((a, i) => (
@@ -332,11 +327,7 @@ export function SessionPanel({
         <footer className="flex shrink-0 flex-col gap-2 border-t border-line px-4 py-3">
           <span className="text-[11.5px] leading-[1.5] text-faint">
             {note ??
-              (s.state === "revoked"
-                ? "Ended by an administrator, and not seen since. It stays here as a record."
-                : mine
-                  ? "This is your own session. Nobody ends their own; another administrator can."
-                  : `${live || attachedKey(s) ? "" : "Not seen in the last 30 minutes; ending it still acts. "}${consequence(s)}`)}
+              (s.state === "revoked" ? "Ended by an administrator." : mine ? "Your own session; another administrator can end it." : consequence(s))}
           </span>
           {endable && !mine && (
             <span className="flex flex-wrap items-center justify-end gap-2">

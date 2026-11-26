@@ -131,29 +131,17 @@ const short = (d: string) => d.slice(0, 8);
 /** Where the limits shown came from, and whether they are the run's own. */
 export function specLine(s: RunSpec): { tone: Tone; text: string } {
   if (s.loading) return { tone: "neutral", text: "Reading the spec…" };
-  if (s.from === "record") return { tone: "neutral", text: "Read from the spec stored with this run." };
-  if (s.from === "loaded") {
-    return {
-      tone: "warn",
-      text: "These are the limits of the agent's latest saved version, as this page loaded it to start the run. The platform runs the deployed version, or a canary candidate, which may differ: the run's own page, once it is recorded, reads the spec stored with it.",
-    };
-  }
-  if (s.from === "none") {
-    return {
-      tone: "warn",
-      text: `No spec can be read for this run: the record holds none${s.system ? `, and no agent named ${s.system} is registered here` : ""}. Only what its journal recorded is shown.`,
-    };
-  }
+  // The run's own copy needs no caption.
+  if (s.from === "record") return { tone: "neutral", text: "" };
+  if (s.from === "loaded") return { tone: "warn", text: "The agent's latest saved version; the run may use another." };
+  if (s.from === "none") return { tone: "warn", text: "No spec for this run; journalled figures only." };
   if (s.runDigest && s.agentDigest && s.runDigest === s.agentDigest) {
-    return { tone: "neutral", text: `The record holds no copy of its spec. The agent's spec today has the same digest (${short(s.runDigest)}), so these are the limits the run was under.` };
+    return { tone: "neutral", text: `The agent's spec today, same digest as the run (${short(s.runDigest)}).` };
   }
   if (s.runDigest && s.agentDigest) {
-    return {
-      tone: "warn",
-      text: `The record holds no copy of its spec, and the agent's spec has changed since (run ${short(s.runDigest)}, today ${short(s.agentDigest)}). These are today's limits, except where a figure is marked as journalled by the run.`,
-    };
+    return { tone: "warn", text: `The agent's spec today; changed since the run (${short(s.runDigest)} → ${short(s.agentDigest)}).` };
   }
-  return { tone: "warn", text: "The record holds no copy of its spec and the digests cannot be compared. These are the agent's limits as they are today." };
+  return { tone: "warn", text: "The agent's spec today; the run's digest cannot be compared." };
 }
 
 /* ═══════════════════ what stopped the run ═══════════════════ */
@@ -477,8 +465,7 @@ function BudgetPauses({ pauses, hold, stoppedText }: { pauses: BudgetPause[]; ho
               </span>
             ) : last && hold.waiting ? (
               <span className="text-warn">
-                It waits on a decision on its budget: a person other than the one who started it continues or stops it under{" "}
-                <Link href="/approvals" className="underline">Paused at budget</Link> on the Approvals page.
+                Waits for a budget decision on <Link href="/approvals" className="underline">Approvals</Link>.
               </span>
             ) : last && stoppedText ? (
               <span className="text-err">{stoppedText[0].toUpperCase() + stoppedText.slice(1)}.</span>
@@ -571,7 +558,7 @@ export function BoundsView({ spec, steps, stopped, visits }: { spec: Rec | null;
                     ) : s.wait ? (
                       <>
                         Waits for a person{s.wait.timeout_s !== null ? `, up to ${dur(s.wait.timeout_s)}` : ""}
-                        {s.wait.timeout_s !== null && <span className="block text-[10px] text-faint">then: {s.wait.on_timeout === "escalate" ? "escalates, or the run is ended as failed when no role is left" : "the run is ended as failed"}</span>}
+                        {s.wait.timeout_s !== null && <span className="block text-[10px] text-faint">then: {s.wait.on_timeout === "escalate" ? "escalates; fails when no role is left" : "the run fails"}</span>}
                       </>
                     ) : s.harness === "sequence" ? (
                       <>
@@ -583,7 +570,7 @@ export function BoundsView({ spec, steps, stopped, visits }: { spec: Rec | null;
                     ) : s.harness ? (
                       <span className="text-faint">Not set</span>
                     ) : (
-                      <span className="text-faint">Not known: no spec, and the journal recorded no limit on entry</span>
+                      <span className="text-faint">—</span>
                     )}
                     {nodeCap !== null && <span className="block text-[10px] text-faint">re-entry cap {nodeCap}</span>}
                   </td>
@@ -614,10 +601,10 @@ export function BoundsView({ spec, steps, stopped, visits }: { spec: Rec | null;
                     {s.stopWhen ? (
                       <>
                         <code className="font-mono text-[11px] break-words text-fg">{s.stopWhen}</code>
-                        {!s.stopEnforced && <span className="block text-[10px] text-warn">not a condition the runtime could read: only the step limit held</span>}
+                        {!s.stopEnforced && <span className="block text-[10px] text-warn">unreadable: only the step limit held</span>}
                       </>
                     ) : s.maxSteps !== null ? (
-                      <span className="text-faint">Not set: the step ends when the model settles, or at the step limit</span>
+                      <span className="text-faint">Not set</span>
                     ) : (
                       <span className="text-ghost">—</span>
                     )}
@@ -628,7 +615,7 @@ export function BoundsView({ spec, steps, stopped, visits }: { spec: Rec | null;
             {steps.length === 0 && (
               <tr>
                 <td colSpan={4} className={`${TD} text-faint`}>
-                  No step is known for this run: there is no spec to read, and its journal entered none.
+                  No step known.
                 </td>
               </tr>
             )}
@@ -642,7 +629,7 @@ export function BoundsView({ spec, steps, stopped, visits }: { spec: Rec | null;
             {stopped?.kind === "wall_clock_s" && <StoppedMark>stopped the run</StoppedMark>}
           </dt>
           <dd className="text-[11.5px] text-dim">
-            {!spec ? <span className="text-faint">{unknown}</span> : wall !== null ? <span className="tnum text-fg">{dur(wall)}</span> : "Not set: the run has no time limit of its own"}
+            {!spec ? <span className="text-faint">{unknown}</span> : wall !== null ? <span className="tnum text-fg">{dur(wall)}</span> : "Not set"}
           </dd>
         </div>
         <div className="flex flex-col gap-0.5">
@@ -663,7 +650,6 @@ export function BoundsView({ spec, steps, stopped, visits }: { spec: Rec | null;
             ) : (
               <>
                 <span className="tnum text-fg">{RUNTIME_DEFAULT.max_visits}</span> entries of one step, the runtime&rsquo;s cap
-                <span className="block text-[10px] text-faint">the definition has no field for it: every run is held to it</span>
               </>
             )}
             {most && most[1] > 0 && <span className="block text-[10px] text-faint">most entries of one step in this run: {most[1]} ({most[0]})</span>}
@@ -692,7 +678,6 @@ export function SpendView({ rows }: { rows: SpendRow[] }) {
               </span>
             </span>
             {ratio !== null && <Meter value={ratio} tone={r.stopped ? "err" : ratio >= 0.8 ? "warn" : "run"} />}
-            <span className="text-[10px] leading-[1.4] text-faint">{r.basis}</span>
           </li>
         );
       })}
@@ -782,7 +767,7 @@ export function RunLimitsPanel({
       mark={stopped ? <Status tone="err">stopped by its {STOP_WORD[stopped.kind]}</Status> : waitingOnBudget ? <Status tone="warn">waiting on a decision on its budget</Status> : stoppedAtBudget ? <Status tone="err">stopped on a budget decision</Status> : undefined}
     >
       <div className="max-h-[320px] overflow-y-auto border-t border-line">
-        <p className={`border-b border-line px-4 py-1.5 text-[11px] leading-[1.5] ${from.tone === "warn" ? "text-warn" : "text-faint"}`}>{from.text}</p>
+        {from.text && <p className={`border-b border-line px-4 py-1.5 text-[11px] leading-[1.5] ${from.tone === "warn" ? "text-warn" : "text-faint"}`}>{from.text}</p>}
         {pauses.length > 0 && <BudgetPauses pauses={pauses} hold={hold} stoppedText={budgetStop} />}
         {stopped && (
           <p className="border-b border-line bg-err-bg/60 px-4 py-1.5 text-[11.5px] leading-[1.5] text-err">
@@ -800,10 +785,7 @@ export function RunLimitsPanel({
               Spend against ceiling{live ? " · so far" : ""}
             </h3>
             <SpendView rows={rows} />
-            <p className="px-4 py-2 text-[10px] leading-[1.45] text-faint">
-              The ceiling is the run&rsquo;s whole budget (the spec&rsquo;s <span className="font-mono">policy.budget</span>), as a person raised it when the run paused at it. A run that reaches its cost budget, the deployment&rsquo;s or its use case&rsquo;s pauses until a person decides.
-              {toolCallsUnbuilt && " Tool calls are not shown: the platform names a run's tool calls as not built (runs[].toolCalls)."}
-            </p>
+            {toolCallsUnbuilt && <p className="px-4 py-2 text-[10px] leading-[1.45] text-faint">Tool calls: not built</p>}
           </section>
         </div>
       </div>

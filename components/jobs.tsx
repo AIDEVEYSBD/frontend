@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Mono, Status, Tag } from "./ui";
+import { Status, Tag } from "./ui";
 import { Pick } from "./select";
 import { soon } from "@/lib/soon";
 import { listJobs, type JobList, type JobQuery, type JobView } from "@/lib/api/l2";
@@ -111,7 +111,6 @@ export function JobsList({ agents, everyMs = 8000 }: { agents: string[]; everyMs
       </div>
       {error && <p className="px-3 pb-2 text-[11px] text-err">{error}</p>}
       {list ? <JobsListView jobs={list.jobs} /> : !error && <p className="px-3 pb-2 text-[11px] text-faint">Reading the jobs…</p>}
-      {list && list.jobs.some((j) => j.shadow) && <Mono className="px-3 py-1.5 text-[9.5px] text-ghost">A shadow job is a canary&rsquo;s mirror: only a worker that runs shadow mode claims it, and it is never replayed.</Mono>}
     </div>
   );
 }

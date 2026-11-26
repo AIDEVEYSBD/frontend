@@ -63,7 +63,7 @@ export const DIRECTION_WORDS: Record<CriterionDirection, string> = { at_least: "
 
 /** When a criterion is met, in words: "Met when the result is at least 0.9". */
 export function metWhen(c: Pick<AcceptanceCriterion, "threshold" | "direction" | "metric">): string {
-  if (typeof c.threshold !== "number") return "No threshold is set: a result is recorded, and whether it is met is not worked out.";
+  if (typeof c.threshold !== "number") return "No threshold set.";
   const side = c.direction ? DIRECTION_WORDS[c.direction] : "against";
   return `Met when the result${c.metric ? ` (${c.metric})` : ""} is ${side} ${figure(c.threshold)}.`;
 }
@@ -296,12 +296,7 @@ export function CriteriaDialog({
     <FormDialog
       title={record ? `Criteria and sign-off: ${recordName || workloadName(record.use_case)}` : "Set criteria and sign-off"}
       width="max-w-[760px]"
-      lead={
-        <>
-          {record ? "The record is replaced by what is saved here. A criterion kept here keeps its result; one removed is removed with its result." : "Opens the acceptance record of a registered use case."} Each role names the one person who signs it.
-          {record ? " Signatures bind to the record as it stood when signed: after a change here, earlier signatures read “signed an earlier version of this record” and do not count." : ""}
-        </>
-      }
+      lead={record ? "Saving replaces the record; earlier signatures stop counting." : "Opens the acceptance record of a registered use case."}
       busy={busy}
       confirm={record ? "Save criteria and sign-off" : "Open the record"}
       permission="configure"
@@ -315,9 +310,9 @@ export function CriteriaDialog({
           {name} <span className="font-mono text-[10.5px] text-faint">{record.use_case}</span>
         </About>
       ) : choices.length === 0 ? (
-        <p className="text-[12px] leading-[1.55] text-dim">Every registered use case already has a record, or none is registered. A use case is registered on the Workloads page, under Use cases.</p>
+        <p className="text-[12px] leading-[1.55] text-dim">Every registered use case has a record, or none is registered.</p>
       ) : (
-        <Field label="Use case" error={need(tried && !key, "Choose the use case the record is for.")} hint={tried && !key ? undefined : "Registered use cases with no acceptance record yet, by the workload each uses."}>
+        <Field label="Use case" error={need(tried && !key, "Choose the use case the record is for.")} hint={tried && !key ? undefined : "Use cases with no acceptance record yet."}>
           <Pick size="md" aria-label="Use case" value={key} onChange={setKey} options={[{ value: "", label: "Choose a use case" }, ...choices.map((c) => ({ value: c.key, label: `${c.name} (${c.key})` }))]} disabled={busy} invalid={tried && !key} />
         </Field>
       )}
@@ -325,7 +320,7 @@ export function CriteriaDialog({
       <div className="flex flex-col gap-2.5">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[12.5px] font-semibold text-fg">Criteria</span>
-          <span className="text-[11.5px] text-faint">what has to be true for the use case to be accepted</span>
+          <span className="text-[11.5px] text-faint">what must be true to accept the use case</span>
           <span className="grow" />
           <Button size="sm" variant="solid" tone="neutral" onClick={() => setCriteria((all) => [...all, { key: fresh(), text: "", metric: "", threshold: "", direction: "" }])} disabled={busy}>
             Add a criterion
@@ -448,23 +443,23 @@ export function ResultDialog({ record, criterion, onDone, onClose }: { record: A
   return (
     <FormDialog
       title="Enter a result"
-      lead={`The result is recorded with your name, the time and the run it was measured on. ${metWhen(criterion)}`}
+      lead={metWhen(criterion)}
       busy={busy}
       confirm="Enter the result"
       permission="configure"
       outcome={outcome}
-      problem={tried && !ready ? "Give the result as a number and pick the run it was measured on." : undefined}
+      problem={tried && !ready ? "Enter a number and pick the run." : undefined}
       onConfirm={() => void save()}
       onClose={onClose}
     >
       <About k={`Criterion ${criterion.id}`}>{criterion.text}</About>
       {typeof criterion.result === "number" && (
         <p className="text-[11.5px] leading-[1.5] text-faint">
-          It has a result already, {figure(criterion.result)}
-          {criterion.run ? ` on run ${criterion.run}` : ""}. The one entered here replaces it.
+          Replaces its current result, {figure(criterion.result)}
+          {criterion.run ? ` on run ${criterion.run}` : ""}.
         </p>
       )}
-      <Field label="Run it was measured on" error={need(tried && !run && runs !== null && runs.length > 0, "Pick the run.")} hint={runs && runs.length ? "Finished runs of this use case: run, agent, how it ended, when." : undefined}>
+      <Field label="Run it was measured on" error={need(tried && !run && runs !== null && runs.length > 0, "Pick the run.")} hint={runs && runs.length ? "Finished runs of this use case." : undefined}>
         {runsOutcome && "door" in runsOutcome ? (
           <NotConnectedNote door={runsOutcome.door} />
         ) : runsOutcome && "error" in runsOutcome ? (
@@ -474,7 +469,7 @@ export function ResultDialog({ record, criterion, onDone, onClose }: { record: A
         ) : runs === null ? (
           <span className="text-[11.5px] text-faint">Reading the runs of this use case…</span>
         ) : runs.length === 0 ? (
-          <span className="text-[11.5px] leading-[1.5] text-dim">No run of this use case has finished: a result is entered against a finished run (complete, failed, killed or closed at a gate).</span>
+          <span className="text-[11.5px] leading-[1.5] text-dim">No finished run of this use case yet.</span>
         ) : (
           <Pick size="md" aria-label="Run it was measured on" value={run} onChange={setRun} options={[{ value: "", label: "Choose a run" }, ...runs.map((r) => ({ value: r.id, label: runLabel(r) }))]} disabled={busy} invalid={tried && !run} />
         )}
@@ -482,7 +477,7 @@ export function ResultDialog({ record, criterion, onDone, onClose }: { record: A
       <Field label={criterion.metric ? `Result (${criterion.metric})` : "Result"} error={need(tried && value === null, "A number.")}>
         <Input value={result} onChange={setResult} disabled={busy} autoComplete="off" mono />
       </Field>
-      <Field label="Note" hint="Optional: how it was measured, or anything a reviewer should know.">
+      <Field label="Note" hint="Optional: how it was measured.">
         <Textarea value={note} onChange={setNote} rows={2} disabled={busy} />
       </Field>
     </FormDialog>
@@ -515,7 +510,7 @@ export function IssueDialog({ record, name, onDone, onClose }: { record: Accepta
   return (
     <FormDialog
       title={`Open an issue: ${name || workloadName(record.use_case)}`}
-      lead="The issue is recorded as open, with your name and the time, until someone closes it."
+      lead="Recorded as open, with your name, until someone closes it."
       busy={busy}
       confirm="Open the issue"
       permission="configure"
@@ -553,7 +548,7 @@ export function CloseIssueDialog({ record, issue, onDone, onClose }: { record: A
   return (
     <FormDialog
       title="Close the issue"
-      lead="It is recorded as closed, with your name, the time and the note."
+      lead="Recorded as closed, with your name and the note."
       busy={busy}
       confirm="Close the issue"
       permission="configure"
@@ -598,7 +593,7 @@ export function SignDialog({ record, name, signoff, onDone, onClose }: { record:
   return (
     <FormDialog
       title={`Sign ${name || workloadName(record.use_case)} as ${signoff.role}`}
-      lead="This records your decision on the acceptance with your name and the time, against the record as it stands now. A signature is never changed afterwards; signing again adds a newer one."
+      lead="Signs the record as it stands now; a signature is never changed."
       busy={busy}
       confirm={decision === "rejected" ? "Sign: reject" : decision === "accepted" ? "Sign: accept" : "Sign"}
       permission="approve"
@@ -607,7 +602,7 @@ export function SignDialog({ record, name, signoff, onDone, onClose }: { record:
       onConfirm={() => void save()}
       onClose={onClose}
     >
-      {signoff.stale && <p className="text-[11.5px] leading-[1.5] text-warn">Your earlier signature was given on an earlier version of this record and does not count. Signing now signs the record as it stands.</p>}
+      {signoff.stale && <p className="text-[11.5px] leading-[1.5] text-warn">Your earlier signature was on an earlier version and does not count.</p>}
       <div className="flex flex-col gap-1.5">
         <span className="text-[12.5px] font-medium text-mist">Decision</span>
         <span className={`flex h-8 items-center ${busy ? "pointer-events-none opacity-40" : ""}`}>

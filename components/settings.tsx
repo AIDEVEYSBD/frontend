@@ -266,8 +266,7 @@ export function OfferedModels({ onChanged }: { onChanged?: () => void }) {
   if (none && catalogue.length === 0 && !unread && (noCatalogue || !catalogueError)) {
     return (
       <p className="px-4 py-3 text-[12px] leading-[1.55] text-dim">
-        No model is offered on this deployment yet, and {noCatalogue ? "no model endpoint is connected to pick from" : "its endpoints list no model to pick from"}. Endpoints are set when the platform
-        is deployed (see Providers); the models they serve appear here.
+        No model offered yet; {noCatalogue ? "no model endpoint is connected" : "the endpoints list no model"}.
       </p>
     );
   }
@@ -299,7 +298,7 @@ export function OfferedModels({ onChanged }: { onChanged?: () => void }) {
       {refused && <PanelFailure title="The change was not saved">{refused}</PanelFailure>}
       {catalogueError && !noCatalogue && (
         <p className="border-b border-line px-4 py-2.5 text-[11.5px] leading-[1.5] text-warn">
-          <span className="font-medium">The catalogue could not be read.</span> {catalogueError}. The offered list still works; only browsing is unavailable.
+          <span className="font-medium">The catalogue could not be read.</span> {catalogueError}.
         </p>
       )}
       {Object.entries(listErrors).map(([endpoint, why]) => (
@@ -528,7 +527,6 @@ export function Keys({ onChanged }: { onChanged?: () => void }) {
             Add a key
           </Button>
         )}
-        {setDoor.off && !adding && <span className="w-full text-[11px] text-faint">{setDoor.why}</span>}
       </div>
 
       {adding && (
@@ -540,7 +538,7 @@ export function Keys({ onChanged }: { onChanged?: () => void }) {
           }}
         >
           <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]">
-            <Row label="Name" tight hint="Lower-case letters, digits, - and _. Setting a name again replaces its value.">
+            <Row label="Name" tight hint="Lower-case, digits, - and _; a repeated name replaces it.">
               <Text mono value={name} placeholder="key-name" onChange={setName} />
             </Row>
             <Row label="Label" tight hint="What this credential is for.">
@@ -566,7 +564,7 @@ export function Keys({ onChanged }: { onChanged?: () => void }) {
               Cancel
             </Button>
             <span className="text-[11px] text-faint">
-              A tool server&rsquo;s header or a workflow&rsquo;s tool argument names it as <code className="font-mono">{`\${secret:${name.trim() || "name"}}`}</code>
+              Referenced as <code className="font-mono">{`\${secret:${name.trim() || "name"}}`}</code>
             </span>
           </div>
         </form>

@@ -55,7 +55,7 @@ export function ScreenerHealthLine() {
           {typeof lat.count === "number" ? ` over ${lat.count} call${lat.count === 1 ? "" : "s"}` : ""}
         </span>
       )}
-      {why && <span className={`basis-full text-[11px] ${h.ok === false ? "text-err" : "text-faint"}`}>{why}</span>}
+      {why && h.ok !== true && <span className={`basis-full text-[11px] ${h.ok === false ? "text-err" : "text-faint"}`}>{why}</span>}
     </p>
   );
 }

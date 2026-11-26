@@ -98,7 +98,7 @@ export function ReasonDialog({
   ready = true,
   onBlocked,
   hint = "Recorded in the history with your name.",
-  missing = "A reason is needed. It is recorded in the history with your name.",
+  missing = "A reason is needed.",
   placeholder,
   onConfirm,
   onClose,

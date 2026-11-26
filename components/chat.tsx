@@ -53,7 +53,6 @@ function ChatBody() {
 
   // Chat talks to registered chatbots only; a RAG app calls the gateway with its own key.
   const chatbots = (apps ?? []).filter((a) => a.class === "chatbot" && a.source === "application");
-  const rag = (apps ?? []).filter((a) => a.class === "rag").length;
   const selected = chatbots.find((a) => a.id === wanted) ?? chatbots[0] ?? null;
   const me = session ? session.email || session.sub : "";
 
@@ -63,15 +62,11 @@ function ChatBody() {
 
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
-      <PageHeader title="Chat">
-        Two ways to talk to the platform: a chatbot from the applications register, and a request to a security workload in plain words. Each part below says whether this deployment offers it.
-      </PageHeader>
+      <PageHeader title="Chat">Talk to a registered chatbot, or ask a workload in plain words.</PageHeader>
 
       {/* The applications register is built in a later phase: its 501 reads as "not built", never as an empty register. */}
       {error && notBuiltDoorOf(error) ? (
-        <NotConnected door={{ method: "GET", path: notBuiltDoorOf(error)?.path ?? "/api/applications" }} compact title="Chatbots: not built yet">
-          The chatbots registered as applications on this deployment, to talk to here under their registered prompt, model, screening and limits.
-        </NotConnected>
+        <NotConnected door={{ method: "GET", path: notBuiltDoorOf(error)?.path ?? "/api/applications" }} compact title="Chatbots: not built yet" />
       ) : error ? (
         <Failure what="The applications register could not be read" message={error} />
       ) : null}
@@ -81,7 +76,7 @@ function ChatBody() {
       {apps !== null && !error && chatbots.length === 0 && (
         <EmptyState
           title="No chatbot is registered on this deployment"
-          detail="A chatbot is registered on the Applications page with its system prompt and its policy. Once one is there, it can be talked to here."
+          detail="Register one on the Applications page."
           action={
             <Button size="sm" variant="solid" tone="ink" href="/applications">
               Open Applications
@@ -124,7 +119,7 @@ function ChatBody() {
               })}
             </div>
             <p className="border-t border-line px-4 py-2 text-[10.5px] leading-[1.5] text-ghost">
-              Chatbots on the applications register.{rag > 0 ? ` The ${rag} RAG app${rag === 1 ? "" : "s"} there call${rag === 1 ? "s" : ""} the gateway with ${rag === 1 ? "its" : "their"} own key and ${rag === 1 ? "is" : "are"} not talked to here.` : ""}
+              Chatbots on the applications register.
             </p>
           </section>
 

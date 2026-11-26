@@ -92,7 +92,7 @@ export function LineageView({ lineage }: { lineage: Lineage }) {
           toDigestLabel={`Version ${lineage.current.version ?? "?"} digest`}
           shown={{ diff: lineage.drift, error: lineage.drift ? "" : "the backend sent no drift" }}
           sections={sections}
-          quietNote="Nothing the spec's vocabulary names has moved from the template: only the agent's id differs, which its digest covers and the diff does not name."
+          quietNote="Nothing moved from the template except the agent's id."
         />
       </div>
     </div>
@@ -104,7 +104,7 @@ export function LineageView({ lineage }: { lineage: Lineage }) {
 /** The templates, newest first. Presentational. */
 export function TemplatesListView({ list, selected, onSelect }: { list: TemplateList; selected?: string | null; onSelect?: (id: string) => void }) {
   if (!list.templates.length)
-    return <p className="text-[12px] text-faint">No template is on record. Make one from a saved version below; a certifier who did not author it signs it before any agent is cut from it.</p>;
+    return <p className="text-[12px] text-faint">No template on record.</p>;
   return (
     <ul className="flex flex-col overflow-hidden rounded-md border border-line">
       {list.templates.map((t) => {
@@ -146,7 +146,7 @@ export function TemplateDetailView({ template }: { template: TemplateDocument })
       <div className="flex flex-col gap-1.5">
         <span className="text-[11px] font-semibold text-dim">Params</span>
         {fields.length === 0 ? (
-          <p className="text-[11.5px] text-faint">It takes no params: a cut is its document under a new id.</p>
+          <p className="text-[11.5px] text-faint">No params.</p>
         ) : (
           <table className="w-full border-collapse overflow-hidden rounded-md border border-line text-[11.5px]">
             <thead>
@@ -216,7 +216,7 @@ function MakeTemplateForm({ agents, onMade }: { agents: AgentSummary[]; onMade: 
     <div className="flex flex-col gap-2.5 rounded-md border border-line bg-canvas/60 p-3">
       <span className="text-[12.5px] font-semibold text-fg">Make a template from a saved version</span>
       <span className="text-[11.5px] leading-[1.5] text-dim">
-        It copies that version&rsquo;s document as saved. Its <span className="font-mono">{"${param:name}"}</span> references (and <span className="font-mono">{"${param:name|default}"}</span>) are what a cut fills.
+        Copies the version&rsquo;s document; a cut fills its <span className="font-mono">{"${param:name}"}</span> references.
       </span>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Field label="Agent">
@@ -233,7 +233,7 @@ function MakeTemplateForm({ agents, onMade }: { agents: AgentSummary[]; onMade: 
           <Input value={name} onChange={setName} placeholder="Triage, certified" />
         </Field>
       </div>
-      {versionsError && <span className="text-[11.5px] text-err">The versions of {agent} could not be read, so none can be picked: {versionsError}</span>}
+      {versionsError && <span className="text-[11.5px] text-err">The versions could not be read: {versionsError}</span>}
       {tried && problem && <span className="text-[11px] text-err">{problem}</span>}
       {error && (<span className="text-[11.5px] text-err">{error}</span>)}
       <span className="flex items-center gap-2">
@@ -276,7 +276,7 @@ function CertifyForm({ template, role, who, onDone }: { template: TemplateView; 
     <div className="flex flex-col gap-2.5 rounded-md border border-line bg-canvas/60 p-3">
       <span className="text-[12.5px] font-semibold text-fg">Certify</span>
       <span className="text-[11.5px] leading-[1.5] text-dim">
-        {role ? <>A certifier holds one of these roles: {role} (or administers), and is not an author of the template.</> : <>The platform did not name the roles that may certify: it decides when you certify. A certifier is never an author of the template.</>} Once certified, agents may be cut from it.
+        {role ? <>Certifier roles: {role}; never an author of the template.</> : <>A certifier is never an author of the template.</>}
       </span>
       <Field label="Note" hint="Recorded with the certification.">
         <Textarea rows={2} value={note} onChange={setNote} disabled={busy} />
@@ -326,7 +326,7 @@ function CutAgentForm({ template, existing, onCut }: { template: TemplateView; e
   return (
     <div className="flex flex-col gap-2.5 rounded-md border border-line bg-canvas/60 p-3">
       <span className="text-[12.5px] font-semibold text-fg">Cut an agent from it</span>
-      <span className="text-[11.5px] leading-[1.5] text-dim">The template&rsquo;s document under a new id, its params filled, saved as the new agent&rsquo;s version 1 (not deployed). The cut is recorded as the agent&rsquo;s lineage.</span>
+      <span className="text-[11.5px] leading-[1.5] text-dim">Saved as the new agent&rsquo;s version 1, not deployed.</span>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <Field label="New agent id" error={tried && (problem.startsWith("the id") || problem.startsWith("name the") || problem.includes("exists")) ? problem : undefined}>
           <Input value={form.id} onChange={(v) => setForm((f) => ({ ...f, id: v }))} placeholder="triage-emea" mono />
@@ -430,10 +430,7 @@ function TemplatesPage() {
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7" data-hue="blue">
       <header className="flex flex-col gap-1.5">
         <h1 className="text-[24px] font-semibold tracking-[-0.02em]">Templates</h1>
-        <p className="max-w-[760px] text-[13.5px] leading-relaxed text-dim">
-          A template is one saved version&rsquo;s document, certified by someone who did not author it. Agents are cut from certified templates only, their params filled,
-          and each keeps its lineage: the template, the digest it was cut from, and how far it has drifted since.
-        </p>
+        <p className="max-w-[760px] text-[13.5px] leading-relaxed text-dim">Certified agent documents; agents cut from them keep their lineage.</p>
       </header>
       {error && (
         <Banner tone="err" title="Could not read the templates">
@@ -466,7 +463,7 @@ function TemplatesPage() {
           />
         </Section>
         <Section title="Template" meta={shown ? shown.id : selected ? "reading…" : "pick one"}>
-          {!selected && <p className="text-[12px] text-faint">Pick a template to read its params and document, certify it, or cut an agent from it.</p>}
+          {!selected && <p className="text-[12px] text-faint">Pick a template to certify it or cut an agent.</p>}
           {docError && (<span className="text-[11.5px] text-err">{docError}</span>)}
           {shown && (
             <>

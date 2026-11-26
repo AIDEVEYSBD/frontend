@@ -235,8 +235,8 @@ export function Menu({
    Rendered inline (the design page specimen) or modal, over a scrim. */
 
 export function Dialog({
-  title = "Deploy DLP Triage?",
-  children = "This publishes 7 harnesses to production. The eval suite passed at 96.4% on 84 cases. Runs already in flight finish on the current version.",
+  title = "Are you sure?",
+  children,
   confirm = "Deploy",
   cancel = "Cancel",
   tone = "ink",
@@ -308,7 +308,7 @@ export function Dialog({
         <h3 id="af-dialog-title" className="text-[16px] font-semibold tracking-tight">
           {title}
         </h3>
-        <p className="text-[13px] leading-[1.55] text-dim">{children}</p>
+        {children && <p className="text-[13px] leading-[1.55] text-dim">{children}</p>}
       </div>
       <div className="flex items-center justify-end gap-2 border-t border-line px-5 py-3">
         <Button variant="solid" tone="err" size="sm" onClick={onClose} disabled={loading}>
@@ -339,7 +339,8 @@ export function EmptyState({
   action,
 }: {
   title: string;
-  detail: string;
+  /** One short line, when the title alone does not say what to do. */
+  detail?: string;
   action?: ReactNode;
 }) {
   return (
@@ -352,7 +353,7 @@ export function EmptyState({
       </span>
       <div className="flex flex-col gap-1">
         <span className="text-[14px] font-medium">{title}</span>
-        <span className="max-w-[42ch] text-[12.5px] leading-[1.55] text-dim">{detail}</span>
+        {detail && <span className="max-w-[42ch] text-[12.5px] leading-[1.55] text-dim">{detail}</span>}
       </div>
       {action}
     </div>

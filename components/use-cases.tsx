@@ -28,7 +28,7 @@ import { WORKLOADS, ask, type Answer, type Door, type UseCase, type UseCaseChang
 
 type Notice = { tone: "ok" | "err"; text: string } | { door: Door };
 
-const WHAT = "Registered use cases are listed here with their owner, the data classes they handle, their autonomy level, the workload they use and their gates.";
+const WHAT = "Registered use cases appear here.";
 const th = "px-3 py-2 font-medium whitespace-nowrap";
 
 const STATE: Record<UseCaseState, { tone: "ok" | "warn" | "neutral"; label: string }> = {
@@ -56,7 +56,7 @@ function Gate({ gate: g }: { gate: UseCaseGate }) {
       </span>
       {g.threshold && <span className="leading-[1.45] text-dim">Applies when: {g.threshold}</span>}
       <span className="leading-[1.45] text-dim">
-        Recorded: waits {waitText(g.timeout_minutes)}, then {g.on_timeout === "stop" ? "the run stops" : g.escalate_to ? `escalates to ${g.escalate_to}` : "escalates"}. Runs are not yet held to it.
+        Recorded: waits {waitText(g.timeout_minutes)}, then {g.on_timeout === "stop" ? "the run stops" : g.escalate_to ? `escalates to ${g.escalate_to}` : "escalates"}.
       </span>
     </li>
   );
@@ -130,15 +130,15 @@ export function UseCases({ workloads, calm }: { /** The workloads door's answer,
         <Failure what="The registered use cases could not be read" message={answer.message} />}
       {connected && recordOnly && (
         <p className="text-[12px] leading-[1.55] text-dim" data-not-built="enforcement">
-          A record only: holding runs to a registered use case (its data classes, autonomy level and gates) is not built, so nothing here is enforced on a run.
+          Enforcement on runs: Not built
         </p>
       )}
       {connected && !recordOnly && unchecked.length > 0 && (
         <p className="text-[12px] leading-[1.55] text-dim" data-not-built={unchecked.map((u) => u.field).join(" ")}>
-          A run of a workload is refused until its use case is approved, and a dataset above the use case&rsquo;s highest data class is refused; {unchecked.map((u) => u.words).join(" and ")} {unchecked.length === 1 ? "is" : "are"} recorded, not yet checked against runs. A workload has at most one use case.
+          Run checks of {unchecked.map((u) => u.words).join(" and ")}: Not built
         </p>
       )}
-      {connected && rows.length === 0 && <p className="text-[12px] text-faint">No use case is registered. Register one to record its owner, the data it handles, its autonomy level and the gates where a person decides.</p>}
+      {connected && rows.length === 0 && <p className="text-[12px] text-faint">No use case is registered.</p>}
 
       {rows.length > 0 && (
         <div className={`overflow-x-auto ${notice ? "-mx-4 -mb-4 border-t border-line" : "-m-4"}`}>
@@ -260,11 +260,11 @@ export function UseCases({ workloads, calm }: { /** The workloads door's answer,
         >
           {moving.to === "approved"
             ? recordOnly
-              ? "The approval is recorded with your name. The use case is a record of what was agreed: runs are not yet held to its owner, data classes, autonomy level or gates."
-              : "The approval is recorded with your name. Runs of its workload may then start, and a dataset above its highest data class is refused. At each production deploy of the agent that runs it, the agent is held to the controls its autonomy level requires and needs an approval step for each of its gates (the gate's approver role, within its timeout); a gate's threshold, what happens on timeout and whom it escalates to are recorded and not checked."
+              ? "Recorded with your name; runs are not held to it."
+              : "Recorded with your name; runs of its workload may then start."
             : recordOnly
-              ? "It moves from draft to awaiting approval, and a person with the approve permission decides. It stays as registered until then."
-              : "It moves from draft to awaiting approval, and a person with the approve permission decides. Until it is approved, a run of its workload is refused."}
+              ? "A person with the approve permission decides."
+              : "Runs of its workload stay refused until it is approved."}
         </Dialog>
       )}
     </Section>

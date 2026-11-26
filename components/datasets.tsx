@@ -132,8 +132,7 @@ function DatasetsPage() {
           </span>
         }
       >
-        What a security workload is to be run on: a code snapshot, a firewall export, a telemetry extract or a document. Every dataset here is an uploaded file. A run reads one through the dataset.read
-        tool, and each run that read it is listed under the dataset.
+        Uploaded files a security workload runs on.
       </GroupHeader>
 
       {answer?.state === "error" && (
@@ -234,18 +233,14 @@ function DatasetsPage() {
         {answer === null && <p className="px-4 py-4 text-[12px] text-faint">Reading the datasets…</p>}
         {pending && (
           <div className="p-4">
-            <NotConnected door={answer.door}>
-              The datasets and uploads available as run inputs: each with its kind, whether it is offline or live, its data class, status, size, owner and the runs that used it. Uploading
-              and removing wait for the same door.
-            </NotConnected>
+            <NotConnected door={answer.door} />
           </div>
         )}
-        {answer?.state === "error" && <p className="px-4 py-4 text-[12px] text-faint">The list could not be read, so nothing is shown.</p>}
+        {answer?.state === "error" && <p className="px-4 py-4 text-[12px] text-faint">The list could not be read.</p>}
         {connected && all.length === 0 && (
           <div className="p-4">
             <EmptyState
               title="No datasets yet"
-              detail="Nothing has been uploaded or connected on this deployment. Upload a file a workload takes as its input."
               action={
                 <Button size="sm" variant="solid" tone="ink" permission="run" onClick={() => setUploading(true)}>
                   Upload a dataset
@@ -342,9 +337,7 @@ function DatasetDetail({ id, row, now, onClose, onRemoved }: { id: string; row: 
                   <NotConnectedNote door={waits} />
                 ) : error ? (
                   <span className="text-err">{error}</span>
-                ) : (
-                  "Removing a dataset takes it out of the list of run inputs."
-                )}
+                ) : null}
               </span>
               {d.mode !== "live" && (
                 <Button
@@ -424,14 +417,14 @@ function DatasetDetail({ id, row, now, onClose, onRemoved }: { id: string; row: 
                 Processing failed: {d.error || "the record gives no reason."}
               </p>
             )}
-            {d.status === "processing" && <p className="border-b border-line px-4 py-2.5 text-[12px] text-dim">Still being processed. It can be picked for a run once it is ready.</p>}
+            {d.status === "processing" && <p className="border-b border-line px-4 py-2.5 text-[12px] text-dim">Still being processed.</p>}
 
             {answer?.state === "pending" && (
               <p className="border-b border-line px-4 py-2.5">
                 <NotConnectedNote door={answer.door} />
               </p>
             )}
-            {answer?.state === "error" && <p className="border-b border-line px-4 py-2.5 text-[11.5px] text-err">Its own record could not be read: {answer.message}. What the list said is shown.</p>}
+            {answer?.state === "error" && <p className="border-b border-line px-4 py-2.5 text-[11.5px] text-err">Its record could not be read: {answer.message}</p>}
 
             {/* the runs that took it */}
             <div className="flex flex-col">
@@ -439,7 +432,7 @@ function DatasetDetail({ id, row, now, onClose, onRemoved }: { id: string; row: 
                 <span className="text-[12px] font-semibold">Runs that used it</span>
                 <span className="tnum text-[11px] text-faint">{used && used.length ? used.length.toLocaleString("en-GB") : used ? "none" : answer === null ? "reading…" : "unknown"}</span>
               </div>
-              {used === undefined && answer !== null && <p className="px-4 py-3 text-[12px] text-faint">The record does not say which runs took this dataset.</p>}
+              {used === undefined && answer !== null && <p className="px-4 py-3 text-[12px] text-faint">Not recorded.</p>}
               {used && used.length === 0 && <p className="px-4 py-3 text-[12px] text-faint">No run has read it yet.</p>}
               {used && used.length > 0 && (
                 <table className="w-full border-collapse text-[11.5px]">
@@ -476,11 +469,7 @@ function DatasetDetail({ id, row, now, onClose, onRemoved }: { id: string; row: 
         <Dialog modal title={`Remove ${d.name}?`} confirm="Remove" cancel="Cancel" tone="err" loading={busy} onConfirm={remove} onClose={() => !busy && setConfirming(false)}>
           <span className="flex flex-col gap-2">
             <span>It will no longer be listed as a run input.</span>
-            {used === undefined ? (
-              <span>The record does not say which runs used it.</span>
-            ) : used.length === 0 ? (
-              <span>No run has read it.</span>
-            ) : (
+            {used && used.length > 0 && (
               <span className="flex flex-col gap-1">
                 <span>
                   {used.length === 1 ? "One run used it" : `${used.length.toLocaleString("en-GB")} runs used it`}:

@@ -86,7 +86,7 @@ export function ModelClearance({ onSaved }: { /** A save went through: the page 
       setSaid(
         dropped && Object.keys(dropped).length
           ? { tone: "warn", text: `Saved, except these fallbacks: ${Object.entries(dropped).flatMap(([m, fs]) => Object.values(fs).map((why) => `${m}: ${why}`)).join("; ")}.` }
-          : { tone: "ok", text: "Saved. Calls use the new clearances and fallbacks from now." },
+          : { tone: "ok", text: "Saved." },
       );
       announceConfig();
       onSaved();
@@ -107,7 +107,7 @@ export function ModelClearance({ onSaved }: { /** A save went through: the page 
         <span className="flex min-w-0 grow flex-col gap-0.5">
           <span className="text-[12px] font-semibold text-fg">Clearance and fallbacks</span>
           <span className="max-w-[110ch] text-[11px] leading-[1.55] text-faint">
-            A model is sent only the classes of data it is cleared for. A run&rsquo;s call that carries a class its model is not cleared for goes to the first of that model&rsquo;s fallbacks that is; when none is, the call is not made. A run&rsquo;s call to a model that does not answer (unreachable, timed out, rate limited or failing on its side) goes to the next cleared model in its chain. The application gateway uses the fallbacks for clearance only, and only to a model the application&rsquo;s policy lists; a model that fails there is answered as a failure.
+            A model gets only the data classes it is cleared for.
           </span>
         </span>
         <span className="flex shrink-0 items-center gap-2">
@@ -188,7 +188,6 @@ export function ModelClearance({ onSaved }: { /** A save went through: the page 
           </tbody>
         </table>
       </div>
-      <p className="px-4 py-2 text-[10.5px] leading-[1.5] text-faint">A model is cleared for at least one class; given none, the service clears it for public and internal data. A model cannot fall back to itself, and the fallbacks may not form a cycle.</p>
     </div>
   );
 }

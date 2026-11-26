@@ -128,7 +128,7 @@ export function GuardrailsWatch({ events }: { events: WatchEvent[] | null }) {
           </div>
           <div className="p-4">
             {!events && <Skeleton lines={4} />}
-            {events && donut.length === 0 && <p className="text-[11.5px] text-faint">No screened hit, taint-to-sink refusal or egress refusal is on the record yet.</p>}
+            {events && donut.length === 0 && <p className="text-[11.5px] text-faint">Nothing on the watch yet.</p>}
             {donut.length > 0 && (
               <Donut
                 data={donut}
@@ -169,7 +169,7 @@ export function GuardrailsWatch({ events }: { events: WatchEvent[] | null }) {
         <div className="flex w-full items-start gap-3 border-b border-line bg-raise/55 px-4 py-2.5">
           <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Watch</span>
           <span className="max-w-[110ch] text-[11px] leading-[1.55] text-faint">
-            {events ? `${shown.length.toLocaleString("en-GB")} of ${all.length.toLocaleString("en-GB")} events · newest first · excerpts are masked by credential shape, and a vault value the run was given is masked in its journal; a secret that looks like neither is not` : "reading the journals…"}
+            {events ? `${shown.length.toLocaleString("en-GB")} of ${all.length.toLocaleString("en-GB")} events · newest first · excerpts masked by credential shape` : "reading the journals…"}
           </span>
         </div>
         <div className="overflow-x-auto">
@@ -250,7 +250,7 @@ export function GuardrailsWatch({ events }: { events: WatchEvent[] | null }) {
             <pre className="max-h-64 overflow-auto rounded-sm border border-line bg-canvas px-3 py-2 font-mono text-[10.5px] leading-[1.55] whitespace-pre-wrap text-mist">{open.excerpt || open.detail || "(no excerpt recorded)"}</pre>
           </div>
           {open.because.length > 0 && (
-            <p className="border-t border-line px-4 py-2 text-[10.5px] text-ghost">Derived from {open.because.join(", ")}; the lineage drawer walks the chain.</p>
+            <p className="border-t border-line px-4 py-2 text-[10.5px] text-ghost">Derived from {open.because.join(", ")}.</p>
           )}
         </DrillModal>
       )}

@@ -61,7 +61,7 @@ export function DatasetUpload({ kind: fixedKind, onClose, onDone }: { kind?: Dat
     }
     const made = a.data && typeof a.data === "object" && "dataset" in a.data ? a.data.dataset : (a.data as Dataset);
     if (!made || typeof made.id !== "string") {
-      setError("The upload was accepted, but the answer did not name the dataset. Reload the list to find it.");
+      setError("Uploaded, but the answer named no dataset; reload the list.");
       return;
     }
     onDone(made);
@@ -98,7 +98,7 @@ export function DatasetUpload({ kind: fixedKind, onClose, onDone }: { kind?: Dat
     >
       {step === 1 ? (
         <div className="flex flex-col gap-3 p-4">
-          <p className="text-[12.5px] leading-[1.55] text-dim">Choose what the file is. A workload is specified to take one kind of dataset as its input; runs on this deployment do not read datasets yet.</p>
+          <p className="text-[12.5px] leading-[1.55] text-dim">Choose what the file is.</p>
           <div role="radiogroup" aria-label="What it is" className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {DATASET_KINDS.map((k) => {
               const on = kind === k.id;
@@ -163,7 +163,7 @@ export function DatasetUpload({ kind: fixedKind, onClose, onDone }: { kind?: Dat
                   <span className="tnum text-[11px] text-faint">{sizeText(file.size)}</span>
                 </span>
               ) : (
-                <span className="min-w-0 grow text-[12px] leading-[1.5] text-dim">Drop one file here, or choose it. An archive is one file.</span>
+                <span className="min-w-0 grow text-[12px] leading-[1.5] text-dim">Drop one file here, or choose it.</span>
               )}
               <Button size="sm" variant="solid" tone="neutral" disabled={busy} onClick={() => input.current?.click()}>
                 {file ? "Choose another" : "Choose a file"}

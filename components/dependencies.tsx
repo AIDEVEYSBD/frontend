@@ -113,7 +113,7 @@ function DependenciesInner() {
         tab="dependencies"
         actions={
           <>
-            <span className="text-[10.5px] text-faint">Journals read from the last</span>
+            <span className="text-[10.5px] text-faint">Window</span>
             <span role="radiogroup" aria-label="Window" className="inline-flex items-center gap-px rounded-sm border border-line bg-canvas p-px">
               {WINDOWS.map((w) => (
                 <button
@@ -134,8 +134,7 @@ function DependenciesInner() {
           </>
         }
       >
-        What every agent depends on, declared by its latest version and seen in its runs: the tools it calls and the servers that serve them, the models it uses, the agents its
-        runs started, the peers its runs handed tasks to, and the applications (registered use cases) that depend on it. Pick a node for its blast radius: everything that fails if it does.
+        What every agent depends on; pick a node for its blast radius.
       </GroupHeader>
 
 
@@ -236,7 +235,7 @@ export function MapView({ map, picked, lit, onPick, quiet = false }: { map: DepM
   }
   if (!map) return <div className="rounded-md border border-line bg-surface px-4 py-6 text-[12px] text-faint">Reading the map…</div>;
   if (!map.nodes.length) {
-    return <div className="rounded-md border border-line bg-surface px-4 py-6 text-[12px] text-faint">Nothing is deployed or seen in this window: no agent, tool, model or application to map.</div>;
+    return <div className="rounded-md border border-line bg-surface px-4 py-6 text-[12px] text-faint">Nothing is deployed or seen in this window.</div>;
   }
 
   const paths = map.edges.map((e) => {
@@ -386,11 +385,7 @@ function SidePanel({
     return (
       <aside className="flex flex-col gap-2 rounded-md border border-line bg-surface px-4 py-3.5">
         <span className="text-[12px] font-semibold text-fg">Pick a node</span>
-        <span className="text-[11.5px] leading-[1.55] text-faint">
-          Its neighbourhood (what it depends on, what depends on it, with how often each edge was used, what it cost, what failed) and its blast radius:
-          every agent that fails if it does, directly or through another agent, the runs in flight, the applications.
-        </span>
-        {map?.how && <span className="text-[10.5px] leading-[1.55] text-ghost">{map.how}.</span>}
+        <span className="text-[11.5px] leading-[1.55] text-faint">Its dependencies, and everything that fails if it does.</span>
       </aside>
     );
   }
@@ -398,7 +393,7 @@ function SidePanel({
     return (
       <aside className="flex flex-col gap-2 rounded-md border border-line bg-surface px-4 py-3.5">
         <span className="text-[12px] font-semibold text-fg">No node {picked} in this window</span>
-        <span className="text-[11.5px] text-faint">Nothing declares it and no journal in the window shows it. Widen the window, or pick another node.</span>
+        <span className="text-[11.5px] text-faint">Widen the window, or pick another node.</span>
         <span>
           <Button size="sm" variant="solid" tone="neutral" onClick={() => onPick("")}>
             Clear
@@ -443,7 +438,7 @@ function SidePanel({
           </span>
         )}
       </div>
-      <EdgeRows title="Depends on" rows={adj.dependsOn} byId={byId} onPick={onPick} empty="Nothing: it depends on no other node on the map." />
+      <EdgeRows title="Depends on" rows={adj.dependsOn} byId={byId} onPick={onPick} empty="Depends on no other node." />
       <EdgeRows title="Depended on by" rows={adj.dependedOnBy} byId={byId} onPick={onPick} empty="Nothing on the map depends on it." />
       <Blast id={node.id} window={window} byId={byId} onPick={onPick} onLit={onLit} />
     </aside>
@@ -550,7 +545,6 @@ export function BlastView({ blast: b, byId, onPick }: { blast: BlastRadius; byId
           {a.via && a.via !== `application:${a.id}` && <span className="text-ghost">via {byId.get(a.via) ? nodeTitle(byId.get(a.via)!).title : a.via}</span>}
         </span>
       ))}
-      {b.how && <p className="border-t border-line px-4 py-2 text-[10.5px] leading-[1.55] text-ghost">{b.how}.</p>}
     </div>
   );
 }

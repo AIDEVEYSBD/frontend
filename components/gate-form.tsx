@@ -420,7 +420,7 @@ export function VerdictTable({ items, verdicts, transitions, chosen, errors, onC
             })}
             {items.length === 0 && (
               <tr>
-                <td colSpan={columns.length + 3} className="px-3 py-4 text-faint">The run emitted nothing under this register; there is nothing to rule on.</td>
+                <td colSpan={columns.length + 3} className="px-3 py-4 text-faint">Nothing on this register to rule on.</td>
               </tr>
             )}
           </tbody>

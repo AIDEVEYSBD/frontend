@@ -197,7 +197,7 @@ export function fetchLine(p: Pick<Peer, "last_fetch" | "card"> & { adopted?: Pee
   if (f.ok) return { ok: true, text: "the card was read, signed, and its signature checked" };
   const why = f.error || "the fetch failed";
   const hint = /\b401\b/.test(why)
-    ? "; the peer does not know this control plane's secret yet: once it registers this factory with the same secret, rescan"
+    ? "; rescan once the peer has registered this platform"
     : /unreachable|refused|timed out|timeout/i.test(why)
       ? "; rescan once it answers"
       : "";

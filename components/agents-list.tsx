@@ -280,7 +280,7 @@ function RowMenu({ at, canDelete, onClose, onExport, onCompare, onDelete }: { at
       <MenuItem
         icon="cross"
         label="Delete"
-        hint={deleteBuilt === false ? "Not built yet: the platform answers 501 to DELETE /api/agents/{agent}" : canDelete ? "Removes it from the registry" : 'Needs the "deploy" permission'}
+        hint={deleteBuilt === false ? "Not built yet: DELETE /api/agents/{agent}" : canDelete ? "Removes it from the registry" : 'Needs the "deploy" permission'}
         tone="err"
         disabled={!canDelete || deleteBuilt === false}
         onClick={onDelete}
@@ -509,7 +509,7 @@ function AgentsPage() {
     <div className="min-h-full" data-hue="blue">
       <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7">
         <GroupHeader group="agents" tab="agents">
-          Every agent saved on this deployment: what it does, who owns it, whether production runs it and when it last ran. Open an agent for its configuration, versions and bill of materials{rosterOff ? "." : ", or open its row for the steps inside it."}
+          Every agent on this deployment, its owner, state and last run.
         </GroupHeader>
 
         {unread && <Failure what="The agents could not be read" message={error} />}
@@ -519,7 +519,6 @@ function AgentsPage() {
         {agents?.length === 0 && !error && (
           <div className="flex flex-col items-start gap-2 rounded-lg border border-dashed border-line-strong bg-surface px-6 py-10">
             <p className="text-[14px] font-medium text-fg">No agent is on this deployment yet.</p>
-            <p className="max-w-[60ch] text-[12.5px] leading-relaxed text-faint">Adding agents is not part of this build: this deployment manages and controls the use cases it was delivered with. Their agents are listed here once they are on the deployment, ready to configure, run and deploy.</p>
           </div>
         )}
 
@@ -548,7 +547,7 @@ function AgentsPage() {
                 {error && (<span className="text-[11px] text-err">{error}</span>)}
                 {!error && partDown && (<span className="text-[11px] text-err">Not read: {Object.entries(reasons).map(([door, why]) => `${door} (${why})`).join("; ")}</span>)}
                 {exportError && <span className="text-[11px] text-err">{exportError}</span>}
-                {rosterOff && <span className="text-[11px] text-faint">Each agent&rsquo;s steps are not built here: GET /api/roster answers 501.</span>}
+                {rosterOff && <span className="text-[11px] text-faint">Steps not built yet: GET /api/roster</span>}
                 <span className="grow" />
                 <SearchBox value={q} onChange={setQ} placeholder="Name, id, owner or step" width="w-[240px]" />
               </div>
@@ -701,7 +700,7 @@ function AgentsPage() {
                                   {roster === undefined && <p className="text-[12px] text-faint">Reading its steps&hellip;</p>}
                                   {/* The failure was said once, in the bar above. */}
                                   {roster === null && !rosterOff && <p className="text-[11.5px] text-err">Its steps could not be read: {reasons.steps}</p>}
-                                  {rosterOff && <p className="text-[12px] text-faint">Each agent&rsquo;s steps are not built here.</p>}
+                                  {rosterOff && <p className="text-[12px] text-faint">Steps: Not built</p>}
                                   {roster && !steps && <p className="text-[12px] text-faint">The registry lists no steps for this agent.</p>}
                                   {steps && <Steps group={steps} />}
                                 </div>
@@ -746,7 +745,7 @@ function AgentsPage() {
       {compare && (
         <DrillModal
           title={`Versions · ${compare.name}`}
-          subtitle="Every save is a version: who saved it, when, its digest, and whether it is deployed. Pick two to see what changed."
+          subtitle="Pick two versions to see what changed."
           onClose={() => setCompare(null)}
           actions={
             <Button size="sm" variant="solid" tone="neutral" href={`/lifecycle?agent=${encodeURIComponent(compare.id)}`}>
@@ -760,7 +759,7 @@ function AgentsPage() {
 
       {deleting && (
         <Dialog modal tone="err" title={`Delete ${deleting.name}?`} confirm="Delete" cancel="Keep it" loading={busy} onClose={() => { if (!busy) { setDeleting(null); setDeleteError(""); } }} onConfirm={() => remove(deleting.id)}>
-          This asks the platform to remove the agent from the registry. Its versions and past runs stay readable.
+          Removes it from the registry; versions and runs stay readable.
           {deleteError && (
             <span className="mt-2 block">
               <Failure inline what="The agent was not deleted" message={deleteError} />

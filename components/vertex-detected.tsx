@@ -72,8 +72,8 @@ export function VertexDetected() {
   if (!answer.connected) {
     const refused = answer.groups.find((g) => g.error);
     const line = answer.source
-      ? `This server has a Google identity${answer.account ? ` (${answer.account})` : ""}, but Vertex AI did not list any model to it${refused?.error ? `: ${refused.error}` : ""}.`
-      : "This server has no Google identity, so nothing is detected from Vertex AI.";
+      ? `Vertex AI listed no model${answer.account ? ` to ${answer.account}` : ""}${refused?.error ? `: ${refused.error}` : ""}.`
+      : "This server has no Google identity.";
     return <p className="border-b border-line px-4 py-3 text-[11.5px] leading-[1.55] text-faint last:border-b-0">{line}</p>;
   }
 
@@ -162,10 +162,7 @@ export function VertexDetected() {
           </div>
         </>
       )}
-      <p className="border-t border-line px-4 py-2.5 text-[11.5px] leading-[1.55] text-faint">
-        Detected on the connection, nothing more: these are the models Vertex AI lists to this deployment. None is offered to agents or has been called from
-        here until it is added to the offered models.
-      </p>
+      <p className="border-t border-line px-4 py-2.5 text-[11.5px] leading-[1.55] text-faint">Detected only; add a model to the offered models to use it.</p>
     </div>
   );
 

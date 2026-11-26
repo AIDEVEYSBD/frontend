@@ -76,7 +76,7 @@ export function ApiKeys() {
   /** The longest lifetime this deployment allows now, as the key list answers it; unknown until the list is read. */
   const maxDays = (list as { max_lifetime_days?: unknown } | null)?.max_lifetime_days;
   const lifetime = days.trim() ? Number(days.trim()) : undefined;
-  const lifetimeProblem = lifetime === undefined ? "" : !Number.isInteger(lifetime) || lifetime < 1 ? "A lifetime is a whole number of days, 1 or more; leave it blank for the longest this deployment allows." : "";
+  const lifetimeProblem = lifetime === undefined ? "" : !Number.isInteger(lifetime) || lifetime < 1 ? "A whole number of days, 1 or more." : "";
 
   const mint = async () => {
     if (!name.trim() || busy || lifetimeProblem) return;
@@ -105,7 +105,7 @@ export function ApiKeys() {
     const k = revoking;
     try {
       await revokeKey(k.id);
-      setRevokeNote({ tone: "ok", text: `${k.name} (${k.prefix}…) is revoked: its next request is refused. The row stays as the record of what it was.` });
+      setRevokeNote({ tone: "ok", text: `${k.name} (${k.prefix}…) is revoked.` });
       load();
     } catch (e) {
       setRevokeNote({ tone: "err", text: `${k.name} was not revoked: ${(e as Error).message}` });
@@ -134,10 +134,10 @@ export function ApiKeys() {
       >
         <span className="text-[12px] font-semibold text-fg">Mint a key</span>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_220px]">
-          <Field label="Name" hint="What it is for, as the register and Sessions will show it.">
+          <Field label="Name" hint="What it is for.">
             <Input value={name} onChange={setName} autoComplete="off" />
           </Field>
-          <Field label="Acts as" hint={agentsError ? `The saved agents could not be read: ${agentsError}` : agents && agents.length === 0 ? "No agent is saved yet, so the key cannot be bound to one." : "Bound to one agent, the key starts that agent's runs and no other."}>
+          <Field label="Acts as" hint={agentsError ? `The saved agents could not be read: ${agentsError}` : agents && agents.length === 0 ? "No agent is saved yet." : "A bound key starts only that agent's runs."}>
             <Pick
               aria-label="Acts as"
               value={agent}
@@ -151,8 +151,8 @@ export function ApiKeys() {
             hint={
               lifetimeProblem ||
               (typeof maxDays === "number"
-                ? `Blank mints it for the longest this deployment allows: ${maxDays} day${maxDays === 1 ? "" : "s"} (API_KEY_MAX_LIFETIME_DAYS). A number above that is refused.`
-                : "Blank mints it for the longest this deployment allows (its API_KEY_MAX_LIFETIME_DAYS setting). A number above that is refused with the range allowed.")
+                ? `Blank for the longest allowed: ${maxDays} day${maxDays === 1 ? "" : "s"}.`
+                : "Blank for the longest this deployment allows.")
             }
           >
             <Input value={days} onChange={setDays} type="number" invalid={Boolean(lifetimeProblem)} aria-label="Lifetime in days" autoComplete="off" />
@@ -169,11 +169,10 @@ export function ApiKeys() {
               ))}
             </span>
           ) : permissionsError ? (
-            <span className="text-[11.5px] leading-[1.5] text-err">The permission list could not be read ({permissionsError}), so none is sent: the platform mints its default, view and run.</span>
+            <span className="text-[11.5px] leading-[1.5] text-err">The permissions could not be read ({permissionsError}); the key gets view and run.</span>
           ) : (
             <span className="text-[11.5px] text-faint">Reading the permissions…</span>
           )}
-          <span className="text-[11px] leading-[1.5] text-faint">What a key may hold is the platform&rsquo;s rule: a permission it refuses comes back with the reason, below.</span>
         </div>
         <span className="flex flex-wrap items-center gap-2">
           <Button type="submit" size="sm" variant="solid" tone="ink" permission="iam" loading={busy} disabled={!name.trim() || (permissions !== null && picked.length === 0) || Boolean(lifetimeProblem)}>
@@ -189,9 +188,7 @@ export function ApiKeys() {
         <div className="flex flex-col gap-2 border-b border-line bg-warn/5 px-4 py-3" role="status">
           <span className="flex flex-wrap items-center gap-2">
             <Status tone="warn">Copy it now</Status>
-            <span className="text-[12.5px] font-medium text-fg">
-              {minted.name} is minted. This is the only time the key is shown: it is not shown again, here or anywhere.
-            </span>
+            <span className="text-[12.5px] font-medium text-fg">{minted.name} is minted; it is shown only once.</span>
           </span>
           <span className="flex flex-wrap items-center gap-2">
             <span className="min-w-0 grow rounded-sm border border-line bg-surface px-2 py-1.5 font-mono text-[12px] break-all text-fg" data-minted-key>
@@ -215,9 +212,8 @@ export function ApiKeys() {
             </Button>
           </span>
           <span className="text-[11.5px] leading-[1.5] text-dim">
-            {(minted.note ?? "").replace(/^This is the only time the key is shown\.\s*/, "") || "Send it as Authorization: Bearer <key>."} The platform keeps only its SHA-256 and the prefix <Mono className="text-[11px]">{minted.prefix}</Mono>
-            {minted.agent ? `; it acts only as the agent ${agentName(minted.agent)}` : ""}.{" "}
-            {minted.expires_at ? `It works until ${until(minted.expires_at)}, and is refused from then.` : "The answer did not say when it expires."}
+            Send it as Authorization: Bearer &lt;key&gt; · prefix <Mono className="text-[11px]">{minted.prefix}</Mono>
+            {minted.agent ? ` · acts as ${agentName(minted.agent)}` : ""} · expires {minted.expires_at ? until(minted.expires_at) : "—"}
           </span>
         </div>
       )}
@@ -302,11 +298,8 @@ export function ApiKeys() {
 
       {revoking && (
         <Dialog modal tone="err" cancel="Cancel" confirm="Revoke key" title={`Revoke ${revoking.name}?`} loading={revokeBusy} onConfirm={revoke} onClose={() => !revokeBusy && setRevoking(null)}>
-          <span className="flex flex-col gap-2">
-            <span>
-              Its next request is refused, and a revoked key cannot be restored: anything still using <Mono className="text-[11.5px]">{revoking.prefix}…</Mono> needs a new key.
-            </span>
-            {revoking.agent && <span>It acts as the agent {agentName(revoking.agent)}; that agent itself is not changed.</span>}
+          <span>
+            Anything using <Mono className="text-[11.5px]">{revoking.prefix}…</Mono> is refused; it cannot be restored.
           </span>
         </Dialog>
       )}

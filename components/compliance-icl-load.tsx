@@ -15,9 +15,9 @@ import { ICL, checkList, plural, type ListCheck } from "./compliance-parts";
  */
 
 const COLUMNS: { name: string; needed: boolean; what: string }[] = [
-  { name: "id", needed: true, what: "The control's identifier in the list. Each id appears once; mappings are kept by it." },
+  { name: "id", needed: true, what: "Unique per control; mappings are kept by it." },
   { name: "title", needed: true, what: "The control's name, as the list writes it." },
-  { name: "domain", needed: false, what: "The part of the list the control belongs to. Used to group the controls no catalogue control answers." },
+  { name: "domain", needed: false, what: "Groups the controls no catalogue control answers." },
 ];
 
 export function IclLoad({ replaces, onClose, onDone }: { /** A list is loaded now and this one takes its place. */ replaces: boolean; onClose: () => void; onDone: () => void }) {
@@ -36,7 +36,7 @@ export function IclLoad({ replaces, onClose, onDone }: { /** A list is loaded no
     setError("");
     f.text()
       .then((text) => setCheck(checkList(text)))
-      .catch(() => setError("The file could not be read in the browser. Choose it again."));
+      .catch(() => setError("The file could not be read; choose it again."));
   };
 
   const problem = !check
@@ -70,7 +70,7 @@ export function IclLoad({ replaces, onClose, onDone }: { /** A list is loaded no
   return (
     <DatasetDialog
       title={`Load the ${ICL}`}
-      subtitle={replaces ? "One CSV file. It takes the place of the list loaded now." : "One CSV file, with a header row."}
+      subtitle={replaces ? "One CSV file; it replaces the list loaded now." : "One CSV file, with a header row."}
       locked={busy}
       onClose={onClose}
       footer={
@@ -92,9 +92,7 @@ export function IclLoad({ replaces, onClose, onDone }: { /** A list is loaded no
         {/* the format */}
         <div className="flex flex-col gap-2">
           <span className="text-[12.5px] font-medium text-mist">Expected format</span>
-          <p className="text-[12px] leading-[1.55] text-dim">
-            A comma-separated file whose first row names the columns, followed by one row per control.
-          </p>
+          <p className="text-[12px] leading-[1.55] text-dim">A header row, then one row per control.</p>
           <code className="w-fit rounded-sm border border-line bg-canvas px-2 py-1 font-mono text-[11.5px] text-fg">id,title,domain</code>
           <dl className="flex flex-col overflow-hidden rounded-md border border-line">
             {COLUMNS.map((c) => (
@@ -152,10 +150,6 @@ export function IclLoad({ replaces, onClose, onDone }: { /** A list is loaded no
             {check.blank > 0 && <span className="text-[11.5px] leading-[1.5] text-warn">{plural(check.blank, "row has", "rows have")} no id.</span>}
           </div>
         )}
-
-        <p className="text-[11.5px] leading-[1.55] text-faint">
-          The mapping to the catalogue is kept by id. A mapping to an id the loaded list does not have is shown as not in the list until it is removed.
-        </p>
 
         {(problem || error) && (
           <p role="alert" className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">

@@ -119,6 +119,7 @@ function RetrievalAccessPage() {
   };
 
   const noticeText: ReactNode = notice ? "door" in notice ? <NotConnectedNote door={notice.door} /> : notice.text : null;
+  const unread = answer === null ? "Reading…" : pending ? "Not built" : "Not read.";
 
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
@@ -131,8 +132,7 @@ function RetrievalAccessPage() {
           </Button>
         }
       >
-        Switch retrieval from a knowledge store off, which refuses every search and answer from it on the Knowledge page at once, or take from an agent its right to read, write or delete in a store. Agents with a read grant retrieve through their retrieval.search tool, which checks
-        the grant at every search: a revocation refuses the agent&rsquo;s next retrieval, including in a run already under way.
+        Switch retrieval from a store off, or revoke an agent&rsquo;s rights.
       </GroupHeader>
 
       {notice && (
@@ -155,13 +155,10 @@ function RetrievalAccessPage() {
       <Section title="Stores" hue="retrieval" meta={connected ? `${stores.length.toLocaleString("en-GB")}${off ? ` · ${off.toLocaleString("en-GB")} switched off` : ""}` : undefined}>
         {answer === null && <p className="text-[12px] text-faint">Reading the stores…</p>}
         {pending && (
-          <NotConnected door={answer.door}>
-            Each knowledge store and data store an agent retrieves from, with its kind, its data class and whether retrieval from it is on. Switching a store off stops every agent retrieving from
-            it; the row then says who switched it off, when and why. The agents and the history below wait for the same door.
-          </NotConnected>
+          <NotConnected door={answer.door} />
         )}
         {answer?.state === "error" && <Failure what="Retrieval access could not be read" message={answer.message} />}
-        {connected && stores.length === 0 && <EmptyState title="No stores" detail="This deployment has no knowledge store or data store. Each one is listed here once it exists." />}
+        {connected && stores.length === 0 && <EmptyState title="No stores" />}
         {stores.length > 0 && (
           <div className="-m-4 overflow-x-auto">
             <table className="w-full min-w-[720px] border-collapse text-left text-[12px] xl:min-w-[900px]">
@@ -244,8 +241,8 @@ function RetrievalAccessPage() {
           )}
         </div>
 
-        {!connected && <p className="text-[12px] text-faint">Each agent is listed here with the stores it holds: what its definition grants it there (read, write, delete) and what of that is revoked now.</p>}
-        {connected && data.grants.length === 0 && <p className="text-[12px] text-faint">No agent holds access to a store, so no agent can retrieve from one; deploying an agent that is granted a retrieval tool gives it read access to the stores that tool names.</p>}
+        {!connected && <p className="text-[12px] text-faint">{unread}</p>}
+        {connected && data.grants.length === 0 && <p className="text-[12px] text-faint">No agent holds access to a store.</p>}
         {connected && data.grants.length > 0 && groups.length === 0 && <p className="text-[12px] text-faint">{revokedOnly && !agentF && !storeF ? "Nothing is revoked at the moment." : "No agent and store match these filters."}</p>}
 
         {groups.length > 0 && (
@@ -322,8 +319,8 @@ function RetrievalAccessPage() {
 
       {/* 3. every change, newest first */}
       <Section title="History" hue="audit" meta={connected && history.length > 0 ? history.length.toLocaleString("en-GB") : undefined}>
-        {!connected && <p className="text-[12px] text-faint">Every revocation, restoration and switch is listed here, newest first: when, who, what, which agent and store, and the reason.</p>}
-        {connected && history.length === 0 && <p className="text-[12px] text-faint">Nothing has been revoked, restored or switched off on this deployment.</p>}
+        {!connected && <p className="text-[12px] text-faint">{unread}</p>}
+        {connected && history.length === 0 && <p className="text-[12px] text-faint">Nothing revoked, restored or switched off yet.</p>}
         {history.length > 0 && (
           <div className="-m-4 overflow-x-auto">
             <table className="w-full min-w-[1080px] border-collapse text-left text-[12px]">

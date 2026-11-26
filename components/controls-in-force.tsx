@@ -150,7 +150,7 @@ function span(seconds: number): string {
 }
 
 /* A declared timeout is acted on when it passes (lib/gates.ts GATE_TIMEOUT_LINE). */
-const timeoutLine = (s: number | null, then: string): string => (s === null ? "" : `after ${span(s)} unanswered it ${then === "escalate" ? "escalates to the next role on its chain, or the run is ended as failed when none is left" : "is ended as failed"}`);
+const timeoutLine = (s: number | null, then: string): string => (s === null ? "" : `${then === "escalate" ? "escalates" : "fails"} after ${span(s)} unanswered`);
 
 const shown = (v: unknown): string => (v === null || v === undefined ? "unset" : typeof v === "string" ? v || "none" : Array.isArray(v) ? (v.length ? v.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join(", ") : "none") : typeof v === "object" ? (Object.keys(v as object).length ? JSON.stringify(v) : "none") : String(v));
 
@@ -183,21 +183,13 @@ export function declaredControls(g: Governed): { control: string; why: string }[
 }
 
 /**
- * What the platform says about one control on this deployment, in a clause:
- * "enforced now", "not enforced now: <why>", "unknown: <why>", or, while
- * `GET /api/controls` does not answer, that it is not reported.
+ * What the platform says about one control on this deployment, as a short
+ * label: "enforced now", "not enforced", "unknown". Nothing while
+ * `GET /api/controls` has not answered; the block's failure line says why.
  */
 function enforcementClause(read: ControlsRead | null, id: string): string {
-  if (!read) return "whether this deployment enforces it is being read";
-  if (read.state === "pending") return "whether this deployment enforces it is not reported: GET /api/controls is not built";
-  if (read.state === "error") return "whether this deployment enforces it could not be read";
-  const e = enforcementOf(read, id)!;
-  const why = e.why ? `: ${e.why}` : "";
-  if (e.state === "enforced") return `this deployment enforces it now${why}`;
-  if (e.state === "partly") return `this deployment enforces it in part${why}`;
-  if (e.state === "not_enforced") return `this deployment does not enforce it now${why}`;
-  if (e.state === null) return `whether this deployment enforces it is unknown${why}`;
-  return "the platform's answer does not list it";
+  if (!read || read.state !== "ok") return "";
+  return enforcementOf(read, id)!.label;
 }
 
 /* ═══════════════════ pieces ═══════════════════ */
@@ -283,8 +275,8 @@ function TargetLines({ target, agent, tier }: { target: TargetKind; agent: strin
             <span className="text-faint">{target.kind === "autonomy_tiers" && tier ? `${tier} requires no controls` : "nothing set"}</span>
           ))}
         {target.kind === "autonomy_tiers" && tier && estate && empty(estate[tier]) && rows(estate).length > 0 && <span className="text-faint">{tier} requires no controls.</span>}
-        {off && <span className="text-faint">The guardian is off, so it watches no agent.</span>}
-        {!off && target.kind === "guardian" && estate && Array.isArray(estate.agents) && estate.agents.length > 0 && !estate.agents.map(String).includes(agent) && <span className="text-faint">The guardian&rsquo;s list of agents does not name this one.</span>}
+        {off && <span className="text-faint">The guardian is off.</span>}
+        {!off && target.kind === "guardian" && estate && Array.isArray(estate.agents) && estate.agents.length > 0 && !estate.agents.map(String).includes(agent) && <span className="text-faint">Not on the guardian&rsquo;s list.</span>}
       </span>
     </Line>
   );
@@ -349,14 +341,14 @@ export function ControlsInForce({ agent }: { agent: string }) {
         <Block title="Gates and who signs them" meta={g ? `${g.gates.length + g.waits.length} declared` : undefined} where={{ href: agentHref(agent), label: "Kept in the agent's spec" }}>
           {spec.state === "reading" && <Skeleton lines={2} />}
           {spec.state === "error" && <Failed what="The agent's spec could not be read" message={spec.message} />}
-          {g && g.gates.length + g.waits.length === 0 && <None>No gate is declared. The platform&rsquo;s own holds still apply: a destructive call waits for a platform admin, and a mass action, a lockdown or an operator&rsquo;s hold makes a call wait for a person.</None>}
+          {g && g.gates.length + g.waits.length === 0 && <None>No gate is declared; the platform&rsquo;s own holds still apply.</None>}
           {g && g.gates.length + g.waits.length > 0 && (
             <List>
               {g.gates.map((x, i) => (
                 <Line key={`g${i}`}>
                   <Status tone="warn">Policy gate</Status>
                   <span className="min-w-0 grow basis-[240px]">
-                    A call at or above <Tag tone={RISK_TONE[x.risk] ?? "neutral"}>{x.risk || "unset"}</Tag> risk{x.nodes.length ? ` in ${x.nodes.join(", ")}` : ""} waits for <span className="font-medium text-fg">{x.approvers.length ? x.approvers.join(", ") : "anyone holding the approve permission (the spec names no role)"}</span>
+                    A call at or above <Tag tone={RISK_TONE[x.risk] ?? "neutral"}>{x.risk || "unset"}</Tag> risk{x.nodes.length ? ` in ${x.nodes.join(", ")}` : ""} waits for <span className="font-medium text-fg">{x.approvers.length ? x.approvers.join(", ") : "anyone with the approve permission"}</span>
                     {timeoutLine(x.timeoutS, x.onTimeout) ? `; ${timeoutLine(x.timeoutS, x.onTimeout)}` : ""}.
                   </span>
                 </Line>
@@ -365,21 +357,20 @@ export function ControlsInForce({ agent }: { agent: string }) {
                 <Line key={w.node}>
                   <Status tone={w.kind === "approval" ? "warn" : "queue"}>{w.kind === "approval" ? "Approval step" : `Waits on a ${w.kind}`}</Status>
                   <span className="min-w-0 grow basis-[240px]">
-                    <Mono className="text-[10.5px] text-fg">{w.node}</Mono> stops and waits for <span className="font-medium text-fg">{w.target || (w.kind === "approval" ? "anyone holding the approve permission (the spec names no role)" : `its ${w.kind}`)}</span>
+                    <Mono className="text-[10.5px] text-fg">{w.node}</Mono> stops and waits for <span className="font-medium text-fg">{w.target || (w.kind === "approval" ? "anyone with the approve permission" : `its ${w.kind}`)}</span>
                     {timeoutLine(w.timeoutS, w.onTimeout) ? `; ${timeoutLine(w.timeoutS, w.onTimeout)}` : ""}.
                   </span>
                 </Line>
               ))}
             </List>
           )}
-          {g && <p className="text-[10.5px] leading-[1.5] text-ghost">Approvers are roles: whoever holds the role when the gate opens may answer, except the person who started the run and the author of its version. The answer is recorded under their sign-in.</p>}
         </Block>
 
         {/* ── tools ── */}
         <Block title="Tools it is granted" meta={g ? `${granted.size} tool${granted.size === 1 ? "" : "s"} across ${g.grants.length} step${g.grants.length === 1 ? "" : "s"} · ${beyondRead} beyond read` : undefined} where={{ href: `/bom?agent=${encodeURIComponent(agent)}`, label: "Each tool on the AI-BOM" }}>
           {spec.state === "reading" && <Skeleton lines={3} />}
           {spec.state === "error" && <Failed what="The agent's spec could not be read" message={spec.message} />}
-          {g && g.grants.length === 0 && <None>No tool is granted to any step: this agent can call none.</None>}
+          {g && g.grants.length === 0 && <None>No tool is granted.</None>}
           {g && g.grants.length > 0 && (
             <>
               <List>
@@ -398,11 +389,11 @@ export function ControlsInForce({ agent }: { agent: string }) {
                 ))}
               </List>
               <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] text-ghost">
-                <span>A mark is the tool&rsquo;s declared risk:</span>
+                <span>Declared risk:</span>
                 <span className="flex items-center gap-1"><span className="size-1.5 rounded-[2px] bg-queue" /> write</span>
                 <span className="flex items-center gap-1"><span className="size-1.5 rounded-[2px] bg-warn" /> risky</span>
                 <span className="flex items-center gap-1"><span className="size-1.5 rounded-[2px] bg-err" /> destructive</span>
-                <span>none is read only.</span>
+                <span>unmarked is read.</span>
               </p>
             </>
           )}
@@ -414,7 +405,7 @@ export function ControlsInForce({ agent }: { agent: string }) {
         <Block title="Autonomy tier" meta={tier ? `${tier.tier} ${tier.name}` : undefined} where={{ href: "/policy", label: "Tier rules on Policy" }}>
           {tiers.state === "reading" && <Skeleton lines={2} />}
           {tiers.state === "error" && <Failed what="The autonomy tiers could not be read" message={tiers.message} />}
-          {tiers.state === "ok" && !tier && <None>The tiers door named no tier for this agent.</None>}
+          {tiers.state === "ok" && !tier && <None>No tier is named for this agent.</None>}
           {tiers.state === "ok" && tier && (
             <>
               <span className="flex flex-wrap items-center gap-2">
@@ -430,7 +421,7 @@ export function ControlsInForce({ agent }: { agent: string }) {
                         <Status tone={s.tone}>{s.label}</Status>
                         <span className="font-medium text-fg">{requirementLabel(r.requirement, tiers.data.requirements)}</span>
                         <span className="min-w-0 basis-full text-[11px] text-faint">
-                          {r.detail} Judged by the {r.judged_by}.
+                          {r.detail}
                         </span>
                       </Line>
                     );
@@ -438,7 +429,7 @@ export function ControlsInForce({ agent }: { agent: string }) {
                 </List>
               )}
               <p className="text-[10.5px] leading-[1.5] text-ghost">
-                The tier is declared in the agent&rsquo;s spec ({g?.autonomy ? `metadata.autonomy ${g.autonomy}` : "none declared, which reads as L0"}); what each tier requires is an estate rule.{" "}
+                {g?.autonomy ? `Declared in the spec: metadata.autonomy ${g.autonomy}.` : "None declared in the spec; reads as L0."}{" "}
                 <Link href={agentHref(agent)} className="focusable rounded-sm text-dim underline">
                   Open the agent
                 </Link>
@@ -454,7 +445,7 @@ export function ControlsInForce({ agent }: { agent: string }) {
           {g && (
             <>
               {g.loops.length + g.fanouts.length + g.extra.length === 0 && !g.injection && !g.blockTaintedSinks ? (
-                <None>The spec declares no step limit, budget, screening phrase or sink protection.</None>
+                <None>The spec declares no limits.</None>
               ) : (
                 <List>
                   {g.loops.length > 0 && (
@@ -480,12 +471,12 @@ export function ControlsInForce({ agent }: { agent: string }) {
                   ))}
                   <Line>
                     <span className="w-full font-medium text-fg sm:w-[150px] sm:shrink-0">Sink protection</span>
-                    <span className="min-w-0 grow basis-[240px]">{g.blockTaintedSinks ? `Declared in the spec; ${enforcementClause(status, "AF-DP-02")}.` : "Not declared in the spec."}</span>
+                    <span className="min-w-0 grow basis-[240px]">{g.blockTaintedSinks ? `Declared in the spec${enforcementClause(status, "AF-DP-02") ? ` · ${enforcementClause(status, "AF-DP-02")}` : ""}` : "Not declared in the spec."}</span>
                   </Line>
                   <Line>
                     <span className="w-full font-medium text-fg sm:w-[150px] sm:shrink-0">Screening</span>
                     <span className="min-w-0 grow basis-[240px]">
-                      {g.injection ? `${g.injection.patterns} block phrase${g.injection.patterns === 1 ? "" : "s"} and ${g.injection.prohibited} prohibited action${g.injection.prohibited === 1 ? "" : "s"} declared in the spec; content screening: ${enforcementClause(status, "AF-DP-04")}.` : `None declared in the spec; the deployment's content screening: ${enforcementClause(status, "AF-DP-04")}.`}
+                      {`${g.injection ? `${g.injection.patterns} block phrase${g.injection.patterns === 1 ? "" : "s"}, ${g.injection.prohibited} prohibited action${g.injection.prohibited === 1 ? "" : "s"}` : "None declared"}${enforcementClause(status, "AF-DP-04") ? ` · screening ${enforcementClause(status, "AF-DP-04")}` : ""}`}
                     </span>
                   </Line>
                   {g.extra.map(([k, v]) => (
@@ -501,8 +492,8 @@ export function ControlsInForce({ agent }: { agent: string }) {
         </Block>
 
         {/* ── estate rules ── */}
-        <Block title="Estate rules that apply now" meta={targets.state === "ok" ? `${applicable.length} of ${targets.data.targets.length} policy targets · every change goes through ${targets.data.door}` : undefined} where={{ href: "/policy", label: "The rules now, on Policy" }}>
-          {fleet.state === "error" && <Failed what="Whether the agent is paused or the estate locked down could not be read" message={fleet.message} />}
+        <Block title="Estate rules that apply now" meta={targets.state === "ok" ? `${applicable.length} of ${targets.data.targets.length} policy targets` : undefined} where={{ href: "/policy", label: "The rules now, on Policy" }}>
+          {fleet.state === "error" && <Failed what="Pause and lockdown could not be read" message={fleet.message} />}
           {(pause || lockdown?.on) && (
             <List>
               {pause && (
@@ -533,7 +524,7 @@ export function ControlsInForce({ agent }: { agent: string }) {
           )}
           {targets.state === "reading" && <Skeleton lines={3} />}
           {targets.state === "error" && <Failed what="The estate's rules could not be read" message={targets.message} />}
-          {targets.state === "ok" && applicable.length === 0 && <None>No estate rule is set that bears on this agent.</None>}
+          {targets.state === "ok" && applicable.length === 0 && <None>No estate rule applies to this agent.</None>}
           {applicable.length > 0 && (
             <List>
               {applicable.map((t) => (
@@ -546,8 +537,8 @@ export function ControlsInForce({ agent }: { agent: string }) {
         {/* ── controls ── */}
         <Block title="Controls it maps to" meta={g ? `${declared.length} from its spec${fired.state === "ok" ? ` · ${[...firings.values()].reduce((a, b) => a + b, 0)} firings on record` : ""}` : undefined} where={{ href: "/guardrails", label: "The register, on Controls" }}>
           {spec.state === "reading" && <Skeleton lines={3} />}
-          {fired.state === "error" && <Failed what="How often each control fired could not be read" message={fired.message} />}
-          {g && declared.length === 0 && undeclared.length === 0 && <None>Nothing this spec declares names a control in the register.</None>}
+          {fired.state === "error" && <Failed what="Firings could not be read" message={fired.message} />}
+          {g && declared.length === 0 && undeclared.length === 0 && <None>No register control is declared.</None>}
           {(declared.length > 0 || undeclared.length > 0) && (
             <List>
               {declared.map((d) => {
@@ -557,12 +548,11 @@ export function ControlsInForce({ agent }: { agent: string }) {
                     <span className="w-full sm:w-[230px] sm:shrink-0">
                       <ControlRef control={d.control} />
                     </span>
-                    <span className="min-w-0 grow basis-[200px]">
-                      {d.why}
+                    <span className="min-w-0 grow basis-[200px]" title={d.why}>
                       {(() => {
                         const e = enforcementOf(status, d.control);
                         return e ? (
-                          <span title={e.why || undefined} className="ml-1.5 inline-flex align-middle">
+                          <span className="ml-1.5 inline-flex align-middle">
                             <Tag tone={e.tone}>{e.label}</Tag>
                           </span>
                         ) : null;
@@ -585,11 +575,11 @@ export function ControlsInForce({ agent }: { agent: string }) {
                     <ControlMark control={k} />
                   </span>
                   <span className="min-w-0 grow basis-[200px]">
-                    Fired on this agent&rsquo;s runs; no declaration in the current spec names it.
+                    Not declared in the current spec.
                     {(() => {
                       const e = resolveControl(k) ? enforcementOf(status, resolveControl(k)!.id) : null;
                       return e ? (
-                        <span title={e.why || undefined} className="ml-1.5 inline-flex align-middle">
+                        <span className="ml-1.5 inline-flex align-middle">
                           <Tag tone={e.tone}>{e.label}</Tag>
                         </span>
                       ) : null;
@@ -604,12 +594,9 @@ export function ControlsInForce({ agent }: { agent: string }) {
           )}
           {status && status.state !== "ok" && (
             <p>
-              <Failure inline what="Whether each control is enforced could not be read" message={status.state === "pending" ? notBuiltText(status.door.method, status.door.path) : status.message} />
+              <Failure inline what="Enforcement could not be read" message={status.state === "pending" ? notBuiltText(status.door.method, status.door.path) : status.message} />
             </p>
           )}
-          <p className="text-[10.5px] leading-[1.5] text-ghost">
-            A control is listed because the spec declares it; declaring is not enforcing. {status?.state === "ok" ? "Whether this deployment enforces each one now is the platform's answer (GET /api/controls)." : "Until the platform reports which controls it enforces, nothing here says one is applied."} Firings are counted from run journals, across every version of the agent.
-          </p>
         </Block>
         </div>
       </div>

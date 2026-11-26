@@ -157,7 +157,7 @@ export function FetchModal({
       const res = await fetch("/api/knowledge/admit", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ document: doc.id, namespace, admit, by, note: note.trim() }) });
       const d = await res.json().catch(() => ({ error: `the server answered ${res.status}` }));
       if (d.error) setDecideError(d.error);
-      else onDone(d.note, true);
+      else onDone(`${doc.title} was ${admit ? "admitted and indexed" : "refused"}.`, true);
     } catch (e) {
       setDecideError((e as Error).message);
     } finally {
@@ -191,9 +191,9 @@ export function FetchModal({
             </span>
             <span className="truncate text-[11px] text-faint">
               {phase === "fetching"
-                ? "Pulling every page the source has, normalising it, and stripping site chrome, repeats and fragments before anything is staged."
+                ? ""
                 : doc
-                  ? `${doc.source_name} · ${doc.publisher} · ${namespace} corpus${doc.pages?.length > 1 ? ` · ${doc.pages.length} pages` : ""}${staged?.unchanged ? " · byte-identical to a fetch already on record" : ""}`
+                  ? `${doc.source_name} · ${doc.publisher} · ${namespace} corpus${doc.pages?.length > 1 ? ` · ${doc.pages.length} pages` : ""}${staged?.unchanged ? " · unchanged since the last fetch" : ""}`
                   : ""}
             </span>
           </span>
@@ -209,10 +209,6 @@ export function FetchModal({
               <span className="relative inline-flex size-3 rounded-full bg-run" />
             </span>
             <span className="text-[12.5px] text-fg">Fetching {sourceName}</span>
-            <span className="max-w-[60ch] text-[11.5px] leading-[1.55] text-faint">
-              The front page first; if it is an index, the pages it links to under its own path as well. Each is normalised to text with its
-              structure kept, then cleaned. A large standard takes a little while.
-            </span>
           </div>
         )}
 
@@ -262,13 +258,12 @@ export function FetchModal({
                     <span className="text-[11.5px] leading-[1.55] text-dim">
                       {removed === 0 ? "Nothing needed removing." : (
                         <>
-                          <b className="text-fg">{c.chrome}</b> site chrome block{c.chrome === 1 ? "" : "s"} (menus, cookie notices, share bars), <b className="text-fg">{c.boilerplate}</b> paragraph{c.boilerplate === 1 ? "" : "s"} repeated on most pages,{" "}
-                          <b className="text-fg">{c.duplicates}</b> duplicate paragraph{c.duplicates === 1 ? "" : "s"}, <b className="text-fg">{c.fragments}</b> fragment{c.fragments === 1 ? "" : "s"} too short to carry a claim. {kb(c.before)} in, {kb(c.after)} kept.
+                          <b className="text-fg">{c.chrome}</b> chrome block{c.chrome === 1 ? "" : "s"} · <b className="text-fg">{c.boilerplate}</b> repeated paragraph{c.boilerplate === 1 ? "" : "s"} · <b className="text-fg">{c.duplicates}</b> duplicate{c.duplicates === 1 ? "" : "s"} · <b className="text-fg">{c.fragments}</b> fragment{c.fragments === 1 ? "" : "s"} · {kb(c.before)} in, {kb(c.after)} kept
                         </>
                       )}
                     </span>
                   ) : (
-                    <span className="text-[11.5px] text-faint">This document was staged before the cleaning pass recorded its figures.</span>
+                    <span className="text-[11.5px] text-faint">—</span>
                   )}
                 </div>
                 <div className="flex min-w-0 flex-col gap-1 bg-surface px-4 py-3">

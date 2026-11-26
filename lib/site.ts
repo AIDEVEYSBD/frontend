@@ -28,11 +28,11 @@ export function machineAddress(origin: string | null | undefined, path: string):
 
 /** What is printed where a machine address would go on a deployment that names none. `consequence` says who cannot reach what. */
 export function noMachineOrigin(consequence: string): string {
-  return `No machine address is set on this deployment (PUBLIC_API_URL): ${consequence} through the console’s sign-in.`;
+  return `No machine address set (PUBLIC_API_URL): ${consequence}.`;
 }
 
 /** Shown in place of a machine address while the session, which carries the machine origin, is read. */
-export const READING_MACHINE_ORIGIN = "Reading the address machines reach this deployment at…";
+export const READING_MACHINE_ORIGIN = "Reading the machine address…";
 
 /** The sentence for a machine address in each state: the address, the reading line, or the plain reason none is printed. */
 export function machineLine(origin: string | null | undefined, path: string, consequence: string): string {

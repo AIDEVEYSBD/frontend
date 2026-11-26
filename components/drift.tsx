@@ -75,15 +75,6 @@ const MEASURE_LABEL: Record<string, string> = {
   severity_mix: "Finding severities",
 };
 
-const MEASURE_ASKS: Record<string, string> = {
-  refusal_rate: "the share of runs with at least one refused call",
-  outcome_mix: "done, failed or stopped",
-  cost_per_run: "US dollars per run, over runs whose every model has a price; runs with an unpriced model are left out and counted",
-  latency_ms: "the run's working time, in milliseconds",
-  model_mix: "model calls per model, every call pooled",
-  severity_mix: "the findings runs recorded, by severity",
-};
-
 const STATISTIC_LABEL: Record<Statistic, string> = { jensen_shannon: "Jensen–Shannon distance", welch_z: "Welch's z", proportion_z: "two-proportion z" };
 
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
@@ -206,12 +197,14 @@ function DriftInner() {
           </>
         }
       >
-        {agent && (
+        {agent ? (
           <>
-            Showing <span className="font-mono text-[11.5px] text-fg">{agent}</span> only.{" "}
+            <span className="font-mono text-[11.5px] text-fg">{agent}</span>:
           </>
-        )}
-        Whether an agent still behaves as it did: its last {report?.windows.recent_h ?? 24} hours of ended runs against the {report?.windows.baseline_d ?? 30} days before, on how often a run meets a refusal, how runs end, what a run costs, how long it works, which models it calls and the severities of what it finds.
+        ) : (
+          "Each agent's"
+        )}{" "}
+        last {report?.windows.recent_h ?? 24} hours of ended runs against the {report?.windows.baseline_d ?? 30} days before.
       </GroupHeader>
 
       <section className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-4">
@@ -228,11 +221,7 @@ function DriftInner() {
         ))}
       </section>
       {report && (
-        <p className="mt-2 text-[11px] text-faint">
-          A measure needs {report.min_runs.recent} in the last {report.windows.recent_h} h and {report.min_runs.baseline} in the {report.windows.baseline_d} days before (runs, model
-          calls or findings, as it counts); with fewer it says so and has no number. A mix moves by its Jensen–Shannon distance (0 to 1, past {report.thresholds.mix_js}); a mean by
-          Welch&rsquo;s z and a rate by the two-proportion z (past ±{report.thresholds.mean_z}). Read {report.now ? new Date(report.now).toLocaleString() : "now"}.
-        </p>
+        <p className="mt-2 text-[11px] text-faint">Read {report.now ? new Date(report.now).toLocaleString() : "now"}.</p>
       )}
 
       {error && <Failure className="mt-4" what="The drift report could not be read" message={error} />}
@@ -265,7 +254,7 @@ export function AgentCard({ drift: a, single, windows }: { drift: AgentDrift; si
           </Link>
         )}
         <Status tone={verdict.tone}>{verdict.label}</Status>
-        <span className="min-w-0 text-[11.5px] text-dim">{verdict.detail}</span>
+        {a.drifted && <span className="min-w-0 text-[11.5px] text-dim">{verdict.detail}</span>}
         <span className="grow" />
         <span className="text-[11px] text-faint">
           {a.recent.runs} ended run{a.recent.runs === 1 ? "" : "s"} in the last {windows.recent_h ?? 24} h against {a.baseline.runs} in the {windows.baseline_d ?? 30} days before
@@ -294,10 +283,7 @@ export function AgentCard({ drift: a, single, windows }: { drift: AgentDrift; si
             {a.measures.map((m) => (
               <tr key={m.name} className={`border-b border-line align-top last:border-0 ${m.drifted ? "bg-err-bg/30" : ""}`}>
                 <td className="px-4 py-2">
-                  <span className="flex flex-col gap-0.5">
-                    <span className={`font-medium ${m.drifted ? "text-err" : "text-fg"}`}>{MEASURE_LABEL[m.name] ?? m.name}</span>
-                    <span className="max-w-[34ch] text-[10.5px] leading-[1.45] text-faint">{MEASURE_ASKS[m.name] ?? ""}</span>
-                  </span>
+                  <span className={`font-medium ${m.drifted ? "text-err" : "text-fg"}`}>{MEASURE_LABEL[m.name] ?? m.name}</span>
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-dim">{STATISTIC_LABEL[m.statistic]}</td>
                 <td className={`tnum px-3 py-2 text-right font-mono whitespace-nowrap ${m.drifted ? "font-semibold text-err" : "text-fg"}`}>{statText(m)}</td>
@@ -307,7 +293,6 @@ export function AgentCard({ drift: a, single, windows }: { drift: AgentDrift; si
                 <td className="px-4 py-2">
                   <span className="flex flex-col gap-0.5">
                     {!m.enough ? <Tag>not enough data</Tag> : m.drifted ? <Tag tone="err" solid>drifted</Tag> : <Tag tone="ok">within</Tag>}
-                    <span className="max-w-[30ch] text-[10.5px] leading-[1.45] text-faint">{m.says}</span>
                   </span>
                 </td>
               </tr>

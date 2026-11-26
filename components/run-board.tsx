@@ -826,7 +826,7 @@ function LedgerModal({ visit: v, live, maxT, initial, onClose }: { visit: Visit;
                     return (
                       <div key={m.id} className="flex flex-col gap-1.5">
                         {r.count > 1 && <span className="font-mono text-[10px] text-faint">call {i + 1} of {r.count} · {m.outcome ? m.outcome : m.done && m.ms !== undefined ? fmtMs(m.ms) : "no result"}</span>}
-                        {r.count === 1 && m.outcome && <span className="text-[11px] text-err">{m.outcome === "refused" ? "Refused after the call was recorded; the refusal is listed below." : "Failed after the call was recorded; the failure is listed below."}</span>}
+                        {r.count === 1 && m.outcome && <span className="text-[11px] text-err">{m.outcome === "refused" ? "Refused after the call was recorded." : "Failed after the call was recorded."}</span>}
                         <Args args={m.call?.data?.args ?? {}} />
                         {sandbox ? (
                           <SandboxOutput run={sandbox} />

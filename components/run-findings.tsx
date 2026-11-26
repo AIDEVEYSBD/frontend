@@ -21,13 +21,7 @@ export function RunFindings({ run }: { run: string }) {
   const { answer } = useDoor<FindingList>("findings", { query: { run, limit: LIMIT }, skip: !run });
   const all = `/findings?run=${encodeURIComponent(run)}`;
 
-  if (answer?.state === "pending") {
-    return (
-      <NotConnected compact door={answer.door}>
-        The findings this run reported, grouped by severity, with the status of each.
-      </NotConnected>
-    );
-  }
+  if (answer?.state === "pending") return <NotConnected compact door={answer.door} />;
 
   const rows: Finding[] = answer?.state === "ok" && Array.isArray(answer.data?.findings) ? [...answer.data.findings].sort(bySeverityThenRecent) : [];
   const total = answer?.state === "ok" && typeof answer.data?.total === "number" ? answer.data.total : rows.length;
@@ -61,7 +55,7 @@ export function RunFindings({ run }: { run: string }) {
       {answer?.state === "error" && <Failure className="m-3" what="This run's findings could not be read" message={answer.message} />}
       {answer?.state === "ok" && rows.length === 0 && (
         <p className="px-3 py-2.5 text-[11.5px] text-faint">
-          {notBuilt(notBuiltOf(answer.data), "producer") ? "Nothing produces findings yet: the platform names their producer as not built." : "No finding is recorded for this run."}
+          {notBuilt(notBuiltOf(answer.data), "producer") ? "Not built" : "No finding is recorded for this run."}
         </p>
       )}
 
@@ -85,7 +79,7 @@ export function RunFindings({ run }: { run: string }) {
       ))}
       {answer?.state === "ok" && total > rows.length && (
         <p className="border-t border-line px-3 py-1.5 text-[11px] text-faint">
-          The first {count(rows.length)} of {count(total)} are listed here; the Findings page has the rest.
+          First {count(rows.length)} of {count(total)}; the rest are in Findings.
         </p>
       )}
     </section>

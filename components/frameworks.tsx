@@ -13,7 +13,7 @@ import { GroupHeader } from "./page-tabs";
 import { soon } from "@/lib/soon";
 import { listAgents, type AgentSummary } from "@/lib/api/l2";
 import { OBLIGATION_STATUSES, getFrameworkView, listFrameworks, type AgentObligation, type FrameworkAgent, type FrameworkInfo, type RegulatoryView } from "@/lib/api/assurance";
-import { CONFIGURATION_META, OBLIGATION_META, frameworkLine, isUnmapped, unmappedLine, viewCounts } from "@/lib/assurance-words";
+import { CONFIGURATION_META, OBLIGATION_META, frameworkLine, isUnmapped, viewCounts } from "@/lib/assurance-words";
 import { whenText } from "@/lib/lifecycle";
 
 /**
@@ -31,11 +31,7 @@ import { whenText } from "@/lib/lifecycle";
 /** The plain statement for a framework with no obligations mapped. Renders nothing for one that has them. */
 export function UnmappedNotice({ framework }: { framework: FrameworkInfo }) {
   if (!isUnmapped(framework)) return null;
-  return (
-    <Banner tone="warn" title={`No obligations of ${framework.short} are mapped`}>
-      {unmappedLine(framework)} Nothing on this page says an agent meets it.
-    </Banner>
-  );
+  return <Banner tone="warn" title={`No obligations of ${framework.short} are mapped`} />;
 }
 
 function ObligationRow({ o }: { o: AgentObligation }) {
@@ -46,19 +42,22 @@ function ObligationRow({ o }: { o: AgentObligation }) {
         <span className="font-mono text-[10.5px] text-mist">{o.ref}</span>
         <span className="text-fg">{o.name}</span>
         <span className="grow" />
-        <Status tone={m.tone}>{m.label}</Status>
+        <span title={o.detail || undefined} className="inline-flex">
+          <Status tone={m.tone}>{m.label}</Status>
+        </span>
       </summary>
       <ul className="flex flex-col gap-1 border-t border-line bg-raise/20 px-3 py-2">
-        <li className="text-[10.5px] leading-[1.5] text-faint">{o.detail}.</li>
         {o.controls.map((c) => {
           const conf = CONFIGURATION_META[c.configuration] ?? { label: c.configuration, tone: "neutral" as const };
           return (
             <li key={c.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
               <ControlRef control={c.id} />
               <span className="text-fg">{c.title}</span>
-              <Tag tone={conf.tone}>{conf.label}</Tag>
+              <span title={c.detail || undefined} className="inline-flex">
+                <Tag tone={conf.tone}>{conf.label}</Tag>
+              </span>
               {c.firings === null ? (
-                <span className="text-faint">acts outside a run: no firing is counted</span>
+                <span className="text-faint">acts outside a run</span>
               ) : c.firings > 0 ? (
                 <Link href={`/evidence?control=${encodeURIComponent(c.id)}`} className="focusable rounded-sm text-dim underline">
                   {c.firings} firing{c.firings === 1 ? "" : "s"}
@@ -67,7 +66,6 @@ function ObligationRow({ o }: { o: AgentObligation }) {
               ) : (
                 <span className="text-faint">no firing</span>
               )}
-              {c.detail && <span className="w-full pl-1 text-[10.5px] leading-[1.5] text-faint">{c.detail}</span>}
             </li>
           );
         })}
@@ -90,7 +88,7 @@ function AgentCard({ a }: { a: FrameworkAgent }) {
       {a.obligations.length ? (
         a.obligations.map((o) => <ObligationRow key={`${o.ref}:${o.name}`} o={o} />)
       ) : (
-        <p className="px-3 py-2 text-[11px] text-faint">No obligations mapped, so nothing to read for this agent.</p>
+        <p className="px-3 py-2 text-[11px] text-faint">No obligations mapped.</p>
       )}
     </div>
   );
@@ -108,12 +106,7 @@ export function FrameworkViewPanel({ view }: { view: RegulatoryView }) {
         {view.framework.name} · {whenText(view.period.from)} to {whenText(view.period.to)}
         {view.framework.mapping.length ? ` · mapped from ${view.framework.mapping.join(" and ")}` : ""}
       </p>
-      <p className="text-[11px] text-faint">
-        {[view.framework.scope, view.as_of]
-          .filter(Boolean)
-          .map((x) => `${x.charAt(0).toUpperCase()}${x.slice(1)}.`)
-          .join(" ")}
-      </p>
+      {view.as_of && <p className="text-[11px] text-faint">{`${view.as_of.charAt(0).toUpperCase()}${view.as_of.slice(1)}.`}</p>}
       {view.agents.length ? (
         <div className="af-list af-list-tall grid items-start gap-3 lg:grid-cols-2">
           {view.agents.map((a) => (
@@ -183,7 +176,7 @@ function FrameworksPage() {
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
       <GroupHeader group="assurance" tab="frameworks">
-        The estate through one framework or regulation: each saved agent against its obligations, with the controls and firings that answer each. Where no control answers an obligation, or nothing is mapped, this says so rather than showing an empty pass.
+        Each saved agent against one framework&rsquo;s obligations.
       </GroupHeader>
       {error && (
         <Banner tone="err" title="Could not read the framework">
@@ -233,13 +226,13 @@ function FrameworksPage() {
           }
         >
           <div className="grid gap-3 md:grid-cols-3">
-            <Field label="Agent" error={agentsError ? `the agents could not be read, so none can be picked: ${agentsError}` : undefined}>
+            <Field label="Agent" error={agentsError ? `the agents could not be read: ${agentsError}` : undefined}>
               <Pick value={agent} onChange={setAgent} options={[{ value: "", label: "Every agent" }, ...agents.map((a) => ({ value: a.id, label: a.name }))]} />
             </Field>
-            <Field label="From" hint="the default is 30 days back">
+            <Field label="From" hint="default: 30 days back">
               <Input type="datetime-local" value={from} onChange={setFrom} />
             </Field>
-            <Field label="To" hint="the default is now">
+            <Field label="To" hint="default: now">
               <Input type="datetime-local" value={to} onChange={setTo} />
             </Field>
           </div>

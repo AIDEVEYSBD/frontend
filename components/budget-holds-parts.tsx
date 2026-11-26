@@ -121,13 +121,13 @@ export function DecideDialog({ hold: h, decision, busy, onConfirm, onClose }: { 
         permission="approve"
         busy={busy}
         hint="Recorded with the decision and your name."
-        missing="A reason is needed. It is recorded with the decision and your name."
+        missing="A reason is needed."
         placeholder="Why this run stops here."
         onClose={onClose}
         onConfirm={(reason) => onConfirm({ decision: "stop", reason })}
       >
         {reached}
-        <span>Stopping ends the run where it paused. It does not carry on, and what it still had to do is not done.</span>
+        <span>Stopping ends the run where it paused.</span>
       </ReasonDialog>
     );
   }
@@ -159,13 +159,12 @@ export function DecideDialog({ hold: h, decision, busy, onConfirm, onClose }: { 
       ready={valid}
       onBlocked={() => setPressed(true)}
       hint="Recorded with the decision and your name."
-      missing="A reason is needed. It is recorded with the decision and your name."
+      missing="A reason is needed."
       placeholder="Why this run may use more."
       onClose={onClose}
       onConfirm={(reason) => onConfirm({ decision: "continue", raise_to: value, reason })}
     >
       {reached}
-      <span>With a higher ceiling it carries on from where it paused.</span>
       {time ? (
         <div className="flex flex-col gap-1.5">
           <div className="grid grid-cols-2 gap-3">
@@ -191,8 +190,7 @@ export function DecideDialog({ hold: h, decision, busy, onConfirm, onClose }: { 
       )}
       {valid && (
         <span className="rounded-sm border border-line bg-canvas px-2 py-1.5 text-[12px] leading-[1.5] text-fg">
-          {value > h.limit ? `Raises the ceiling by ${amount(h.measure, value - h.limit)}, from ${amount(h.measure, h.limit)} to ${amount(h.measure, value)}.` : `Sets the ceiling to ${amount(h.measure, value)}.`} The run can use{" "}
-          {amount(h.measure, value - h.used)} more before it pauses again.
+          {value > h.limit ? `From ${amount(h.measure, h.limit)} to ${amount(h.measure, value)}` : `Ceiling ${amount(h.measure, value)}`}: {amount(h.measure, value - h.used)} more before it pauses again.
         </span>
       )}
     </ReasonDialog>

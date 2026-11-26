@@ -30,7 +30,7 @@ export function PipelineView() {
           <path d="M6 9l6 6 6-6" />
         </svg>
         <span className="text-[12.5px] font-semibold tracking-[-0.005em]">How a source becomes retrievable</span>
-        <span className="text-[11px] leading-[1.55] text-faint">the stages, explained; this drawing does not report what is running</span>
+        <span className="text-[11px] leading-[1.55] text-faint">reference only</span>
         <span className="grow" />
         <span className="text-[10.5px] text-ghost">{shown ? "hide" : "show"}</span>
       </button>
@@ -47,13 +47,7 @@ export function PipelineView() {
                 <span className="max-w-[90ch] text-[12px] leading-[1.6] text-dim">{open.detail}</span>
               </>
             ) : (
-              <>
-                <span className="text-[13px] font-semibold">Pick a stage to read what it does</span>
-                <span className="max-w-[90ch] text-[12px] leading-[1.6] text-dim">
-                  A source is added to the register, fetched, split and indexed by its words, and then waits for a person. Only an admitted document is embedded and can be
-                  searched, by a person here or by an agent with a read grant through its retrieval.search tool.
-                </span>
-              </>
+              <span className="text-[13px] font-semibold">Pick a stage to read what it does</span>
             )}
           </div>
         </div>

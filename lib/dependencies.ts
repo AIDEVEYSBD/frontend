@@ -219,7 +219,7 @@ export function blastIds(b: Pick<BlastRadius, "node" | "agents" | "applications"
 
 /** A refusal from the blast-radius door, in the reader's words. A 409's candidates are offered beside it. */
 export function blastRefusalText(status: number, message: string): string {
-  if (status === 403) return "A blast radius reaches every agent, so a key scoped to one agent cannot ask for it. Sign in as a person (or use an unscoped key) to see it.";
-  if (status === 404) return `${message || "No such node"}. The map may have moved since it was read; read it again.`;
+  if (status === 403) return "A key scoped to one agent cannot read a blast radius.";
+  if (status === 404) return `${message || "No such node"}; read the map again.`;
   return message;
 }

@@ -396,7 +396,7 @@ export function AcceptanceView() {
           </Button>
         }
       >
-        The acceptance record of each registered use case: its criteria, the result of each as measured on a run, the issues opened and closed, and the sign-off by the person named for each accountable role. A signature counts for the record as it stood when it was signed. A use case is accepted when its record says so.
+        Each use case&rsquo;s criteria, results, issues and sign-offs.
       </GroupHeader>
 
       {opened && (
@@ -407,12 +407,12 @@ export function AcceptanceView() {
 
       {registered?.state === "pending" && (
         <p className="text-[11.5px] leading-[1.5] text-faint">
-          Opening a record needs the registered use cases. <NotConnectedNote door={registered.door} />
+          Registered use cases: <NotConnectedNote door={registered.door} />
         </p>
       )}
       {registered?.state === "error" && (
         <p className="text-[11.5px] leading-[1.5] text-err" role="alert">
-          The registered use cases could not be read, so no record can be opened from here: {registered.message}
+          The registered use cases could not be read: {registered.message}
         </p>
       )}
       {answer?.state === "ok" && records.length > 0 && choices.length > 0 && (
@@ -454,7 +454,7 @@ export function AcceptanceView() {
         (useCases && useCases.length === 0 ? (
           <EmptyState
             title="No use case is registered"
-            detail="An acceptance record is opened for a registered use case. Register one on the Workloads page, then set its criteria and the people who sign it here."
+            detail="Register one on the Workloads page."
             action={
               <Button size="sm" variant="solid" tone="neutral" href="/workloads#use-cases">
                 Open Use cases
@@ -464,11 +464,7 @@ export function AcceptanceView() {
         ) : (
           <EmptyState
             title="No acceptance record yet"
-            detail={
-              choices.length
-                ? `Open one with “Set criteria and sign-off”: ${choices.length === 1 ? "one registered use case has" : `${count(choices.length)} registered use cases have`} no record yet.`
-                : "A record is opened for a registered use case with “Set criteria and sign-off”."
-            }
+            detail={choices.length ? "Open one with “Set criteria and sign-off”." : undefined}
           />
         ))}
 

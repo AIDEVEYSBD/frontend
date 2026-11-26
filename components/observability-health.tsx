@@ -30,18 +30,12 @@ const WINDOWS = [
 
 const unknown = (why: string | null) => (
   <span className="text-[12px] font-normal text-faint" title={why ?? undefined}>
-    unknown
+    —
   </span>
 );
 
 const rate = (r: number | null, why: string | null) => (r === null ? unknown(why) : `${(r * 100).toFixed(r < 0.1 ? 1 : 0)}%`);
 const ms = (v: number | null, l: Latency) => (v === null ? unknown(l.why) : `${v} ms`);
-
-function Why({ items }: { items: (string | null)[] }) {
-  const said = items.filter((x): x is string => Boolean(x));
-  if (!said.length) return null;
-  return <p className="text-[11px] leading-[1.5] text-faint">{said.map((s) => `${s.charAt(0).toUpperCase()}${s.slice(1)}.`).join(" ")}</p>;
-}
 
 /** Every figure of one answer. Presentational. */
 export function HealthView({ h }: { h: PlatformHealth }) {
@@ -91,9 +85,8 @@ export function HealthView({ h }: { h: PlatformHealth }) {
             { k: "live worker processes", v: h.workers.live.length },
           ]}
         />
-        <Why items={[q.oldest_due_waiting_s === null ? q.why_no_wait : null, h.workers.live.length ? null : `no worker process renewed its heartbeat in the last ${h.workers.within_s} seconds, so nothing takes queued work`]} />
       </Section>
-      <Section title="Model calls" meta="started, answered and failed, from the run journals">
+      <Section title="Model calls" meta="started, answered and failed">
         <Figures
           items={[
             { k: "started", v: m.started },
@@ -105,9 +98,8 @@ export function HealthView({ h }: { h: PlatformHealth }) {
             { k: "p95", v: ms(m.latency.p95_ms, m.latency) },
           ]}
         />
-        <Why items={[m.why_no_rate, m.latency.why]} />
       </Section>
-      <Section title="Tool calls" meta="each paired with its outcome through the entry it cites">
+      <Section title="Tool calls" meta="called, and each outcome">
         <Figures
           items={[
             { k: "called", v: t.called },
@@ -120,7 +112,6 @@ export function HealthView({ h }: { h: PlatformHealth }) {
             { k: "p95", v: ms(t.latency.p95_ms, t.latency) },
           ]}
         />
-        <Why items={[t.why_no_rate, t.latency.why]} />
       </Section>
       <div className="grid items-start gap-4 lg:grid-cols-2">
         <Section title="Controls" meta="breakers, held agents and the lockdown, now">
@@ -167,8 +158,7 @@ export function HealthView({ h }: { h: PlatformHealth }) {
             <p className="text-[12px] text-faint">Nothing is waiting for a person.</p>
           )}
           <p className="text-[11px] text-faint">
-            From {h.alerts.source}
-            {h.alerts.not_built.length ? `; not built there: ${h.alerts.not_built.join(", ")}` : ""}.{" "}
+            {h.alerts.not_built.length ? `Not built: ${h.alerts.not_built.join(", ")} · ` : ""}
             <Link href="/control" className="focusable rounded-sm underline">
               Control room
             </Link>
@@ -177,18 +167,16 @@ export function HealthView({ h }: { h: PlatformHealth }) {
       </div>
       <Section title="Telemetry" meta="what leaves the service">
         <div className="flex flex-col gap-1 text-[11.5px] leading-[1.5]">
-          <p className={h.telemetry.traces.configured ? "text-dim" : "text-faint"}>
-            Traces: {h.telemetry.traces.configured ? `sent on request to ${h.telemetry.traces.destination}` : h.telemetry.traces.reason}.
+          <p className={h.telemetry.traces.configured ? "text-dim" : "text-faint"} title={h.telemetry.traces.configured ? undefined : h.telemetry.traces.reason || undefined}>
+            Traces: {h.telemetry.traces.configured ? `sent on request to ${h.telemetry.traces.destination}` : "not configured"}
           </p>
-          <p className={h.telemetry.logs.configured ? "text-dim" : "text-faint"}>
+          <p className={h.telemetry.logs.configured ? "text-dim" : "text-faint"} title={h.telemetry.logs.configured ? undefined : h.telemetry.logs.reason || undefined}>
             Logs:{" "}
             {h.telemetry.logs.configured
-              ? `the audit trail is forwarded to ${h.telemetry.logs.destination}; through row ${h.telemetry.logs.forwarded_through ?? "none"}, ${h.telemetry.logs.behind ?? "an unknown number of"} behind${h.telemetry.logs.last_at ? `, last sent ${whenText(h.telemetry.logs.last_at)}` : ""}`
-              : h.telemetry.logs.reason}
-            .
+              ? `audit trail forwarded to ${h.telemetry.logs.destination} · through row ${h.telemetry.logs.forwarded_through ?? "—"} · ${h.telemetry.logs.behind ?? "—"} behind${h.telemetry.logs.last_at ? ` · last sent ${whenText(h.telemetry.logs.last_at)}` : ""}`
+              : "not configured"}
           </p>
           {h.telemetry.logs.last_error && <p className="text-err">The last forwarding failed: {h.telemetry.logs.last_error}</p>}
-          {h.telemetry.not_shown && <p className="text-faint">{`${h.telemetry.not_shown.charAt(0).toUpperCase()}${h.telemetry.not_shown.slice(1)}.`}</p>}
         </div>
       </Section>
     </div>
@@ -197,7 +185,7 @@ export function HealthView({ h }: { h: PlatformHealth }) {
 
 /** Each dependency's own check, as answered. Presentational. */
 function Dependencies({ h }: { h: PlatformHealth }) {
-  if (!h.dependencies.checked) return <p className="text-[12px] text-faint">{h.dependencies.why ? `Not checked: ${h.dependencies.why}.` : "Not checked."}</p>;
+  if (!h.dependencies.checked) return <p className="text-[12px] text-faint">Not checked.</p>;
   return (
     <ul className="flex flex-col gap-1 text-[11.5px]">
       {h.dependencies.ports.map((p) => (
@@ -247,7 +235,7 @@ function HealthPage() {
           </span>
         }
       >
-        Failures, the queue, model and tool calls, the controls holding work back and what waits for a person, counted by the platform from its own records when you ask.
+        Failures, queue, calls, controls and alerts, counted when you ask.
       </GroupHeader>
       {error && <Failure what="Platform health could not be read" message={error} />}
       {health ? <HealthView h={health} /> : !error && <p className="text-[12px] text-faint">Counting…</p>}

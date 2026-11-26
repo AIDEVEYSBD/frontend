@@ -59,6 +59,6 @@ export function startRefusalOf(agent: string, status: number, body: unknown, ret
   const paused = pausedRefusalOf(status, body);
   if (paused) return { kind: "paused", text: platformSentence(body) || pausedLine(agent, paused) };
   const retired = status === 409 ? retiredOf((body as { retired?: unknown } | null | undefined)?.retired) : null;
-  if (retired) return { kind: "retired", text: `${agent || "This agent"} is retired. ${retiredLine(retired)}` };
+  if (retired) return { kind: "retired", text: `${agent || "This agent"}: ${retiredLine(retired)}` };
   return { kind: "other", text: errorText(body, response) };
 }

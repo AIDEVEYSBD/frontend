@@ -21,7 +21,6 @@ import {
   rankPeople,
   rankTools,
   spendText,
-  unpricedIn,
   unpricedWords,
   useFigures,
   useWaiting,
@@ -116,11 +115,11 @@ function Overview() {
       : null,
   );
 
-  /** What a ranking says in place of rows (null when it has rows to show): `ranks` is what the list will hold, `none` what it says of a window that gives it nothing. */
-  const noRows = (has: boolean, ranks: string, none: string) => {
+  /** What a ranking says in place of rows (null when it has rows to show): `none` is what it says of a window that gives it nothing. */
+  const noRows = (has: boolean, none: string) => {
     if (loading) return <Nothing>Reading the figures.</Nothing>;
     if (unread) return <Nothing>The figures could not be read.</Nothing>;
-    if (!total && !has) return <Nothing>{latest ? `No runs in ${windowWords(win)}.` : `No runs yet. ${ranks}`}</Nothing>;
+    if (!total && !has) return <Nothing>{latest ? `No runs in ${windowWords(win)}.` : "No runs yet."}</Nothing>;
     return has ? null : <Nothing>{none}</Nothing>;
   };
   const sub = (said: string) => (loading ? "reading the figures" : unread ? "figures not read" : said);
@@ -136,31 +135,31 @@ function Overview() {
           </span>
         }
       >
-        What the estate is doing and what is waiting on a person. Each figure is counted by the platform from its records, and leads to the page behind it.
+        What the estate is doing and what is waiting on a person.
       </PageHeader>
 
       {unread && (
         <Banner tone="err" title="The figures could not be read">
-          {figures.error}. The figures below stay empty until the platform answers.
+          {figures.error}
         </Banner>
       )}
       {stale && (
-        <Banner tone="err" title="The figures stopped answering">
-          {figures.error}. The figures below are stale: they are as the platform last answered, at {new Date(figures.at).toLocaleTimeString("en-GB")}.
+        <Banner tone="err" title={`The figures stopped answering; shown as of ${new Date(figures.at).toLocaleTimeString("en-GB")}`}>
+          {figures.error}
         </Banner>
       )}
       {gatesError && gates !== null && (
         <Banner tone="err" title="The approvals inbox stopped answering">
-          {gatesError}. The gates below are as it last answered.
+          {gatesError}
         </Banner>
       )}
       {f && !latest && (
-        <p className="rounded-md border border-line bg-surface px-3 py-2 text-[12px] leading-[1.5] text-dim">No agent has run on this deployment yet. The figures and lists below fill in from the first run.</p>
+        <p className="rounded-md border border-line bg-surface px-3 py-2 text-[12px] leading-[1.5] text-dim">No agent has run on this deployment yet.</p>
       )}
       {f && latest && total === 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-md border border-line bg-surface px-3 py-2">
           <p className="min-w-0 grow text-[12px] leading-[1.5] text-dim">
-            No runs in {windowWords(win)}. The latest run was asked for {fmtAge(now - Date.parse(latest))} ago.
+            No runs in {windowWords(win)} · latest {fmtAge(now - Date.parse(latest))} ago
           </p>
           <Button size="sm" variant="solid" tone="ink" onClick={() => setWin("all")}>
             Show all runs
@@ -196,7 +195,7 @@ function Overview() {
             href="/finops"
             value={f ? spendText(f.spend) : null}
             off={unread}
-            sub={sub(!f?.spend.calls ? "no model call in this window" : f.spend.unpriced_calls ? `${unpricedWords(f.spend)}, not counted` : `across ${plural(f.spend.calls, "model call")}`)}
+            sub={sub(!f?.spend.calls ? "no model call in this window" : f.spend.unpriced_calls ? unpricedWords(f.spend) : `across ${plural(f.spend.calls, "model call")}`)}
           />
         </div>
       </div>
@@ -209,17 +208,14 @@ function Overview() {
             action={<MeasureSwitch label="Rank agents by" value={agentMeasure} onChange={setAgentMeasure} options={RUN_MEASURES} />}
             footer={
               <>
-                <FootNote>
-                  {agents.top.length ? `${agents.top.length} of ${plural(agents.of, "agent")}` : "By runs or spend"}
-                  {agentMeasure === "spend" && f && unpricedIn(f.rank.agents) ? ` · ${plural(unpricedIn(f.rank.agents), "call")} with no price not counted` : ""}
-                </FootNote>
+                <FootNote>{agents.top.length ? `${agents.top.length} of ${plural(agents.of, "agent")}` : "By runs or spend"}</FootNote>
                 <Button size="sm" href="/agents">
                   View all
                 </Button>
               </>
             }
           >
-            {noRows(agents.top.length > 0, "Agents rank here by runs, or by spend.", f?.spend.unpriced_calls ? "No priced spend: these runs' calls had no price set." : "No spend recorded in this window.") ?? (
+            {noRows(agents.top.length > 0, f?.spend.unpriced_calls ? "No price set." : "No spend recorded in this window.") ?? (
               <RankList rows={agents.top} format={agentMeasure === "runs" ? fmtCount : fmtMoney} measure={agentMeasure === "runs" ? "runs" : "spent"} />
             )}
           </Card>
@@ -236,7 +232,7 @@ function Overview() {
               </>
             }
           >
-            {noRows(tools.top.length > 0, "Tools rank here by calls, or by the time spent in them.", "No tool was called in this window.") ?? (
+            {noRows(tools.top.length > 0, "No tool was called in this window.") ?? (
               <RankList rows={tools.top} format={toolMeasure === "calls" ? fmtCount : fmtMs} measure={toolMeasure === "calls" ? "calls" : "in the tool"} />
             )}
           </Card>
@@ -246,19 +242,14 @@ function Overview() {
             action={<MeasureSwitch label="Rank people by" value={peopleMeasure} onChange={setPeopleMeasure} options={RUN_MEASURES} />}
             footer={
               <>
-                <FootNote>
-                  {people.top.length ? `${people.top.length} of ${plural(people.of, "person", "people")}, keys and services included` : "Who started the runs and made the calls"}
-                  {peopleMeasure === "spend" && f && unpricedIn(f.rank.people)
-                    ? ` · ${plural(unpricedIn(f.rank.people), "call")} with no price not counted${f.rank.people.some((p) => p.cost_usd === null) ? `; ${plural(f.rank.people.filter((p) => p.cost_usd === null).length, "person", "people")} with no priced call left out` : ""}`
-                    : ""}
-                </FootNote>
+                <FootNote>{people.top.length ? `${people.top.length} of ${plural(people.of, "person", "people")}, keys and services included` : "Who started the runs and made the calls"}</FootNote>
                 <Button size="sm" href="/iam">
                   View all
                 </Button>
               </>
             }
           >
-            {noRows(people.top.length > 0, "Whoever starts runs ranks here, a person, a key or a service.", f?.spend.unpriced_calls ? "No priced spend: these calls had no price set." : "No spend recorded in this window.") ?? (
+            {noRows(people.top.length > 0, f?.spend.unpriced_calls ? "No price set." : "No spend recorded in this window.") ?? (
               <RankList rows={people.top} format={peopleMeasure === "runs" ? fmtCount : fmtMoney} measure={peopleMeasure === "runs" ? "runs" : "spent"} />
             )}
           </Card>
@@ -268,7 +259,7 @@ function Overview() {
             meta="run duration"
             footer={
               <>
-                <FootNote>{f?.latency ? `${plural(f.latency.runs, "ended run")}, each run's own working time` : "Each ended run's working time"}</FootNote>
+                <FootNote>{f?.latency ? plural(f.latency.runs, "ended run") : "Ended runs"}</FootNote>
                 <Button size="sm" href="/runs">
                   View runs
                 </Button>
@@ -284,17 +275,11 @@ function Overview() {
                   <CardFigure label="p95" value={f?.latency ? fmtMs(f.latency.p95) : "—"} />
                   <CardFigure label="Slowest" value={f?.latency ? fmtMs(f.latency.max) : "—"} />
                 </div>
-                <p className="px-4 pb-4 text-[12px] leading-[1.55] text-faint">
-                  {f?.latency
-                    ? `Half the ended runs took ${fmtMs(f.latency.p50)} or less, 95 in 100 took ${fmtMs(f.latency.p95)} or less.`
-                    : loading
-                      ? "Reading the figures."
-                      : total
-                        ? "No run of this window has ended yet, so there is no duration to measure."
-                        : latest
-                          ? `No runs in ${windowWords(win)}, so there is no duration to measure.`
-                          : "No runs yet, so there is no duration to measure."}
-                </p>
+                {!f?.latency && (
+                  <p className="px-4 pb-4 text-[12px] leading-[1.55] text-faint">
+                    {loading ? "Reading the figures." : total ? "No run has ended in this window." : latest ? `No runs in ${windowWords(win)}.` : "No runs yet."}
+                  </p>
+                )}
               </>
             )}
           </Card>

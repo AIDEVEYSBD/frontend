@@ -255,12 +255,12 @@ function Explore() {
           </span>
         }
       >
-        Filter and read everything the platform recorded. The filters are kept in the page&rsquo;s link, so it can be shared.
+        Filter and read everything the platform recorded.
       </PageHeader>
 
       <ViewSwitch value={view} onChange={address.go} />
 
-      {error && <ErrorLine what={first ? "Explore stopped answering; what is shown is as it last answered" : "Explore could not be read"} message={error} />}
+      {error && <ErrorLine what={first ? "Explore stopped answering" : "Explore could not be read"} message={error} />}
 
       {!first && !error && (
         <Card title="Entries" meta="reading…">
@@ -295,7 +295,7 @@ function Explore() {
             {rows.length === 0 ? (
               <p className="px-4 py-6 text-[12px] text-faint">{first.total === 0 ? "Nothing recorded matches these filters." : "Reading…"}</p>
             ) : (
-              <div className="af-list af-list-tall overflow-x-auto" title={first.basis}>
+              <div className="af-list af-list-tall overflow-x-auto">
                 <table className="w-full min-w-[920px] border-collapse text-[11.5px]">
                   <thead>
                     <tr className="border-b border-line text-left text-[10.5px] text-faint">

@@ -176,7 +176,7 @@ function ExchangeView({ x, name, asker, onSend, busy, last }: { x: Exchange; nam
         {x.state === "waiting" && (
           <div className="flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-[12.5px] text-dim">
             <Spinner size={13} />
-            Waiting for the reply. It arrives whole: chat does not stream.
+            Waiting for the reply…
           </div>
         )}
         {x.state === "answered" && (
@@ -287,11 +287,11 @@ export function ChatPane({ app, me }: { app: Application; /** The person signed 
   const foreign = cid !== null && held.kept && !mine(held.holder);
   const tooLong = draft.length > MESSAGE_CAP;
   const cannot = app.blocked
-    ? "This chatbot is blocked: the gateway refuses every call until the block is lifted."
+    ? "This chatbot is blocked; the gateway refuses every call."
     : named
-      ? "This conversation was named by the application through the gateway. It is shown as recorded and is not continued from here."
+      ? "Named by the application; shown as recorded, not continued here."
       : foreign
-        ? `This conversation is held by ${held.holder || "a person the record does not name"}. It is shown as recorded and is not continued by anyone else.`
+        ? `Held by ${held.holder || "a person the record does not name"}; shown as recorded, not continued here.`
         : "";
 
   const send = async (typed?: string) => {
@@ -343,7 +343,7 @@ export function ChatPane({ app, me }: { app: Application; /** The person signed 
         <Mono className="text-[10.5px] text-faint">{app.id}</Mono>
         {app.blocked ? <Status tone="err">blocked</Status> : <Status tone="ok">admitted</Status>}
         <span className="text-[11px] leading-[1.55] text-faint">
-          model {model} · {app.policy.data_class} data · {app.policy.system_prompt ? "registered system prompt" : "no registered system prompt"} · answers in {app.policy.answers === "blocks" ? "text and blocks" : "text"} · screening refuses a block and records a flag
+          model {model} · {app.policy.data_class} data · {app.policy.system_prompt ? "registered system prompt" : "no registered system prompt"} · answers in {app.policy.answers === "blocks" ? "text and blocks" : "text"}
         </span>
         <span className="grow" />
         <Button size="sm" variant="solid" tone="neutral" href={`/applications/${encodeURIComponent(app.id)}`}>
@@ -365,7 +365,7 @@ export function ChatPane({ app, me }: { app: Application; /** The person signed 
           <div className="flex max-h-[220px] flex-col overflow-y-auto lg:max-h-[520px]">
             {convs === null && <span className="px-3 py-3 text-[11.5px] text-faint">Reading the conversations…</span>}
             {convError && <span className="px-3 py-3 text-[11.5px] leading-[1.5] text-err">{convError}</span>}
-            {convs?.length === 0 && !convError && <span className="px-3 py-3 text-[11.5px] leading-[1.5] text-faint">No conversation is on the record for this chatbot yet.</span>}
+            {convs?.length === 0 && !convError && <span className="px-3 py-3 text-[11.5px] leading-[1.5] text-faint">No conversations yet.</span>}
             {(convs ?? []).map((c) => (
               <button
                 key={c.id}
@@ -391,7 +391,7 @@ export function ChatPane({ app, me }: { app: Application; /** The person signed 
               </button>
             ))}
           </div>
-          <p className="border-t border-line px-3 py-2 text-[10.5px] leading-[1.5] text-ghost">Everyone&rsquo;s conversations with this chatbot, newest first, replayed with secrets and personal data masked.</p>
+          <p className="border-t border-line px-3 py-2 text-[10.5px] leading-[1.5] text-ghost">Everyone&rsquo;s conversations, newest first; secrets and personal data masked.</p>
         </div>
 
         {/* ── the conversation ── */}
@@ -401,9 +401,7 @@ export function ChatPane({ app, me }: { app: Application; /** The person signed 
             {exchanges.length === 0 && !openError && (
               <div className="m-auto flex max-w-[46ch] flex-col items-center gap-1.5 text-center">
                 <span className="text-[13px] font-medium text-fg">A new conversation</span>
-                <span className="text-[12.5px] leading-[1.55] text-dim">
-                  What you send goes to the chatbot as it is registered: its system prompt, its first model, its data class, its rate and budget, and its screening. Every turn is journalled under your name, and only you can continue the conversation.
-                </span>
+                <span className="text-[12.5px] leading-[1.55] text-dim">Every turn is journalled under your name.</span>
               </div>
             )}
             {cid && exchanges.some((x) => x.recorded) && (

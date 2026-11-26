@@ -30,7 +30,6 @@ type Notice = { tone: "ok" | "err"; text: string } | { door: Door };
 /** What the service answers beside the console's `BudgetHold`: the budget reached, and why the run paused. */
 export type Hold = BudgetHold & { scope?: "run" | "deployment" | "use_case"; key?: string; paused_because?: string };
 
-const WHAT = "Runs paused at a budget are listed here: the budget each reached, why, how long it has waited, and the decision to continue or stop it.";
 const th = "px-3 py-2 font-medium whitespace-nowrap";
 
 /** The holds of an answer, or none when the address has not answered with a list. */
@@ -115,7 +114,7 @@ export function PausedAtBudget({ answer, reload, now }: { answer: Answer<BudgetH
     const to = dollars(body.raise_to ?? 0);
     setNotice({
       tone: "ok",
-      text: body.decision === "stop" ? `Run ${h.run} is stopped.` : period(h) ? `Run ${h.run} goes on until ${budgetName(h)} has seen ${to} spent; the budget itself is unchanged.` : `Run ${h.run} goes on with its budget raised to ${to}.`,
+      text: body.decision === "stop" ? `Run ${h.run} is stopped.` : period(h) ? `Run ${h.run} may go on until ${to} is spent.` : `Run ${h.run} goes on with its budget raised to ${to}.`,
     });
     reload();
   };
@@ -136,12 +135,10 @@ export function PausedAtBudget({ answer, reload, now }: { answer: Answer<BudgetH
       )}
 
       {answer === null && <p className="text-[12px] text-faint">Reading the runs paused at a budget…</p>}
-      {answer?.state === "pending" && <NotConnected door={answer.door} compact>{WHAT}</NotConnected>}
+      {answer?.state === "pending" && <NotConnected door={answer.door} compact />}
       {answer?.state === "error" && <Failure what="The runs paused at a budget could not be read" message={answer.message} />}
       {connected && waiting.length === 0 && (
-        <p className="text-[12px] leading-[1.55] text-faint">
-          No run is paused at a budget. A run that reaches its own budget, the deployment&rsquo;s or its use case&rsquo;s pauses and is listed here until a person other than the one who started it decides.
-        </p>
+        <p className="text-[12px] leading-[1.55] text-faint">No run is paused at a budget.</p>
       )}
 
       {(waiting.length > 0 || decided.length > 0) && (
@@ -186,7 +183,6 @@ export function PausedAtBudget({ answer, reload, now }: { answer: Answer<BudgetH
                               Stop the run
                             </Button>
                           </span>
-                          {own && <span className="mt-1 block text-[10.5px] text-faint">{why}</span>}
                         </td>
                       </tr>
                     );
@@ -278,13 +274,13 @@ function Decide({ hold: h, decision, busy, onConfirm, onClose }: { hold: Hold; d
         permission="approve"
         busy={busy}
         hint="Recorded with the decision and your name."
-        missing="A reason is needed. It is recorded with the decision and your name."
+        missing="A reason is needed."
         placeholder="Why this run stops here."
         onClose={onClose}
         onConfirm={(reason) => onConfirm({ decision: "stop", reason })}
       >
         {reached}
-        <span>Stopping ends the run where it paused, as a kill does: what it still had to do is not done.</span>
+        <span>Stopping ends the run where it paused.</span>
       </ReasonDialog>
     );
   }
@@ -293,7 +289,7 @@ function Decide({ hold: h, decision, busy, onConfirm, onClose }: { hold: Hold; d
   const valid = Number.isFinite(value) && value > h.used;
   const problem = !text.trim() ? "Enter the amount in dollars." : !Number.isFinite(value) ? "Enter an amount in dollars." : value <= h.used ? `It must be above ${dollars(h.used)}, which has been spent.` : "";
   const error = !valid && (text.trim() || pressed) ? problem : undefined;
-  const label = period(h) ? "Let this run go on until the period's spend reaches, in dollars" : "The run's new budget, in dollars";
+  const label = period(h) ? "Period spend this run may reach, in dollars" : "The run's new budget, in dollars";
 
   return (
     <ReasonDialog
@@ -305,7 +301,7 @@ function Decide({ hold: h, decision, busy, onConfirm, onClose }: { hold: Hold; d
       ready={valid}
       onBlocked={() => setPressed(true)}
       hint="Recorded with the decision and your name."
-      missing="A reason is needed. It is recorded with the decision and your name."
+      missing="A reason is needed."
       placeholder="Why this run may spend more."
       onClose={onClose}
       onConfirm={(reason) => onConfirm({ decision: "continue", raise_to: value, reason })}
@@ -317,8 +313,8 @@ function Decide({ hold: h, decision, busy, onConfirm, onClose }: { hold: Hold; d
       {valid && (
         <span className="rounded-sm border border-line bg-canvas px-2 py-1.5 text-[12px] leading-[1.5] text-fg">
           {period(h)
-            ? `${budgetName(h)[0].toUpperCase() + budgetName(h).slice(1)} stays ${dollars(h.limit)}; change it on the Costs page. This run alone goes on until the period's spend reaches ${dollars(value)}; other runs it applies to are still refused or paused.`
-            : `The run's budget goes from ${dollars(h.limit)} to ${dollars(value)}: it can spend ${dollars(value - h.used)} more before it pauses again.`}
+            ? `Budget stays ${dollars(h.limit)}; this run alone may go on to ${dollars(value)}.`
+            : `Budget goes from ${dollars(h.limit)} to ${dollars(value)}: ${dollars(value - h.used)} more to spend.`}
         </span>
       )}
     </ReasonDialog>

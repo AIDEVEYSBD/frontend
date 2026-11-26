@@ -106,12 +106,12 @@ export function isolationOf(entries: LimitEntry[]): SandboxRun[] {
 }
 
 const SOURCE: Record<string, string> = {
-  "": "the platform's own runtime",
-  console: "the platform's own runtime, started from the console",
-  worker: "the platform's runtime on a worker, from the queue",
-  sdk: "the attached agent's own process, reported through the SDK",
-  a2a: "an attached agent, reported over A2A through the tool broker and the model gateway",
-  gateway: "outside the platform, with its model calls through the model gateway",
+  "": "the platform's runtime",
+  console: "the platform's runtime, from the console",
+  worker: "a platform worker, from the queue",
+  sdk: "the attached agent's process, via the SDK",
+  a2a: "an attached agent, over A2A",
+  gateway: "outside the platform, via the model gateway",
 };
 
 /** The spec's four risk levels: read, write, risky, destructive. */
@@ -165,7 +165,7 @@ function toolCallLine(entries: LimitEntry[]): string {
     count("held") && `${count("held")} waiting for a person`,
     count("open") && `${count("open")} with no outcome on record`,
   ].filter(Boolean);
-  const made = n ? `This run made ${plural(n, "tool call")}${parts.length ? `: ${parts.join(", ")}` : ""}.` : "This run's journal holds no tool call.";
+  const made = n ? `${plural(n, "tool call")}${parts.length ? `: ${parts.join(", ")}` : ""}.` : "No tool call in the journal.";
   const extra = [before && `${plural(before, "call")} refused before ${before === 1 ? "it was" : "they were"} made`, held && `${plural(held, "call")} held for a person before ${held === 1 ? "it was" : "they were"} made`].filter(Boolean);
   return extra.length ? `${made} ${extra.join("; ")}.` : made;
 }
@@ -231,8 +231,8 @@ export function RunBoundaryPanel({
       <div className="max-h-[320px] overflow-y-auto border-t border-line">
         <p className="border-b border-line px-4 py-1.5 text-[11px] leading-[1.5] text-faint">
           {toolCallLine(entries)}
-          {toolsUnbuilt && " The platform names its tool registry as not built on this deployment, so the grants below are what the spec says, not rules a call was checked against."}
-          {serversBuilt === false && " Tool servers are not built: the platform answers 501 to GET /api/mcp."}
+          {toolsUnbuilt && " Tool registry: not built."}
+          {serversBuilt === false && " Tool servers: not built."}
         </p>
         <div className="grid gap-px bg-line lg:grid-cols-[minmax(0,300px)_minmax(0,1fr)_minmax(0,300px)]">
           <dl className="flex min-w-0 flex-col divide-y divide-line/70 bg-surface">
@@ -275,8 +275,8 @@ export function RunBoundaryPanel({
 
           <section className="min-w-0 bg-surface" aria-label="Tools granted">
             <h3 className="border-b border-line px-4 py-1.5 text-[11px] font-semibold text-dim">Tools each step was granted</h3>
-            <p className={`border-b border-line/70 px-4 py-1.5 text-[10.5px] leading-[1.5] ${from.tone === "warn" ? "text-warn" : "text-faint"}`}>{from.text}</p>
-            {grants.length === 0 && <p className="px-4 py-2 text-[11.5px] text-faint">{spec.loading ? "Reading the spec…" : "Not known: there is no spec to read, and the journal recorded no grant."}</p>}
+            {from.text && <p className={`border-b border-line/70 px-4 py-1.5 text-[10.5px] leading-[1.5] ${from.tone === "warn" ? "text-warn" : "text-faint"}`}>{from.text}</p>}
+            {grants.length === 0 && <p className="px-4 py-2 text-[11.5px] text-faint">{spec.loading ? "Reading the spec…" : "Not known: no spec."}</p>}
             <ul className="flex flex-col">
               {grants.map((g) => {
                 const scoped = g.tools.filter((t) => Object.keys(t.scope).length > 0).length;
@@ -350,13 +350,13 @@ export function RunBoundaryPanel({
                   ))}
                 </span>
               ) : (
-                <span className="text-faint">{body ? "No data class ceiling is set in this spec." : "Not known: there is no spec to read."}</span>
+                <span className="text-faint">{body ? "None set." : "Not known: no spec."}</span>
               )}
             </Fact>
             <Fact k="Egress allowlist">
               {deployment.state === "ok" ? (
                 egressUnbuilt ? (
-                  <span className="text-faint">Not built: the platform names the egress allowlist as not built on this deployment.</span>
+                  <span className="text-faint">Not built</span>
                 ) : deployment.hosts.length ? (
                   <>
                     <span className="flex flex-wrap gap-1">
@@ -366,10 +366,10 @@ export function RunBoundaryPanel({
                         </span>
                       ))}
                     </span>
-                    <span className="mt-0.5 block text-[10px] text-faint">The deployment&rsquo;s list as it is now; the run&rsquo;s record does not hold the list it ran under.</span>
+                    <span className="mt-0.5 block text-[10px] text-faint">The deployment&rsquo;s list now, not the run&rsquo;s.</span>
                   </>
                 ) : (
-                  <span className="text-faint">No host is listed on this deployment now; the run&rsquo;s record does not hold the list it ran under.</span>
+                  <span className="text-faint">No host listed now.</span>
                 )
               ) : deployment.state === "error" ? (
                 <Failure inline what="Could not be read" message={deployment.message} />

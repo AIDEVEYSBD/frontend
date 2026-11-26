@@ -104,7 +104,7 @@ export function movesOf(c: Pick<PolicyChange, "state" | "proposed_by">, who: Who
       c.state !== "pending"
         ? { open: false, why: `it is ${label}` }
         : mine
-          ? { open: false, why: "you proposed it: its proposer may not approve it; another administrator does" }
+          ? { open: false, why: "You proposed it; another administrator approves" }
           : { open: true, why: "" },
     reject: c.state === "pending" || c.state === "approved" ? { open: true, why: "" } : { open: false, why: `it is ${label}` },
     rollback: c.state === "applied" ? { open: true, why: "" } : { open: false, why: `it is ${label}: only an applied change is rolled back` },
@@ -115,11 +115,11 @@ export function movesOf(c: Pick<PolicyChange, "state" | "proposed_by">, who: Who
 export function changeLine(c: PolicyChange): string {
   switch (c.state) {
     case "pending":
-      return `Waiting for someone other than ${c.proposed_by || "its proposer"} to review it${c.effective_at ? `; effective ${when(c.effective_at)} once approved` : "; applied at once on approval"}.`;
+      return `Waiting for review by someone other than ${c.proposed_by || "its proposer"}${c.effective_at ? `; effective ${when(c.effective_at)}` : ""}.`;
     case "approved":
-      return `Approved by ${c.approved_by}; the scheduler applies it at ${when(c.effective_at)}. It can still be rejected.`;
+      return `Approved by ${c.approved_by}; applies ${when(c.effective_at)}.`;
     case "applied":
-      return c.emergency ? `Emergency rollback by ${c.applied_by || c.proposed_by}: no second person, raised for review.` : `Applied ${when(c.applied_at)} by ${c.applied_by}, approved by ${c.approved_by}.`;
+      return c.emergency ? `Emergency rollback by ${c.applied_by || c.proposed_by}, raised for review.` : `Applied ${when(c.applied_at)} by ${c.applied_by}, approved by ${c.approved_by}.`;
     case "rejected":
       return `Rejected by ${c.rejected_by}: ${c.reject_reason}`;
     case "rolled_back":
@@ -174,12 +174,12 @@ export const GATE_CHOICES = [
 const FIXED: Record<string, Pick<ProposalField, "kind" | "choices" | "hint" | "star">> = {
   "attached.grants": { kind: "list", hint: "registry tools, as server.tool" },
   "attached.gate_at": { kind: "choice", choices: GATE_CHOICES },
-  "attached.gates": { kind: "json", hint: "a JSON list of gate rules, written as an agent definition writes them" },
-  "attached.scope": { kind: "json", hint: "a JSON object: each granted tool, the argument values it may be called with" },
+  "attached.gates": { kind: "json", hint: "a JSON list of gate rules, as in an agent definition" },
+  "attached.scope": { kind: "json", hint: "a JSON object: tool name to allowed argument values" },
   "attestation.period_days": { kind: "number", hint: "days; the default is 90" },
   "guardian.agents": { kind: "list", hint: "agent ids; * for every agent", star: true },
-  "peer.data_class": { kind: "choice", choices: dataClassChoices("undeclared"), hint: "what it returns; a task it sends in starts at this class or higher" },
-  "peer.max_data_class": { kind: "choice", choices: dataClassChoices("no limit here"), hint: "a spec's own limit holds beside this one, and the lower decides" },
+  "peer.data_class": { kind: "choice", choices: dataClassChoices("undeclared"), hint: "the class of what it returns" },
+  "peer.max_data_class": { kind: "choice", choices: dataClassChoices("no limit here"), hint: "the lower of this and the spec's own limit applies" },
   "guardian.may": { kind: "list", hint: "hold, block, redirect" },
   "guardian.model": { kind: "text" },
   "guardian.rubric": { kind: "longtext" },
@@ -275,7 +275,7 @@ export function proposedField(e: unknown): string | null {
 
 /** A proposal that has gone in, in a sentence with where it goes next. */
 export function proposedLine(c: PolicyChange): string {
-  return `Proposed as ${c.id}: ${changeSummary(c)}. Someone other than you reviews it${c.effective_at ? ` and it takes effect ${when(c.effective_at)}` : ", and it applies on approval"}.`;
+  return `Proposed as ${c.id}; someone other than you reviews it.`;
 }
 
 /**
@@ -360,10 +360,10 @@ export function simulationLine(r: SimulationResult): string {
 export function simulationGaps(r: SimulationResult): string[] {
   const e = r.excluded;
   return [
-    e.shadow ? `${plural(e.shadow, "shadow run")} left out: a mirror executes nothing above read` : "",
-    e.no_spec ? `${plural(e.no_spec, "run")} left out: the spec it ran under is not on record` : "",
-    e.no_journal ? `${plural(e.no_journal, "run")} left out: its journal is gone` : "",
+    e.shadow ? `${plural(e.shadow, "shadow run")} left out` : "",
+    e.no_spec ? `${plural(e.no_spec, "run")} left out: spec not on record` : "",
+    e.no_journal ? `${plural(e.no_journal, "run")} left out: journal gone` : "",
     r.skipped.length ? `${plural(r.skipped.length, "call")} could not be ruled again` : "",
-    r.truncated ? "The limit left older runs out; widen it, or narrow the window" : "",
+    r.truncated ? "Older runs left out at the limit; narrow the window" : "",
   ].filter(Boolean);
 }

@@ -156,7 +156,7 @@ export function BenchmarkView({ benchmark, agent }: { benchmark: Benchmark | nul
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
       <span className="tnum text-[18px] font-semibold text-fg">{benchmark.score !== null ? benchmark.score.toFixed(3) : "—"}</span>
-      <span title={benchmark.threshold_why ?? undefined}>
+      <span>
         <Status tone={tone}>{benchmark.incomplete ? "incomplete: not judged against its threshold" : benchmark.passed_threshold === true ? "at or above its threshold" : benchmark.passed_threshold === false ? "under its threshold" : benchmark.threshold === null ? "no threshold" : "not judged"}</Status>
       </span>
       {!benchmark.matches_deployed && <Tag tone="warn">not what production runs</Tag>}
@@ -170,7 +170,7 @@ export function BenchmarkView({ benchmark, agent }: { benchmark: Benchmark | nul
 
 /** The reviews, newest first. Presentational. */
 export function ReviewsView({ list }: { list: ReviewList }) {
-  if (!list.reviews.length) return <p className="text-[12px] text-faint">No policy review is on record. A reviewer holds the &ldquo;{list.role}&rdquo; role, and never reviews a version they saved.</p>;
+  if (!list.reviews.length) return <p className="text-[12px] text-faint">No policy review on record.</p>;
   return (
     <ul className="flex flex-col overflow-hidden rounded-md border border-line">
       {list.reviews.map((r) => (
@@ -232,7 +232,7 @@ export function DeploymentsView({ list }: { list: DeploymentList }) {
     <div className="flex flex-col gap-3">
       {list.adopted && (
         <Banner tone="neutral" title={`Production runs version ${list.adopted.version ?? "?"}`}>
-          It was deployed before deployments were recorded, so no deployment row stands for it; the next deploy or rollback is the first.
+          Deployed before deployments were recorded.
         </Banner>
       )}
       {!envs.length && !list.adopted && <p className="text-[12px] text-faint">Never deployed.</p>}
@@ -246,10 +246,10 @@ export function DeploymentsView({ list }: { list: DeploymentList }) {
               {now ? <Mono className="text-[10.5px] text-dim">runs version {now.version ?? "?"} ({shortDigest(now.digest)})</Mono> : <span className="text-[10.5px] text-faint">nothing current</span>}
               {env === "canary" || env === "shadow" ? (
                 <span className="text-[10.5px] text-faint">
-                  {env === "shadow" ? "mirrored beside production in shadow mode" : "a share of new starts beside production"}; current only while its canary stands
+                  {env === "shadow" ? "mirrored beside production in shadow mode" : "a share of new starts beside production"}
                 </span>
               ) : (
-                env !== "production" && <span className="text-[10.5px] text-faint">a record: nothing runs it, and what production runs does not move</span>
+                env !== "production" && <span className="text-[10.5px] text-faint">a record only; nothing runs it</span>
               )}
             </span>
             <ul className="flex flex-col overflow-hidden rounded-md border border-line">
@@ -268,7 +268,7 @@ export function DeploymentsView({ list }: { list: DeploymentList }) {
 export function RollbackReceipt({ r }: { r: RollbackResult }) {
   return (
     <Banner tone="warn" title={`Rolled back to version ${r.to.version ?? "?"}`}>
-      {`Rolled back from version ${r.from.version ?? "?"} to ${r.to.version ?? "?"}${r.by ? ` by ${r.by}` : ""}: ${r.reason}. ${r.count ? `${r.count} run${r.count === 1 ? "" : "s"} of version ${r.from.version ?? "?"} listed on the rollback for review` : `No run of version ${r.from.version ?? "?"} to list`}.`}
+      {`From version ${r.from.version ?? "?"}${r.by ? ` by ${r.by}` : ""}: ${r.reason} · ${r.count ? `${r.count} run${r.count === 1 ? "" : "s"} listed for review` : "no run to list"}`}
       {r.flagged.length > 0 && (
         <span className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5">
           {r.flagged.map((run) => (
@@ -352,7 +352,7 @@ function ReviewForm({ agent, versions, defaultDigest, role, who, onDone }: { age
           </span>
         </Field>
       </div>
-      <Field label="Note" hint="Recorded with the review; a request for changes says what to change.">
+      <Field label="Note" hint="For a change request, say what to change.">
         <Textarea rows={2} value={note} onChange={setNote} disabled={busy} />
       </Field>
       {!access.ok && <span className="text-[11.5px] text-warn">{access.reason}</span>}
@@ -407,10 +407,7 @@ function RollbackForm({ agent, list, onDone }: { agent: string; list: Deployment
   return (
     <div className="flex flex-col gap-2.5 rounded-md border border-line bg-canvas/60 p-3">
       <span className="text-[12.5px] font-semibold text-fg">Roll back production</span>
-      <span className="text-[11.5px] leading-[1.5] text-dim">
-        Reinstates a version that ran in production before, as a new production deployment. Every condition is read again, as for any deploy, and a refusal lists
-        them. Every run of the version rolled back from, since it was deployed, is listed on the rollback for review.
-      </span>
+      <span className="text-[11.5px] leading-[1.5] text-dim">Reinstates an earlier production version; every condition is checked again.</span>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Reinstate">
           <Pick
@@ -448,7 +445,7 @@ function RollbackForm({ agent, list, onDone }: { agent: string; list: Deployment
               const gone = retiredRefusalOf(e);
               const held = gateRefusalOf(e);
               if (held && !gone) setGate(held);
-              setError(gone ? `${agent} is retired. ${retiredLine(gone)}` : held ? `Version ${to} is not reinstated: ${held.unmet.map((u) => u.condition.replace(/_/g, " ")).join(", ")} ${held.unmet.length === 1 ? "does" : "do"} not hold. Production runs what it ran.` : (e as Error).message);
+              setError(gone ? retiredLine(gone) : held ? `Version ${to} is not reinstated: ${held.unmet.map((u) => u.condition.replace(/_/g, " ")).join(", ")} ${held.unmet.length === 1 ? "does" : "do"} not hold.` : (e as Error).message);
             } finally {
               setBusy(false);
             }
@@ -474,10 +471,7 @@ function RetireForm({ agent, others, onDone }: { agent: string; others: string[]
   return (
     <div className="flex flex-col gap-2.5 rounded-md border border-line bg-canvas/60 p-3">
       <span className="text-[12.5px] font-semibold text-fg">Retire {agent}</span>
-      <span className="text-[11.5px] leading-[1.5] text-dim">
-        After it, the platform refuses every new run of it, and every new version, deploy, rollback, review and attestation. Runs already started are not stopped.
-        Its runs, versions and records stay readable.
-      </span>
+      <span className="text-[11.5px] leading-[1.5] text-dim">Refuses new runs, versions and deploys; running ones finish.</span>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Reason" error={tried && !reason.trim() ? "A retirement needs a reason." : undefined}>
           <Input value={reason} onChange={setReason} placeholder="Why it no longer runs" />
@@ -636,7 +630,7 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
           </Button>
         }
       >
-        This agent from design to retirement: each stage lit only by its own record, with its reviews, deployments, rollback and retirement. A deploy to production goes ahead only when every condition holds; the answer lists each.
+        Stages, reviews, deployments, rollback and retirement.
       </AgentHeader>
 
       {unsupported.length > 0 && <UnsupportedParts parts={unsupported} heading={unsupportedHeading(data?.detail?.version, data?.detail?.deployed_version)} />}
@@ -685,14 +679,14 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
       {/* With the agent unread, the failure above is said once and no panel calls an unread record empty. */}
       {data?.error && !data.detail && !data.lifecycle ? <>
         {[
-          { title: "Spine", meta: "each stage lit only by its own record", line: "The stages from designed to retired are drawn here, each lit by its own record." },
-          { title: "Autonomy tier", meta: "the tier of its use case, else what its definition declares, and the controls it lacks", line: "The agent's tier is shown here beside the controls that tier requires." },
-          { title: "Benchmark", meta: "the latest eval of what production runs, on the spec's own suite", line: "The latest evaluation of the version production runs is shown here with its score and threshold." },
-          { title: "Policy reviews", meta: "a reviewer never reviews a version they saved", line: "Reviews are listed here with the version reviewed, the reviewer and the decision." },
-          { title: "Deployments", meta: "per environment; production is held to every condition, and is what runs", line: "Deployments are listed here per environment, newest first, with the rollback to an earlier version." },
+          { title: "Spine", meta: "each stage lit only by its own record" },
+          { title: "Autonomy tier", meta: "its tier and the controls it lacks" },
+          { title: "Benchmark", meta: "the latest eval of what production runs" },
+          { title: "Policy reviews", meta: "a reviewer never reviews a version they saved" },
+          { title: "Deployments", meta: "per environment; production is what runs" },
         ].map((x) => (
           <Section key={x.title} title={x.title} meta={x.meta}>
-            <p className="text-[12px] text-faint">{x.line}</p>
+            <p className="text-[12px] text-faint">Not read.</p>
           </Section>
         ))}
         <Section title="Retirement" meta="refuses new work everywhere; its records stay">
@@ -700,7 +694,7 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
         </Section>
       </> : <>
       <Section title="Spine" meta="each stage lit only by its own record">
-        {data?.failed.versions && <Failure what="The versions could not be read, so the spine, the review form and the canary form offer none to choose" message={data.failed.versions} />}
+        {data?.failed.versions && <Failure what="The versions could not be read" message={data.failed.versions} />}
         {versionOptions.length > 1 && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[11px] text-faint">Drawn for</span>
@@ -716,15 +710,15 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
         {data?.lifecycle ? <SpineView lifecycle={data.lifecycle} /> : <p className="text-[12px] text-faint">{data ? "No spine to draw." : "Reading the lifecycle…"}</p>}
       </Section>
 
-      <Section id="autonomy" title="Autonomy tier" meta="the tier of its use case, else what its definition declares, and the controls it lacks">
+      <Section id="autonomy" title="Autonomy tier" meta="its tier and the controls it lacks">
         <AutonomyPanel agent={agent} tick={deployed ? 1 : 0} />
       </Section>
 
-      <Section title="Benchmark" meta="the latest eval of what production runs, on the spec's own suite">
+      <Section title="Benchmark" meta="the latest eval of what production runs">
         {data?.failed.benchmark ? <Failure what="The benchmark could not be read" message={data.failed.benchmark} /> : data ? <BenchmarkView benchmark={data.benchmark} agent={agent} /> : <p className="text-[12px] text-faint">Reading…</p>}
       </Section>
 
-      <Section id="reviews" title="Reviews" meta={data?.reviews ? `${data.reviews.count} on record · a reviewer holds the "${data.reviews.role}" role and never reviews a version they saved` : undefined}>
+      <Section id="reviews" title="Reviews" meta={data?.reviews ? `${data.reviews.count} on record · role "${data.reviews.role}", never the author` : undefined}>
         {data?.failed.reviews && <Failure what="The reviews could not be read" message={data.failed.reviews} />}
         {data?.reviews && <ReviewsView list={data.reviews} />}
         {data && !retired && !notBuiltDoorOf(data.failed.reviews) && reviewBuilt !== false && (
@@ -747,7 +741,7 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
         )}
       </Section>
 
-      <Section id="canary" title="Canary and shadow" meta="a version beside production: a share of starts, or a mirror in shadow mode">
+      <Section id="canary" title="Canary and shadow" meta="a share of starts, or a shadow mirror">
         {data ? (
           <CanaryPanel agent={agent} versions={data.versions} production={data.detail?.deployed_version ?? null} retired={Boolean(retired)} onChanged={load} />
         ) : (
@@ -757,14 +751,14 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
 
       {(data?.lineage || data?.failed.lineage) && (
         <Section id="lineage" title="Lineage" meta="the certified template it was cut from, and the drift since">
-          {data.lineage ? <LineageView lineage={data.lineage} /> : <Failure what="This agent was cut from a template, and its lineage could not be read" message={data.failed.lineage} />}
+          {data.lineage ? <LineageView lineage={data.lineage} /> : <Failure what="The lineage could not be read" message={data.failed.lineage} />}
         </Section>
       )}
 
       <Section title="Retirement" meta="refuses new work everywhere; its records stay">
-        {agentsError && !retired && <Failure what="The other agents could not be read, so no replacement can be named here" message={agentsError} />}
+        {agentsError && !retired && <Failure what="The other agents could not be read" message={agentsError} />}
         {retired ? (
-          <p className="text-[12px] text-faint">Retired {whenText(retired.at)}. Nothing restarts it; save its document as a new agent to carry it on.</p>
+          <p className="text-[12px] text-faint">Retired {whenText(retired.at)}; save its document as a new agent to continue.</p>
         ) : (
           <RetireForm
             agent={agent}
@@ -785,7 +779,7 @@ function AgentLifecycle({ agent, digest }: { agent: string; digest: string | nul
 
 /** Every agent, with where it stands: the latest save, what production runs, retired. */
 export function LifecycleIndexView({ agents }: { agents: AgentSummary[] }) {
-  if (!agents.length) return <p className="text-[12px] text-faint">No agent is saved yet. Build one, save it, and its lifecycle starts here.</p>;
+  if (!agents.length) return <p className="text-[12px] text-faint">No agent is saved yet.</p>;
   return (
     <ul className="af-list af-list-tall flex flex-col rounded-md border border-line bg-surface">
       {agents.map((a) => {
@@ -829,7 +823,7 @@ function LifecycleIndex() {
   return (
     <div className="flex flex-col gap-4">
       <ChooseAgentHeader title="Versions">
-        Choose an agent to open its versions: each one from design to retirement (designed, reviewed, approved, deployed, retired), every stage lit only by its own record. A deploy to production goes ahead only when every condition holds.
+        Choose an agent to open its versions.
       </ChooseAgentHeader>
       {error && (
         <Banner tone="err" title="Could not read the registry">

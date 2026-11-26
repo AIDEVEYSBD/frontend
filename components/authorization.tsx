@@ -10,7 +10,7 @@ import { NotConnected, NotConnectedNote, useDoor } from "./pending";
 import { Card, ago } from "./identity-shared";
 import { whenFull } from "./dataset-parts";
 import { until } from "./sessions-parts";
-import { ServerState, UPSTREAM_NOT_BUILT, subjectKind } from "./authorization-parts";
+import { ServerState, subjectKind } from "./authorization-parts";
 import { AddAuthServerDialog } from "./authorization-add";
 import { useSession } from "@/lib/use-session";
 import { ask, type Answer, type AuthServer, type AuthServerList, type Door } from "@/lib/api/pending";
@@ -43,10 +43,9 @@ const none = (text = "none") => <span className="text-faint">{text}</span>;
 /* ═══════════════════ console sign-in ═══════════════════ */
 
 /** How people come in: Google Identity-Aware Proxy is the only way, and the session door says so on every answer (`via: "iap"`). */
-const IAP_METHOD: { name: string; tone: Tone; how: string } = {
+const IAP_METHOD: { name: string; tone: Tone } = {
   name: "Google Identity-Aware Proxy",
   tone: "ok",
-  how: "Google's proxy stands in front of the console and signs each person in with their Google account. Every request carries the proxy's signed statement of who the person is; the platform's service checks it against Google's published keys on every request and gives the person the roles this deployment maps them to.",
 };
 
 function ConsoleSignIn({ now }: { now: number }) {
@@ -55,9 +54,9 @@ function ConsoleSignIn({ now }: { now: number }) {
 
   return (
     <Card title="Console sign-in" meta={method ? <Status tone={method.tone}>{method.name}</Status> : undefined}>
-      <p className="border-b border-line px-4 py-2.5 text-[12px] leading-[1.55] text-dim">Who signs people in to this console. It is set where the console is deployed, so it is shown here and not changed here.</p>
+      <p className="border-b border-line px-4 py-2.5 text-[12px] leading-[1.55] text-dim">Set where the console is deployed; read-only here.</p>
       {!loaded && <p className="px-4 py-3 text-[12px] text-faint">Reading the session…</p>}
-      {loaded && !me && <div className="p-4">{<p className="text-[12px] text-err">The session door did not say who is signed in, so how sign-in works here is not known.</p>}</div>}
+      {loaded && !me && <div className="p-4">{<p className="text-[12px] text-err">The session door did not say who is signed in.</p>}</div>}
       {me && method && (
         <div className="grid gap-px bg-line lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
           <div className="flex flex-col bg-surface">
@@ -65,10 +64,9 @@ function ConsoleSignIn({ now }: { now: number }) {
             <dl className="flex flex-col px-4 py-1.5">
               <Fact k="Signed in by">
                 <span className="font-medium">{method.name}</span>
-                <span className="text-[11.5px] leading-[1.55] text-dim">{method.how}</span>
               </Fact>
               <Fact k="Roles come from">
-                <span className="text-dim">This deployment&rsquo;s own map from a person&rsquo;s email to a role, set on the platform&rsquo;s service.</span>
+                <span className="text-dim">This deployment&rsquo;s email-to-role map.</span>
                 <Link href="/iam" className="focusable w-fit rounded-sm text-[11.5px] text-fg underline decoration-line-strong underline-offset-2 hover:decoration-fg">
                   Open people and agents
                 </Link>
@@ -148,14 +146,12 @@ function RemoveCell({ onRemove }: { onRemove: () => void }) {
 }
 
 /** What a list shows in place of rows: reading, not connected, a failed read, or nothing yet. */
-function ListState({ answer, count, pendingText, emptyText }: { answer: Answer<AuthServerList> | null; count: number; pendingText: string; emptyText: string }) {
+function ListState({ answer, count, emptyText }: { answer: Answer<AuthServerList> | null; count: number; emptyText: string }) {
   if (answer === null) return <p className="px-4 py-3 text-[12px] text-faint">Reading the authorization servers…</p>;
   if (answer.state === "pending")
     return (
       <div className="p-4">
-        <NotConnected door={answer.door} compact>
-          {pendingText}
-        </NotConnected>
+        <NotConnected door={answer.door} compact />
       </div>
     );
   if (answer.state === "error") return <div className="p-4">{<p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">The authorization servers could not be read: {answer.message}</p>}</div>;
@@ -185,7 +181,7 @@ export function AuthorizationView() {
     setRemoving(null);
     if (a.state === "pending") return setNotice({ door: a.door });
     if (a.state === "error") return setNotice({ tone: "err", text: a.message });
-    setNotice({ tone: "ok", text: was.purpose === "workload" ? `Trust in ${was.name || was.id} was withdrawn. No workload can sign in with a token from it.` : `${was.name || was.id} was removed.` });
+    setNotice({ tone: "ok", text: was.purpose === "workload" ? `Trust in ${was.name || was.id} was withdrawn.` : `${was.name || was.id} was removed.` });
     reload();
   };
 
@@ -204,7 +200,7 @@ export function AuthorizationView() {
           </span>
         }
       >
-        The outside issuers this deployment trusts: who signs people in to the console, and whose signed tokens a service may sign in with. Upstream trust, a per-person token for a tool, is not built.
+        The outside issuers this deployment trusts.
       </PageHeader>
 
       {notice && (
@@ -234,18 +230,13 @@ export function AuthorizationView() {
               <span className="size-1.5 shrink-0 rounded-[2px] bg-faint" />
               <span className="text-[13px] font-semibold text-fg">Upstream trust is not built</span>
             </span>
-            <p className="max-w-[86ch] text-[12.5px] leading-[1.55] text-dim">
-              An upstream issuer would give a per-person token for a tool, so a tool server is called as the person and not with a shared key. {UPSTREAM_NOT_BUILT}
-            </p>
           </div>
         </div>
       </Card>
 
       {/* ── workloads ── */}
       <Card title="Workloads" meta={count(workload.length)}>
-        <p className="border-b border-line px-4 py-2.5 text-[12px] leading-[1.55] text-dim">
-          Issuers whose signed tokens a service signs in with: the token is sent on every request and checked there, so no long-lived key is stored for the service. A Kubernetes service account issuer is one.
-        </p>
+        <p className="border-b border-line px-4 py-2.5 text-[12px] leading-[1.55] text-dim">Issuers whose signed tokens a service signs in with.</p>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[860px] border-collapse text-left text-[12px]">
             <thead>
@@ -290,7 +281,6 @@ export function AuthorizationView() {
         <ListState
           answer={answer}
           count={workload.length}
-          pendingText="The issuers whose signed tokens a service signs in with: each with its address, the subjects admitted from it (exact, or a prefix ending in *), how many of its services are connected and its state."
           emptyText="No workload issuer is trusted yet."
         />
       </Card>
@@ -316,50 +306,20 @@ export function AuthorizationView() {
           onClose={() => !busy && setRemoving(null)}
         >
           <span className="flex flex-col gap-2">
+            <span className="font-mono text-[11.5px] break-all text-fg">{removing.issuer}</span>
             {removing.purpose === "workload" ? (
-              <>
-                <span>
-                  Withdrawing trust in an issuer stops every workload from it: the next token from <span className="font-mono text-[11.5px] break-all text-fg">{removing.issuer}</span> is refused, and its services leave
-                  the register.
-                </span>
-                {removing.sessions !== undefined && (
-                  <span>{removing.sessions === 0 ? "None of its services is connected now." : removing.sessions === 1 ? "The one service connected now is cut off." : `The ${removing.sessions.toLocaleString("en-GB")} services connected now are cut off.`}</span>
-                )}
-                {Boolean(removing.subjects?.length) && (
-                  <span className="flex flex-col gap-1">
-                    <span>Subjects admitted from it today:</span>
-                    <span className="flex max-h-[120px] flex-col gap-0.5 overflow-y-auto rounded-sm border border-line bg-canvas px-2 py-1.5">
-                      {removing.subjects!.map((x) => (
-                        <span key={x} className="font-mono text-[11px] break-all text-fg">
-                          {x}
-                        </span>
-                      ))}
-                    </span>
-                  </span>
-                )}
-              </>
+              <span>
+                Its next token is refused
+                {removing.sessions ? `; ${removing.sessions === 1 ? "one connected service is" : `${removing.sessions.toLocaleString("en-GB")} connected services are`} cut off` : ""}.
+              </span>
             ) : (
-              <>
+              removing.tool_servers !== undefined && (
                 <span>
-                  This deployment stops trusting <span className="font-mono text-[11.5px] break-all text-fg">{removing.issuer}</span> for per-person tokens.
+                  {removing.tool_servers.length === 0
+                    ? "No tool server uses it."
+                    : `${removing.tool_servers.length === 1 ? "One tool server" : `${removing.tool_servers.length.toLocaleString("en-GB")} tool servers`} can no longer be called as the person.`}
                 </span>
-                {removing.tool_servers === undefined ? (
-                  <span>The record does not say which tool servers use it.</span>
-                ) : removing.tool_servers.length === 0 ? (
-                  <span>No tool server uses it.</span>
-                ) : (
-                  <span className="flex flex-col gap-1">
-                    <span>{removing.tool_servers.length === 1 ? "One tool server gets its tokens from it and can no longer be called as the person:" : `${removing.tool_servers.length.toLocaleString("en-GB")} tool servers get their tokens from it and can no longer be called as the person:`}</span>
-                    <span className="flex max-h-[120px] flex-col gap-0.5 overflow-y-auto rounded-sm border border-line bg-canvas px-2 py-1.5">
-                      {removing.tool_servers.map((t) => (
-                        <span key={t.id} className="text-[11.5px] text-fg">
-                          {t.name || t.id}
-                        </span>
-                      ))}
-                    </span>
-                  </span>
-                )}
-              </>
+              )
             )}
           </span>
         </Dialog>

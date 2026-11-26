@@ -101,18 +101,18 @@ export function IngressActivity() {
       <div className="flex flex-col gap-1 border-b border-line px-4 py-2.5 text-[11.5px] leading-[1.55]">
         {machine ? (
           <>
-            <span className="text-faint">Outside systems post to the platform&rsquo;s own address, outside the console&rsquo;s sign-in:</span>
+            <span className="text-faint">Outside systems post to:</span>
             <span className="flex flex-wrap items-baseline gap-x-3">
               <Mono className="text-[11px] text-fg">POST {machine}/api/trigger/&lt;agent&gt;</Mono>
-              <span className="text-faint">an agent started by an API call, with an API key bound to it</span>
+              <span className="text-faint">with an API key bound to the agent</span>
             </span>
             <span className="flex flex-wrap items-baseline gap-x-3">
               <Mono className="text-[11px] text-fg">POST {machine}/api/webhooks/&lt;agent&gt;</Mono>
-              <span className="text-faint">an agent started by a webhook, signed with the secret its trigger names, or with an API key</span>
+              <span className="text-faint">signed with the trigger&rsquo;s secret, or with an API key</span>
             </span>
           </>
         ) : (
-          <span className={machine === undefined ? "text-faint" : "text-warn"}>{machineLine(machine, "", "outside systems cannot reach the trigger and webhook doors")}</span>
+          <span className={machine === undefined ? "text-faint" : "text-warn"}>{machineLine(machine, "", "outside systems cannot post work")}</span>
         )}
       </div>
       {failed && (
@@ -122,7 +122,7 @@ export function IngressActivity() {
       )}
       {!view && !failed && <p className="px-4 py-3 text-[11.5px] text-faint">Reading what has arrived…</p>}
       {view && view.arrivals.length === 0 && (
-        <p className="px-4 py-3 text-[11.5px] text-faint">No run has been started from outside: none by an API key, a webhook or a schedule.</p>
+        <p className="px-4 py-3 text-[11.5px] text-faint">No run has been started from outside.</p>
       )}
       {view && view.arrivals.length > 0 && (
         <div className="overflow-x-auto">
@@ -177,11 +177,9 @@ export function IngressActivity() {
       )}
 
       <span className="border-y border-line px-4 py-2 text-[10.5px] text-ghost">Schedules</span>
-      {view && (
-        <p className={`border-b border-line px-4 py-2 text-[11.5px] leading-[1.5] ${view.workers_alive ? "text-faint" : "text-warn"}`}>{view.clock}</p>
-      )}
+      {view && !view.workers_alive && <p className="border-b border-line px-4 py-2 text-[11.5px] leading-[1.5] text-warn">No worker process is running; schedules do not fire.</p>}
       {view && view.schedules.length === 0 && (
-        <p className="px-4 py-3 text-[11.5px] text-faint">No deployed agent has a cron trigger, so nothing starts on a schedule.</p>
+        <p className="px-4 py-3 text-[11.5px] text-faint">No deployed agent has a cron trigger.</p>
       )}
       {view?.schedules.map((s) => (
         <div key={s.agent} className="flex flex-col gap-1.5 border-b border-line px-4 py-2.5 last:border-0">
@@ -193,7 +191,7 @@ export function IngressActivity() {
             ) : (
               <span className="text-[11px] text-faint">
                 next due {when(s.next_due)}
-                {s.seen ? "" : " (worked out now: no worker's clock has seen this schedule yet)"}
+                {s.seen ? "" : " (not yet seen by a worker)"}
               </span>
             )}
           </span>

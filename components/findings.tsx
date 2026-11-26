@@ -122,7 +122,7 @@ function Triage({ finding, disabled = false, onChanged }: { finding: Finding | n
             options={[{ value: "", label: "Choose a status" }, ...options.map((s) => ({ value: s, label: FINDING_STATUS_META[s].label }))]}
           />
         </Field>
-        <Field label="Note" hint="Required. It is kept in the finding's history with your name.">
+        <Field label="Note" hint="Required. Kept in the finding's history.">
           <Textarea value={note} onChange={setNote} rows={2} disabled={disabled || busy} placeholder="Why the status changes" />
         </Field>
         <span className="flex flex-wrap items-center gap-2">
@@ -173,7 +173,7 @@ export function FindingView({ finding, onChanged, partial = false }: { finding: 
             <FindingDetail finding={f} />
           </div>
         )}
-        {!f.summary && !f.recommendation && !hasFindingDetail(f) && <p className="text-[12px] text-faint">The run recorded no summary, recommendation or detail for this finding.</p>}
+        {!f.summary && !f.recommendation && !hasFindingDetail(f) && <p className="text-[12px] text-faint">No summary, recommendation or detail recorded.</p>}
       </div>
 
       <div className="flex min-w-0 flex-col gap-4">
@@ -211,7 +211,7 @@ export function FindingView({ finding, onChanged, partial = false }: { finding: 
 
         <Block title="Evidence" meta={evidence.length || undefined}>
           {evidence.length === 0 ? (
-            <p className="text-[12px] text-faint">{partial ? "Evidence is read from the finding's own record." : "No journal entry is linked to this finding."}</p>
+            <p className="text-[12px] text-faint">{partial ? "—" : "No journal entry is linked to this finding."}</p>
           ) : (
             <ul className="flex flex-col overflow-hidden rounded-md border border-line">
               {evidence.map((e, i) => (
@@ -233,7 +233,7 @@ export function FindingView({ finding, onChanged, partial = false }: { finding: 
 
         <Block title="Status history" meta={history.length || undefined}>
           {history.length === 0 ? (
-            <p className="text-[12px] text-faint">{partial ? "History is read from the finding's own record." : "No status change is recorded."}</p>
+            <p className="text-[12px] text-faint">{partial ? "—" : "No status change is recorded."}</p>
           ) : (
             <ol className="flex flex-col overflow-hidden rounded-md border border-line">
               {history.map((h, i) => (
@@ -426,8 +426,7 @@ function FindingsPage() {
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7" data-hue="red">
       <GroupHeader group="results" tab="findings">
-        What the security workloads reported: each finding with its severity, its status, the agent and the run it came from. Open one to read its evidence in the run&rsquo;s journal and to change
-        its status.
+        Each finding with its severity, status, agent and run.
       </GroupHeader>
 
       <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface px-4 py-3 elev-1">
@@ -469,7 +468,7 @@ function FindingsPage() {
           </Filter>
           <Filter label="Agent" width="w-44">
             <Pick value={agent} onChange={(v) => filter({ agent: v || null })} aria-label="Agent" options={[{ value: "", label: "Every agent" }, ...agentOptions.map((a) => ({ value: a, label: a }))]} />
-            {agentsError && <span className="text-[10.5px] leading-[1.4] text-err" title={agentsError}>The agents could not be read: only those on these findings are offered.</span>}
+            {agentsError && <span className="text-[10.5px] leading-[1.4] text-err" title={agentsError}>The agents could not be read.</span>}
           </Filter>
           <Filter label="Search" width="w-52">
             <span className="flex h-8 items-center">
@@ -530,18 +529,15 @@ function FindingsPage() {
             <NotConnected door={answer.door} />
           </div>
         )}
-        {answer?.state === "error" && <p className="px-4 py-6 text-[12px] text-faint">Nothing to show: the findings could not be read.</p>}
+        {answer?.state === "error" && <p className="px-4 py-6 text-[12px] text-faint">Not read.</p>}
         {answer?.state === "ok" && shown.length === 0 && (
           <div className="p-4">
             {rows.length === 0 && notBuilt(notBuiltOf(answer.data), "producer") ? (
-              <EmptyState title="Nothing produces findings yet" detail="The platform names the producer of findings as not built: no run writes one, so this list is empty because nothing can fill it." />
+              <EmptyState title="Not built" />
             ) : rows.length === 0 ? (
-              <EmptyState
-                title={set > 0 ? "No finding matches these filters" : "No findings yet"}
-                detail={set > 0 ? "Nothing on record has this workload, status, agent, run and owner." : "No finding has been recorded yet. A run records one through its finding.record tool."}
-              />
+              <EmptyState title={set > 0 ? "No finding matches these filters" : "No findings yet"} />
             ) : (
-              <EmptyState title="No finding matches" detail="The findings read do not include one with this severity and search text." />
+              <EmptyState title="No finding matches" />
             )}
           </div>
         )}
@@ -553,7 +549,7 @@ function FindingsPage() {
             <span>Sorted by severity, then most recent.</span>
             {total > rows.length && (
               <span className="text-warn">
-                {count(total)} match on record; the {count(rows.length)} read are counted and searched here. Narrow the filters to reach the rest.
+                {count(total)} match on record, {count(rows.length)} read here; narrow the filters for the rest.
               </span>
             )}
           </div>

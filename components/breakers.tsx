@@ -113,7 +113,7 @@ export function OpenBreakerRow({ breaker: b, now, onClosed, onRefresh }: { break
         )}
       </div>
       {confirming && (
-        <span className="-mt-0.5 self-end text-[11px] text-warn">Every run may call it again at once; it opens again when its calls or failures pass the thresholds.</span>
+        <span className="-mt-0.5 self-end text-[11px] text-warn">Every run may call it again at once.</span>
       )}
       {o ? (
         <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-dim">
@@ -124,7 +124,7 @@ export function OpenBreakerRow({ breaker: b, now, onClosed, onRefresh }: { break
           {o.source && <RunSourceTag run={{ source: o.source }} />}
         </span>
       ) : (
-        <span className="text-[11px] text-faint">Open, but the opening behind it is not among the openings listed.</span>
+        <span className="text-[11px] text-faint">Opening not in the list.</span>
       )}
       {error && (<span className="text-[11.5px] text-err">{error}</span>)}
     </div>
@@ -190,7 +190,7 @@ export function BreakersBody({ view, now, onClosed, onRefresh }: { view: Breaker
         <section className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">
           <div data-hue={hueFor("breaker refusals")} className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2.5">
             <span className="text-[12px] font-semibold">Open now</span>
-            <span className="text-[11px] text-faint">{open.length ? `${open.length} open: every run is refused a call of ${open.length === 1 ? "it" : "each"} until it closes` : "none: every tool may be called"}</span>
+            <span className="text-[11px] text-faint">{open.length ? `${open.length} open · calls refused until closed` : "none"}</span>
           </div>
           {open.map((b) => (
             <OpenBreakerRow key={b.name} breaker={b} now={now} onClosed={onClosed} onRefresh={onRefresh} />
@@ -224,9 +224,8 @@ export function BreakersBody({ view, now, onClosed, onRefresh }: { view: Breaker
         </div>
         <p className="border-t border-line px-4 py-2.5 text-[11.5px] leading-[1.55] text-dim">{thresholdsLine(t)}</p>
         <p className="border-t border-line px-4 py-2.5 text-[11px] leading-[1.55] text-faint">
-          Counted per tool that acts outside, by its name, across every run on every worker. A refusal (by policy, the host, the allow list or the vault) is never a failure and is not counted. The deployment sets these:{" "}
-          <Mono className="text-[10.5px]">BREAKER_FAILURES</Mono>, <Mono className="text-[10.5px]">BREAKER_CALLS</Mono>, <Mono className="text-[10.5px]">BREAKER_WINDOW_SECONDS</Mono> and{" "}
-          <Mono className="text-[10.5px]">BREAKER_COOLDOWN_SECONDS</Mono>; 0 turns a rule off, and a cooldown of 0 turns breakers off. Changing them by policy is not built: it is a later phase.
+          Set by <Mono className="text-[10.5px]">BREAKER_FAILURES</Mono>, <Mono className="text-[10.5px]">BREAKER_CALLS</Mono>, <Mono className="text-[10.5px]">BREAKER_WINDOW_SECONDS</Mono>,{" "}
+          <Mono className="text-[10.5px]">BREAKER_COOLDOWN_SECONDS</Mono>; 0 turns one off.
         </p>
       </section>
     </div>
@@ -259,9 +258,7 @@ export function Breakers() {
   return (
     <div className="mx-auto w-full max-w-[1520px] px-5 py-7" data-hue="red">
       <GroupHeader group="resilience" tab="breakers" meta={view && <Status tone={open ? "err" : "ok"}>{open ? `${open} open` : "none open"}</Status>}>
-        Breakers on the tools that act outside, across every run: a tool whose calls fail too many times in a row, or that is called too often across the estate within the window, is cut off
-        for its cooldown, and every run is refused a call of it until then. After the cooldown the first call is a probe, and a failure opens the breaker again at once. A person with the configure
-        permission may close one by hand once what it calls is mended.
+        Tools cut off after too many failures or calls, across every run.
       </GroupHeader>
       {error && <Failure className="mt-4" what="The breakers could not be read" message={error} />}
       {notice && <p className="mt-4 text-[12px] text-ok">{notice}</p>}
@@ -272,7 +269,7 @@ export function Breakers() {
             now={now}
             onClosed={(name) => {
               const t = breakerTarget(name);
-              setNotice(`The breaker on ${t.kind === "peer" ? `the peer ${t.label}` : t.label} was closed: every run may call it again at once.`);
+              setNotice(`Breaker on ${t.kind === "peer" ? `the peer ${t.label}` : t.label} closed.`);
               load();
             }}
             onRefresh={load}

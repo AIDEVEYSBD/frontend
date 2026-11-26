@@ -179,16 +179,16 @@ export function IdentityPage({
     personIssues.push({
       tone: "err",
       title: "Held out of the console",
-      detail: `Held out ${ago(p.disabled_at, now)}${p.disabled_by ? ` by ${p.disabled_by}` : ""}. Every request of theirs is refused until an administrator lets them back; their Google sign-in itself is untouched.${
-        theirKeys.length ? ` ${theirKeys.length === 1 ? "One API key that answers to them still works" : `${theirKeys.length} API keys that answer to them still work`}: ${theirKeys.map((k) => k.name).join(", ")}.` : ""
-      }`,
+      detail: `Held out ${ago(p.disabled_at, now)}${p.disabled_by ? ` by ${p.disabled_by}` : ""}${
+        theirKeys.length ? `; ${theirKeys.length === 1 ? "one API key still works" : `${theirKeys.length} API keys still work`}: ${theirKeys.map((k) => k.name).join(", ")}` : ""
+      }.`,
     });
   if (p && !p.disabled_at && p.last_app_roles.length === 0)
     personIssues.push({
       tone: "warn",
       title: "No role in this app",
       // Behind Google IAP a person's roles come from this deployment's role map, never from the sign-in.
-      detail: "This deployment's role map names no role for them, so no permission maps to them. A role is given in the role map, by address or by domain.",
+      detail: "Give them a role in this deployment's role map.",
     });
   const unowned = Boolean(i && !i.owner && i.status !== "revoked");
   const attention = findings.length + personIssues.length + (unowned ? 1 : 0);
@@ -256,10 +256,7 @@ export function IdentityPage({
             ) : confirming === "disable" || confirming === "signout" ? (
               <span className="flex max-w-[460px] flex-col items-end gap-1.5">
                 <span className="text-right text-[11.5px] leading-[1.5] text-dim">
-                  {confirming === "signout"
-                    ? `This service cannot end a Google session. Signing ${who} out everywhere holds them out instead: every request of theirs is refused until an administrator lets them back.`
-                    : `Every request ${who} makes is refused until an administrator lets them back. Their Google sign-in is untouched.`}{" "}
-                  A key acts with its own authority, so a hold alone leaves their API keys working{revokeWithHold ? "; these are revoked with it, and a revoked key cannot be restored." : "; the notice lists them, to revoke."}
+                  {confirming === "signout" ? `Holds ${who} out: every request refused until let back.` : `Every request ${who} makes is refused until let back.`}
                 </span>
                 <span className="flex flex-col items-end gap-0.5">
                   <Checkbox
@@ -273,7 +270,6 @@ export function IdentityPage({
                     checked={revokeWithHold}
                     onChange={setRevokeWithHold}
                   />
-                  {keysOfPerson === null && <span className="text-[10.5px] text-faint">The identity register was not read, so which keys answer to them is not known here; the platform revokes every one that still works.</span>}
                 </span>
                 <span className="flex gap-1.5">
                   {confirmPair(
@@ -312,9 +308,7 @@ export function IdentityPage({
             !keyedAgent(i) &&
             (confirming === "disconnect-service" ? (
               <span className="flex max-w-[460px] flex-col items-end gap-1.5">
-                <span className="text-right text-[11.5px] leading-[1.5] text-dim">
-                  Every token issued to {i.name} until now is refused. A token its issuer issues later signs it in again; to keep it out, remove its subject from the issuer.
-                </span>
+                <span className="text-right text-[11.5px] leading-[1.5] text-dim">Every token issued to {i.name} until now is refused.</span>
                 <span className="flex gap-1.5">{confirmPair("Disconnect now", () => { setConfirming(""); actions.disconnectService(i); }, busy === `service:${i.id}`)}</span>
               </span>
             ) : (
@@ -357,7 +351,7 @@ export function IdentityPage({
 
       {/* ── needs attention ── */}
       {!(unread && attention === 0) && <Card id="attention" title="Needs attention" meta={attention ? `${attention}` : "nothing"}>
-        {attention === 0 && <p className="px-4 py-3 text-[12px] text-dim">Nothing about this identity needs attention on this read.</p>}
+        {attention === 0 && <p className="px-4 py-3 text-[12px] text-dim">Nothing needs attention.</p>}
         {personIssues.map((x) => (
           <div key={x.title} className="flex flex-wrap items-start gap-3 border-b border-line px-4 py-2.5 last:border-0">
             <span className="w-[62px] shrink-0 pt-0.5">
@@ -379,7 +373,7 @@ export function IdentityPage({
             </span>
             <span className="flex min-w-0 grow basis-[260px] flex-col gap-0.5">
               <span className="text-[12.5px] text-fg">No owner</span>
-              <span className="max-w-[90ch] text-[11.5px] leading-[1.5] text-dim">Nobody is named as answering for this identity. Name a person and why it exists, under Access.</span>
+              <span className="max-w-[90ch] text-[11.5px] leading-[1.5] text-dim">Name a person and a purpose under Access.</span>
             </span>
           </div>
         )}
@@ -387,7 +381,7 @@ export function IdentityPage({
 
       {/* ── access ── */}
       {p && (
-        <Card id="access" title="Access" meta="roles from this deployment's role map, and the permissions they map to here">
+        <Card id="access" title="Access" meta="roles and the permissions they map to">
           <div className="grid gap-px bg-line lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
             <div className="flex flex-col bg-surface px-4 py-1.5">
               <Fact k="Roles in this app">
@@ -405,7 +399,7 @@ export function IdentityPage({
                 {p.disabled_at ? (
                   <span className="flex flex-col gap-0.5">
                     <Status tone="err">held out {ago(p.disabled_at, now)}</Status>
-                    {p.disabled_by && <span className="text-[11px] text-faint">by {p.disabled_by}, until an administrator lets them back</span>}
+                    {p.disabled_by && <span className="text-[11px] text-faint">by {p.disabled_by}</span>}
                   </span>
                 ) : (
                   <Status tone="ok">let in</Status>
@@ -499,13 +493,13 @@ function IdentityAccess({ identity: i, now, busy, ownerStoreDown, editOwner, act
       { k: "Attached over", v: `${f.mode === "a2a" ? "A2A" : "the SDK"}${text(f.framework) ? ` · ${text(f.framework)}` : ""}${text(f.language) ? ` · ${text(f.language)}` : ""}` },
       { k: "Owning team", v: text(f.team) || "none given when it was attached" },
       { k: "Attached by", v: `${person(f.attached_by) || "not recorded"}, ${when(i.created_at, "at a time not recorded")}` },
-      { k: "Approved by", v: f.approved_by ? `${person(f.approved_by)}, ${when(f.approved_at, "at a time not recorded")}` : "nobody yet: its key works once a second person approves the attachment" },
+      { k: "Approved by", v: f.approved_by ? `${person(f.approved_by)}, ${when(f.approved_at, "at a time not recorded")}` : "nobody yet: the key works once a second person approves" },
       ...(block ? [{ k: "Blocked", v: <span className="text-err">by {text(block.by) || "not recorded"}, {when(block.at, "at a time not recorded")}: {text(block.reason) || "no reason given"}</span> }] : []),
-      ...(f.detached_at ? [{ k: "Detached", v: `${when(f.detached_at, "")} by ${text(f.detached_by) || "not recorded"}; its key is revoked and its record stays` }] : []),
+      ...(f.detached_at ? [{ k: "Detached", v: `${when(f.detached_at, "")} by ${text(f.detached_by) || "not recorded"}; key revoked` }] : []),
       { k: "Granted tools", v: chips(f.grants) },
       { k: "Stops for a person at", v: list(f.gates).join(", ") || "never: no gate in its policy" },
       { k: "Data class", v: text(f.data_class) || "not recorded" },
-      ...(f.owner_held_out ? [{ k: "Its owner", v: <span className="text-err">is held out of the console; this agent&rsquo;s key still works until it is blocked or detached</span> }] : []),
+      ...(f.owner_held_out ? [{ k: "Its owner", v: <span className="text-err">is held out; this agent&rsquo;s key still works</span> }] : []),
     );
   } else if (i.kind === "attached_agent")
     facts.push(
@@ -539,7 +533,7 @@ function IdentityAccess({ identity: i, now, busy, ownerStoreDown, editOwner, act
       // When it stops working: its own expiry, or its minting plus the longest lifetime the deployment allows now, whichever is first.
       { k: i.status === "expired" ? "Expired" : "Expires", v: typeof f.expires_at === "string" && f.expires_at ? new Date(f.expires_at).toLocaleString("en-GB") : "not said by the register" },
       ...(f.revoked_at ? [{ k: "Revoked", v: when(f.revoked_at, "") }] : []),
-      ...(f.owner_held_out ? [{ k: "Its owner", v: <span className="text-err">is held out of the console; this key still works until it is revoked</span> }] : []),
+      ...(f.owner_held_out ? [{ k: "Its owner", v: <span className="text-err">is held out; this key still works</span> }] : []),
     );
   }
   if (i.kind === "vault_credential") facts.push({ k: "Referenced by", v: list(f.referenced_by).join(", ") || "no spec" }, { k: "Declared users", v: list(f.declared_users).join(", ") || "none" }, { k: "Value set", v: f.set ? "yes" : "no" });
@@ -549,7 +543,7 @@ function IdentityAccess({ identity: i, now, busy, ownerStoreDown, editOwner, act
   };
 
   return (
-    <Card id="access" title="Access" meta={i.kind === "workflow" || i.kind === "attached_agent" ? "what it may call, where it stops for a person, and who answers for it" : "what it gives access to, and who answers for it"}>
+    <Card id="access" title="Access" meta={i.kind === "workflow" || i.kind === "attached_agent" ? "what it may call, and who answers for it" : "what it gives access to, and who answers for it"}>
       <div className="grid gap-px bg-line lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
         <div className="flex flex-col bg-surface px-4 py-1.5">
           <Fact k="May reach">
@@ -558,8 +552,6 @@ function IdentityAccess({ identity: i, now, busy, ownerStoreDown, editOwner, act
               <span>{i.privileges}</span>
             </span>
           </Fact>
-          {/* Where an agent's risk was read from: which version, and its highest-risk grant (or why it could not be read). */}
-          {typeof f.risk_from === "string" && f.risk_from && <Fact k="Risk read from">{f.risk_from}</Fact>}
           <Fact k="Authenticates with">{i.credential}</Fact>
           {facts.map((x) => (
             <Fact key={x.k} k={x.k}>
@@ -584,7 +576,7 @@ function IdentityAccess({ identity: i, now, busy, ownerStoreDown, editOwner, act
               <Field label="Purpose">
                 <Input value={draft.purpose} onChange={(v) => setDraft((d) => ({ ...d, purpose: v }))} placeholder="Why this identity exists" />
               </Field>
-              <Field label="Review due" hint="A date, as YYYY-MM-DD. Leave empty for none.">
+              <Field label="Review due" hint="YYYY-MM-DD; empty for none.">
                 <Input value={draft.review} onChange={(v) => setDraft((d) => ({ ...d, review: v }))} placeholder="YYYY-MM-DD" mono />
               </Field>
               <span className="flex gap-2">
@@ -598,9 +590,9 @@ function IdentityAccess({ identity: i, now, busy, ownerStoreDown, editOwner, act
             </>
           ) : (
             <>
-              {i.owner ? <OwnerChip owner={i.owner} /> : <span className="text-[12px] text-warn">No owner. Nobody is named as answering for this identity.</span>}
+              {i.owner ? <OwnerChip owner={i.owner} /> : <span className="text-[12px] text-warn">No owner.</span>}
               {i.owner && (f.owner_from === "minted" || f.owner_from === "saved") && (
-                <span className="text-[11.5px] leading-[1.5] text-faint">Nobody is named on the register, so the person who {f.owner_from === "minted" ? "minted it" : "first saved it"} answers for it.</span>
+                <span className="text-[11.5px] leading-[1.5] text-faint">Owner by default: the person who {f.owner_from === "minted" ? "minted it" : "first saved it"}.</span>
               )}
               {i.owner?.review_due_at && (
                 <span className="text-[11.5px] text-dim">
@@ -612,7 +604,7 @@ function IdentityAccess({ identity: i, now, busy, ownerStoreDown, editOwner, act
                   {i.owner ? "Change owner" : "Assign owner"}
                 </Button>
               )}
-              {ownerStoreDown && (<span className="text-[11.5px] leading-[1.5] text-faint">Owners cannot be saved here: the register&rsquo;s own table is not reachable on this deployment.</span>)}
+              {ownerStoreDown && (<span className="text-[11.5px] leading-[1.5] text-faint">Owners cannot be saved: their table is not reachable.</span>)}
             </>
           )}
         </form>
@@ -631,7 +623,7 @@ function Usage({ identity: i, now }: { identity: Identity; now: number }) {
   if (items.length === 0 && !i.last_used && useKept) return null;
   items.push({ k: "Last used", v: i.last_used ? ago(i.last_used, now) : useKept ? "none on record" : "not recorded with this secret store" });
   return (
-    <Card id="usage" title="Usage" meta="as the identity register measured it on this read">
+    <Card id="usage" title="Usage">
       <div className="p-4">
         <Figures items={items} />
       </div>

@@ -108,7 +108,6 @@ function IamPage() {
   /** The kinds the register names as not built: none can be listed, so none is counted as zero. */
   const unbuiltKinds = useMemo(() => notBuiltOf(reg).filter((k) => (KINDS as string[]).includes(k)), [reg]);
   const unbuiltWords = unbuiltKinds.map((k) => UNBUILT_WORD[k] ?? KIND_META[k as keyof typeof KIND_META].plural.toLowerCase());
-  const unbuiltLine = unbuiltWords.length ? `${unbuiltWords.join(" and ")} ${unbuiltWords.length === 1 ? "is" : "are"} not built on this platform` : "";
   const findingsOf = useMemo(() => {
     const m = new Map<string, Finding[]>();
     for (const f of reg?.findings ?? []) {
@@ -188,7 +187,7 @@ function IamPage() {
       setBusy("");
     }
   };
-  const revokeKey = (i: Identity) => act(`revoke:${i.id}`, () => revokeKeyDoor(i.id), () => ({ tone: "ok", text: `Revoked ${i.name}. Anything still presenting it is refused from now.` }));
+  const revokeKey = (i: Identity) => act(`revoke:${i.id}`, () => revokeKeyDoor(i.id), () => ({ tone: "ok", text: `Revoked ${i.name}.` }));
   const rotateKey = (i: Identity) =>
     act(
       `rotate:${i.id}`,
@@ -204,13 +203,13 @@ function IamPage() {
       },
       (d) =>
         d.revokeFailed
-          ? { tone: "err", text: `A new key for ${i.name} was minted, but the old one was NOT revoked and still works: ${String(d.revokeFailed)}. Copy the new key now: it is not shown again.`, secret: String(d.key ?? "") }
-          : { tone: "ok", text: `Rotated ${i.name}: the old key is revoked. Copy the new key now: it is not shown again.`, secret: String(d.key ?? "") },
+          ? { tone: "err", text: `Old key of ${i.name} not revoked: ${String(d.revokeFailed)}; copy the new key, shown once.`, secret: String(d.key ?? "") }
+          : { tone: "ok", text: `Rotated ${i.name}; copy the new key, shown once.`, secret: String(d.key ?? "") },
     );
   const disconnectService = (i: Identity) =>
-    act(`service:${i.id}`, () => disconnectIdentity("attached_agent", i.id), (d) => ({ tone: "warn", text: `${i.name} is disconnected: ${typeof d.note === "string" && d.note ? d.note : "every token issued to it until now is refused."}` }));
+    act(`service:${i.id}`, () => disconnectIdentity("attached_agent", i.id), () => ({ tone: "warn", text: `${i.name} is disconnected.` }));
   const blockAgent = (i: Identity, blocked: boolean) =>
-    act(`block:${i.id}`, () => setAttachedPolicy({ id: i.id, blocked }), () => ({ tone: blocked ? "warn" : "ok", text: blocked ? `${i.name} is blocked; every door refuses it until the block is lifted.` : `${i.name} is unblocked.` }));
+    act(`block:${i.id}`, () => setAttachedPolicy({ id: i.id, blocked }), () => ({ tone: blocked ? "warn" : "ok", text: blocked ? `${i.name} is blocked.` : `${i.name} is unblocked.` }));
   const gateAgent = (i: Identity) => act(`gate:${i.id}`, () => setAttachedPolicy({ id: i.id, gate_at: "write" }), () => ({ tone: "ok", text: `${i.name} now stops for a person at write and above.` }));
   const disconnectServer = (i: Identity) => act(`disconnect:${i.id}`, () => disconnectIdentity("mcp_server", i.id), () => ({ tone: "ok", text: `Disconnected ${i.name} from the registry.` }));
   const removeSecret = (i: Identity) => act(`secret:${i.id}`, () => removeVaultKey(i.id), () => ({ tone: "ok", text: `Removed \${secret:${i.id}} from the vault.` }));
@@ -228,24 +227,23 @@ function IamPage() {
   };
   const liveKeysOf = (d: Record<string, unknown>): LiveKey[] =>
     Array.isArray(d.live_keys) ? (d.live_keys as LiveKey[]).filter((k) => k && typeof k.id === "string") : [];
-  const HELD = "every request of theirs is refused until an administrator lets them back. Their Google sign-in itself is untouched";
-  /** The keys a hold revoked in the same act, when it was asked to, in a sentence; "" when it revoked none. */
-  const revokedLine = (d: Record<string, unknown>, asked: boolean): string => {
+  /** The keys a hold revoked in the same act, when it was asked to, as a clause; "" when it was not asked. */
+  const revokedPart = (d: Record<string, unknown>, asked: boolean): string => {
     const revoked = Array.isArray(d.revoked_keys) ? (d.revoked_keys as LiveKey[]).filter((k) => k && typeof k.id === "string") : [];
-    if (revoked.length) return ` Revoked with the hold: ${revoked.map((k) => `${k.name} (${k.prefix}…)`).join(", ")}.`;
-    return asked ? " No API key of theirs still worked, so none was revoked." : "";
+    if (revoked.length) return `; revoked ${revoked.map((k) => `${k.name} (${k.prefix}…)`).join(", ")}`;
+    return asked ? "; no API key of theirs still worked" : "";
   };
   const signOut = (p: Person, revokeKeys = false) =>
     act(`signout:${p.sub}`, () => signOutUser(p.sub, revokeKeys), (d) => ({
       tone: "warn",
-      text: `This service cannot end a Google session, so ${p.name || p.email} is held out instead: ${HELD}.${d.signedOut === 1 ? " Their live connection to the console is ended." : " They had no live connection to the console."}${revokedLine(d, revokeKeys)}`,
+      text: `${p.name || p.email} is held out${revokedPart(d, revokeKeys)}.`,
       keys: liveKeysOf(d),
     }));
   const setAccess = (p: Person, disabled: boolean, revokeKeys = false) =>
     act(`user:${p.sub}`, () => setUserAccess(p.sub, disabled, byName, revokeKeys), (d) =>
       disabled
-        ? { tone: "warn", text: `${p.name || p.email} is held out: ${HELD}.${revokedLine(d, revokeKeys)}`, keys: liveKeysOf(d) }
-        : { tone: "ok", text: `${p.name || p.email} is let back: their next request is let through.` },
+        ? { tone: "warn", text: `${p.name || p.email} is held out${revokedPart(d, revokeKeys)}.`, keys: liveKeysOf(d) }
+        : { tone: "ok", text: `${p.name || p.email} is let back in.` },
     );
 
   const open = (key: string, owner = false) => router.push(`${identityUrl(key)}${owner ? "&owner=1" : ""}`);
@@ -295,7 +293,7 @@ function IamPage() {
   const ownerStoreDown = reg?.store === "db unreachable";
   /* The users door answers an empty trail when its store is down; that is "not read", not "nothing happened". */
   const auditDown = people?.store === "db unreachable";
-  const auditError = peopleError || (auditDown ? "the store that holds people and the audit trail is not reachable on this deployment" : "");
+  const auditError = peopleError || (auditDown ? "its store is not reachable" : "");
   const loading = !reg && !people && !regError && !peopleError;
   /* A door that failed is shown with its reason above; every panel it feeds says it was not read, and nothing is counted as zero. */
   const quietDown = Boolean(regError || peopleError);
@@ -367,7 +365,7 @@ function IamPage() {
         {errorLines}
         {noticeBar}
         {quietDown && !entry ? (
-          <p className="text-[12.5px] text-faint">The roster could not be read, so this identity cannot be shown.</p>
+          <p className="text-[12.5px] text-faint">The roster could not be read.</p>
         ) : entry ? (
           <IdentityPage
             key={entry.key}
@@ -390,9 +388,7 @@ function IamPage() {
         ) : (
           <div className="flex flex-col gap-1.5 rounded-lg border border-dashed border-line-strong px-6 py-10">
             <span className="text-[14px] font-medium">No identity with this id is on the roster</span>
-            <span className="max-w-[70ch] text-[12.5px] leading-[1.55] text-dim">
-              <Mono className="text-[12px]">{selected}</Mono> is not a person the identity provider has signed in, nor an identity on the register. It may have been revoked, disconnected or removed.
-            </span>
+            <Mono className="text-[12px] text-dim">{selected}</Mono>
           </div>
         )}
       </div>
@@ -408,14 +404,9 @@ function IamPage() {
           <h1 className="text-[24px] font-semibold tracking-[-0.02em]">Identity and access</h1>
           {people && (people.sso.configured ? <Tag tone="ok">Signed in through Identity-Aware Proxy</Tag> : <Tag tone="err">Sign-in is not set up on the service</Tag>)}
         </span>
-        <p className="max-w-[86ch] text-[13.5px] leading-relaxed text-dim">
-          The people who sign in, and the workflows, attached agents and API keys that can act on this deployment, in one roster. Open one for what needs attention, what it may do and what it has done.
-          {unbuiltLine && <span className="text-faint"> {unbuiltLine[0].toUpperCase() + unbuiltLine.slice(1)}, so none is listed.</span>}
-        </p>
+        <p className="max-w-[86ch] text-[13.5px] leading-relaxed text-dim">People and non-human identities that can act on this deployment.</p>
         {people && !people.sso.configured && (
-          <p className="max-w-[86ch] text-[12px] leading-[1.55] text-err">
-            The service names no IAP_AUDIENCE, so it cannot verify anyone&rsquo;s Google sign-in and refuses every person until it is set.
-          </p>
+          <p className="max-w-[86ch] text-[12px] leading-[1.55] text-err">Set IAP_AUDIENCE on the service; until then every person is refused.</p>
         )}
       </header>
 
@@ -446,7 +437,7 @@ function IamPage() {
         id="findings"
         {...fold("findings")}
         title="Findings"
-        caption="Computed from the register on every read: identities with no owner, keys whose owner is held out, identities not used in 90 days, keys older than 180 days. A finding goes when the record changes; each has the action that clears it."
+        caption="Each finding has the action that clears it."
         meta={reg ? <Tag tone={errs ? "err" : warns ? "warn" : "neutral"}>{findings.length}</Tag> : null}
       >
         {!reg && !regError && <p className="px-4 py-3 text-[12px] text-faint">Reading the register…</p>}
@@ -492,8 +483,7 @@ function IamPage() {
           unread={noReg || noPeople}
           notBuiltKinds={unbuiltKinds}
         />
-        {ownerStoreDown && <p className="border-t border-line px-4 py-2 text-[11.5px] leading-[1.5] text-warn">Owners cannot be read or saved: the register&rsquo;s own table is not reachable on this deployment.</p>}
-        {reg?.basis && <p className="border-t border-line px-4 py-2 text-[11px] leading-[1.5] text-faint">{reg.basis}</p>}
+        {ownerStoreDown && <p className="border-t border-line px-4 py-2 text-[11.5px] leading-[1.5] text-warn">Owners cannot be read or saved: their table is not reachable.</p>}
       </Card>
 
       {/* ── the shape of the estate; each segment narrows the roster ── */}
@@ -549,8 +539,7 @@ function IamPage() {
           )}
           {!reg && <span className="text-[12px] text-faint">{regError ? notRead("Identities are ranked here by the risk of what they may call.") : "Reading…"}</span>}
           <span className="mt-auto text-[10.5px] leading-[1.45] text-faint">
-            Reach is the highest risk among what the identity may call; an agent&rsquo;s is read from the tools its deployed definition grants (its latest saved one while none is deployed).
-            {noReach > 0 ? ` ${noReach} tool server${noReach === 1 ? "" : "s"} and stored credential${noReach === 1 ? "" : "s"} call nothing themselves and are not ranked.` : ""}
+            Highest risk among what each identity may call{noReach > 0 ? ` · ${noReach} not ranked` : ""}
           </span>
         </section>
         <section className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4 elev-1">
@@ -594,7 +583,7 @@ function IamPage() {
           ) : (
             <span className="text-[12px] text-faint">{peopleError ? notRead("Each role is listed here with the permissions it carries and how many people hold it.") : "Reading…"}</span>
           )}
-          <span className="mt-auto text-[10.5px] text-faint">Roles come from this deployment&rsquo;s map from a person&rsquo;s email to a role; this platform decides what each one may do.</span>
+          <span className="mt-auto text-[10.5px] text-faint">Roles come from this deployment&rsquo;s email-to-role map.</span>
         </section>
       </div>
 
@@ -603,7 +592,7 @@ function IamPage() {
         id="roles"
         {...fold("roles")}
         title="Roles and permissions"
-        caption="Behind Google Identity-Aware Proxy the sign-in names a person and never a role: each person's role comes from this deployment's role map, read on every request, and this platform maps each role to what it may do here."
+        caption="Each person's role comes from this deployment's role map."
         meta={people ? <Tag>{roleList.length} roles</Tag> : null}
       >
         {!people && <p className="px-4 py-3 text-[12px] text-faint">{peopleError ? notRead("Roles are listed here with their permissions and holders, beside what each permission lets a person do.") : "Reading…"}</p>}
@@ -643,7 +632,7 @@ function IamPage() {
         id="audit"
         {...fold("audit")}
         title="Audit trail"
-        caption="Every row of the platform's audit trail, newest first, as the door returned it (the latest only): first sign-ins, people held out and let back, requests refused, changes that did not succeed, and every change made, with who made it."
+        caption="The latest audit trail rows, newest first, with who acted."
         meta={people && !auditDown ? <Tag>{people.events.length} events</Tag> : null}
       >
         {!people && <p className="px-4 py-3 text-[12px] text-faint">{peopleError ? notRead("Sign-ins, sign-outs, denials and privileged actions are listed here, newest first.") : "Reading…"}</p>}

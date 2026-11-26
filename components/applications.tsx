@@ -80,8 +80,7 @@ export const ANSWER_OPTIONS: { value: AnswerMode; label: string }[] = [
   { value: "text", label: "Text" },
   { value: "blocks", label: "Text and blocks" },
 ];
-export const ANSWERS_HINT =
-  "Text and blocks: the model is asked for an answer of text plus tiles, a table, bars, a chart, steps, links or choices, as structured output through the same gateway path, and the service checks it before it is shown. The blocks are the chatbot's own words. The gateway's OpenAI-compatible addresses answer as they always do.";
+export const ANSWERS_HINT = "Blocks: tiles, tables, charts or steps, checked before they are shown.";
 
 /** A policy in one line: data class, models, rate, budget. */
 export function policyLine(p: Policy): string {
@@ -191,8 +190,8 @@ export function Applications() {
       value: apps && !pending ? (unread && !known.length ? "not read" : priced.length || !unpriced ? money(cost) : "no price set") : "…",
       sub: [
         "last 30 days",
-        unpriced ? `${unpriced} call${unpriced === 1 ? "" : "s"} with no price set, not in it` : "",
-        unread ? `${unread} not read, not in it` : "",
+        unpriced ? `${unpriced} call${unpriced === 1 ? "" : "s"} with no price set` : "",
+        unread ? `${unread} not read` : "",
       ].filter(Boolean).join(" · ") + (unpriced || unread ? "" : ", registered applications"),
       tone: unread ? "warn" : undefined,
     },
@@ -202,7 +201,7 @@ export function Applications() {
     <div className="min-h-full" data-hue="blue">
       <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7">
         <GroupHeader group="agents" tab="applications" actions={<Button size="sm" variant="solid" tone="ink" permission="configure" disabled={connectDoor.off} title={connectDoor.why} onClick={() => setConnecting(true)}>Register an application</Button>}>
-          The chatbots and RAG apps registered on this deployment, and the agents deployed on it. A registered application calls models through the gateway with the key minted here; the gateway holds every call to the application&rsquo;s policy (its models, data class, rate and budget) and to the deployment&rsquo;s period budget (applications serve no use case, so no use case&rsquo;s budget applies), screens the prompt and the reply, and journals the call. Agents are listed here and governed on the Agents page.
+          Chatbots and RAG apps registered here, and the agents deployed here.
         </GroupHeader>
 
         {error && <Failure what="The applications register could not be read" message={error} />}
@@ -247,7 +246,7 @@ export function Applications() {
           <div className="flex w-full flex-wrap items-center gap-3 border-b border-line bg-raise/55 px-4 py-2.5">
             <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Register</span>
             <span className="max-w-[110ch] text-[11px] leading-[1.55] text-faint">
-              {off ? "" : apps ? `${shown.length} of ${apps.length} · ` : "reading the register… · "}last seen, cost and controls fired are read from each registered application&rsquo;s journalled calls over the last 30 days
+              {off ? "" : apps ? `${shown.length} of ${apps.length} · ` : "reading the register… · "}last 30 days
             </span>
             <span className="grow" />
             <SearchBox value={q} onChange={setQ} placeholder="Name, id or owner" width="w-[220px]" />
@@ -332,7 +331,7 @@ export function Applications() {
                 {apps && shown.length === 0 && (
                   <tr>
                     <td colSpan={11} className="px-4 py-8 text-center text-[11.5px] text-faint">
-                      {off ? "The register was not read, so nothing is listed." : apps.length ? "Nothing matches." : "Nothing is registered and no agent is deployed. Register a chatbot or RAG app above; an agent joins the register when it is deployed on the Agents page."}
+                      {off ? "The register was not read." : apps.length ? "Nothing matches." : "Nothing registered or deployed yet."}
                     </td>
                   </tr>
                 )}
@@ -342,20 +341,15 @@ export function Applications() {
         </section>
 
         {Object.keys(notBuilt).length > 0 && (
-          <section className="flex flex-col gap-1 rounded-md border border-line bg-surface px-4 py-3 text-[11.5px] leading-[1.55] text-faint">
-            <span className="font-medium text-dim">Recorded, and not carried out by this deployment</span>
-            {Object.entries(notBuilt).map(([k, v]) => (
-              <span key={k}>
-                <Mono className="text-[10.5px]">{k}</Mono>: {v}.
-              </span>
+          <section className="flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-md border border-line bg-surface px-4 py-3 text-[11.5px] leading-[1.55] text-faint">
+            <span className="font-medium text-dim">Not built:</span>
+            {Object.keys(notBuilt).map((k) => (
+              <Mono key={k} className="text-[10.5px]">{k}</Mono>
             ))}
           </section>
         )}
 
-        <p className="pb-2 text-[10.5px] text-ghost">
-          {gateway ? `Applications call the gateway at ${gateway}, outside the console’s sign-in.` : machineLine(machine, GATEWAY_PATH, "applications cannot reach the gateway")} An application&rsquo;s key is
-          shown once, when it is registered.
-        </p>
+        <p className="pb-2 text-[10.5px] text-ghost">{gateway ? `Gateway: ${gateway}` : machineLine(machine, GATEWAY_PATH, "applications cannot reach the gateway")}</p>
       </div>
 
       {connecting && (
@@ -479,7 +473,7 @@ function ConnectDialog({ notBuilt, onClose, onMinted }: { notBuilt: Record<strin
   return (
     <DrillModal
       title="Register an application"
-      subtitle="A chatbot or a RAG app, with the policy the gateway holds each of its calls to. Its key is minted once and shown with the code to paste."
+      subtitle="A chatbot or RAG app and its policy; the key is shown once."
       onClose={onClose}
       actions={
         <Button variant="solid" tone="ink" size="sm" permission="configure" loading={busy} disabled={!name.trim()} onClick={submit}>Register and mint the key</Button>
@@ -492,7 +486,7 @@ function ConnectDialog({ notBuilt, onClose, onMinted }: { notBuilt: Record<strin
           if (name.trim() && !busy) submit();
         }}
       >
-        <Field label="Class" hint="A chatbot has a registered system prompt; a RAG app names its knowledge stores and sends its own instructions.">
+        <Field label="Class" hint="A chatbot has a system prompt; a RAG app, knowledge stores.">
           <Pick value={cls} onChange={setCls} options={[{ value: "chatbot", label: "Chatbot" }, { value: "rag", label: "RAG app" }]} size="md" aria-label="Class" />
         </Field>
         <Field label="Name" htmlFor="app-name">
@@ -501,10 +495,10 @@ function ConnectDialog({ notBuilt, onClose, onMinted }: { notBuilt: Record<strin
         <Field label="Owner" htmlFor="app-owner" hint="The person or team accountable for what it answers.">
           <Input id="app-owner" value={ownerValue} onChange={setOwner} />
         </Field>
-        <Field label="Autonomy" hint={notBuilt.autonomy ? `Declared, and ${notBuilt.autonomy.replace(/^an application's autonomy tier is recorded as declared; /, "")}.` : "The tier declared for it."}>
+        <Field label="Autonomy" hint={notBuilt.autonomy ? "Declared; checking it is not built." : "The tier declared for it."}>
           <Pick value={autonomy} onChange={setAutonomy} options={[{ value: "" as Autonomy | "", label: "not declared" }, ...AUTONOMIES.map((a) => ({ value: a as Autonomy | "", label: AUTONOMY_LABEL[a] }))]} size="md" aria-label="Autonomy" />
         </Field>
-        <Field label="Data class" hint="The most sensitive class of data it handles. Every call is sent only to a model cleared for it (Configuration, Models).">
+        <Field label="Data class" hint="The most sensitive data it handles; calls go only to cleared models.">
           <Pick value={dataClass} onChange={setDataClass} options={DATA_CLASSES.map((c) => ({ value: c, label: c }))} size="md" aria-label="Data class" />
         </Field>
         <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
@@ -520,9 +514,7 @@ function ConnectDialog({ notBuilt, onClose, onMinted }: { notBuilt: Record<strin
         </div>
         <div className="flex flex-col gap-2 md:col-span-2">
           <span className="text-[12.5px] font-medium text-mist">Models it may call</span>
-          <span className="text-[11.5px] leading-[1.5] text-faint">
-            In order; chat uses the first. Only models this deployment offers can be listed. A model not cleared for {dataClass} data is refused unless its first cleared fallback is listed too.
-          </span>
+          <span className="text-[11.5px] leading-[1.5] text-faint">In order; chat uses the first.</span>
           {offered === null && <span className="text-[11.5px] text-faint">Reading the offered models…</span>}
           {offered?.length === 0 && !choicesError && <span className="text-[11.5px] text-warn">This deployment offers no model yet: offer one under Configuration, Models.</span>}
           <div className="flex flex-col divide-y divide-line rounded-md border border-line">
@@ -554,18 +546,14 @@ function ConnectDialog({ notBuilt, onClose, onMinted }: { notBuilt: Record<strin
             })}
           </div>
           {amount.trim() !== "" && unpricedPicked.length > 0 && (
-            <span className="text-[11.5px] leading-[1.5] text-warn">
-              With a budget, a call on a model with no price set is refused, because its spend cannot be counted: {unpricedPicked.join(", ")}.
-            </span>
+            <span className="text-[11.5px] leading-[1.5] text-warn">With a budget, calls are refused on models with no price set: {unpricedPicked.join(", ")}.</span>
           )}
-          <span className="text-[11.5px] leading-[1.5] text-faint">
-            A budget is a calendar period in UTC (a week starts on Monday). A rate limit answers 429, a spent budget 402.
-          </span>
+          <span className="text-[11.5px] leading-[1.5] text-faint">Budget periods are UTC calendar periods; a week starts Monday.</span>
         </div>
         {cls === "rag" ? (
           <div className="flex flex-col gap-2 md:col-span-2">
             <span className="text-[12.5px] font-medium text-mist">Knowledge stores</span>
-            <span className="text-[11.5px] leading-[1.5] text-faint">At least one. {notBuilt.retrieval ? `${notBuilt.retrieval[0].toUpperCase()}${notBuilt.retrieval.slice(1)}.` : ""}</span>
+            <span className="text-[11.5px] leading-[1.5] text-faint">{notBuilt.retrieval ? "At least one; retrieval from them is not built." : "At least one."}</span>
             {stores === null && <span className="text-[11.5px] text-faint">Reading the knowledge stores…</span>}
             {stores?.length === 0 && !choicesError && <span className="text-[11.5px] text-warn">There is no knowledge store on this deployment yet.</span>}
             <div className="flex flex-wrap gap-x-5 gap-y-1.5">
@@ -577,7 +565,7 @@ function ConnectDialog({ notBuilt, onClose, onMinted }: { notBuilt: Record<strin
         ) : (
           <>
             <div className="md:col-span-2">
-              <Field label="System prompt (optional)" htmlFor="app-prompt" hint="Registered here and put first on every call by the gateway; the chatbot then sends no system message of its own. A reply that repeats it is withheld.">
+              <Field label="System prompt (optional)" htmlFor="app-prompt" hint="Put first on every call; a reply that repeats it is withheld.">
                 <Textarea id="app-prompt" value={prompt} onChange={setPrompt} rows={4} />
               </Field>
             </div>
@@ -612,7 +600,7 @@ function MintedDialog({ minted, onClose }: { minted: Minted; onClose: () => void
   return (
     <DrillModal
       title={`${a.name} registered`}
-      subtitle={minted.note || "This is the only time the key is shown."}
+      subtitle="Shown once."
       onClose={onClose}
       actions={<Button size="sm" variant="quiet" href={`/applications/${encodeURIComponent(a.id)}`}>Open the dashboard</Button>}
     >
@@ -621,13 +609,12 @@ function MintedDialog({ minted, onClose }: { minted: Minted; onClose: () => void
           <Status tone="ok">key minted</Status>
           <Mono className="break-all text-[11px] text-fg">{minted.key}</Mono>
           <CopyButton text={minted.key} />
-          <span className="text-[10.5px] text-faint">Scoped to {a.id}. Blocking the application refuses every call; removing it revokes the key.</span>
+          <span className="text-[10.5px] text-faint">Scoped to {a.id}.</span>
         </div>
         {minted.system_prompt && (
           <p className="text-[11px] leading-[1.55] text-faint">
             System prompt recorded as version {minted.system_prompt.version}
-            {minted.system_prompt.set_by ? `, signed ${minted.system_prompt.set_by}` : ""} ({minted.system_prompt.chars.toLocaleString("en-GB")} characters). Every later change is a new version on the
-            application&rsquo;s page.
+            {minted.system_prompt.set_by ? `, signed ${minted.system_prompt.set_by}` : ""} ({minted.system_prompt.chars.toLocaleString("en-GB")} characters).
           </p>
         )}
 
@@ -654,20 +641,9 @@ function MintedDialog({ minted, onClose }: { minted: Minted; onClose: () => void
           ) : (
             <p className={`px-3 py-3 text-[11.5px] leading-[1.55] ${machine === undefined ? "text-faint" : "text-warn"}`}>
               {machineLine(machine, GATEWAY_PATH, "applications cannot reach the gateway")}
-              {machine === null && " The code to paste is shown once the deployment names that address."}
             </p>
           )}
         </section>
-
-        {gateway && (
-          <p className="text-[11px] leading-[1.55] text-faint">
-            Applications call the gateway at {gateway}, the service&rsquo;s own address, outside the console&rsquo;s sign-in: the gateway refuses a call that carries a console sign-in.
-          </p>
-        )}
-        <p className="text-[11px] leading-[1.55] text-faint">
-          The gateway takes this key and nothing else. It holds every call to the policy ({policyLine(a.policy)}; models {a.policy.models.join(", ")}), screens the prompt and the reply (a block is
-          refused naming the control, a flag is recorded and let through), and journals the call with its tokens, its cost (none when its model has no price set), its latency and its model.
-        </p>
       </div>
     </DrillModal>
   );

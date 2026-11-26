@@ -130,7 +130,7 @@ export function RegisterDialog({ workloads, onDone, onClose }: { workloads: { va
           <h3 id="af-use-case-title" className="text-[16px] font-semibold tracking-tight">
             Register a use case
           </h3>
-          <p className="text-[12.5px] leading-[1.5] text-dim">It is registered as a draft, then sent for approval; a run of its workload is refused until a second person approves it. A workload has at most one use case.</p>
+          <p className="text-[12.5px] leading-[1.5] text-dim">Registered as a draft; runs wait until a second person approves.</p>
         </div>
 
         <div className="flex min-h-0 grow flex-col gap-4 overflow-y-auto px-5 py-4">
@@ -148,7 +148,7 @@ export function RegisterDialog({ workloads, onDone, onClose }: { workloads: { va
               <Pick size="md" aria-label="Workload it uses" value={workload} onChange={setWorkload} options={[{ value: "", label: "Choose a workload" }, ...workloads]} disabled={busy} invalid={tried && !workload} />
             </Field>
             <div className="sm:col-span-2">
-              <Field label="Autonomy level" error={need(!autonomy, "Choose an autonomy level.")} hint={tried && !autonomy ? undefined : tier ? `${tier.label}: checked at each production deploy of the agent that runs it, against the controls this level requires.` : "How much a run of it may do without a person; a production deploy of the agent that runs it is held to the controls the level requires."}>
+              <Field label="Autonomy level" error={need(!autonomy, "Choose an autonomy level.")} hint={tried && !autonomy ? undefined : tier ? `${tier.label}: checked at each production deploy.` : "How much a run may do without a person."}>
                 <Pick size="md" aria-label="Autonomy level" value={autonomy} onChange={setAutonomy} options={[{ value: "", label: "Choose a level" }, ...TIER_CHOICES.map((t) => ({ value: t.value, label: t.label }))]} disabled={busy} invalid={tried && !autonomy} />
               </Field>
             </div>
@@ -163,7 +163,7 @@ export function RegisterDialog({ workloads, onDone, onClose }: { workloads: { va
                 Add a gate
               </Button>
             </div>
-            {gates.length === 0 && <p className="text-[12px] leading-[1.5] text-faint">No gate is set: a run of this use case would not wait for a person anywhere. Add a gate for each point where one must decide.</p>}
+            {gates.length === 0 && <p className="text-[12px] leading-[1.5] text-faint">No gate: a run would never wait for a person.</p>}
             {gates.map((g, i) => (
               <div key={g.key} className="flex flex-col gap-3 rounded-md border border-line bg-canvas px-3 py-3">
                 <div className="flex items-center gap-2">
@@ -188,12 +188,12 @@ export function RegisterDialog({ workloads, onDone, onClose }: { workloads: { va
                   <Field label="Timeout, in minutes" error={need(minutesOf(g.timeout) <= 0, "A whole number of minutes above zero.")}>
                     <Input value={g.timeout} onChange={(v) => setGate(g.key, { timeout: v })} disabled={busy} autoComplete="off" />
                   </Field>
-                  <Field label="If nobody answers in time" hint="Recorded with the use case; runs are not yet held to it.">
+                  <Field label="If nobody answers in time" hint="Enforcement: Not built">
                     <Pick size="md" aria-label="If nobody answers in time" value={g.on_timeout} onChange={(v) => setGate(g.key, { on_timeout: v })} options={ON_TIMEOUT} disabled={busy} />
                   </Field>
                   {g.on_timeout === "escalate" && (
                     <div className="sm:col-span-2">
-                      <Field label="Escalate to" error={need(!g.escalate_to.trim(), "Name the role it escalates to.")} hint={tried && !g.escalate_to.trim() ? undefined : "Recorded with the use case; runs are not yet held to it."}>
+                      <Field label="Escalate to" error={need(!g.escalate_to.trim(), "Name the role it escalates to.")} hint={tried && !g.escalate_to.trim() ? undefined : "Enforcement: Not built"}>
                         <Input value={g.escalate_to} onChange={(v) => setGate(g.key, { escalate_to: v })} disabled={busy} autoComplete="off" />
                       </Field>
                     </div>

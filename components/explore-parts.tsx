@@ -26,10 +26,10 @@ export type ViewId = "all" | "tools" | "activity" | "security";
 
 /** A view is a preset of kinds: the kinds it reads while the address names none. */
 export const VIEWS: { id: ViewId; label: string; what: string; kinds: string[] }[] = [
-  { id: "all", label: "Everything", what: "Every journal entry of every run you may see, and the audit trail's changes, refusals and sign-ins when you may read it. A row opens the run at that entry.", kinds: [] },
-  { id: "tools", label: "Tool calls", what: "Every tool call: when it was made, by which agent at which step, how it ended and how long its result took. A row opens the run at that entry.", kinds: ["tool_call"] },
-  { id: "activity", label: "Agent activity", what: "What each agent did: runs starting and ending, steps, model calls with their cost, tool calls and gates. A row opens the run at that entry.", kinds: ["activity", "model_call", "tool_call", "gate"] },
-  { id: "security", label: "Security events", what: "What the controls did and what people did about it: refusals, screening flags and taint marks, gates, stops, operator changes and refused requests. A row opens the run at that entry.", kinds: ["refusal", "security", "operator", "gate"] },
+  { id: "all", label: "Everything", what: "Every journal entry and audit record you may read.", kinds: [] },
+  { id: "tools", label: "Tool calls", what: "Every tool call: agent, step, outcome and duration.", kinds: ["tool_call"] },
+  { id: "activity", label: "Agent activity", what: "Runs, steps, model calls with cost, tool calls and gates.", kinds: ["activity", "model_call", "tool_call", "gate"] },
+  { id: "security", label: "Security events", what: "Refusals, screening flags, gates, stops and operator changes.", kinds: ["refusal", "security", "operator", "gate"] },
 ];
 
 /** The filters the platform takes, each one parameter of the address and of `GET /api/explore`. */
@@ -414,7 +414,7 @@ export function Timeline({
           <span className="truncate font-sans text-[10.5px]">
             One bar is {stepText(step)}
             {note ? ` · ${note}` : ""}
-            {untimed > 0 ? ` · ${count(untimed)} with no recorded time ${untimed === 1 ? "is" : "are"} on no bar` : ""}
+            {untimed > 0 ? ` · ${count(untimed)} untimed` : ""}
           </span>
           <span>{stamp(buckets[n - 1].to, day)}</span>
         </div>

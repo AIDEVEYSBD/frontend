@@ -204,10 +204,7 @@ function RegisterPeerForm({ onAdded, onCancel }: { onAdded: (p: Peer) => void; o
         void submit();
       }}
     >
-      <span className="flex flex-wrap items-center gap-2">
-        <span className="text-[12px] font-semibold text-fg">Register a peer</span>
-        <span className="text-[10.5px] text-faint">its agent card is fetched, its signature checked, and the card and its key pinned; nothing is sent to it, or heard from it, until a second person approves the card</span>
-      </span>
+      <span className="text-[12px] font-semibold text-fg">Register a peer</span>
       <div className="flex flex-wrap items-end gap-2">
         <label className={cell}>
           <span className="text-[10.5px] text-ghost">Name</span>
@@ -230,16 +227,16 @@ function RegisterPeerForm({ onAdded, onCancel }: { onAdded: (p: Peer) => void; o
       </div>
       <div className="grid gap-2 md:grid-cols-2">
         <label className="flex min-w-0 flex-col gap-1">
-          <span className="text-[10.5px] text-ghost">Data class of what it returns (optional; a task it sends in starts here or higher)</span>
+          <span className="text-[10.5px] text-ghost">Data class of what it returns (optional)</span>
           <Pick aria-label="Data class of what the peer returns" value={form.data_class} onChange={(v) => set({ data_class: v })} options={dataClassChoices("undeclared")} />
         </label>
         <label className="flex min-w-0 flex-col gap-1">
-          <span className="text-[10.5px] text-ghost">Highest class it takes (optional; a spec&rsquo;s limit holds too, and the lower decides)</span>
+          <span className="text-[10.5px] text-ghost">Highest class it takes (optional)</span>
           <Pick aria-label="Highest data class the peer takes" value={form.max_data_class} onChange={(v) => set({ max_data_class: v })} options={dataClassChoices("no limit here")} />
         </label>
       </div>
       <p className="text-[10.5px] leading-[1.5] text-faint">
-        Store the credential in the vault first (Credentials, on this page) and give its name here, or <Mono className="text-[10px]">{"${secret:name}"}</Mono>; a value pasted where the name belongs is refused. It is presented as the peer&rsquo;s card asks (a bearer token, or an API key in a header). Requests are signed with this platform&rsquo;s own key, not with this credential.
+        Give the vault name, or <Mono className="text-[10px]">{"${secret:name}"}</Mono>; never the value.
       </p>
       {error && <Refusal error={error} />}
       <div className="flex flex-wrap items-center gap-2">
@@ -265,7 +262,7 @@ export function PeerRow({ peer: p, twoPerson, me, onChanged }: { peer: PeerWithK
   const meta = PEER_STATUS_META[p.status];
   // An unsigned card is pinned and shown, and cannot be approved: nothing the peer sent could be verified.
   const unsigned = Boolean(p.card) && p.signed_by === null;
-  const access = unsigned ? { ok: false, reason: "its card is not signed: nothing it sent could be verified, so it cannot be approved" } : approvePeerAccess(p, me, twoPerson);
+  const access = unsigned ? { ok: false, reason: "its card is not signed, so it cannot be approved" } : approvePeerAccess(p, me, twoPerson);
   const skills = skillsOf(p.card);
   const change = cardChange(p);
   const title = cardTitle(p.card);
@@ -280,13 +277,13 @@ export function PeerRow({ peer: p, twoPerson, me, onChanged }: { peer: PeerWithK
     try {
       if (what === "approve") {
         await approvePeer(p.id);
-        setNotice({ tone: "ok", text: "Card approved: runs may now hand this peer tasks, and the tasks door hears its signed requests." });
+        setNotice({ tone: "ok", text: "Card approved: runs may now hand this peer tasks." });
       } else if (what === "rescan") {
         const r = await rescanPeer(p.id);
         setNotice(
           !r.changed
             ? { tone: "ok", text: r.peer.status === "pending" && !p.card ? "Rescanned: its card is read and pinned; it waits for an approval." : "Rescanned: the card still matches the pin." }
-            : { tone: "err", text: "Agent card changed — re-approval needed. The peer is refused both ways until someone approves the new card." },
+            : { tone: "err", text: "Agent card changed — re-approval needed." },
         );
       } else {
         await deletePeer(p.id);
@@ -355,7 +352,6 @@ export function PeerRow({ peer: p, twoPerson, me, onChanged }: { peer: PeerWithK
       {p.status !== "approved" && !access.ok && access.reason && <span className="-mt-1 self-end text-[11px] text-warn">{access.reason}</span>}
 
       <Mono className="block truncate text-[10.5px] text-ghost">{p.url}</Mono>
-      <span className="text-[11px] leading-[1.5] text-faint">{meta.means}.</span>
       {(title.name || title.description) && (
         <span className="text-[11px] leading-[1.5] text-dim">
           {title.name && <span className="font-medium text-fg">{title.name}</span>}
@@ -434,9 +430,7 @@ export function PeerRow({ peer: p, twoPerson, me, onChanged }: { peer: PeerWithK
 
       {p.status === "changed" && (
         <div className="flex flex-col gap-1.5">
-          <p className="text-[11.5px] leading-[1.5] font-medium text-err">
-            Agent card changed — re-approval needed. A rescan found a card, or a signing key, other than the one approved and pinned it, waiting; no run will send this peer a task, and the tasks door will not hear one from it, until a second person approves the new card.
-          </p>
+          <p className="text-[11.5px] leading-[1.5] font-medium text-err">Agent card changed — re-approval needed.</p>
           <span className="flex flex-wrap items-center gap-1.5 text-[11px] text-dim">
             <span>Approved</span>
             <DigestChip digest={p.previous_card?.digest || approvedDigest(p)} label="Approved card" />
@@ -490,7 +484,7 @@ export function PeerList({ peers, twoPerson, me, error, refresh }: { peers: Peer
   const shown = orderPeers(peers ?? []);
   const none = shown.length === 0;
   // Said only from a registry that answered: with its read failed, whether a second person is needed is not known here.
-  const approvalRule = error ? "" : twoPerson ? "Two-person approval is on: whoever registers a peer cannot approve its card." : "One approval admits a peer; two-person approval is off on this deployment.";
+  const approvalRule = error ? "" : twoPerson ? "Two-person approval is on." : "Two-person approval is off.";
 
   // A registry that could not be read is not shown as an empty one with zero counts (usePeers keeps the error beside an empty list).
   if (peers === null) return <p className="px-4 py-3 text-[11.5px] text-faint">Reading the registry&hellip;</p>;
@@ -499,10 +493,7 @@ export function PeerList({ peers, twoPerson, me, error, refresh }: { peers: Peer
     <>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-2 last:border-b-0">
         {none && !error ? (
-          <span className="min-w-0 max-w-[92ch] text-[12px] leading-[1.55] text-dim">
-            No peer is registered. A run&rsquo;s peer.send reaches another party&rsquo;s agent only once that agent is registered here and its card approved; until then the call is refused,
-            and nothing is sent. {approvalRule}
-          </span>
+          <span className="min-w-0 max-w-[92ch] text-[12px] leading-[1.55] text-dim">No peer is registered.</span>
         ) : (
           <>
             {/* With the registry unread (an error and nothing listed), no count is shown: a zero would be a claim. */}
@@ -542,7 +533,7 @@ export function PeerList({ peers, twoPerson, me, error, refresh }: { peers: Peer
             <>
               <span className="text-[11px] text-faint">card pinned</span>
               <DigestChip digest={added.card.digest} label="Card" />
-              <span className="text-[11px] text-faint">and pending: nothing is sent to it until the card is approved{twoPerson ? " by someone other than you" : ""}.</span>
+              <span className="text-[11px] text-faint">pending approval</span>
             </>
           ) : (
             <span className="text-[11px] text-faint">without a card: {fetchLine(added).text}.</span>
@@ -585,8 +576,8 @@ function OfferedSkills() {
   const refresh = useCallback(async () => {
     try {
       const r = (await door("GET", "/api/peers/skills")) as { skills: PeerSkill[]; tasks_accepted: boolean; not_accepted_why?: string[]; not_built?: string[] };
-      // Why the tasks door takes no task now (no signing key, no public address): `not_accepted_why`; `not_built` names parts not built, if any.
-      const why = [...(Array.isArray(r.not_accepted_why) ? r.not_accepted_why : []), ...(Array.isArray(r.not_built) ? r.not_built : [])].filter((x) => typeof x === "string" && x.trim());
+      // Why the tasks door takes no task now (no signing key, no public address): `not_accepted_why`. `not_built` is not drawn.
+      const why = (Array.isArray(r.not_accepted_why) ? r.not_accepted_why : []).filter((x) => typeof x === "string" && x.trim());
       setRead({ skills: r.skills, accepted: r.tasks_accepted === true, why });
       setError(null);
     } catch (e) {
@@ -627,13 +618,11 @@ function OfferedSkills() {
     <div className="flex flex-col gap-2 border-t border-line bg-raise/30 px-4 py-3">
       <span className="flex flex-wrap items-center gap-2">
         <span className="text-[12px] font-semibold text-fg">Offered to peers</span>
-        <span className="text-[10.5px] text-faint">the agents an approved peer may hand a task to: the skills on this platform&rsquo;s agent card</span>
+        <span className="text-[10.5px] text-faint">the skills on this platform&rsquo;s agent card</span>
       </span>
       {error && <Refusal error={error} />}
       {read && !read.accepted && (
-        <p className="text-[11px] leading-[1.5] font-medium text-warn">
-          The tasks door takes no task now{read.why.length ? `: ${read.why.join("; ")}` : ", and the platform gives no reason"}. Every peer that hands it one is refused until this is put right, and no offered agent takes a task meanwhile.
-        </p>
+        <p className="text-[11px] leading-[1.5] font-medium text-warn">Tasks door closed{read.why.length ? `: ${read.why.join("; ")}` : ""}.</p>
       )}
       {read && read.skills.length === 0 && <span className="text-[11.5px] text-dim">No agent is offered to peers.</span>}
       {read?.skills.map((s) => (

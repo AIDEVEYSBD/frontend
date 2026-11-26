@@ -220,10 +220,7 @@ export function SpanDetail({ span }: { span: Span }) {
       {span.input && <Block k="Input" v={span.input} />}
       {span.output && <Block k={span.kind === "tool" ? "Returned" : "Output"} v={span.output} />}
       {!span.input && !span.output && !span.statusMessage && (
-        <p className="px-4 py-3 text-[11px] leading-[1.5] text-faint">
-          This span carries timing only. Model calls and tool results carry what went in and what
-          came back; a node boundary carries what it emitted.
-        </p>
+        <p className="px-4 py-3 text-[11px] leading-[1.5] text-faint">Timing only.</p>
       )}
     </div>
   );

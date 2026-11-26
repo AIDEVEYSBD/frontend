@@ -37,7 +37,7 @@ const standingHref = (agent: string) => `/attestations?agent=${encodeURIComponen
 
 /** Every deployed agent's standing. Presentational. */
 export function StandingsTable({ rows, selected }: { rows: Standing[]; selected?: string | null }) {
-  if (!rows.length) return <p className="text-[12px] text-faint">No agent is deployed, so nothing is due. An attestation is due from an agent&rsquo;s first production deploy.</p>;
+  if (!rows.length) return <p className="text-[12px] text-faint">No agent is deployed.</p>;
   return (
     <div className="af-list af-list-tall overflow-x-auto rounded-md border border-line">
       <table className="w-full min-w-[760px] border-collapse text-[11.5px]">
@@ -247,7 +247,7 @@ function AttestationsPage() {
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
       <GroupHeader group="assurance" tab="attestations">
-        Each deployed agent&rsquo;s owner says, on a schedule, that it still does what was approved. The record carries what changed in its definition since the last time; overdue attestations are listed first.
+        Owners confirm on a schedule that agents still do what was approved.
       </GroupHeader>
       {error && (
         <Banner tone="err" title="Could not read the attestations">
@@ -282,7 +282,7 @@ function AttestationsPage() {
         )}
       </Section>
       <div className="w-full max-w-sm">
-        <Field label="An agent" hint="any saved agent, deployed or not" error={agentsError ? `the agents could not be read, so none can be picked: ${agentsError}` : undefined}>
+        <Field label="An agent" hint="any saved agent, deployed or not" error={agentsError ? `the agents could not be read: ${agentsError}` : undefined}>
           <Pick value={agent ?? ""} onChange={(v) => router.push(v ? standingHref(v) : "/attestations")} options={[{ value: "", label: "Pick one" }, ...agents.map((a) => ({ value: a.id, label: a.name }))]} />
         </Field>
       </div>

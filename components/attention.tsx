@@ -269,7 +269,7 @@ export function AttentionPanel({
       try {
         await closeBreaker(name);
         const t = breakerTarget(name);
-        onNotice(`Closed the breaker on ${t.kind === "peer" ? `the peer ${t.label}` : t.label}: every run may call it again at once. It opens again when its calls or failures pass the thresholds.`);
+        onNotice(`Closed the breaker on ${t.kind === "peer" ? `the peer ${t.label}` : t.label}.`);
         reload();
       } catch (e) {
         onNotice(refusedText(item, e));
@@ -284,7 +284,7 @@ export function AttentionPanel({
       setBusy(item.id);
       try {
         const r = await steerRun(item.run, { hold_at_next_gate: true });
-        onNotice(`Asked for a hold on ${r.run}: its next tool call at or above write waits for a person.`);
+        onNotice(`Hold asked on ${r.run}.`);
         reload();
       } catch (e) {
         onNotice(refusedText(item, e));
@@ -298,13 +298,7 @@ export function AttentionPanel({
       const { health } = await clearAttention(item);
       if (health) setChecked((c) => ({ ...c, [item.id]: health }));
       // A re-read clears nothing by itself: the row goes once the port reads healthy.
-      onNotice(
-        health
-          ? `${portHealthLine(health)}${health.ok === true ? " The row clears on the next read." : a.says ? ` To clear it: ${a.says}.` : ""}`
-          : a.kind === "check"
-            ? `Re-read. ${a.says ? `To clear it: ${a.says}.` : "The row clears once it reads healthy."}`
-            : `${attentionVerb(item)}: ${item.title}`,
-      );
+      onNotice(health ? portHealthLine(health) : a.kind === "check" ? "Re-read." : `${attentionVerb(item)}: ${item.title}`);
       reload();
     } catch (e) {
       onNotice(refusedText(item, e));
@@ -321,7 +315,7 @@ export function AttentionPanel({
       {killAsk && killAsk.run && (
         <KillDialog
           title="Kill the run the guardian flagged?"
-          what={`${killAsk.agent} · ${killAsk.run}. The guardian would have blocked it but did not act (${String(killAsk.data?.why ?? "outside its limits")}). The kill reaches the run and everything it set off.`}
+          what={`${killAsk.agent} · ${killAsk.run}. The guardian would have blocked it (${String(killAsk.data?.why ?? "outside its limits")}).`}
           initialReason={String(killAsk.action.body?.reason ?? "")}
           busy={busy === killAsk.id}
           onClose={() => setKillAsk(null)}
@@ -346,7 +340,7 @@ export function AttentionPanel({
       {textAsk && textAsk.action.kind === "pause" && (
         <TextDialog
           title={`Pause ${pauseOf(textAsk)?.agents.join(", ") || textAsk.agent}?`}
-          what={`${textAsk.title}. Pausing starts no new run of it and lets no worker take up one that has not started; every run of it in flight, running or waiting at a gate, is stopped. It stays paused until a person resumes it.`}
+          what={`${textAsk.title}. Stops its runs in flight; nothing new starts until resumed.`}
           label="Reason"
           hint="Recorded on the pause, with your name, and audited."
           missing="A pause needs a reason."
@@ -363,7 +357,7 @@ export function AttentionPanel({
             setBusy(item.id);
             try {
               const r = await fleet("pause", p.agents, reason);
-              onNotice(`Paused ${r.agents.join(", ")}${r.killed.length ? `; ${r.killed.length} run${r.killed.length === 1 ? "" : "s"} in flight stopped` : ""}. Resume it on the Control page once the drift is understood.`);
+              onNotice(`Paused ${r.agents.join(", ")}${r.killed.length ? `; ${r.killed.length} run${r.killed.length === 1 ? "" : "s"} in flight stopped` : ""}.`);
               reload();
             } catch (e) {
               onNotice(refusedText(item, e));
@@ -377,7 +371,7 @@ export function AttentionPanel({
       {textAsk && textAsk.action.kind === "redirect" && textAsk.run && (
         <TextDialog
           title="Redirect the run the guardian flagged?"
-          what={`${textAsk.agent} · ${textAsk.run}. The guardian would have redirected it but did not act (${String(textAsk.data?.why ?? "outside its limits")}). The run reads the guidance at its next model call.`}
+          what={`${textAsk.agent} · ${textAsk.run}. The guardian would have redirected it (${String(textAsk.data?.why ?? "outside its limits")}).`}
           label="Guidance"
           hint="Handed to the run as a steer, signed with your name."
           missing="A redirect needs the guidance it sends."
@@ -392,7 +386,7 @@ export function AttentionPanel({
             setBusy(item.id);
             try {
               const r = await steerRun(item.run!, { guidance });
-              onNotice(`Sent guidance to ${r.run} (${r.delivery}); it reads it at its next model call.`);
+              onNotice(`Sent guidance to ${r.run} (${r.delivery}).`);
               reload();
             } catch (e) {
               onNotice(refusedText(item, e));
@@ -406,7 +400,7 @@ export function AttentionPanel({
       {textAsk && textAsk.action.kind === "resume" && textAsk.agent && (
         <TextDialog
           title={`Resume ${textAsk.agent}?`}
-          what={`${textAsk.title}${textAsk.detail ? ` (${textAsk.detail})` : ""}. Resuming lifts the hold: its runs start again, and workers take up the ones waiting. One audit event records it, with the reason and your name.`}
+          what={`${textAsk.title}${textAsk.detail ? ` (${textAsk.detail})` : ""}. Its runs start again.`}
           label="Reason"
           hint="Recorded on the resume, with your name, and audited."
           missing="A resume needs a reason."
@@ -435,7 +429,7 @@ export function AttentionPanel({
       {textAsk && textAsk.action.kind === "lift" && (
         <TextDialog
           title="Lift the lockdown?"
-          what={`${textAsk.title}${textAsk.detail ? ` (${textAsk.detail})` : ""}. Lifting it lets runs start again and workers take up the runs waiting; tool calls go back to what each agent's policy says. One audit event records it, with the reason and your name.`}
+          what={`${textAsk.title}${textAsk.detail ? ` (${textAsk.detail})` : ""}. Runs start again; tool calls follow each agent's policy.`}
           label="Reason"
           hint="Recorded on the lift, with your name, and audited."
           missing="Lifting the lockdown needs a reason."
@@ -479,7 +473,7 @@ export function AttentionPanel({
       {error && !off && (
         <Failure
           className="m-3"
-          what={`The attention queue stopped answering; the list below is as it last answered${readAt ? `, at ${new Date(readAt).toLocaleTimeString("en-GB")}` : ""}, and a new gate or hold does not appear until it answers again`}
+          what={`The attention queue stopped answering${readAt ? ` (last read ${new Date(readAt).toLocaleTimeString("en-GB")})` : ""}`}
           message={error}
         />
       )}
@@ -524,7 +518,7 @@ export function AttentionPanel({
                 <span className="tnum font-mono text-[10px] text-ghost">S{Math.round(it.severity)}/10</span>
               </span>
               {/* What clears it, in the backend's words, on the one button. */}
-              <span className="shrink-0" title={it.action.says || undefined}>
+              <span className="shrink-0">
                 <Button
                   size="sm"
                   variant="solid"
@@ -548,15 +542,13 @@ export function AttentionPanel({
           );
         })}
         {items && items.length === 0 && !error && (
-          <p className="px-3 py-3 text-[12px] text-faint">
-            Nothing waiting. The queue raises gates waiting for a person, runs that failed or were stopped in the last 24 hours, breakers open on a tool, agents paused or draining, and the lockdown, each with the action that clears it.
-          </p>
+          <p className="px-3 py-3 text-[12px] text-faint">Nothing waiting.</p>
         )}
       </div>
-      {items && truncated && <p className="border-t border-line px-3 py-1.5 text-[11px] text-faint">More runs ended in the last 24 hours than the queue lists; the Runs page has them all.</p>}
+      {items && truncated && <p className="border-t border-line px-3 py-1.5 text-[11px] text-faint">More ended runs are on the Runs page.</p>}
       {items && notBuilt.length > 0 && (
         <p className="border-t border-line px-3 py-1.5 text-[11px] text-faint" data-not-built={notBuilt.join(",")}>
-          Not built: {notBuilt.map((k) => NOT_BUILT_KIND[k] ?? k.replace(/_/g, " ")).join(" and ")} {notBuilt.length === 1 ? "is" : "are"} not raised here yet, so the queue says nothing about {notBuilt.length === 1 ? "it" : "them"}.
+          Not built: {notBuilt.map((k) => NOT_BUILT_KIND[k] ?? k.replace(/_/g, " ")).join(", ")}
         </p>
       )}
     </section>

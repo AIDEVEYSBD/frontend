@@ -225,8 +225,8 @@ export function approveAccess(server: WithCredentials, me: Me | null, twoPerson:
   if (server.status === "refused") return no(`refused ${refusedWhen(server)}; rescan once the server is fixed, or delete it`);
   if (!credentials && !server.pin) return no("it has no tool list to approve; rescan it first");
   if (!me) return no("who you are is not known yet");
-  if (!isPlatformAdmin(me.roles)) return no(credentials ? "only a platform admin approves sending a server its credentials" : "only a platform admin approves a tool server and sets its tools' risks");
-  if (credentials && samePerson(server.added_by, me)) return no("you registered it: a second platform admin approves sending its credentials to its address");
+  if (!isPlatformAdmin(me.roles)) return no(credentials ? "only a platform admin approves sending a server its credentials" : "only a platform admin approves a tool server");
+  if (credentials && samePerson(server.added_by, me)) return no("you registered it: a second platform admin approves its credentials");
   if (twoPerson && samePerson(server.added_by, me)) return no("a second person must approve");
   return { ok: true, reason: "", credentials };
 }
@@ -326,13 +326,13 @@ export function formProblem(f: AddForm): string {
   const url = f.url.trim();
   if (!/^https?:\/\/\S+$/i.test(url)) return "Give the address the server answers on, starting https://.";
   // The registry refuses userinfo in an address; a credential belongs in a header, as a vault reference.
-  if (/^https?:\/\/[^/\s?#]*@/i.test(url)) return "An address carries no credentials: put them in a header as a vault reference, such as Authorization: Bearer ${secret:my-token}.";
-  if (/[?#]/.test(url)) return "An address carries no query or fragment: anything else, a key included, goes in a header that names a vault credential.";
+  if (/^https?:\/\/[^/\s?#]*@/i.test(url)) return "An address carries no credentials: put them in a header.";
+  if (/[?#]/.test(url)) return "An address carries no query or fragment: use a header.";
   if (/^http:\/\//i.test(url) && !/^http:\/\/(localhost|127\.[0-9.]+|\[::1\])(:[0-9]+)?(\/|$)/i.test(url)) return "A tool server is reached over https; http only at a loopback address.";
   const bad = lineNames(f.headers, ":=").find((l) => !l.split || !HEADER_NAME.test(l.name));
   if (bad) return bad.split ? `"${bad.name}" is not a header name.` : `"${bad.name}" needs a value: one Name: value per line.`;
   // Every header value takes its value from the vault: no credential, and no other literal, is stored with a registration.
   const literal = Object.entries(kvLines(f.headers, ":=")).find(([, v]) => !SECRET_REF.test(v));
-  if (literal) return `The header "${literal[0]}" must take its value from the vault, as \${secret:name}, with any text around it ("Bearer \${secret:name}").`;
+  if (literal) return `The header "${literal[0]}" must take its value from the vault, as \${secret:name}.`;
   return "";
 }

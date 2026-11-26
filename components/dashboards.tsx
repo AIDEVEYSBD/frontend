@@ -9,9 +9,9 @@ import { PageHeader } from "./section";
 import { usePageFacts } from "./assistant";
 import { WINDOWS, WindowPick, type Win } from "./window-pick";
 import { OutcomesBody } from "./outcomes";
-import { fmtAge, fmtCount, fmtMoney, leaders, plural, spendText, unpricedIn, unpricedWords, useFigures, useWaiting, windowWords } from "./overview-data";
+import { fmtAge, fmtCount, fmtMoney, leaders, plural, spendText, unpricedWords, useFigures, useWaiting, windowWords } from "./overview-data";
 import { Card, CardFigure, FigureTile, FootNote, Nothing, RankList, TrendBars } from "./overview-parts";
-import { rankControls, rankRefusals, resultTotals, spendByAgent, spendByModel, windowBudget, windowDays } from "./dashboards-data";
+import { rankControls, rankRefusals, resultTotals, spendByAgent, spendByModel, windowDays } from "./dashboards-data";
 import { notBuilt, notBuiltOf } from "@/lib/not-built";
 import { BoardNote, BoardSwitch, CloudFindingsCard, ValueBars } from "./dashboards-parts";
 import type { Answer, FindingsSummary } from "@/lib/api/pending";
@@ -37,8 +37,8 @@ import type { Answer, FindingsSummary } from "@/lib/api/pending";
 type Board = "security" | "cost" | "results";
 
 const BOARDS: { id: Board; label: string; line: string }[] = [
-  { id: "security", label: "Security posture", line: "What waits on a person, what the controls stopped, and the runs that failed." },
-  { id: "cost", label: "Cost", line: "What the model calls cost over the window, where it went, and the budget." },
+  { id: "security", label: "Security posture", line: "Waiting approvals, refused calls and failed runs." },
+  { id: "cost", label: "Cost", line: "Model spend by agent and model, against the budget." },
   { id: "results", label: "Workload results", line: "What each security workload found over the window." },
 ];
 
@@ -103,9 +103,7 @@ function Dashboards() {
             <WindowPick value={win} onChange={setWin} />
           </span>
         }
-      >
-        Three fixed boards, each drawn from the same records as the pages it links to.
-      </PageHeader>
+      />
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <BoardSwitch value={board} onChange={setBoard} options={BOARDS} />
@@ -136,7 +134,7 @@ function EmptyWindow({ win, setWin, age }: BoardProps & { age: number }) {
         </Button>
       }
     >
-      No runs in {windowWords(win)}. The latest run was asked for {fmtAge(age)} ago.
+      No runs in {windowWords(win)} · latest {fmtAge(age)} ago
     </BoardNote>
   );
 }
@@ -161,12 +159,12 @@ function FiguresBanners({ figures, unread, stale }: { figures: { error: string; 
     <>
       {unread && (
         <Banner tone="err" title="The figures could not be read">
-          {figures.error}. The figures below stay empty until the platform answers.
+          {figures.error}
         </Banner>
       )}
       {stale && (
-        <Banner tone="err" title="The figures stopped answering">
-          {figures.error}. The figures below are stale: they are as the platform last answered{figures.at ? `, at ${new Date(figures.at).toLocaleTimeString("en-GB")}` : ""}.
+        <Banner tone="err" title={`The figures stopped answering${figures.at ? `; shown as of ${new Date(figures.at).toLocaleTimeString("en-GB")}` : ""}`}>
+          {figures.error}
         </Banner>
       )}
     </>
@@ -207,17 +205,17 @@ function SecurityBoard({ win, setWin }: BoardProps) {
   );
 
   const sub = (said: string) => (reading ? "reading the figures" : unread ? "figures not read" : said);
-  /** What a card says in place of its rows (null when it has rows): `holds` is what it will list, `none` what it says of a window that gives it nothing. */
-  const noRows = (has: boolean, holds: string, none: string) => {
+  /** What a card says in place of its rows (null when it has rows): `none` is what it says of a window that gives it nothing. */
+  const noRows = (has: boolean, none: string) => {
     if (reading) return <Nothing>Reading the figures.</Nothing>;
-    if (off) return <Nothing>{holds}</Nothing>;
-    return has ? null : <Nothing>{latest ? none : `No runs yet. ${holds}`}</Nothing>;
+    if (off) return <Nothing>{off}</Nothing>;
+    return has ? null : <Nothing>{latest ? none : "No runs yet."}</Nothing>;
   };
 
   return (
     <>
       <FiguresBanners figures={figures} unread={unread} stale={stale} />
-      {f && !latest && <BoardNote>No agent has run on this deployment yet. The figures and lists below fill in from the first run.</BoardNote>}
+      {f && !latest && <BoardNote>No agent has run on this deployment yet.</BoardNote>}
       {f && latest && total === 0 && <EmptyWindow win={win} setWin={setWin} age={now - Date.parse(latest)} />}
 
       <FigureBand>
@@ -317,21 +315,21 @@ function SecurityBoard({ win, setWin }: BoardProps) {
             </>
           }
         >
-          {noRows(refusers.top.length > 0, "Agents rank here by the calls a control refused them.", `No call was refused in ${windowWords(win)}.`) ?? <RankList rows={refusers.top} format={fmtCount} measure="refused calls" />}
+          {noRows(refusers.top.length > 0, `No call was refused in ${windowWords(win)}.`) ?? <RankList rows={refusers.top} format={fmtCount} measure="refused calls" />}
         </Card>
 
         <Card
           title="Controls that fired most"
           footer={
             <>
-              <FootNote>{f?.firings.total ? plural(f.firings.total, "firing") : "Counted from the run journals"}</FootNote>
+              <FootNote>{f?.firings.total ? plural(f.firings.total, "firing") : "Times a control fired"}</FootNote>
               <Button size="sm" href="/guardrails">
                 Controls
               </Button>
             </>
           }
         >
-          {noRows(controls.top.length > 0, "Controls rank here by how often they fired.", `No control fired in ${windowWords(win)}.`) ?? <RankList rows={controls.top} format={fmtCount} measure="firings" />}
+          {noRows(controls.top.length > 0, `No control fired in ${windowWords(win)}.`) ?? <RankList rows={controls.top} format={fmtCount} measure="firings" />}
         </Card>
 
         <Card
@@ -347,7 +345,7 @@ function SecurityBoard({ win, setWin }: BoardProps) {
           }
         >
           {off ? (
-            <Nothing>The share of runs that failed, and the failed runs over the window, show here.</Nothing>
+            <Nothing>{off}</Nothing>
           ) : !f || !total ? (
             <Nothing>{reading ? "Reading the figures." : latest ? `No runs in ${windowWords(win)}.` : "No runs yet."}</Nothing>
           ) : (
@@ -393,7 +391,6 @@ function CostBoard({ win, setWin }: BoardProps) {
   const budgetTone = budget?.exceeded === true ? "err" : budget && (budget.exceeded === null || (used !== null && used > 0.8)) ? "warn" : undefined;
   /** Unpriced calls leave the budget's standing unknown: the service's reason. */
   const budgetUnknown = budget !== null && (budget.exceeded === null || budget.used === null || budget.remaining === null || budget.spent === null);
-  const scaled = f ? windowBudget(f) : null;
   const priced = spend?.cost_usd ?? null;
 
   usePageFacts(
@@ -415,23 +412,23 @@ function CostBoard({ win, setWin }: BoardProps) {
 
   const sub = (said: string) => (reading ? "reading the figures" : unread ? "figures not read" : said);
   /** What a spend card says in place of its rows (null when it has rows). */
-  const noRows = (has: boolean, holds: string) => {
+  const noRows = (has: boolean) => {
     if (reading) return <Nothing>Reading the figures.</Nothing>;
-    if (off) return <Nothing>{holds}</Nothing>;
-    if (!spend?.calls) return <Nothing>{latest ? `No model calls in ${windowWords(win)}.` : `No model calls yet. ${holds}`}</Nothing>;
-    return has ? null : <Nothing>{spend.unpriced_calls ? `No priced spend: ${unpricedWords(spend)}.` : "No spend recorded for these calls."}</Nothing>;
+    if (off) return <Nothing>{off}</Nothing>;
+    if (!spend?.calls) return <Nothing>{latest ? `No model calls in ${windowWords(win)}.` : "No model calls yet."}</Nothing>;
+    return has ? null : <Nothing>{spend.unpriced_calls ? "No price set." : "No spend recorded for these calls."}</Nothing>;
   };
   const finops = (
     <Button size="sm" href="/finops">
       Costs
     </Button>
   );
-  const unpricedNote = spend?.unpriced_calls ? ` · ${unpricedWords(spend)}, not counted` : "";
+  const unpricedNote = spend?.unpriced_calls ? ` · ${unpricedWords(spend)}` : "";
 
   return (
     <>
       <FiguresBanners figures={figures} unread={unread} stale={stale} />
-      {f && !latest && <BoardNote>No agent has run on this deployment yet. Spend shows here from the first model call.</BoardNote>}
+      {f && !latest && <BoardNote>No agent has run on this deployment yet.</BoardNote>}
       {f && latest && total === 0 && <EmptyWindow win={win} setWin={setWin} age={now - Date.parse(latest)} />}
 
       <FigureBand>
@@ -441,7 +438,7 @@ function CostBoard({ win, setWin }: BoardProps) {
           href="/finops"
           value={spend ? spendText(spend) : null}
           off={off}
-          sub={sub(!spend?.calls ? "nothing spent in this window" : spend.unpriced_calls ? `${unpricedWords(spend)}, not counted` : `across ${plural(spend.calls, "model call")}`)}
+          sub={sub(!spend?.calls ? "nothing spent in this window" : spend.unpriced_calls ? unpricedWords(spend) : `across ${plural(spend.calls, "model call")}`)}
         />
         <FigureTile label="Runs" chip={chip} href="/finops" value={f ? fmtCount(total) : null} off={off} sub={sub(!total ? "none in this window" : `${((spend?.calls ?? 0) / total).toFixed(1)} model calls per run`)} />
         <FigureTile
@@ -450,7 +447,7 @@ function CostBoard({ win, setWin }: BoardProps) {
           href="/finops"
           value={f ? (!total ? "No runs" : priced === null ? "Not priced" : fmtSmall(priced / total)) : null}
           off={off}
-          sub={sub(total ? (spend?.unpriced_calls ? "priced spend divided by runs; calls with no price left out" : "spend divided by runs") : "none in this window")}
+          sub={sub(total ? (spend?.unpriced_calls ? "priced spend divided by runs" : "spend divided by runs") : "none in this window")}
         />
         <FigureTile label="Tokens" chip={chip} href="/finops" value={spend ? fmtTokens(spend.tokens_in + spend.tokens_out) : null} off={off} sub={sub(spend?.calls ? "in and out, every model call" : "none in this window")} />
         <FigureTile
@@ -459,7 +456,7 @@ function CostBoard({ win, setWin }: BoardProps) {
           value={f ? (budget === null ? "Not set" : budget.used === null ? "Unknown" : percent(budget.used, 1)) : null}
           off={off}
           tone={budgetTone}
-          sub={sub(budget === null ? "spend is not capped" : budget.exceeded === true ? "spent, new runs are refused" : budgetUnknown ? budget.unknown_why || "what was spent is not known" : `${fmtMoney(budget.spent ?? 0)} of ${fmtMoney(budget.budget_usd)} this ${budget.period}`)}
+          sub={sub(budget === null ? "spend is not capped" : budget.exceeded === true ? "spent, new runs are refused" : budgetUnknown ? "spend not known" : `${fmtMoney(budget.spent ?? 0)} of ${fmtMoney(budget.budget_usd)} this ${budget.period}`)}
         />
       </FigureBand>
 
@@ -475,7 +472,7 @@ function CostBoard({ win, setWin }: BoardProps) {
           }
         >
           {off ? (
-            <Nothing>Spend per {span} over the window shows here.</Nothing>
+            <Nothing>{off}</Nothing>
           ) : !spend?.calls || !series ? (
             <Nothing>{reading ? "Reading the figures." : latest ? `No model calls in ${windowWords(win)}.` : "No model calls yet."}</Nothing>
           ) : (
@@ -498,7 +495,7 @@ function CostBoard({ win, setWin }: BoardProps) {
                   />
                 </div>
               ) : (
-                <p className="px-4 pb-4 text-[12px] leading-[1.55] text-faint">{spend.unpriced_calls ? `No priced spend: ${unpricedWords(spend)}.` : "No spend recorded for these calls."}</p>
+                <p className="px-4 pb-4 text-[12px] leading-[1.55] text-faint">{spend.unpriced_calls ? "No price set." : "No spend recorded for these calls."}</p>
               )}
             </>
           )}
@@ -508,30 +505,24 @@ function CostBoard({ win, setWin }: BoardProps) {
           title="Spend by agent"
           footer={
             <>
-              <FootNote>
-                {agents.top.length ? `${agents.top.length} of ${plural(agents.of, "agent")}` : "Where the spend went"}
-                {f && unpricedIn(f.rank.agents) ? ` · ${plural(unpricedIn(f.rank.agents), "call")} with no price not counted` : ""}
-              </FootNote>
+              <FootNote>{agents.top.length ? `${agents.top.length} of ${plural(agents.of, "agent")}` : "Where the spend went"}</FootNote>
               {finops}
             </>
           }
         >
-          {noRows(agents.top.length > 0, "Agents rank here by what their model calls cost.") ?? <RankList rows={agents.top} format={fmtMoney} measure="spent" />}
+          {noRows(agents.top.length > 0) ?? <RankList rows={agents.top} format={fmtMoney} measure="spent" />}
         </Card>
 
         <Card
           title="Spend by model"
           footer={
             <>
-              <FootNote>
-                {models.top.length ? `${models.top.length} of ${plural(models.of, "model")}` : "Which models the spend went to"}
-                {f && unpricedIn(f.rank.models) ? ` · ${plural(unpricedIn(f.rank.models), "call")} with no price not counted` : ""}
-              </FootNote>
+              <FootNote>{models.top.length ? `${models.top.length} of ${plural(models.of, "model")}` : "Which models the spend went to"}</FootNote>
               {finops}
             </>
           }
         >
-          {noRows(models.top.length > 0, "Models rank here by what the calls to them cost.") ?? <RankList rows={models.top} format={fmtMoney} measure="spent" />}
+          {noRows(models.top.length > 0) ?? <RankList rows={models.top} format={fmtMoney} measure="spent" />}
         </Card>
 
         <Card
@@ -547,9 +538,9 @@ function CostBoard({ win, setWin }: BoardProps) {
           {reading ? (
             <Nothing>Reading the figures.</Nothing>
           ) : off ? (
-            <Nothing>The budget, how much of it is spent and what is left show here.</Nothing>
+            <Nothing>{off}</Nothing>
           ) : budget === null ? (
-            <Nothing>No budget is set, so spend is not capped. A budget is set on the Costs page.</Nothing>
+            <Nothing>No budget is set; set one on the Costs page.</Nothing>
           ) : (
             <div className="flex flex-col gap-3 px-4 pt-4 pb-4">
               <div className="grid grid-cols-2 gap-4">
@@ -557,16 +548,14 @@ function CostBoard({ win, setWin }: BoardProps) {
                 <CardFigure label="Left" value={budget.remaining === null ? "Unknown" : fmtMoney(Math.max(0, budget.remaining))} />
               </div>
               {budget.used !== null && <Meter value={budget.used} tone={budgetTone ?? "run"} />}
-              <p className="text-[12px] leading-[1.55] text-faint">
-                {budgetUnknown
-                  ? // Unpriced calls in the period: spend, what is left and whether it is spent are not known; the service's reason.
-                    `${budget.exceeded === true ? `Spent by the priced calls alone in the last ${PERIOD_WORDS[budget.period]}: new runs are refused. ` : ""}${budget.unknown_why ? `${budget.unknown_why[0].toUpperCase()}${budget.unknown_why.slice(1)}.` : "What was spent is not known, and the platform gives no reason."}`
-                  : budget.exceeded
-                    ? `${fmtMoney(budget.spent ?? 0)} of ${fmtMoney(budget.budget_usd)} is spent in the last ${PERIOD_WORDS[budget.period]}. New runs are refused until spend falls back under the budget or the budget is raised.`
-                    : `${fmtMoney(budget.spent ?? 0)} of ${fmtMoney(budget.budget_usd)} spent in the last ${PERIOD_WORDS[budget.period]}.`}
-                {!budgetUnknown && budget.unpriced ? ` ${plural(budget.unpriced, "call")} with no price set are not counted against it.` : ""}
-                {scaled !== null && win !== "all" && priced !== null && ` Over ${windowWords(win)} the same rate allows ${fmtMoney(scaled)}, and ${fmtMoney(priced)} was spent.`}
-              </p>
+              {/* Unpriced calls in the period leave what was spent unknown: the figures above say "Unknown", and only a refusal is said here. */}
+              {(!budgetUnknown || budget.exceeded === true) && (
+                <p className="text-[12px] leading-[1.55] text-faint">
+                  {budgetUnknown
+                    ? "Spent: new runs are refused."
+                    : `${fmtMoney(budget.spent ?? 0)} of ${fmtMoney(budget.budget_usd)} spent in the last ${PERIOD_WORDS[budget.period]}${budget.exceeded ? "; new runs are refused" : ""}.`}
+                </p>
+              )}
             </div>
           )}
         </Card>

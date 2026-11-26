@@ -167,7 +167,7 @@ export function ChangeDetail({ change, who, onMoved }: { change: PolicyChange; w
         <p className="text-[12px] leading-[1.55] text-fg">{c.reason}</p>
       </div>
       <DiffTable diff={diffOf(c)} />
-      {asked && <p className="text-[11px] text-warn">The rules moved between proposal and application; this is the diff as applied. As proposed: {c.diff.summary.join("; ")}.</p>}
+      {asked && <p className="text-[11px] text-warn">Applied diff differs; as proposed: {c.diff.summary.join("; ")}.</p>}
       {c.effective_at && <p className="text-[11px] text-faint">Effective {whenText(c.effective_at)}.</p>}
       {c.rollback_of && (
         <p className="text-[11px] text-faint">
@@ -247,7 +247,7 @@ export function ChangeDetail({ change, who, onMoved }: { change: PolicyChange; w
       {ask === "rollback" && (
         <TextDialog
           title={`Roll back ${c.id}?`}
-          what={`Puts the rules back at once, with no second person: ${changeSummary(c)} is undone. It is recorded as an emergency and raised as attention for review.`}
+          what={`Undoes at once, with no second person: ${changeSummary(c)}.`}
           label="Why"
           hint="Who reviews this reads it first"
           missing="A rollback needs a reason."
@@ -266,7 +266,7 @@ export function ChangeDetail({ change, who, onMoved }: { change: PolicyChange; w
 /** The changes, newest first. Presentational. */
 export function ChangesListView({ list, selected, onSelect, filtered = false }: { list: PolicyChangeList; selected?: string | null; onSelect?: (id: string) => void; filtered?: boolean }) {
   if (!list.changes.length) {
-    return <p className="text-[12px] text-faint">{filtered ? "No change matches." : "No policy change is on record. A proposal below starts the history; rules set before this door stand as they were."}</p>;
+    return <p className="text-[12px] text-faint">{filtered ? "No change matches." : "No policy change is on record."}</p>;
   }
   return (
     <ul className="flex flex-col overflow-hidden rounded-md border border-line">
@@ -318,7 +318,7 @@ export function OpenChanges({ target, tick = 0 }: { target: PolicyTarget; tick?:
       stop = true;
     };
   }, [query, tick]);
-  if (failed) return <Failure inline message={`Whether a change to this is waiting on review could not be read: ${failed}`} />;
+  if (failed) return <Failure inline message={`Pending changes could not be read: ${failed}`} />;
   if (!open.length) return null;
   return (
     <div className="flex flex-col gap-1 rounded-md border border-line bg-raise/30 px-3 py-2">
@@ -445,7 +445,7 @@ function ProposalFields({ target, id, current, inherits, onProposed }: { target:
   };
   return (
     <div className="flex flex-col gap-3">
-      {!editable && <p className="text-[11.5px] text-warn">Proposing a change needs the configure permission; the form is shown as it stands.</p>}
+      {!editable && <p className="text-[11.5px] text-warn">Proposing needs the configure permission.</p>}
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {fields.map((f) => (
           <FieldEditor
@@ -512,7 +512,7 @@ function ProposeForm({ targets, agents, agentsError = "", kind, onKind, onPropos
   return (
     <div className="flex flex-col gap-3">
       <div className="grid gap-3 md:grid-cols-2">
-        <Field label="Target" hint={target.what}>
+        <Field label="Target">
           <Pick value={kind} onChange={onKind} options={targets.map((t) => ({ value: t.kind, label: targetLabel(t.kind) }))} />
         </Field>
         {needs !== "estate" && (
@@ -590,11 +590,6 @@ export function SimulationView({ result }: { result: SimulationResult }) {
           </table>
         </div>
       )}
-      {r.notes.map((n) => (
-        <p key={n} className="text-[11px] text-faint">
-          {n}
-        </p>
-      ))}
       {gaps.map((g) => (
         <p key={g} className="text-[11px] text-warn">
           {g}.
@@ -660,7 +655,7 @@ function SimulatePanel({ agents, agentsError = "", preset, quiet = false }: { ag
   return (
     <div className="flex flex-col gap-3">
       <div className="grid gap-3 md:grid-cols-3">
-        <Field label="What is proposed for" hint="simulating an attached agent's proposed policy is not built">
+        <Field label="What is proposed for">
           <Pick value={subject} onChange={() => undefined} options={[{ value: "agent", label: "A saved agent's policy" }]} />
         </Field>
         <Field label="Agent" hint={options.length || quiet || agents === null ? undefined : agentsError ? `the agents could not be read: ${agentsError}` : "none on record"}>
@@ -680,14 +675,14 @@ function SimulatePanel({ agents, agentsError = "", preset, quiet = false }: { ag
           </Field>
         </div>
       )}
-      <Field label="Proposed" hint="the policy block as it stands: edit it, or paste a whole definition">
+      <Field label="Proposed" hint="edit the policy block, or paste a whole definition">
         <Textarea rows={8} mono value={text} onChange={(v) => setEdited({ key, text: v })} />
       </Field>
       <span className="flex flex-wrap items-center gap-2">
         <Button size="sm" variant="solid" tone="ink" disabled={!picked || !text.trim() || simDoor.off} title={simDoor.why} loading={busy} onClick={run}>
           Simulate
         </Button>
-        <span className="text-[11px] text-faint">{simDoor.off ? simDoor.why : "Each recorded call is decided again by the run engine's own decision. Nothing is executed or written."}</span>
+        {!simDoor.off && <span className="text-[11px] text-faint">Nothing is executed or written.</span>}
       </span>
       {error && <Failure inline message={error} />}
       {shown?.result && <SimulationView result={shown.result} />}
@@ -710,7 +705,6 @@ export function TargetRules({ target, onPropose }: { target: TargetKind; onPropo
           </Button>
         )}
       </span>
-      <p className="text-[11px] leading-[1.5] text-faint">{target.what}</p>
       {Object.keys(target.by_id).length > 0 && (
         <div className="af-list flex flex-col">
           {Object.entries(target.by_id).map(([id, rules]) => (
@@ -833,8 +827,7 @@ function PolicyPage() {
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
       <GroupHeader group="controls" tab="policy">
-        The rules that decide what runs may do change here: proposed with a diff, approved by someone other than the proposer, applied at their effective time, and rolled back at once in an emergency. A
-        spec&rsquo;s own policy keeps its path through versions and reviews; simulate it here first.
+        Propose, review, apply and roll back the rules runs follow.
       </GroupHeader>
 
       {/* The policy door's failure comes first, above the catalogue, so the first screenful shows it. */}
@@ -871,7 +864,7 @@ function PolicyPage() {
         </Section>
         <Section title="Change" hue="approvals" meta={selected ?? "pick one to review it"}>
           {detailError && (<p className="text-[11.5px] text-err">{detailError}</p>)}
-          {!selected && <p className="text-[12px] text-faint">{quietDown ? "Not read." : "Nothing picked. A change waiting on you is in the list."}</p>}
+          {!selected && <p className="text-[12px] text-faint">{quietDown ? "Not read." : "Pick a change from the list."}</p>}
           {selected && change?.id === selected && (
             <ChangeDetail
               key={`${change.id}:${change.state}`}
@@ -914,7 +907,7 @@ function PolicyPage() {
         <SimulatePanel key={preset ?? ""} agents={agents} agentsError={agentsError} preset={preset} quiet={quietDown} />
       </Section>
 
-      <Section title="The rules now" hue="guardrail" meta={targets ? `every change goes through ${targets.door}` : undefined}>
+      <Section title="The rules now" hue="guardrail">
         {targets ? (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {targets.targets.map((t) => (
@@ -938,7 +931,7 @@ function PolicyPage() {
             <span className="text-[11px] font-semibold text-dim">Not built</span>
             {notBuilt.map((t) => (
               <p key={t.kind} className="text-[11px] leading-[1.5] text-faint">
-                <span className="text-dim">{targetLabel(t.kind)}</span>: {t.what}; {t.why}.
+                <span className="text-dim">{targetLabel(t.kind)}</span>
               </p>
             ))}
           </div>

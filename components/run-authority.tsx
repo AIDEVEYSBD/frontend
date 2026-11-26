@@ -37,9 +37,9 @@ function UseCaseRow({ a }: { a: RunAuthority }) {
     <div className="flex min-w-0 flex-col gap-1">
       <span className="text-[10.5px] font-semibold text-dim">Use case</span>
       {u === undefined ? (
-        <span className="text-[11px] text-faint">Not in this answer: the platform does not say which use case the run started under.</span>
+        <span className="text-[11px] text-faint">—</span>
       ) : u === null ? (
-        <span className="text-[11px] text-faint">None{a.use_case_note ? `: ${a.use_case_note}` : "; the answer gives no reason."}</span>
+        <span className="text-[11px] text-faint">None</span>
       ) : (
         <span className="flex flex-col gap-1 text-[11px] text-dim">
           <span className="flex flex-wrap items-baseline gap-x-2">
@@ -78,14 +78,14 @@ export function RunAuthorityView({ a }: { a: RunAuthority }) {
   return (
     <div className="flex min-w-0 flex-col gap-2.5">
       <p className="text-[11px] leading-[1.5] text-dim">
-        {starter ? <>Started by {starter}: the run acts with their authority, as they held it when it started, and nobody else&rsquo;s.</> : "The record names nobody as having started this run."}
+        {starter ? <>Started by {starter}.</> : "Started by: not recorded."}
         {a.caller && (
           <>
-            {" "}It was started under run{" "}
+            {" "}Started under run{" "}
             <Link href={`/runs?id=${encodeURIComponent(a.caller.run)}`} className="focusable rounded-sm font-mono text-[10.5px] text-fg hover:underline">
               {a.caller.run}
             </Link>
-            {a.caller.agent ? `, which ran as ${a.caller.agent}` : ""}.
+            {a.caller.agent ? ` (${a.caller.agent})` : ""}.
           </>
         )}
       </p>
@@ -107,7 +107,7 @@ export function RunAuthorityView({ a }: { a: RunAuthority }) {
             {(held.via || held.kind) && <span className="text-faint">{[held.kind ? `a ${held.kind}` : "", held.via ? (VIA[held.via] ?? `by ${held.via}`) : ""].filter(Boolean).join(", ")}</span>}
           </span>
         ) : (
-          <span className="text-[11px] text-faint">The record does not say what the starter held.</span>
+          <span className="text-[11px] text-faint">Not recorded.</span>
         )}
       </div>
 
@@ -115,9 +115,7 @@ export function RunAuthorityView({ a }: { a: RunAuthority }) {
         <span className="text-[10.5px] font-semibold text-dim">
           Grants {off("grants") ? <NotBuiltValue field="grants" className="font-normal" /> : <span className="tnum font-normal text-faint">({grants.length})</span>}
         </span>
-        {off("grants") ? (
-          <span className="text-[11px] text-faint">Tools are not connected on this platform, so no run holds a tool grant.</span>
-        ) : grants.length ? (
+        {off("grants") ? null : grants.length ? (
           <div className="overflow-x-auto rounded-md border border-line bg-surface">
             <table className="w-full min-w-[420px] border-collapse">
               <thead>
@@ -162,9 +160,7 @@ export function RunAuthorityView({ a }: { a: RunAuthority }) {
         <span className="text-[10.5px] font-semibold text-dim">
           Narrowed {off("narrowed") ? <NotBuiltValue field="narrowed" className="font-normal" /> : <span className="tnum font-normal text-faint">({narrowed.length})</span>}
         </span>
-        {off("narrowed") ? (
-          <span className="text-[11px] text-faint">With no tool grant, nothing is cut down to what a caller held.</span>
-        ) : narrowed.length ? (
+        {off("narrowed") ? null : narrowed.length ? (
           <ul className="flex flex-col gap-0.5">
             {narrowed.map((n, i) => (
               <li key={`${n.tool}-${i}`} className="flex flex-wrap items-baseline gap-x-2 text-[11px]">
@@ -186,10 +182,8 @@ export function RunAuthorityView({ a }: { a: RunAuthority }) {
               <Tag>up to {a.max_data_class}</Tag>
             </span>
           ) : (
-            // No ceiling is a fact about the run, not a part that is not built: the service's own sentence when it gives one.
-            <span className="text-[11px] text-faint">
-              {a.max_data_class_note ? `${a.max_data_class_note[0].toUpperCase()}${a.max_data_class_note.slice(1)}.` : "No ceiling: the run has no data class of its own, no use-case ceiling and none handed down to it."}
-            </span>
+            // No ceiling is a fact about the run, not a part that is not built.
+            <span className="text-[11px] text-faint">No ceiling</span>
           )}
         </div>
         <div className="flex min-w-0 flex-col gap-1">
@@ -206,9 +200,9 @@ export function RunAuthorityView({ a }: { a: RunAuthority }) {
               ))}
             </ul>
           ) : (
-            <span className="text-[11px] text-faint">Its definition has no step where it waits for a person.</span>
+            <span className="text-[11px] text-faint">None</span>
           )}
-          {unbuilt.some((f) => f.startsWith("gates[")) && <span className="text-[10.5px] text-faint">Gates on tool calls: not built; only the run&rsquo;s own waiting steps are listed.</span>}
+          {unbuilt.some((f) => f.startsWith("gates[")) && <span className="text-[10.5px] text-faint">Gates on tool calls: not built</span>}
         </div>
       </div>
     </div>
@@ -218,14 +212,8 @@ export function RunAuthorityView({ a }: { a: RunAuthority }) {
 /** Asks the door for one run's authority and shows it, or that nothing serves the door yet. */
 export function RunAuthorityPanel({ run }: { run: string }) {
   const { answer } = useDoor<RunAuthority>("runAuthority", { params: { id: run } });
-  if (!answer) return <p className="text-[11px] text-faint">Reading the authority this run was started under…</p>;
-  if (answer.state === "pending") {
-    return (
-      <NotConnected door={answer.door} compact title="The authority a run started under is not built yet">
-        Who started this run and what they held, its gates, and what it was granted.
-      </NotConnected>
-    );
-  }
+  if (!answer) return <p className="text-[11px] text-faint">Reading the authority…</p>;
+  if (answer.state === "pending") return <NotConnected door={answer.door} compact title="Run authority: not built yet" />;
   if (answer.state === "error") return <p className="text-[11px] text-err">The authority could not be read: {answer.message}</p>;
   return <RunAuthorityView a={answer.data} />;
 }

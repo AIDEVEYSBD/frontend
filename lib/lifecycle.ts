@@ -70,7 +70,7 @@ export const STAGE_LABEL: Record<StageName, string> = {
 /** The record that lights each stage, in a line: what to look for when it is dark. */
 export const STAGE_RECORD: Record<StageName, string> = {
   designed: "a saved version carrying this digest",
-  reviewed: "an approving policy review of this digest, by someone who did not author it",
+  reviewed: "an approving policy review by a non-author",
   approved: "a promotion-gate decision that passed for this digest",
   canary: "a canary deployment of this digest beside production",
   deployed: "a production deployment row of this digest",
@@ -155,7 +155,7 @@ export function spineOf(l: Pick<Lifecycle, "stages" | "deployed" | "digest" | "r
             } else if (r.current === true) parts.push("what production runs now");
             note = parts.join("; ");
           } else if (l.deployed?.adopted && l.deployed.digest === l.digest) {
-            note = `production runs this digest (version ${l.deployed.version ?? "?"}), deployed before deployments were recorded: no deployment row lights it`;
+            note = `production runs this digest (version ${l.deployed.version ?? "?"}); no deployment row`;
           }
           break;
         }
@@ -355,7 +355,7 @@ export function authorsOf(versions: readonly { digest: string; saved_by: string 
 export function reviewAccess(who: Reviewer | null, authors: readonly string[], role: string): Access {
   if (!who) return { ok: false, reason: "who you are is not known yet" };
   const mine = authors.find((a) => samePerson(a, who));
-  if (mine) return { ok: false, reason: `you saved this version (${mine}): its author may not review it; another policy reviewer signs` };
+  if (mine) return { ok: false, reason: `you saved this version (${mine}); another reviewer must sign` };
   if (isPlatformAdmin(who.appRoles)) return { ok: true, reason: "" };
   const held = new Set([...(who.roles ?? []), ...(who.appRoles ?? []), ...(who.groups ?? [])]);
   if (held.has(role)) return { ok: true, reason: "" };
@@ -366,9 +366,9 @@ export function reviewAccess(who: Reviewer | null, authors: readonly string[], r
 export function reviewRefusalText(e: { status: number; message: string; control?: string; missingRole?: string; body: Record<string, unknown> }): string {
   if (e.status === 403 && e.control === "separation_of_duties") {
     const authors = Array.isArray(e.body.authors) ? e.body.authors.map(s_).filter(Boolean) : [];
-    return `Separation of duties: the author of a version may not review it${authors.length ? ` (authors: ${authors.join(", ")})` : ""}. Another policy reviewer signs. ${e.message}`;
+    return `Separation of duties${authors.length ? ` (authors: ${authors.join(", ")})` : ""}: ${e.message}`;
   }
-  if (e.status === 403 && e.missingRole) return `Only a holder of the "${e.missingRole}" role (or an administrator) signs a policy review. ${e.message}`;
+  if (e.status === 403 && e.missingRole) return `Needs the "${e.missingRole}" role: ${e.message}`;
   return e.message;
 }
 
@@ -445,7 +445,7 @@ export function runFlagLine(f: RunFlag): string {
 
 /** A retirement in one line, wherever the agent appears. */
 export function retiredLine(r: Pick<Retired, "reason" | "replacement" | "by" | "at">): string {
-  return `Retired${r.by ? ` by ${r.by}` : ""}${r.at ? ` ${whenText(r.at)}` : ""}: ${r.reason}.${r.replacement ? ` Replaced by ${r.replacement}.` : ""} It takes no new runs; its runs and versions stay readable.`;
+  return `Retired${r.by ? ` by ${r.by}` : ""}${r.at ? ` ${whenText(r.at)}` : ""}: ${r.reason}${r.replacement ? `; replaced by ${r.replacement}` : ""}.`;
 }
 
 /**
@@ -456,10 +456,7 @@ export function retiredLine(r: Pick<Retired, "reason" | "replacement" | "by" | "
 export function pausedLine(agent: string, p: { mode: string; reason: string; by: string; at: string }): string {
   const drain = p.mode === "drain";
   const who = [p.by ? `by ${p.by}` : "", whenText(p.at)].filter(Boolean).join(", ");
-  const does = drain
-    ? "Its runs in flight finish, with the sub-runs they start; it takes no new run, and no worker takes up one that has not started, until it is resumed on the Control page."
-    : "It takes no new run, and no worker takes up one that has not started, until it is resumed on the Control page; its runs in flight were stopped when it was paused.";
-  return `${agent || "This agent"} is ${drain ? "draining" : "paused"}${p.reason ? `: ${p.reason}` : ""}${who ? ` (${who})` : ""}. ${does}`;
+  return `${agent || "This agent"} is ${drain ? "draining" : "paused"}${p.reason ? `: ${p.reason}` : ""}${who ? ` (${who})` : ""}; resume it on the Control page.`;
 }
 
 /** What the backend would refuse before anything is sent: a reason (400), and a replacement that is another saved agent (400/404 `field: replacement`). */
@@ -481,8 +478,8 @@ export function retireProblem(agent: string, reason: string, replacement: string
  */
 export function savedLine(saved: Pick<AgentSaved, "draft" | "version">, running: number | null): string {
   const v = saved.version !== null ? `version ${saved.version}` : "this version";
-  if (saved.draft) return `Saved ${v} as a draft. Production keeps running ${running !== null ? `version ${running}` : "the deployed version"} until a deploy.`;
-  return `Saved ${v}. The agent is not deployed yet, so the save is what runs.`;
+  if (saved.draft) return `Saved ${v} as a draft; production still runs ${running !== null ? `version ${running}` : "the deployed version"}.`;
+  return `Saved ${v}; not deployed yet, so it is what runs.`;
 }
 
 /** A save whose deploy the gate held, in a line: the version is kept, and what runs did not move. */
@@ -517,7 +514,7 @@ export function draftBanner(d: { version?: number | null; deployed_version?: num
 /** The benchmark in one line: the score against the threshold, the model, and what it measured against what runs. */
 export function benchmarkLine(b: Benchmark): string {
   const score = b.score !== null ? ` (${b.score.toFixed(3)})` : "";
-  const th = b.threshold === null ? "no threshold" : b.incomplete ? `incomplete: not every case could run or be graded, so it is not judged against the threshold ${b.threshold}` : b.passed_threshold === true ? `at or above the threshold ${b.threshold}` : b.passed_threshold === false ? `under the threshold ${b.threshold}` : `threshold ${b.threshold}`;
+  const th = b.threshold === null ? "no threshold" : b.incomplete ? `incomplete, threshold ${b.threshold}` : b.passed_threshold === true ? `at or above the threshold ${b.threshold}` : b.passed_threshold === false ? `under the threshold ${b.threshold}` : `threshold ${b.threshold}`;
   const what = b.version !== null ? `version ${b.version} (${shortDigest(b.digest)})` : shortDigest(b.digest);
   const vs = b.matches_deployed
     ? "what production runs"

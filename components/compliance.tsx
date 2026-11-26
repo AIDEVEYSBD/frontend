@@ -49,6 +49,16 @@ export function ComplianceView() {
       : controlsRead.frameworks === null
         ? "The standards are not shown: the platform's answer carries no framework list."
         : "";
+  /** The same, as the card shows it: a short value in place, or the failure with its reason. */
+  const colsLine = !controlsRead
+    ? "Reading…"
+    : controlsRead.state === "pending"
+      ? "Not built"
+      : controlsRead.state !== "ok"
+        ? `The standards could not be read: ${controlsRead.message}`
+        : controlsRead.frameworks === null
+          ? "—"
+          : "";
 
   // What was just saved stands in for the record until the door answers again.
   const [held, setHeld] = useState<{ over: unknown; data: ReturnType<typeof readCompliance> } | null>(null);
@@ -188,7 +198,7 @@ export function ComplianceView() {
     ? answer === null
       ? "Reading the compliance register…"
       : answer.state === "pending"
-        ? "Not built yet: the platform does not answer this address"
+        ? "Not built yet"
         : answer.state === "error"
           ? `The compliance register could not be read: ${answer.message}`
           : ""
@@ -232,8 +242,7 @@ export function ComplianceView() {
           </span>
         }
       >
-        The catalogue&rsquo;s {CONTROLS.length} controls against the standards they answer to and against the {ICL}, with firings by control family. A platform admin loads the{" "}
-        {ICL} here, maps it to the catalogue and can mark a control as not applying to this deployment.
+        The catalogue&rsquo;s {CONTROLS.length} controls against the standards and the {ICL}.
       </GroupHeader>
 
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
@@ -244,20 +253,17 @@ export function ComplianceView() {
           meta={cover.left ? `of the ${cover.applying.length} controls that apply here` : `of the ${CONTROLS.length} controls`}
           footer={
             <span className="text-[11px] leading-[1.5] text-faint">
-              A count says how many controls cite an entry of the standard, or are placed in one of its domains, as the platform maps them: where a control comes from, not that it is enforced. Whether each is enforced is on the Controls page.{" "}
-              {cover.left > 0 && `${plural(cover.left, "control is", "controls are")} marked as not applying to this deployment and left out of every count. `}
-              {unsaved && "The counts include the changes not saved yet. "}
-              Pick a standard to see only its controls.
+              Pick a standard to filter{unsaved ? " · counts include unsaved changes" : ""}.
             </span>
           }
         >
           <div className="grid grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_auto] gap-x-3 px-4 py-1">
-            {colsWhy && <p className="col-span-3 py-2 text-[11.5px] leading-[1.55] text-faint">{colsWhy}</p>}
+            {colsLine && <p className="col-span-3 py-2 text-[11.5px] leading-[1.55] text-faint">{colsLine}</p>}
             {(["cited", "grouped"] as const).filter((kind) => cols.some((s) => s.kind === kind)).map((kind) => (
               <CoverageGroup key={kind} label={kind === "cited" ? "Entries the catalogue cites" : "Domains each control is placed under"}>
                 {cols.filter((s) => s.kind === kind).map((s) => {
                   const n = cover.byStandard.get(s.id) ?? 0;
-                  return <CoverageRow key={s.id} name={s.short} title={[s.title, s.note].filter(Boolean).join(". ")} n={n} of={cover.applying.length} on={std === s.id} onPick={() => pickStandard(std === s.id ? "" : s.id)} />;
+                  return <CoverageRow key={s.id} name={s.short} title={s.title} n={n} of={cover.applying.length} on={std === s.id} onPick={() => pickStandard(std === s.id ? "" : s.id)} />;
                 })}
               </CoverageGroup>
             ))}
@@ -327,9 +333,6 @@ export function ComplianceView() {
               <div className="h-14" />
             ) : answer.state === "pending" ? (
               <div className="flex flex-col gap-1.5 px-4 py-4">
-                <p className="text-[12px] leading-[1.55] text-dim">
-                  No list is loaded. The {ICL} is the client&rsquo;s own control list: it is loaded here as a file and mapped to the catalogue. The console adds no control to it.
-                </p>
                 <NotConnectedNote door={answer.door} />
               </div>
             ) : answer.state === "error" ? (
@@ -342,7 +345,7 @@ export function ComplianceView() {
                 </Button>
               </div>
             ) : !server.icl ? (
-              <Nothing>No list is loaded yet. Load the {ICL} as a CSV file to map the catalogue to it. Until then the {ICL} column of the matrix stays empty.</Nothing>
+              <Nothing>No list is loaded yet.</Nothing>
             ) : (
               <dl className="grid grid-cols-[112px_minmax(0,1fr)] gap-x-3 gap-y-1.5 px-4 py-3.5 text-[12px]">
                 <dt className="text-faint">List</dt>
@@ -375,7 +378,7 @@ export function ComplianceView() {
       </div>
 
       {/* ── the gaps: ICL controls nothing in the catalogue answers ── */}
-      {gaps.length > 0 && <Gaps gaps={gaps} total={list?.length ?? 0} left={cover.left} />}
+      {gaps.length > 0 && <Gaps gaps={gaps} total={list?.length ?? 0} />}
 
       {/* ── the matrix ── */}
       <section className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1" aria-label="Controls against standards">
@@ -391,10 +394,7 @@ export function ComplianceView() {
               </span>
             )}
           </div>
-          <p className="max-w-[110ch] text-[11.5px] leading-[1.55] text-faint">
-            A cell lists the entries a control answers in that standard; rest on one for its name, or open the row for every reference in full. The first five standards are cited entry by
-            entry; under NIST 800-53, NIST CSF 2.0 and ISO 27001 each control sits in one domain.
-          </p>
+          <p className="max-w-[110ch] text-[11.5px] leading-[1.55] text-faint">Rest on an entry for its name; open a row for every reference.</p>
           <FilterBar
             count={filters}
             onClear={() => {
@@ -481,9 +481,7 @@ export function ComplianceView() {
               <span role="alert" className="text-[11.5px] leading-[1.5] text-err">
                 The changes were not saved: {saveError}
               </span>
-            ) : (
-              <span className="text-[11.5px] leading-[1.5] text-faint">The mapping and the changes to controls are saved together.</span>
-            )}
+            ) : null}
           </span>
           <Button size="sm" variant="solid" tone="err" disabled={saving} onClick={discard}>
             Discard
@@ -547,7 +545,7 @@ function CoverageRow({ name, title, n, of, on, onPick }: { name: string; title: 
 }
 
 /** The ICL controls no applying catalogue control answers, by the list's own domains. */
-function Gaps({ gaps, total, left }: { gaps: IclControl[]; total: number; left: number }) {
+function Gaps({ gaps, total }: { gaps: IclControl[]; total: number }) {
   const [shut, setShut] = useState(false);
   const domains = [...new Set(gaps.map((g) => g.domain?.trim() || ""))].sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b)));
   return (
@@ -563,10 +561,7 @@ function Gaps({ gaps, total, left }: { gaps: IclControl[]; total: number; left: 
     >
       {!shut && (
         <>
-          <p className="border-b border-line px-4 py-2.5 text-[11.5px] leading-[1.55] text-faint">
-            To close one, open a catalogue control in the matrix and add it to that control&rsquo;s mapping.
-            {left > 0 && " A mapping held by a control marked as not applying does not count as an answer."}
-          </p>
+          <p className="border-b border-line px-4 py-2.5 text-[11.5px] leading-[1.55] text-faint">To close one, add it to a catalogue control&rsquo;s mapping in the matrix.</p>
           <div className="max-h-[300px] overflow-y-auto">
             {domains.map((d) => (
               <div key={d || "none"} className="flex flex-col">

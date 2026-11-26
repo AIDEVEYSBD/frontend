@@ -9,10 +9,10 @@ import { BrandLockup } from "./brand";
  */
 
 const REASONS: Record<string, { title: string; body: string }> = {
-  unassigned: { title: "A role is required to access Saros", body: "Your account was authenticated, but it has not been assigned a Saros role. Contact the administrator who assigns roles, then sign in again after the role has been assigned." },
-  "iap-missing": { title: "This console is reached through Google sign-in", body: "The request arrived without the header Identity-Aware Proxy adds, so it did not come through the proxy. Open the console at its published address. If you did, the proxy in front of this deployment is not switched on; contact the platform team." },
-  "iap-invalid": { title: "Your Google sign-in could not be verified", body: "Identity-Aware Proxy named you, but its assertion did not verify for this deployment: it was signed for a different service, has expired, or the keys could not be read. Try again; if it continues, contact the platform team." },
-  disabled: { title: "An administrator has ended your access", body: "An administrator of this console has ended your access to it. Your Google sign-in still works, but this console no longer lets you in. Ask an administrator if you need access again." },
+  unassigned: { title: "A role is required to access Saros", body: "Ask an administrator for a role, then sign in again." },
+  "iap-missing": { title: "This console is reached through Google sign-in", body: "Open the console at its published address." },
+  "iap-invalid": { title: "Your Google sign-in could not be verified", body: "Try again; if it continues, contact the platform team." },
+  disabled: { title: "An administrator has ended your access", body: "Ask an administrator if you need access again." },
 };
 
 export function NoAccess({ reason }: { reason: string }) {

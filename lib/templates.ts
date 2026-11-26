@@ -22,8 +22,8 @@ import type { CutRequest, Lineage, TemplateView } from "./api/l8b";
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 export const TEMPLATE_STATE_META: Record<string, { label: string; tone: "warn" | "ok" | "neutral"; means: string }> = {
-  pending: { label: "pending", tone: "warn", means: "waiting for a certifier who did not author it; no agent is cut from it until then" },
-  certified: { label: "certified", tone: "ok", means: "signed by a certifier who did not author it; agents may be cut from it" },
+  pending: { label: "pending", tone: "warn", means: "waiting for a certifier who did not author it" },
+  certified: { label: "certified", tone: "ok", means: "signed by a certifier; agents may be cut from it" },
 };
 
 export const templateStateMeta = (state: string) => TEMPLATE_STATE_META[state] ?? { label: state.replace(/_/g, " "), tone: "neutral" as const, means: "" };
@@ -101,7 +101,7 @@ export function cutBody(templateId: string, f: CutForm, params: Record<string, s
 export function certifyAccess(who: Reviewer | null, authors: readonly string[], role: string): Access {
   if (!who) return { ok: false, reason: "who you are is not known yet" };
   const mine = authors.find((a) => samePerson(a, who));
-  if (mine) return { ok: false, reason: `you are an author of this template (${mine}): its author may not certify it; another certifier signs` };
+  if (mine) return { ok: false, reason: `you are an author of this template (${mine}); another certifier must sign` };
   if (isPlatformAdmin(who.appRoles)) return { ok: true, reason: "" };
   // The platform names the roles that may certify as one comma-separated line; with none named, the platform decides on the press.
   const roles = role.split(",").map((r) => r.trim()).filter(Boolean);
@@ -116,10 +116,10 @@ export function templateRefusalText(e: { status: number; message: string; field?
   const list = (v: unknown) => (Array.isArray(v) ? v.map(String).filter(Boolean) : []);
   if (e.status === 403 && e.control === "separation_of_duties") {
     const authors = list(e.body.authors);
-    return `Separation of duties: an author of a template may not certify it${authors.length ? ` (authors: ${authors.join(", ")})` : ""}. Another certifier signs. ${e.message}`;
+    return `Separation of duties${authors.length ? ` (authors: ${authors.join(", ")})` : ""}: ${e.message}`;
   }
-  if (e.status === 403 && e.missingRole) return `Only a holder of the "${e.missingRole}" role (or an administrator) certifies a template. ${e.message}`;
-  if (e.status === 409 && e.control === "template_certification") return `The template is ${String(e.body.state ?? "not certified")}: an agent is cut from a certified template only. A certifier who did not author it signs it first.`;
+  if (e.status === 403 && e.missingRole) return `Needs the "${e.missingRole}" role: ${e.message}`;
+  if (e.status === 409 && e.control === "template_certification") return `The template is ${String(e.body.state ?? "not certified")}: ${e.message}`;
   if (e.status === 409 && e.field === "id") return `${e.message}. Pick another id.`;
   if (e.status === 409 && typeof e.body.state === "string") return `${e.message}: a template is certified once.`;
   if (e.status === 400 && e.field === "params") {
@@ -157,16 +157,15 @@ export function cutParamsLine(params: Record<string, unknown>): string {
 
 /** An agent's lineage in a line: the template, the cut, where it stands now. */
 export function lineageLine(l: Lineage): string {
-  const cert = l.template.certified ? `, certified by ${l.template.certified.by}` : "";
-  const cut = `Cut from template "${l.template.name}" (${l.template.id}${cert}) at digest ${shortDigest(l.template_digest)} by ${l.cut.by || "someone"} ${whenText(l.cut.at)}, as version ${l.cut.version ?? "?"} with ${cutParamsLine(l.cut.params)}.`;
-  const now = l.current.version !== null && l.current.version !== l.cut.version ? ` Version ${l.current.version} (${shortDigest(l.current.digest)}) now.` : "";
-  const deployed = l.deployed ? ` Production runs version ${l.deployed.version ?? "?"}.` : " Not deployed.";
+  const cut = `Cut by ${l.cut.by || "someone"} ${whenText(l.cut.at)} as version ${l.cut.version ?? "?"}, ${cutParamsLine(l.cut.params)}`;
+  const now = l.current.version !== null && l.current.version !== l.cut.version ? ` · now version ${l.current.version} (${shortDigest(l.current.digest)})` : "";
+  const deployed = l.deployed ? ` · production runs version ${l.deployed.version ?? "?"}` : " · not deployed";
   return `${cut}${now}${deployed}`;
 }
 
 /** The drift in a line: what moved from the template, or that nothing the spec names has. */
 export function driftLine(l: Pick<Lineage, "drifted" | "drift">): string {
   const summary = l.drift?.summary ?? [];
-  if (!l.drifted || !summary.length) return "No drift: nothing the spec's vocabulary names has moved from the template (the new id is not part of it).";
-  return `Drifted from the template: ${plural(summary.length, "change")} (${summary.join("; ")}). The params the cut filled count as drift from the start.`;
+  if (!l.drifted || !summary.length) return "No drift from the template.";
+  return `Drifted from the template: ${plural(summary.length, "change")} (${summary.join("; ")})`;
 }

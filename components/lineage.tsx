@@ -122,7 +122,7 @@ export function LineageDrawer({
       title={`Lineage · ${focus}`}
       subtitle={
         root
-          ? `${root.title || root.kind} in run ${runId}. Above: what it was derived from (the because chain, backwards). Below: every later entry that cites it.`
+          ? `${root.title || root.kind} in run ${runId}`
           : `Run ${runId}`
       }
       onClose={onClose}
@@ -155,7 +155,7 @@ export function LineageDrawer({
           ))}
           {lineage.missing.length > 0 && (
             <p className="px-4 py-2 text-[11px] text-warn">
-              Cited but not on the record: {lineage.missing.join(", ")}. A hole in the chain is itself a finding.
+              Cited but not on the record: {lineage.missing.join(", ")}.
             </p>
           )}
           <span className="border-y border-line bg-raise/40 px-4 py-1.5 text-[10.5px] font-medium tracking-[0.04em] text-ghost uppercase">The entry</span>

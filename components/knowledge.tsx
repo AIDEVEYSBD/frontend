@@ -267,7 +267,7 @@ export function Knowledge() {
       const r = await fetch("/api/knowledge/reembed", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ namespace }) });
       const j = (await r.json().catch(() => ({}))) as { error?: string; note?: string; needsReembed?: string[] };
       if (!r.ok) throw new Error(j.error ?? `the server answered ${r.status}`);
-      setNotice({ ok: true, text: `${j.note ?? "Re-embedded."}${j.needsReembed?.length ? ` Still on another model: ${j.needsReembed.join(", ")}.` : ""}` });
+      setNotice({ ok: true, text: `Re-embedded${j.needsReembed?.length ? `; still on another model: ${j.needsReembed.join(", ")}` : ""}.` });
       load();
     } catch (e) {
       setNotice({ ok: false, text: (e as Error).message });
@@ -296,7 +296,7 @@ export function Knowledge() {
       setNotice({
         ok: true,
         text: enabled
-          ? `${s.name} was added to the "${namespace}" corpus. ${s.licence === "licensed" ? "It is cited by reference; no text is held." : "Nothing of it is retrievable until a copy is fetched and a person admits it."}`
+          ? `${s.name} was added to the "${namespace}" corpus.`
           : `${s.name} was removed from the "${namespace}" corpus.`,
       });
       load();
@@ -398,23 +398,21 @@ export function Knowledge() {
             </>
           }
         >
-          The sources people search here, and agents with a read grant search through their retrieval.search tool. A person adds a source, a copy of it is fetched, and a person admits that copy before any of it can be searched; a bucket connector&rsquo;s documents are admitted instead by its rule, which a second person admits once. Each
-          engagement has its own corpus; the one open here is <span className="font-mono text-[11.5px] text-fg">{ns}</span>.
+          Sources people and agents search, once a person admits them.
         </GroupHeader>
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-4 py-2.5 elev-1">
           <NamespacePicker value={ns} options={namespaces} loading={!namespace} onChange={pickNamespace} />
-          <span className="text-[11.5px] leading-[1.5] text-faint">Everything below is this corpus&rsquo;s and no other&rsquo;s.</span>
         </div>
 
         {failed && <Failure what="The knowledge base could not be read" message={failed} />}
         {retrievalOff && (
           <p className="rounded-md border border-warn/40 bg-surface px-3 py-2.5 text-[11.5px] leading-[1.5] text-warn">
-            Retrieval from this corpus&rsquo;s store is switched off{retrievalOff.reason ? `: ${retrievalOff.reason}` : ""}. Every search and answer here is refused until it is switched back on under Retrieval access.
+            Retrieval from this corpus is switched off{retrievalOff.reason ? `: ${retrievalOff.reason}` : ""}.
           </p>
         )}
         {data && !data.ready && (
           <p className="rounded-md border border-err/40 bg-surface px-3 py-2.5 text-[11.5px] leading-[1.5] text-err">
-            {data.error} Which sources this corpus holds, and what is indexed, is not known until the store answers.
+            {data.error || "The store did not answer."}
           </p>
         )}
         {notice && (
@@ -432,9 +430,9 @@ export function Knowledge() {
             <div className="mt-4 border-t border-line pt-3">
               {ready && sources.length > 0 && <Donut data={byLicence.filter((d) => d.value > 0)} size={96} />}
               {ready && sources.length === 0 && (
-                <p className="text-[11.5px] leading-[1.55] text-dim">No source has been added. Add one from the public sources below, or add your own.</p>
+                <p className="text-[11.5px] leading-[1.55] text-dim">No sources yet.</p>
               )}
-              {!ready && <span className={`text-[11.5px] ${off ? "leading-[1.55] text-faint" : "text-ghost"}`}>{off ? "The sources in the register are counted here by licence." : data ? "Unknown while the store is unreachable." : failed ? "Unknown." : "Reading…"}</span>}
+              {!ready && !off && <span className="text-[11.5px] text-ghost">Reading…</span>}
             </div>
           </section>
 
@@ -444,11 +442,9 @@ export function Knowledge() {
             <span className="mt-1 text-[11.5px] text-faint">fetched and split · not embedded, not searchable</span>
             <div className="mt-4 flex flex-col gap-1.5 border-t border-line pt-3">
               {ready && staged.length === 0 && (
-                <p className="text-[11.5px] leading-[1.55] text-dim">
-                  Nothing is waiting. {sources.length ? "Fetch a source in the register to stage a copy." : "A copy is staged when a source in the register is fetched."}
-                </p>
+                <p className="text-[11.5px] leading-[1.55] text-dim">Nothing is waiting.</p>
               )}
-              {!ready && <span className={`text-[11.5px] ${off ? "leading-[1.55] text-faint" : "text-ghost"}`}>{off ? "Fetched copies waiting for a person to review are listed here." : data ? "Unknown while the store is unreachable." : failed ? "Unknown." : "Reading…"}</span>}
+              {!ready && !off && <span className="text-[11.5px] text-ghost">Reading…</span>}
               {staged.length > 0 && (
                 <div className="-mr-2 flex max-h-[188px] flex-col gap-1.5 overflow-y-auto pr-2">
                   {staged.map((s) => (
@@ -490,23 +486,24 @@ export function Knowledge() {
             {/* Integrity: recomputed on this read against what the latest admission recorded. */}
             <div className="mt-3 flex flex-col gap-2 border-t border-line pt-3">
               {data?.index?.integrity === undefined || data?.index?.integrity === null ? (
-                <span className="text-[11px] text-faint">{off ? "Integrity: not read." : data?.ready === false ? "Integrity is checked once the index is reachable." : data ? "No integrity result came with this read." : "Integrity: reading…"}</span>
+                <span className="text-[11px] text-faint">{off ? "Integrity: not read." : data?.ready === false ? "Integrity: needs the store." : data ? "Integrity: —" : "Integrity: reading…"}</span>
               ) : (
                 <span className="flex flex-col gap-0.5">
                   <Status tone={data.index.integrity.ok === true ? "ok" : data.index.integrity.ok === false ? "err" : "neutral"}>
                     {data.index.integrity.ok === true ? "index matches the latest admission" : data.index.integrity.ok === false ? "index changed outside admission" : "no integrity expectation yet"}
                   </Status>
-                  <span className="text-[10.5px] leading-[1.5] text-faint">
-                    {data.index.integrity.note}
-                    {data.index.integrity.admission ? ` Latest admission #${data.index.integrity.admission.id} by ${data.index.integrity.admission.by_whom}${data.index.integrity.admission.model ? ` with ${data.index.integrity.admission.model} (${data.index.integrity.admission.dimensions}d)` : ""}.` : ""}
-                  </span>
+                  {data.index.integrity.admission && (
+                    <span className="text-[10.5px] leading-[1.5] text-faint">
+                      {`Latest admission #${data.index.integrity.admission.id} by ${data.index.integrity.admission.by_whom}${data.index.integrity.admission.model ? ` with ${data.index.integrity.admission.model} (${data.index.integrity.admission.dimensions}d)` : ""}`}
+                    </span>
+                  )}
                 </span>
               )}
               <span className="flex flex-wrap items-center gap-2">
                 <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={!data?.ready || !totals?.admitted || reembed === "busy"} loading={reembed === "busy"} onClick={() => setReembed("confirm")}>
                   Re-embed namespace
                 </Button>
-                <span className="text-[10.5px] text-ghost">{off ? "every admitted chunk, with the configured model" : !ready ? "needs the store" : totals?.admitted ? "every admitted chunk, with the configured model" : "nothing is admitted, so there is nothing to embed"}</span>
+                <span className="text-[10.5px] text-ghost">{off ? "every admitted chunk, with the configured model" : !ready ? "needs the store" : totals?.admitted ? "every admitted chunk, with the configured model" : "nothing admitted yet"}</span>
               </span>
             </div>
           </section>
@@ -634,20 +631,19 @@ export function Knowledge() {
                 </thead>
                 <tbody>
                   <tr>
-                    <td colSpan={6} className="px-4 py-6 text-[12px] text-faint">Sources added to this corpus are listed here by publisher, each with its licence and what is indexed.</td>
+                    <td colSpan={6} className="px-4 py-6 text-[12px] text-faint">Not read.</td>
                   </tr>
                 </tbody>
               </table>
             </div>
           )}
           {!data && !failed && <p className="px-4 py-4 text-[12px] text-faint">Reading the register…</p>}
-          {!off && !data && failed && <p className="px-4 py-4 text-[12px] text-faint">The register could not be read, so nothing is shown.</p>}
-          {!off && data && !ready && <p className="px-4 py-4 text-[12px] text-faint">The register is kept in the store, which is not reachable, so it is not shown.</p>}
+          {!off && !data && failed && <p className="px-4 py-4 text-[12px] text-faint">The register could not be read.</p>}
+          {!off && data && !ready && <p className="px-4 py-4 text-[12px] text-faint">The store is not reachable.</p>}
           {ready && sources.length === 0 && (
             <div className="p-4">
               <EmptyState
                 title="No sources in this corpus yet"
-                detail="Nothing has been added, so nothing can be fetched, admitted or retrieved. Add a public source from the list below, or add a source of your own."
                 action={
                   <Button size="sm" variant="solid" tone="ink" permission="configure" onClick={() => setAdding(true)}>
                     Add a source
@@ -676,7 +672,7 @@ export function Knowledge() {
               </svg>
               <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Public sources you can add</span>
               <span className="tnum text-[11px] text-faint">{off && !data ? "" : count(offered.length)}</span>
-              <span className="text-[11px] leading-[1.55] text-faint">published standards, frameworks and regulation · none is part of this corpus until a person adds it</span>
+              <span className="text-[11px] leading-[1.55] text-faint">published standards, frameworks and regulation</span>
               <span className="grow" />
               <span className="text-[10.5px] text-ghost">{offerIsOpen ? "hide" : "show"}</span>
             </button>
@@ -729,7 +725,7 @@ export function Knowledge() {
                             </td>
                             <td className="max-w-[320px] px-3 py-2 text-[11px] leading-[1.45] text-faint">
                               {s.use_for}
-                              {Number(s.chunks) > 0 && <span className="block text-warn">{s.chunks} chunks from an earlier admission are held and left out of retrieval.</span>}
+                              {Number(s.chunks) > 0 && <span className="block text-warn">{s.chunks} chunks held, left out of retrieval</span>}
                             </td>
                             <td className="px-3 py-2 whitespace-nowrap text-[11px] text-faint">{s.cadence}</td>
                             <td className="sticky right-0 bg-surface px-3 py-2 text-right whitespace-nowrap">
@@ -744,8 +740,8 @@ export function Knowledge() {
                   </div>
                 )}
                 {offered.length > 0 && offerShown.length === 0 && <p className="px-4 py-4 text-[12px] text-faint">No public source matches.</p>}
-                {offered.length === 0 && <p className="px-4 py-4 text-[12px] text-faint">{ready ? "Every public source on offer is already in this corpus." : off ? "Published standards, frameworks and regulation are offered here, each ready to add." : "The list of public sources did not come with this read."}</p>}
-                {!ready && offered.length > 0 && <p className="border-t border-line px-4 py-2.5 text-[11.5px] text-faint">Adding waits for the store: a source is added by writing it to this corpus&rsquo;s register.</p>}
+                {offered.length === 0 && <p className="px-4 py-4 text-[12px] text-faint">{ready ? "Every public source is already in this corpus." : off ? "Not read." : "The public sources were not read."}</p>}
+                {!ready && offered.length > 0 && <p className="border-t border-line px-4 py-2.5 text-[11.5px] text-faint">Adding needs the store.</p>}
               </div>
             )}
           </section>
@@ -772,7 +768,6 @@ export function Knowledge() {
               <Button size="md" variant="solid" tone="ink" disabled>Answer</Button>
               <Button size="md" variant="solid" disabled>Search</Button>
             </div>
-            <p className="border-t border-line px-4 py-4 text-[12px] leading-[1.55] text-faint">Passages found and answers with their citations are shown here.</p>
           </section>
         ) : (
           <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
@@ -781,11 +776,11 @@ export function Knowledge() {
             </div>
             <p className="px-4 py-4 text-[12px] leading-[1.55] text-faint">
               {ready
-                ? "Nothing is indexed in this corpus, so there is nothing to search. Search and answer open here once a document has been admitted."
+                ? "Nothing is indexed yet: admit a document first."
                 : data
                   ? "Search needs the store, which is not reachable."
                   : failed
-                    ? "Search is not shown because the knowledge base could not be read."
+                    ? "The knowledge base could not be read."
                     : "Reading…"}
             </p>
           </section>
@@ -795,12 +790,12 @@ export function Knowledge() {
         <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
           <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2.5">
             <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Admission record</span>
-            <span className="text-[11px] text-faint">every admission and refusal in this corpus, newest first</span>
+            <span className="text-[11px] text-faint">newest first</span>
           </div>
-          {off && (data?.admissions ?? []).length === 0 && <p className="px-4 py-3 text-[11.5px] text-faint">Each decision is listed here with the document, who decided and when.</p>}
+          {off && (data?.admissions ?? []).length === 0 && <p className="px-4 py-3 text-[11.5px] text-faint">Not read.</p>}
           {!off && !data && <p className="px-4 py-3 text-[11.5px] text-faint">{failed ? "The record could not be read." : "Reading…"}</p>}
-          {!off && data && !ready && <p className="px-4 py-3 text-[11.5px] text-faint">The record is kept in the store, which is not reachable.</p>}
-          {ready && (data?.admissions ?? []).length === 0 && <p className="px-4 py-3 text-[11.5px] text-faint">Nothing has been admitted or refused in this corpus yet.</p>}
+          {!off && data && !ready && <p className="px-4 py-3 text-[11.5px] text-faint">The store is not reachable.</p>}
+          {ready && (data?.admissions ?? []).length === 0 && <p className="px-4 py-3 text-[11.5px] text-faint">Nothing admitted or refused yet.</p>}
           {(data?.admissions ?? []).map((a, i) => (
             <div key={i} className="flex items-baseline gap-3 border-b border-line px-4 py-2 last:border-0">
               <Status tone={a.admitted ? "ok" : "err"}>{a.admitted ? "admitted" : "refused"}</Status>
@@ -816,13 +811,6 @@ export function Knowledge() {
 
         {/* ── the stages, explained ── */}
         <PipelineView />
-
-        {ready && (
-          <p className="pb-2 text-[10.5px] leading-[1.5] text-ghost">
-            The register is the sources a person added to the &ldquo;{ns}&rdquo; corpus; document, chunk and admission figures are read from that corpus of the index on each load; the integrity
-            digest is recomputed on each load and compared with the latest admission&rsquo;s.
-          </p>
-        )}
       </div>
 
       {reembed && (
@@ -836,7 +824,7 @@ export function Knowledge() {
           onConfirm={runReembed}
           onClose={() => setReembed(null)}
         >
-          {`Every admitted chunk in this namespace is embedded again with ${data?.index?.model || "the configured model"}${data?.index?.embedding?.host ? ` on ${data.index.embedding.host}` : ""}. A chunk whose vector was made by another model or width is found by wording only until it has been rewritten. The act is recorded in the admission record with the model and width.`}
+          {`Every admitted chunk is embedded again with ${data?.index?.model || "the configured model"}.`}
         </Dialog>
       )}
 
@@ -1114,7 +1102,7 @@ function DocumentModal({ id, namespace, locate, onClose, onDone }: { id: string;
       const res = await fetch("/api/knowledge/admit", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ document: doc.id, namespace, admit, by, note: note.trim() }) });
       const d = await res.json().catch(() => ({ error: `the server answered ${res.status}` }));
       if (d.error) setError(d.error);
-      else onDone(d.note, true);
+      else onDone(`${doc.title} was ${admit ? "admitted and indexed" : "refused"}.`, true);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -1239,9 +1227,9 @@ function DocumentModal({ id, namespace, locate, onClose, onDone }: { id: string;
               </nav>
               <div ref={body} className="min-h-0 overflow-y-auto px-5 py-4 text-[12.5px] leading-[1.65] text-fg">
                 {(!doc.fullTextHeld || doc.textNote) && (
-                  // The store's own sentence: the text was cut at the most this service keeps of one document, and what follows cannot be retrieved.
+                  // The text was cut: what follows the cut cannot be retrieved.
                   <p role="note" className="mb-3 rounded-md border border-warn/50 bg-raise/40 px-3 py-2 text-[11px] leading-[1.55] text-warn">
-                    {doc.textNote || "The store says it does not hold this document's whole text, and gives no reason."}
+                    Only part of this document&rsquo;s text is held.
                   </p>
                 )}
                 <Markdown text={text} headingIds />
@@ -1429,7 +1417,7 @@ function SourceDialog({
     setSaving(false);
     if (a.state === "pending") setWaits(a.door);
     else if (a.state === "error") setError(a.message);
-    else onSaved(`${s.name}: data class set to ${cls}${names.length ? `, entitled: ${names.join(", ")}` : ", with no named restriction"}.`);
+    else onSaved(`${s.name}: data class set to ${cls}${names.length ? `, entitled: ${names.join(", ")}` : ""}.`);
   };
 
   return (
@@ -1524,7 +1512,7 @@ function SourceDialog({
               <span id="source-class-label" className="text-[12.5px] font-medium text-mist">Data class</span>
               <ClassChips value={cls} onChange={setCls} disabled={pending || saving} labelledBy="source-class-label" />
             </div>
-            <Field label="Entitled" hint="Names an agent must hold one of to retrieve from it, separated by commas: an agent holds one name, its own id, and every retrieval.search applies this. People with either console role read every class and every source.">
+            <Field label="Entitled" hint="Names an agent must hold one of, separated by commas.">
               <Input value={entitled} onChange={setEntitled} disabled={pending || saving} autoComplete="off" />
             </Field>
             {error && (<p role="alert" className="text-[11.5px] leading-[1.5] text-err">{error}</p>)}
@@ -1549,10 +1537,7 @@ function SourceDialog({
           onConfirm={() => onEnable(false)}
           onClose={() => !busy && setRemoving(false)}
         >
-          It leaves this corpus&rsquo;s register and goes back to the sources that can be added.{" "}
-          {chunks > 0
-            ? `Its ${count(chunks)} indexed chunks stay in the store and are left out of retrieval until it is added again.`
-            : "Nothing of it is indexed."}
+          {chunks > 0 ? `Its ${count(chunks)} indexed chunks are left out of retrieval.` : "Nothing of it is indexed."}
         </Dialog>
       )}
     </>
@@ -1598,13 +1583,13 @@ function AddSourceDialog({ namespace, namespaces, onClose, onDone }: { namespace
   return (
     <Frame
       title="Add a source"
-      subtitle="A source of your own: a document set, a policy library, a site. It joins one corpus."
+      subtitle="A document set, a policy library or a site."
       locked={busy}
       onClose={onClose}
       footer={
         <>
           <span className="min-w-0 grow text-[11.5px] leading-[1.5] text-faint">
-            {pending ? "" : missing.length ? `Still needed: ${missing.join(", ")}.` : "Adding a source fetches nothing. It can be fetched from the register once it is there."}
+            {pending ? "" : missing.length ? `Still needed: ${missing.join(", ")}.` : "Fetch it from the register once added."}
           </span>
           <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={pending || missing.length > 0 || badAddress} loading={busy} onClick={add}>
             Add source
@@ -1617,11 +1602,11 @@ function AddSourceDialog({ namespace, namespaces, onClose, onDone }: { namespace
         <Field label="Name">
           <Input value={name} onChange={setName} disabled={off} autoComplete="off" />
         </Field>
-        <Field label="Address" hint="Where it is fetched from. Several addresses separated by spaces are fetched as one document." error={badAddress ? "Each address starts with https://: sources are fetched over https only" : undefined}>
+        <Field label="Address" hint="Several addresses, separated by spaces, are fetched as one document." error={badAddress ? "Each address must start with https://" : undefined}>
           <Input value={url} onChange={setUrl} disabled={off} type="url" mono autoComplete="off" />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Publisher" hint="Who issues it. Sources are listed by publisher.">
+          <Field label="Publisher" hint="Who issues it.">
             <Input value={publisher} onChange={setPublisher} disabled={off} autoComplete="off" />
           </Field>
           <Field label="Licence" hint={licence ? LICENCE_NOTE[licence] : "What may be held of its text."}>
@@ -1691,13 +1676,13 @@ function UploadDocumentDialog({ namespace, namespaces, onClose, onDone }: { name
     setBusy(false);
     if (a.state === "pending") setWaits(a.door);
     else if (a.state === "error") setError(a.message);
-    else onDone(a.data?.note || `${title.trim()} was uploaded into the "${into}" corpus.`, typeof a.data?.document === "string" ? a.data.document : null, into);
+    else onDone(`${title.trim()} was uploaded into the "${into}" corpus.`, typeof a.data?.document === "string" ? a.data.document : null, into);
   };
 
   return (
     <Frame
       title="Upload a document"
-      subtitle="One file, put into one corpus. Like a fetched copy, a person admits it before it can be retrieved."
+      subtitle="One file, admitted by a person before it can be retrieved."
       locked={busy}
       onClose={onClose}
       footer={
@@ -1867,7 +1852,7 @@ function ConnectorsSection({ namespace, onDocument }: { namespace: string; onDoc
     setSyncing(c.id);
     try {
       const d = await connectorCall<{ listed: number; queued: number; unchanged: number; refused: number; withdrawn: number }>(`/api/knowledge/connectors/${c.id}/sync`, { method: "POST" });
-      setNotice({ ok: true, text: `${c.name}: listed ${d.listed} object${d.listed === 1 ? "" : "s"}; ${d.queued} queued to be read, ${d.unchanged} unchanged, ${d.refused} refused by the rule, ${d.withdrawn} withdrawn.` });
+      setNotice({ ok: true, text: `${c.name}: ${d.listed} listed, ${d.queued} queued, ${d.unchanged} unchanged, ${d.refused} refused, ${d.withdrawn} withdrawn.` });
     } catch (e) {
       setNotice({ ok: false, text: `${c.name} was not synced: ${(e as Error).message}` });
     } finally {
@@ -1882,20 +1867,17 @@ function ConnectorsSection({ namespace, onDocument }: { namespace: string; onDoc
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-raise/55 px-4 py-2.5">
         <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Bucket connectors</span>
         <span className="tnum text-[11px] text-faint">{data ? count(connectors.length) : ""}</span>
-        <span className="text-[11px] leading-[1.55] text-faint">a body of documents under a Cloud Storage bucket and prefix, ingested by a rule one person registers and another admits</span>
+        <span className="text-[11px] leading-[1.55] text-faint">documents under a Cloud Storage bucket and prefix</span>
         <span className="grow" />
         <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={!data} onClick={() => setEditing("new")}>
           Register a connector
         </Button>
       </div>
-      {data?.accepts?.note && <p className="border-b border-line px-4 py-2 text-[11px] leading-[1.5] text-warn">{data.accepts.note}</p>}
       {failed && <Failure what="The connectors could not be read" message={failed} className="px-4 py-3" />}
       {!data && !failed && <p className="px-4 py-4 text-[12px] text-faint">Reading the connectors…</p>}
       {notice && <p className={`border-b border-line px-4 py-2 text-[11.5px] leading-[1.5] ${notice.ok ? "text-faint" : "text-err"}`}>{notice.text}</p>}
       {data && connectors.length === 0 && (
-        <p className="px-4 py-4 text-[12px] leading-[1.55] text-faint">
-          No connector feeds the &ldquo;{namespace}&rdquo; corpus. A connector reads every document under a bucket and prefix; it ingests nothing until a second person admits its rule.
-        </p>
+        <p className="px-4 py-4 text-[12px] leading-[1.55] text-faint">No connector feeds the &ldquo;{namespace}&rdquo; corpus.</p>
       )}
       {connectors.map((c) => {
         const mine = Boolean(session && c.rule.by && session.sub === c.rule.by.sub);
@@ -1932,9 +1914,9 @@ function ConnectorsSection({ namespace, onDocument }: { namespace: string; onDoc
             <p className="text-[11px] leading-[1.5] text-faint">
               {c.admission
                 ? c.admitted
-                  ? `Admitted by ${whoName(c.admission.by)} ${ago(c.admission.at)}${c.admission.note ? `: “${c.admission.note}”` : ""}. Every object ingested under it records this admission.`
-                  : `The rule admitted by ${whoName(c.admission.by)} ${ago(c.admission.at)} was changed by ${whoName(c.rule.by)}; nothing new is ingested until a person other than ${whoName(c.rule.by)} admits the change.`
-                : `Not admitted. Nothing is listed or ingested until a person other than ${whoName(c.rule.by)} admits the rule.`}
+                  ? `Admitted by ${whoName(c.admission.by)} ${ago(c.admission.at)}${c.admission.note ? `: “${c.admission.note}”` : ""}.`
+                  : `Changed since admitted; a person other than ${whoName(c.rule.by)} must admit it.`
+                : `Not admitted; a person other than ${whoName(c.rule.by)} must admit the rule.`}
             </p>
             <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-md border border-line bg-canvas px-3 py-2 text-[11px]">
               <span className="text-faint">
@@ -2005,7 +1987,7 @@ function ConnectorObjects({ id, refresh, onDocument }: { id: string; refresh: un
   }, [id, key]);
   if (failed) return <Failure what="The objects could not be read" message={failed} />;
   if (!data) return <p className="text-[11.5px] text-faint">Reading the objects…</p>;
-  if (data.objects.length === 0) return <p className="text-[11.5px] text-faint">The connector has seen no object yet: nothing is listed until it is synced.</p>;
+  if (data.objects.length === 0) return <p className="text-[11.5px] text-faint">No object seen yet.</p>;
   return (
     <div className="max-h-[420px] overflow-auto rounded-md border border-line">
       <table className="w-full min-w-[860px] border-collapse text-left">
@@ -2034,7 +2016,7 @@ function ConnectorObjects({ id, refresh, onDocument }: { id: string; refresh: un
                 {o.provenance && (
                   <span className="block text-faint">
                     Generation {o.provenance.generation}
-                    {o.provenance.md5_hash ? ` (MD5 ${o.provenance.md5_hash})` : ""}, admitted under rule {o.provenance.rule_digest.slice(0, 12)} as admitted by {whoName(o.provenance.admitted_by)} {ago(o.provenance.admitted_at)}; ingested {ago(o.provenance.ingested_at)}.
+                    {o.provenance.md5_hash ? ` · MD5 ${o.provenance.md5_hash}` : ""} · rule {o.provenance.rule_digest.slice(0, 12)} · admitted by {whoName(o.provenance.admitted_by)} {ago(o.provenance.admitted_at)} · ingested {ago(o.provenance.ingested_at)}
                   </span>
                 )}
               </td>
@@ -2086,10 +2068,10 @@ function ConnectorDialog({ connector, namespace, accepts, onClose, onDone }: { c
     try {
       if (connector) {
         await connectorCall(`/api/knowledge/connectors/${connector.id}`, { method: "PATCH", body: JSON.stringify(body) });
-        onDone(`${body.name}: the change is saved. Nothing new is ingested until a person other than you admits it.`);
+        onDone(`${body.name}: saved; another person must admit the change.`);
       } else {
         const d = await connectorCall<{ connector: Connector }>("/api/knowledge/connectors", { method: "POST", body: JSON.stringify(body) });
-        onDone(`${d.connector.name} was registered for the "${namespace}" corpus as ${d.connector.id}. It lists and ingests nothing until a person other than you admits its rule.`);
+        onDone(`${d.connector.name} was registered as ${d.connector.id}; another person must admit its rule.`);
       }
     } catch (e) {
       setError((e as Error).message);
@@ -2101,7 +2083,7 @@ function ConnectorDialog({ connector, namespace, accepts, onClose, onDone }: { c
   return (
     <Frame
       title={connector ? `Change the rule of ${connector.name}` : "Register a connector"}
-      subtitle={connector ? "A changed rule stops ingestion until another person admits it." : "Every document under a bucket and prefix, read with this service's own Google identity. Another person admits its rule before anything is read."}
+      subtitle={connector ? "A changed rule stops ingestion until another person admits it." : "Another person admits the rule before anything is read."}
       locked={busy}
       onClose={onClose}
       footer={
@@ -2122,7 +2104,7 @@ function ConnectorDialog({ connector, namespace, accepts, onClose, onDone }: { c
           <Field label="Bucket" hint="The Cloud Storage bucket's name, without gs://.">
             <Input value={bucket} onChange={setBucket} disabled={busy} mono autoComplete="off" />
           </Field>
-          <Field label="Prefix" hint="Only objects whose names begin with this are read. Empty: the whole bucket.">
+          <Field label="Prefix" hint="Empty reads the whole bucket.">
             <Input value={prefix} onChange={setPrefix} disabled={busy} mono autoComplete="off" />
           </Field>
         </div>
@@ -2131,7 +2113,7 @@ function ConnectorDialog({ connector, namespace, accepts, onClose, onDone }: { c
           <ClassChips value={cls} onChange={setCls} disabled={busy} labelledBy="connector-class-label" />
           <span className="text-[11.5px] text-faint">Every document the connector ingests carries this class.</span>
         </div>
-        <Field label="Entitled" hint="Names a caller must hold one of, separated by commas (an agent's id, for example). Empty: the class alone decides.">
+        <Field label="Entitled" hint="Names a caller must hold one of, separated by commas.">
           <Input value={entitled} onChange={setEntitled} disabled={busy} autoComplete="off" />
         </Field>
         <div className="flex flex-col gap-1.5">
@@ -2152,9 +2134,9 @@ function ConnectorDialog({ connector, namespace, accepts, onClose, onDone }: { c
               </button>
             ))}
           </div>
-          <span className="text-[11.5px] text-faint">An object of any other type is recorded as refused, with the reason.</span>
+          <span className="text-[11.5px] text-faint">Other types are refused.</span>
         </div>
-        <Field label="Size cap (MB)" hint={`An object larger than this is recorded as refused. At most ${bytesText(most)}, the largest document this deployment accepts.`} error={badSize ? `Give a size from 1 byte to ${bytesText(most)}.` : undefined}>
+        <Field label="Size cap (MB)" hint={`Larger objects are refused; at most ${bytesText(most)}.`} error={badSize ? `Give a size from 1 byte to ${bytesText(most)}.` : undefined}>
           <Input value={megabytes} onChange={setMegabytes} disabled={busy} type="number" autoComplete="off" />
         </Field>
         {error && <p role="alert" className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">{error}</p>}
@@ -2177,7 +2159,7 @@ function AdmitConnectorDialog({ connector, onClose, onDone }: { connector: Conne
         body: JSON.stringify({ digest: connector.rule.digest, note: note.trim() }),
       });
       const reclassed = d.admitted.sources_reclassed;
-      onDone(`The rule of ${connector.name} is admitted in your name.${reclassed ? ` ${reclassed} document source${reclassed === 1 ? "" : "s"} it already feeds now carr${reclassed === 1 ? "ies" : "y"} its class and entitlement.` : ""} The clock syncs it within a minute, or sync it now.`);
+      onDone(`The rule of ${connector.name} is admitted${reclassed ? `; ${reclassed} source${reclassed === 1 ? "" : "s"} reclassed` : ""}.`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -2187,12 +2169,12 @@ function AdmitConnectorDialog({ connector, onClose, onDone }: { connector: Conne
   return (
     <Frame
       title={`Admit the rule of ${connector.name}`}
-      subtitle="Every object read under this rule is admitted in your name, straight into retrieval, without a person reviewing each one."
+      subtitle="Every object it reads is admitted in your name, unreviewed."
       locked={busy}
       onClose={onClose}
       footer={
         <>
-          <span className="min-w-0 grow text-[11.5px] leading-[1.5] text-faint">You admit exactly the rule shown, by its digest.</span>
+          <span className="grow" />
           <Button size="sm" variant="solid" tone="err" disabled={busy} onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="solid" tone="ok" permission="configure" loading={busy} onClick={admit}>Admit rule</Button>
         </>

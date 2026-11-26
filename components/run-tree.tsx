@@ -233,7 +233,7 @@ export function KillReceiptView({ receipt, onDismiss }: { receipt: KillReceipt; 
       </div>
       {receipt.already.length > 0 && (
         <div className="flex flex-col border-t border-line">
-          <span className="px-4 pt-1.5 text-[10.5px] text-faint">Already stopping on an earlier kill, not sent another</span>
+          <span className="px-4 pt-1.5 text-[10.5px] text-faint">Already stopping on an earlier kill</span>
           <ul className="max-h-[120px] overflow-y-auto">
             {receipt.already.map((r) => (
               <ReachedRow key={`already:${r.kind}:${r.run}`} r={r} />
@@ -296,11 +296,11 @@ export function RunTreeBody({ tree, footer }: { tree: RunTree; footer?: React.Re
       <div className="min-w-0 bg-surface">
         {tree.asked !== tree.root && (
           <p className="border-b border-line px-4 py-1.5 text-[11px] text-faint">
-            This run is part of a larger tree: the orchestrator is{" "}
+            Orchestrator:{" "}
             <Link href={`/runs?id=${encodeURIComponent(tree.root)}`} className="focusable rounded-sm font-mono text-[10.5px] text-dim hover:underline">
               {root?.agent ? `${root.agent} · ${tree.root}` : tree.root}
             </Link>
-            {asked ? ` (this one sits ${asked.depth} level${asked.depth === 1 ? "" : "s"} below it).` : "."}
+            {asked ? ` · this run is ${asked.depth} level${asked.depth === 1 ? "" : "s"} below` : ""}
           </p>
         )}
         {rows.map((r) => (
@@ -309,8 +309,8 @@ export function RunTreeBody({ tree, footer }: { tree: RunTree; footer?: React.Re
         {tree.truncated && <p className="px-4 py-1.5 text-[11px] text-warn">The tree has more than {tree.count} nodes; the rest are left out.</p>}
       </div>
       <div className="flex min-w-0 flex-col bg-surface">
-        <div className="flex flex-col gap-0.5 border-b border-line px-4 py-2" title={tree.how || undefined}>
-          <span className="text-[11px] font-semibold text-dim">Rolled up to the orchestrator{tree.how ? " · as the runs list shows them" : ""}</span>
+        <div className="flex flex-col gap-0.5 border-b border-line px-4 py-2">
+          <span className="text-[11px] font-semibold text-dim">Rolled up to the orchestrator</span>
           <span className="tnum font-mono text-[11px] text-fg">{figuresLine(tree.rollup)}</span>
           <span className={`text-[11px] ${tree.rollup.refusals ? "text-err" : "text-faint"}`}>{refusalLine(tree)}</span>
         </div>
@@ -364,7 +364,7 @@ export function RunTreePanel({ runId, live }: { runId?: string; live: boolean })
       {killAsk && tree && (
         <KillDialog
           title={tree.asked === tree.root ? "Kill what is still running in this tree?" : "Kill this run and what it set off?"}
-          what={`${moving.length} node${moving.length === 1 ? " is" : "s are"} still in flight under ${tree.asked}. The kill reaches every run below it in the tree, running, waiting for a sub-run, waiting at a gate or still queued: each is stopped before its next model or tool call. Tasks handed to peers are not reached (peer tasks are not built).`}
+          what={`${moving.length} node${moving.length === 1 ? " is" : "s are"} still in flight under ${tree.asked}. Each stops before its next model or tool call.`}
           confirm="Kill the tree"
           onClose={() => setKillAsk(false)}
           onConfirm={(reason) => {

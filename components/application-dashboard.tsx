@@ -63,9 +63,6 @@ const controlLabel = (key: string) => {
   return c ? `${c.id} ${c.title}` : key;
 };
 
-/** What the register says of a RAG app's knowledge stores (`not_built_says.retrieval`, agentfactory/applications/register.py). */
-const RETRIEVAL_NOT_BUILT = "nothing retrieves from them through this service yet";
-
 export function ApplicationDashboard({ id }: { id: string }) {
   const [now] = useState(() => Date.now());
   const [app, setApp] = useState<Application | null | undefined>(undefined);
@@ -190,22 +187,22 @@ export function ApplicationDashboard({ id }: { id: string }) {
     if (drill.kind === "kpi") {
       switch (drill.which) {
         case "volume":
-          return { title: "Conversations", subtitle: `${metrics?.completions ?? 0} calls over ${win} from ${metrics?.principals ?? 0} principals. Calls that named no conversation are counted in the figure and are in no row below.`, rows: all };
+          return { title: "Conversations", subtitle: `${metrics?.completions ?? 0} calls over ${win} from ${metrics?.principals ?? 0} principals.`, rows: all };
         case "cost":
-          return { title: "Cost by conversation", subtitle: `The sum over calls whose model had a price set${metrics?.unpriced ? `; ${metrics.unpriced} answered call${metrics.unpriced === 1 ? "" : "s"} had no price set and are in no sum` : ""}.`, rows: [...all].sort((a, b) => (b.cost ?? -1) - (a.cost ?? -1)) };
+          return { title: "Cost by conversation", subtitle: `Highest first${metrics?.unpriced ? ` · ${metrics.unpriced} with no price set` : ""}.`, rows: [...all].sort((a, b) => (b.cost ?? -1) - (a.cost ?? -1)) };
         case "p50":
         case "p95":
-          return { title: "Latency", subtitle: `The model call's latency over the calls a model answered: p50 ${ms(metrics?.latency.p50 ?? null)}, p95 ${ms(metrics?.latency.p95 ?? null)}. The conversations, most recent first.`, rows: all };
+          return { title: "Latency", subtitle: `p50 ${ms(metrics?.latency.p50 ?? null)}, p95 ${ms(metrics?.latency.p95 ?? null)} over answered calls.`, rows: all };
         case "refusals":
           return { title: "Refused", subtitle: "Conversations in which at least one call was refused.", rows: all.filter((c) => c.refusals > 0) };
         case "screened":
-          return { title: "Screened", subtitle: `${metrics?.blocked ?? 0} refused by screening and ${metrics?.flagged ?? 0} let through with a flag over ${win}. Open a conversation to see the turn the screener matched.`, rows: all };
+          return { title: "Screened", subtitle: `${metrics?.blocked ?? 0} refused and ${metrics?.flagged ?? 0} flagged over ${win}.`, rows: all };
       }
     }
     if (drill.kind === "control") {
-      return { title: controlLabel(drill.control), subtitle: `${metrics?.screened[drill.control] ?? 0} hits over ${win}. Open a conversation to see the turn the control matched.`, rows: all };
+      return { title: controlLabel(drill.control), subtitle: `${metrics?.screened[drill.control] ?? 0} hits over ${win}.`, rows: all };
     }
-    if (drill.kind === "reason") return { title: `Refused: ${outcomeWords(drill.reason)}`, subtitle: `${metrics?.refusals_by_reason[drill.reason] ?? 0} refusals over ${win}. Conversations with at least one refusal.`, rows: all.filter((x) => x.refusals > 0) };
+    if (drill.kind === "reason") return { title: `Refused: ${outcomeWords(drill.reason)}`, subtitle: `${metrics?.refusals_by_reason[drill.reason] ?? 0} refusals over ${win}.`, rows: all.filter((x) => x.refusals > 0) };
     return { title: drill.model, subtitle: `${metrics?.models.find((m) => m.model === drill.model)?.completions ?? 0} calls over ${win}.`, rows: all.filter((x) => x.models.includes(drill.model)) };
   }, [drill, convs, metrics, win]);
 
@@ -238,7 +235,7 @@ export function ApplicationDashboard({ id }: { id: string }) {
       <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7" data-hue="blue">
         <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-line-strong px-6 py-12 text-center">
           <span className="text-[14px] font-medium">{app.name} is a deployed agent</span>
-          <span className="max-w-[56ch] text-[12.5px] leading-[1.55] text-dim">Its model calls are runs, read on the Runs page, and its spend is on the Costs page. The register journals no completions for an agent.</span>
+          <span className="max-w-[56ch] text-[12.5px] leading-[1.55] text-dim">Its calls are on the Runs and Costs pages.</span>
           <span className="flex gap-2">
             <Button variant="solid" tone="ink" size="sm" href={agentHref(app.id)}>Open the agent</Button>
             <Button variant="solid" tone="neutral" size="sm" href="/applications">Back to the register</Button>
@@ -251,7 +248,7 @@ export function ApplicationDashboard({ id }: { id: string }) {
   const removed = Boolean(app.removed_at);
   const tiles: { id: Extract<Drill, { kind: "kpi" }>["which"]; label: string; value: string; sub: string; tone?: "warn" | "err" | "run" }[] = [
     { id: "volume", label: "Calls", value: metrics ? metrics.completions.toLocaleString("en-GB") : "…", sub: metrics ? `${metrics.answered} answered · ${metrics.conversations} conversations · ${metrics.principals} principals` : "" },
-    { id: "cost", label: "Cost", value: metrics ? (metrics.cost === null ? "no price set" : money(metrics.cost)) : "…", sub: metrics ? `${tokens(metrics.tokens.in + metrics.tokens.out)} tokens${metrics.unpriced ? ` · ${metrics.unpriced} with no price set, not in it` : ""}` : "", tone: metrics?.unpriced ? "warn" : undefined },
+    { id: "cost", label: "Cost", value: metrics ? (metrics.cost === null ? "no price set" : money(metrics.cost)) : "…", sub: metrics ? `${tokens(metrics.tokens.in + metrics.tokens.out)} tokens${metrics.unpriced ? ` · ${metrics.unpriced} with no price set` : ""}` : "", tone: metrics?.unpriced ? "warn" : undefined },
     { id: "p50", label: "Latency p50", value: metrics ? ms(metrics.latency.p50) : "…", sub: "the model call, answered calls" },
     { id: "p95", label: "Latency p95", value: metrics ? ms(metrics.latency.p95) : "…", sub: "the slow tail" },
     { id: "refusals", label: "Refusals", value: metrics ? metrics.refusals.toLocaleString("en-GB") : "…", sub: reasons.length ? reasons.map(([r, n]) => `${outcomeWords(r)} ${n}`).slice(0, 2).join(" · ") : "none in the window", tone: metrics?.refusals ? "err" : undefined },
@@ -281,19 +278,19 @@ export function ApplicationDashboard({ id }: { id: string }) {
             </p>
             {app.class === "rag" && (
               <p className="max-w-[86ch] text-[12px] leading-[1.55] text-faint">
-                Knowledge stores {app.policy.knowledge_stores.join(", ")}: recorded, and {RETRIEVAL_NOT_BUILT}. The application calls the gateway with its own instructions.
+                Knowledge stores {app.policy.knowledge_stores.join(", ")} · retrieval not built
               </p>
             )}
             {app.class === "chatbot" && !removed && <AnswerSetting app={app} onChanged={setApp} />}
             {removed && (
               <p className="text-[12px] leading-[1.55] text-faint">
                 Removed {when(app.removed_at ?? "")}
-                {app.removed_by ? ` by ${app.removed_by}` : ""}; its key is revoked. Its calls and conversations stay on the record.
+                {app.removed_by ? ` by ${app.removed_by}` : ""}; key revoked.
               </p>
             )}
             {!removed && app.blocked && app.block && (
               <p className="text-[12px] leading-[1.55] text-err">
-                Blocked by {app.block.by || "someone not recorded"} {app.block.at ? `on ${when(app.block.at)}` : ""}: {app.block.reason || "no reason was given"}. The gateway refuses every call.
+                Blocked by {app.block.by || "someone not recorded"} {app.block.at ? `on ${when(app.block.at)}` : ""}: {app.block.reason || "no reason was given"}.
               </p>
             )}
           </div>
@@ -350,7 +347,7 @@ export function ApplicationDashboard({ id }: { id: string }) {
           <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
             <div className="flex w-full items-start gap-3 border-b border-line bg-raise/55 px-4 py-2.5">
               <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Screened hits by control</span>
-              <span className="text-[11px] leading-[1.55] text-faint">what the screener matched on prompts and replies, and the leak check · click a control</span>
+              <span className="text-[11px] leading-[1.55] text-faint">screener matches on prompts and replies · click a control</span>
             </div>
             <div className="p-4">
               {!metrics && <Skeleton lines={3} />}
@@ -416,13 +413,11 @@ export function ApplicationDashboard({ id }: { id: string }) {
           <div className="flex w-full items-start gap-3 border-b border-line bg-raise/55 px-4 py-2.5">
             <span className="text-[12.5px] font-semibold tracking-[-0.005em]">Conversations</span>
             <span className="text-[11px] leading-[1.55] text-faint">
-              {convs ? `${convs.length} last active within ${win} · a person's chat from the console, or a conversation the application named (X-Conversation-Id) · open one to replay it, masked` : "reading…"}
+              {convs ? `${convs.length} last active within ${win} · open one to replay it, masked` : "reading…"}
             </span>
           </div>
           <ConversationTable rows={convs ?? []} loaded={Boolean(convs)} failed={convError} opening={opening} onOpen={openConversation} />
         </section>
-
-        <p className="pb-2 text-[10.5px] text-ghost">{metrics?.basis || "figures are counted from the completions the gateway journalled"}</p>
       </div>
 
       {drill && (
@@ -440,7 +435,7 @@ export function ApplicationDashboard({ id }: { id: string }) {
       {open && (
         <DrillModal
           title={`Conversation ${open.conversation.id}`}
-          subtitle={`${open.conversation.kept ? `${open.conversation.principal || "a person not recorded"}'s chat from the console` : `named by the application${open.conversation.principal ? `, end user ${open.conversation.principal}` : ""}`} · started ${when(open.conversation.started)} · ${open.conversation.completions} calls · secrets and personal data masked as journalled`}
+          subtitle={`${open.conversation.kept ? `${open.conversation.principal || "a person not recorded"}'s chat from the console` : `named by the application${open.conversation.principal ? `, end user ${open.conversation.principal}` : ""}`} · started ${when(open.conversation.started)} · ${open.conversation.completions} calls · masked`}
           onClose={() => setOpen(null)}
           actions={
             <span className="flex items-center gap-2">
@@ -481,7 +476,7 @@ export function ApplicationDashboard({ id }: { id: string }) {
       {removing && (
         <DrillModal
           title={`Remove ${app.name}?`}
-          subtitle="It leaves the register and its key is revoked at once: the gateway refuses every call that carries it. Its calls, conversations and prompt versions stay on the record."
+          subtitle="Its key is revoked at once; its records stay."
           onClose={() => !busy && setRemoving(false)}
         >
           <div className="flex justify-end gap-2 p-4">

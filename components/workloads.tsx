@@ -83,7 +83,7 @@ function WorkloadCard({ profile, reading }: { profile: WorkloadProfile; reading:
           <Column title="A person decides" items={decides} empty={gates.from === "door" ? "No gate is listed." : "Not named by the control plane."} />
           <Column title="What comes out" items={profile.produces} empty="Not described for this workload." />
         </div>
-        <p className="text-[10.5px] leading-[1.5] text-faint">As specified for the workload&rsquo;s own console, not what this deployment runs.</p>
+        <p className="text-[10.5px] leading-[1.5] text-faint">As specified, not as deployed.</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line px-4 py-3">
@@ -99,9 +99,7 @@ function WorkloadCard({ profile, reading }: { profile: WorkloadProfile; reading:
               {linksError ? <span className="text-err"> The console addresses could not be read: {linksError}</span> : null}
             </span>
           ) : linksError ? (
-            <span className="text-err">The console addresses could not be read, so whether this workload&rsquo;s console is live is not known: {linksError}</span>
-          ) : links && !url ? (
-            "A run is set up in this workload's own console, which is not live yet."
+            <span className="text-err">The console addresses could not be read: {linksError}</span>
           ) : (
             reading.short
           )}
@@ -125,10 +123,7 @@ function Index({ answer, reload }: { answer: Answer<WorkloadList> | null; reload
   const others = otherOffers(answer);
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7" data-hue="blue">
-      <PageHeader title="Workloads">
-        The four security workloads this console is built for. Each card describes one workload&rsquo;s own console, a separate product: what a person hands over, where a person decides and what comes out, as specified,
-        not what this deployment runs. Whether this deployment offers each one is read from the platform and shown on its card.
-      </PageHeader>
+      <PageHeader title="Workloads">The four security workloads, and whether this deployment offers each.</PageHeader>
 
       {answer?.state === "error" && (
         <Banner
@@ -155,11 +150,7 @@ function Index({ answer, reload }: { answer: Answer<WorkloadList> | null; reload
         })}
       </div>
 
-      {answer?.state === "pending" && (
-        <NotConnected door={answer.door}>
-          Which deployed agent runs each workload, whether it is available, and the inputs and gates it takes. Until this answers, the cards above describe each workload and none can be started.
-        </NotConnected>
-      )}
+      {answer?.state === "pending" && <NotConnected door={answer.door} />}
 
       <UseCases workloads={answer} calm={answer?.state === "pending"} />
     </div>
@@ -211,7 +202,7 @@ function One({ id, answer, reload }: { id: string; answer: Answer<WorkloadList> 
       {unknown ? (
         <EmptyState
           title="No such workload"
-          detail={`Nothing called "${id}" is among the workloads this console controls${answer?.state === "ok" ? ", and the control plane does not list it" : ""}.`}
+          detail={`Nothing called "${id}" is listed.`}
           action={
             <Button size="sm" variant="solid" tone="neutral" href="/workloads">
               Back to Workloads
@@ -253,7 +244,7 @@ function One({ id, answer, reload }: { id: string; answer: Answer<WorkloadList> 
 
           {tab === "setup" && <WorkloadSetup profile={profile} reading={reading} values={values} onValue={onValue} step={step} run={run} />}
           {tab === "findings" && <WorkloadFindings profile={profile} selected={finding} />}
-          {tab === "report" && <WorkloadReport profile={profile} reading={reading} />}
+          {tab === "report" && <WorkloadReport reading={reading} />}
           {tab === "acceptance" && <WorkloadAcceptance profile={profile} />}
         </>
       )}

@@ -87,8 +87,8 @@ export function KillDialog({
           </div>
           <Field
             label="Reason"
-            error={missing ? "A kill needs a reason; it goes into the run's journal with your name." : undefined}
-            hint={missing ? undefined : "Written into the journal with your name, on the kill entry."}
+            error={missing ? "A kill needs a reason." : undefined}
+            hint={missing ? undefined : "Recorded in the run's journal with your name."}
           >
             <Textarea
               rows={2}

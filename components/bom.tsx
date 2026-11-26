@@ -318,11 +318,11 @@ export function BomView({ bom, extra }: { bom: AiBom; extra?: BomExtra }) {
           ) : (
             <p className="text-[11.5px] text-faint">Its runs started no run of another agent.</p>
           )}
-          {extra.not_built.length > 0 && (
-            <p className="text-[11px] text-faint">
-              Not built, as the platform answers: {extra.not_built.map((n) => ({ "sub_agents.declared": "a sub-agent a definition declares", cyclonedx: "the CycloneDX export" })[n] ?? n).join(", ")}.
+          {extra.not_built.map((n) => (
+            <p key={n} className="text-[11px] text-faint">
+              {({ "sub_agents.declared": "Declared sub-agents", cyclonedx: "CycloneDX export" } as Record<string, string>)[n] ?? n}: Not built
             </p>
-          )}
+          ))}
         </Section>
       )}
 
@@ -390,7 +390,7 @@ function BomPage() {
     return (
       <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
         <ChooseAgentHeader title="Bill of materials">
-          Choose an agent to read what it is made of: its models and routes, its tools with their data classes and the servers behind them, the knowledge and datasets it reaches, and the digest of each.
+          Choose an agent to read what it is made of.
         </ChooseAgentHeader>
         {agentsDown ? (
           <Failure what="The agents could not be read" message={agentsDown} />
@@ -415,7 +415,7 @@ function BomPage() {
         id={agent}
         agent={agents?.find((a) => a.id === agent) ?? null}
       >
-        What this agent is made of: its models and routes, its tools with their data classes and the servers behind them, the knowledge and datasets it reaches, and the digest of each.
+        Models, tools, servers, knowledge and digests.
       </AgentHeader>
       {(
         <>

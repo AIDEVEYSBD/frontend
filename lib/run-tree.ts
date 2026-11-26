@@ -228,15 +228,15 @@ export function treeSummary(tree: RunTree): string {
 
 /** How the kill reached a run, in the reader's words. */
 export const DELIVERY_TEXT: Record<string, string> = {
-  settled: "stopped at once: no worker held it, so the platform settled it as killed",
-  "in-process": "stopped at once, as it was waiting for a person",
-  "shared-cancel": "an in-process sub-run, stopped with the run it runs in",
-  worker: "a worker's run: the worker stops it at its next model call, step or node",
-  sdk: "an attached agent's run: its SDK takes the kill on its next control poll",
-  queue: "a queued child job: dead-lettered, so it never starts",
+  settled: "stopped at once (no worker held it)",
+  "in-process": "stopped at once (waiting for a person)",
+  "shared-cancel": "stopped with its parent run",
+  worker: "its worker stops it at the next step",
+  sdk: "its SDK takes the kill on its next poll",
+  queue: "dead-lettered, never starts",
   // The second round's peer tasks: a signed tasks/cancel, as the agent that sent the task, at the registry's URL.
-  a2a: "a peer's task: cancelled over A2A, and the peer answered",
-  "a2a-refused": "a peer's task: the cancel could not be delivered, or the peer said no",
+  a2a: "cancelled over A2A; the peer answered",
+  "a2a-refused": "cancel not delivered, or the peer said no",
 };
 
 export const deliveryText = (d: string): string => DELIVERY_TEXT[d] ?? `delivered: ${d || "unknown"}`;
@@ -330,7 +330,7 @@ export function alreadySummary(refusal: KillRefusal): string {
   const subs = refusal.already.length - runs.length;
   const n = runs.length;
   const what = `${n} run${n === 1 ? "" : "s"}${subs ? ` and ${subs} sub-run${subs === 1 ? "" : "s"}` : ""}`;
-  return `Already being stopped: an earlier kill ${earlierKills(refusal.already)} reached ${what} in this tree, still stopping at their next checkpoint. Nothing new to reach, so nothing was sent again.`;
+  return `An earlier kill ${earlierKills(refusal.already)} is stopping ${what}; nothing sent again.`;
 }
 
 /** The reached runs grouped by how the kill reached them, in a stable order. */
@@ -370,12 +370,12 @@ export function killSummary(receipt: KillReceipt): string {
   const rest = parts.join(", ");
   const by = receipt.kill.by ? ` by ${receipt.kill.by}` : "";
   const stopping = recordsOf(receipt.already).length;
-  const already = receipt.already.length ? ` ${stopping || receipt.already.length} more ${(stopping || receipt.already.length) === 1 ? "is" : "are"} already stopping on an earlier kill ${earlierKills(receipt.already)}, and ${(stopping || receipt.already.length) === 1 ? "was" : "were"} not sent another.` : "";
+  const already = receipt.already.length ? ` ${stopping || receipt.already.length} more already stopping on an earlier kill ${earlierKills(receipt.already)}.` : "";
   if (receipt.delivery === "tree") {
     const self = receipt.already.some((r) => r.run === receipt.run);
-    const head = self ? `The run is already stopping on an earlier kill; this kill${by} reached what that kill had not` : `The run itself had already ended (${receipt.state || "settled"}); the kill${by} reached what it set off`;
+    const head = self ? `Already stopping; this kill${by} reached the rest` : `Run already ${receipt.state || "settled"}; the kill${by} reached what it set off`;
     return `${head}${rest ? `: ${rest}` : ""}.${already}`;
   }
-  const own = receipt.delivery === "settled" ? "was stopped at once: no worker held it, so the platform settled it as killed" : receipt.delivery === "in-process" ? "stopped at once, as it was waiting for a person" : receipt.delivery === "worker" ? "is stopped by its worker at its next model call, step or node" : "is stopped on its SDK's next control poll";
-  return `Kill requested${by}: the run ${own}${rest ? `; ${rest}` : ""}. Child runs it started are not stopped.${already}`;
+  const own = receipt.delivery === "settled" || receipt.delivery === "in-process" ? "stopped at once" : receipt.delivery === "worker" ? "stops at its next step" : "stops on its SDK's next poll";
+  return `Kill requested${by}: the run ${own}${rest ? `; ${rest}` : ""}.${already}`;
 }

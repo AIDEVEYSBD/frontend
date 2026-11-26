@@ -73,7 +73,7 @@ export function ProvenanceDrawer({ entries, entryId, onClose }: { entries: Linea
       {chain.missing.length > 0 && <p className="border-b border-line px-4 py-2 text-[11px] text-err">The chain cites entries this record does not hold: {chain.missing.join(", ")}.</p>}
       {chain.joined > 0 && (
         <p className="border-b border-line px-4 py-2 text-[11px] leading-[1.5] text-faint">
-          {chain.joined} step{chain.joined === 1 ? " is" : "s are"} joined by journal position: this run was recorded before the runtime cited across a resume, or into a run&rsquo;s first step or its end.
+          {chain.joined} step{chain.joined === 1 ? " is" : "s are"} joined by journal position, not cited.
         </p>
       )}
       <ProvenanceChain chain={chain} onFocus={setFocus} />

@@ -446,7 +446,7 @@ export function useReadLimit(win: Win): { limit: number; more: () => void } {
 export function WindowBar({ win, auto, onPick, onReload, loading }: { win: Win; auto: boolean; onPick: (w: Win) => void; onReload: () => void; loading: boolean }) {
   return (
     <span className="flex flex-wrap items-center gap-2">
-      <span className="text-[11px] text-faint">{auto ? `Window: ${windowWords(win)}, the narrowest with a run in it` : "Window"}</span>
+      <span className="text-[11px] text-faint">{auto ? `Window: ${windowWords(win)}` : "Window"}</span>
       <WindowPick value={win} onChange={onPick} inherited={auto} />
       <Button size="sm" variant="solid" tone="neutral" loading={loading} onClick={onReload}>
         Read again
@@ -536,8 +536,8 @@ export function ReadNote({ read, total, pending, failed, win, onMore }: { read: 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-line bg-surface px-3 py-2">
       <span className="min-w-0 grow text-[11.5px] leading-[1.5] text-faint">
-        Journals read for <span className="tnum font-medium text-fg">{count(read)}</span> of <span className="tnum font-medium text-fg">{count(total)}</span> run{total === 1 ? "" : "s"} in {windowWords(win)}, newest first, {RUN_BATCH} at a
-        time.{pending > 0 ? ` Reading ${count(pending)} more…` : ""}
+        Journals read for <span className="tnum font-medium text-fg">{count(read)}</span> of <span className="tnum font-medium text-fg">{count(total)}</span> run{total === 1 ? "" : "s"} in {windowWords(win)}
+        {pending > 0 ? `; reading ${count(pending)} more…` : "."}
         {failed.length > 0 && (
           <span className="text-err">
             {" "}

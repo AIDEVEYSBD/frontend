@@ -66,11 +66,11 @@ export const SOURCE_META: Record<
   },
   images: {
     label: "Images",
-    blurb: "Pictures, found via sidecar text or filename — never a caption invented at search time. Fetch returns the actual image.",
+    blurb: "Pictures, found by sidecar text or filename. Fetch returns the actual image.",
   },
   tool: {
     label: "External tool",
-    blurb: "Somebody else's search API: map three field names and it ranks alongside everything else.",
+    blurb: "Another service's search API, mapped by three field names.",
   },
 };
 

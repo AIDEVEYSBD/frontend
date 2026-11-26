@@ -23,8 +23,8 @@ import type { Dataset } from "@/lib/api/pending";
 const range = (v: InputValue): DateRange => (v && typeof v === "object" ? v : { from: "", to: "" });
 const text = (v: InputValue): string => (typeof v === "string" ? v : "");
 
-const need = (i: WorkloadInput): string => (i.required ? "Required." : "Optional.");
-const hint = (i: WorkloadInput, extra = ""): string => [need(i), extra, i.help ? (/[.!?]$/.test(i.help.trim()) ? i.help.trim() : `${i.help.trim()}.`) : ""].filter(Boolean).join(" ");
+const need = (i: WorkloadInput): string => (i.required ? "Required" : "Optional");
+const hint = (i: WorkloadInput, extra = ""): string => [need(i), extra, (i.help ?? "").trim().replace(/[.!?]$/, "")].filter(Boolean).join(" · ");
 
 export function InputFields({ inputs, values, onChange, disabled = false }: { inputs: WorkloadInput[]; values: InputValues; onChange: (name: string, v: InputValue) => void; disabled?: boolean }) {
   return (
@@ -33,7 +33,7 @@ export function InputFields({ inputs, values, onChange, disabled = false }: { in
         const v = valueOf(i, values);
         if (i.kind === "dataset") {
           return (
-            <Field key={i.name} label={i.label} hint={hint(i, i.dataset_kind ? `A dataset of the kind "${kindLabel(i.dataset_kind).toLowerCase()}".` : "A dataset of any kind.")}>
+            <Field key={i.name} label={i.label} hint={hint(i, i.dataset_kind ? `${kindLabel(i.dataset_kind)} dataset` : "Any dataset")}>
               <DatasetPicker kind={i.dataset_kind} value={text(v) || null} onChange={(id) => onChange(i.name, id)} disabled={disabled} />
             </Field>
           );
@@ -51,14 +51,14 @@ export function InputFields({ inputs, values, onChange, disabled = false }: { in
                   <Input type="datetime-local" value={r.to} onChange={(to) => onChange(i.name, { ...r, to })} disabled={disabled} />
                 </Field>
               </div>
-              <span className="text-[11.5px] text-faint">{hint(i, "In your local time.")}</span>
+              <span className="text-[11.5px] text-faint">{hint(i, "Local time")}</span>
             </fieldset>
           );
         }
         if (i.kind === "list") {
           const n = listOf(text(v)).length;
           return (
-            <Field key={i.name} label={i.label} hint={hint(i, `One per line${n ? `, ${count(n)} given` : ""}.`)}>
+            <Field key={i.name} label={i.label} hint={hint(i, `One per line${n ? `, ${count(n)} given` : ""}`)}>
               <Textarea value={text(v)} onChange={(t) => onChange(i.name, t)} rows={5} mono disabled={disabled} />
             </Field>
           );

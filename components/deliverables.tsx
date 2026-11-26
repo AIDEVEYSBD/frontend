@@ -136,7 +136,7 @@ export function ReportGateDeliverables({ gate }: { gate: Pick<Gate, "control" | 
       </span>
       <p className="text-[11.5px] leading-[1.55] text-dim">{reportGateNote(gate.deliverables.length, sinkOfAsk(gate.asks))}</p>
       {gate.deliverables.length === 0 ? (
-        <p className="text-[11px] text-faint">The gate names no deliverable; open the run to read what it wrote.</p>
+        <p className="text-[11px] text-faint">No deliverable named; open the run to read what it wrote.</p>
       ) : (
         <ul className="flex flex-col overflow-hidden rounded-md border border-line">
           {gate.deliverables.map((d) => (
@@ -167,7 +167,7 @@ export function DeliverablesListView({ list, selected, onSelect }: { list: Deliv
   if (!list.deliverables.length)
     return list.not_built.includes("producer") ? (
       <p className="text-[12px] text-dim" data-not-built="producer">
-        Nothing produces deliverables yet: the platform names their producer as not built, so this list is empty because no run can write one.
+        Not built
       </p>
     ) : (
       <p className="text-[12px] text-faint">No deliverable matches.</p>
@@ -206,7 +206,6 @@ export function DeliverableDetailView({ deliverable }: { deliverable: Deliverabl
         <Tag>{d.kind}</Tag>
         <Mono className="text-[10.5px] text-faint">{d.id}</Mono>
       </div>
-      <p className="text-[11.5px] text-faint">{deliverableStateMeta(d.state).means}.</p>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-dim">
         <span>{deliverableLine(d)}</span>
         {d.digest && <DigestChip digest={d.digest} label="Digest as written" />}
@@ -243,7 +242,7 @@ export function DeliverableDetailView({ deliverable }: { deliverable: Deliverabl
         </ol>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <span className={`text-[11.5px] ${d.file.available ? "text-dim" : "text-warn"}`}>{fileLine(d.file)}</span>
+        {!d.file.available && <span className="text-[11.5px] text-warn">{fileLine(d.file)}</span>}
         <span className="grow" />
         {d.file.available && <DeliverableDownload id={d.id} download={d.download} />}
       </div>
@@ -253,7 +252,7 @@ export function DeliverableDetailView({ deliverable }: { deliverable: Deliverabl
 
 /** The registers a records backend wrote to. Presentational. */
 export function RegistersView({ list, selected, onSelect }: { list: RegisterList; selected?: string | null; onSelect?: (name: string) => void }) {
-  if (!list.registers.length) return <p className="text-[12px] text-faint">No register is on record. A run whose records backend writes a row registers it as an item of its register.</p>;
+  if (!list.registers.length) return <p className="text-[12px] text-faint">No register is on record.</p>;
   return (
     <ul className="flex flex-col overflow-hidden rounded-md border border-line">
       {list.registers.map((r) => (
@@ -417,9 +416,7 @@ function DeliverablesPage() {
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-5 px-5 py-7" data-hue="violet">
       <GroupHeader group="results" tab="deliverables">
-        The documents runs write, each with its state (draft, reviewed, published or withdrawn), its history and its file, and the registers a records backend wrote to. A run writes a document through
-        the document.write tool, as a draft. Before a tool that acts outside the platform fires in that run, a report gate asks a person to review what it wrote: approving reviews it, refusing withdraws it,
-        and the tool then fires and publishes it.
+        What runs write: documents and register items, with their state.
       </GroupHeader>
       {error && (
         <Banner tone="err" title="Could not read the deliverables">
@@ -427,7 +424,7 @@ function DeliverablesPage() {
         </Banner>
       )}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
-        <Section title="Deliverables" meta={list && !listOff ? (list.count === 0 && list.not_built.includes("producer") ? "not built: nothing produces one" : `${list.count} · ${statesLine(list.states)}`) : undefined}>
+        <Section title="Deliverables" meta={list && !listOff ? (list.count === 0 && list.not_built.includes("producer") ? "Not built" : `${list.count} · ${statesLine(list.states)}`) : undefined}>
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex flex-col gap-1">
               <span className="text-[11px] text-faint">State</span>
@@ -437,7 +434,7 @@ function DeliverablesPage() {
               </span>
             </div>
             <div className="w-56">
-              <Field label="Agent" error={agentsError ? `the agents could not be read, so none can be picked: ${agentsError}` : undefined}>
+              <Field label="Agent" error={agentsError ? `the agents could not be read: ${agentsError}` : undefined}>
                 <Pick value={agent} onChange={(v) => go({ agent: v || null, id: null })} options={[{ value: "", label: "Every agent" }, ...agents.map((a) => ({ value: a.id, label: a.id }))]} />
               </Field>
             </div>
@@ -463,7 +460,7 @@ function DeliverablesPage() {
           {registersOff ? <Failure what="The registers could not be read" message={registersFailed} /> : registers ? <RegistersView list={registers} selected={register} onSelect={(name) => go({ register: name })} /> : <p className="text-[12px] text-faint">Reading the registers…</p>}
         </Section>
         <Section title={register ? `Register ${register}` : "Register items"} meta={shownItems ? `${shownItems.count} · ${statesLine(shownItems.states)}` : undefined}>
-          {!register && (registersUnbuilt ? <p className="text-[12px] text-faint">Not built: with no list of registers, there is no register to pick.</p> : <p className="text-[12px] text-faint">Pick a register to read its items and their states.</p>)}
+          {!register && (registersUnbuilt ? <p className="text-[12px] text-faint">Not built</p> : <p className="text-[12px] text-faint">Pick a register to read its items and their states.</p>)}
           {register && (
             <span className="flex items-center gap-1">
               {stateButton("", "All", !itemState, () => setItemState(""))}

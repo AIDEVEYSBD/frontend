@@ -179,32 +179,32 @@ function registeredToolOf(v: unknown): RegisteredTool | null {
 
 type TabId = "models" | "tools" | "connections" | "access" | "deployment";
 
-/** The five tabs: the panels each holds, in order, and one sentence on it. The row itself, with each tab's label and address, is in lib/page-groups.ts. */
+/** The five tabs: the panels each holds, in order, and one short line on it. The row itself, with each tab's label and address, is in lib/page-groups.ts. */
 const TABS: { id: TabId; panels: string[]; about: string }[] = [
   {
     id: "models",
     panels: ["vertex", "providers", "models"],
-    about: "The model endpoints this deployment was set up with, and which models teams may pick from; the offered models and their prices are managed here.",
+    about: "Model endpoints, the models teams may pick, and their prices.",
   },
   {
     id: "tools",
     panels: ["registry", "tools", "mcp"],
-    about: "The tool servers registered here, every tool a workflow can be given, and this deployment's own MCP server.",
+    about: "Tool servers, the tools workflows hold, and this deployment's MCP server.",
   },
   {
     id: "connections",
     panels: ["sources", "peers", "agents", "egress"],
-    about: "What the workflows connect to and who this deployment talks to: sources, peers, outside agents and allowed hosts.",
+    about: "Sources, peers, attached agents and allowed hosts.",
   },
   {
     id: "access",
     panels: ["credentials", "ingress", "gates"],
-    about: "The vault's credentials (by name; a value is never shown), the keys that may post work here, and where a person has to sign.",
+    about: "Credentials, API keys, the queue and approval gates.",
   },
   {
     id: "deployment",
     panels: ["deployment", "appearance"],
-    about: "Where this deployment keeps its records, and how the console looks.",
+    about: "Where records are kept, and how the console looks.",
   },
 ];
 
@@ -253,10 +253,10 @@ function hashTarget(): { id: string; panel: string } | null {
  * gives them.
  */
 const PLATFORM_SOURCES: Record<string, { label: string; blurb: string; mode: SourceMode }> = {
-  "dataset.read": { label: "Dataset", blurb: "A file handed over: an uploaded dataset the run's input names", mode: "offline" },
-  "retrieval.search": { label: "Knowledge store", blurb: "The platform's own knowledge store: the documents admitted to it, searched when the run asks", mode: "platform" },
-  "web.fetch": { label: "Web fetch", blurb: "Pages read from the web when the run asks, from the hosts this deployment allows", mode: "live" },
-  "notify.send": { label: "Webhooks", blurb: "Messages sent when the run asks, to the hosts this deployment allows", mode: "live" },
+  "dataset.read": { label: "Dataset", blurb: "An uploaded dataset the run's input names", mode: "offline" },
+  "retrieval.search": { label: "Knowledge store", blurb: "Admitted documents, searched when the run asks", mode: "platform" },
+  "web.fetch": { label: "Web fetch", blurb: "Web pages from allowed hosts, read when the run asks", mode: "live" },
+  "notify.send": { label: "Webhooks", blurb: "Messages to allowed hosts, sent when the run asks", mode: "live" },
 };
 
 /**
@@ -286,9 +286,9 @@ function modeOf(s: { kind?: string; tool?: string; server?: string; settings?: s
   return null;
 }
 const MODE_MEANS: Record<SourceMode, string> = {
-  offline: "A file or folder handed over: read from disk, not from a system.",
+  offline: "A file or folder handed over, read from disk.",
   live: "A connection read when the run asks.",
-  platform: "The platform's own store: documents admitted to it, searched when the run asks.",
+  platform: "The platform's knowledge store.",
 };
 const MODE_LABEL: Record<SourceMode, string> = { offline: "Offline", live: "Live", platform: "Platform store" };
 
@@ -343,7 +343,7 @@ function ConfigurationTabs() {
   // The address MCP clients connect to: beneath the machine origin the session answers, never the console's own.
   const machine = useMachineOrigin();
   const mcpEndpoint = machineAddress(machine, MCP_PATH);
-  const mcpUnreachable = "MCP clients cannot reach the platform's MCP server";
+  const mcpUnreachable = "MCP clients cannot reach it";
   // What the deployment's own Google identity can see on Vertex AI: its panel is drawn only when there is something to show.
   const vertex = useVertex();
 
@@ -594,7 +594,7 @@ function ConfigurationTabs() {
           {TABS.find((t) => t.id === tab)?.about}
         </GroupHeader>
 
-        {failed && <Failure what="The configuration could not be read, so the deployment, connections, tools, gates and ingress show nothing" message={failed} />}
+        {failed && <Failure what="The configuration could not be read" message={failed} />}
 
         {/* ═══════════════════ models ═══════════════════ */}
         {pane(
@@ -606,7 +606,7 @@ function ConfigurationTabs() {
                 id="vertex"
                 {...fold("vertex")}
                 title={TITLES.vertex}
-                caption="What this deployment's own Google identity can see on Vertex AI."
+                caption="Models this deployment's Google identity can see."
                 className="has-[#vertex-body:empty]:hidden"
               >
                 <VertexDetected />
@@ -617,8 +617,7 @@ function ConfigurationTabs() {
               id="providers"
               {...fold("providers")}
               title={TITLES.providers}
-              caption="The endpoints this deployment was set up with. They are set when the platform is deployed, not here."
-              how="A provider is a chat-completions endpoint the platform was deployed with. Its credential comes from the deployment's environment or its Google identity, never from this page. The runtime routes every call to the endpoint its model is served from."
+              caption="Set when the platform is deployed."
             >
               <Providers />
             </Panel>
@@ -627,8 +626,7 @@ function ConfigurationTabs() {
               id="models"
               {...fold("models")}
               title={TITLES.models}
-              caption="What teams may pick from, the tier each sits in, the price cost figures are computed against, the classes of data each may be sent and what its calls fall back to. Every model choice in the console shows exactly this list."
-              how="Tick what this deployment offers, from what its catalogue lists and what was offered from a provider under Providers. A workflow names a model, never a provider. Record the price per million tokens beside each offered model; a call's cost is counted at the price set when it is made, and a call on a model with no price set has no cost. Under the list, clear each model for the classes of data it may be sent and name its fallbacks in order."
+              caption="What teams may pick, with tier, price, data clearance and fallbacks."
             >
               {/* Read again after a clearance or fallback is saved below, so its own copy of the list never posts the old ones back. */}
               <OfferedModels key={modelsRead} onChanged={changed} />
@@ -651,8 +649,7 @@ function ConfigurationTabs() {
               id="registry"
               {...fold("registry")}
               title={TITLES.registry}
-              caption="The MCP servers that carry a team's own tools to its agents. A server's tools attach to a run only after a platform admin approves its pinned tool list."
-              how="Registering is admission, not trust: the server is asked for its tool list once, every tool's name, description and schema is screened, and the list is pinned by its digest. A platform admin approves the pin and sets each tool's risk; a tool left unset counts as destructive. A rescan that finds a different list marks the server changed and detaches it until it is approved again. Header values reference the vault; only their names are shown."
+              caption="A server's tools reach runs once an admin approves its tool list."
               meta={
                 registry.servers && registry.servers.some((x) => STATUS_META[x.status].alarming) ? (
                   <Tag tone="err" solid>
@@ -670,11 +667,7 @@ function ConfigurationTabs() {
               id="tools"
               {...fold("tools")}
               title={TITLES.tools}
-              caption={
-                notBuilt(unbuilt, "tools")
-                  ? "Not built: the platform names its tool registry as not built on this deployment, so no tool is listed and none can be granted."
-                  : "Every tool a deployed workflow names, beside what the platform registered about it: the built-in tools and the tools of approved tool servers. A workflow may make a tool stricter, never looser."
-              }
+              caption={notBuilt(unbuilt, "tools") ? undefined : "Each tool a deployed workflow names. A workflow may only tighten it."}
               meta={data ? notBuilt(unbuilt, "tools") ? <NotBuiltValue field="tools" /> : <span className="tnum text-[10.5px] font-normal text-faint">{registered.length} named</span> : undefined}
             >
               {workflowPick && (
@@ -739,31 +732,26 @@ function ConfigurationTabs() {
                     {data && tools.length === 0 && (
                       <tr>
                         <td colSpan={5 + (repeatShown ? 1 : 0) + (usage ? 2 : 0)} className="px-4 py-3 text-faint">
-                          {notBuilt(unbuilt, "tools") ? "Not built: the platform names tools as not built, so this list is empty because nothing can fill it." : agent ? "This workflow names no tool." : "No deployed workflow names a tool."}
+                          {notBuilt(unbuilt, "tools") ? "Not built" : agent ? "This workflow names no tool." : "No deployed workflow names a tool."}
                         </td>
                       </tr>
                     )}
                   </tbody>
                 </table>
               </div>
-              {data && !notBuilt(unbuilt, "tools") && tools.length > 0 && !repeatShown && (
-                <p className="border-t border-line px-4 py-2 text-[10.5px] leading-[1.5] text-faint">
-                  Whether a call to each tool may be made again after the worker making it stopped (repeatable) is not in the platform&rsquo;s answer, so it is not shown.
-                </p>
-              )}
             </Panel>
             {/* ── the platform as an MCP server ── */}
             <Panel
               id="mcp"
               {...fold("mcp")}
               title={TITLES.mcp}
-              caption={mcp ? "Other agents and tools can read this deployment over the Model Context Protocol, as the server describes itself below." : "The platform's own MCP server, as it describes itself."}
+              caption="Other agents and tools read this deployment over MCP."
               meta={mcp ? <Tag tone="neutral">MCP</Tag> : undefined}
             >
               {!mcp &&
                 (machine === null ? (
                   <p className="px-4 py-3 text-[11.5px] leading-[1.55] text-warn">
-                    {machineLine(machine, MCP_PATH, mcpUnreachable)} The server&rsquo;s description names that address, so the platform gives no description (it answers 503) until the deployment sets one.
+                    {machineLine(machine, MCP_PATH, mcpUnreachable)}
                   </p>
                 ) : mcpAnswer && mcpAnswer.state !== "ok" ? (
                   <AnswerFailure className="p-4" answer={mcpAnswer} what="The MCP server description could not be read" />
@@ -815,15 +803,13 @@ function ConfigurationTabs() {
               title={TITLES.sources}
               caption={
                 data && notBuilt(unbuilt, "sources")
-                  ? `Not built on this deployment · ${data.deployment.runs} runs on record.`
+                  ? "Not built"
                   : data
-                  ? `${rows.length === 1 ? "1 connection" : `${rows.length} connections`} named by the agents on this deployment, ${used} called at least once · ${data.deployment.runs} runs on record.`
+                  ? `${rows.length === 1 ? "1 connection" : `${rows.length} connections`} · ${used} called · ${data.deployment.runs} runs on record`
                   : failed
                     ? "not read"
                     : "reading the workflows…"
               }
-              howLabel="How to read this table"
-              how="A connection is a tool an agent holds that reaches outside its own reasoning: a dataset, a tool on a tool server, web fetch, the knowledge store, or a backend configured on a tool. Mode says whether it is offline (a file or folder handed over), live (read from a system when the run asks) or the platform's own knowledge store. Reaches says whether it returns untrusted content, acts outside the system, or both. Calls and last used are counted from the run journals; there is no health figure, because nothing measures one. Credentials are named in the vault and never held in the definition."
             >
               {data && rows.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2">
@@ -841,12 +827,12 @@ function ConfigurationTabs() {
               )}
 
               {!data && !failed && <p className="px-4 py-3 text-[11.5px] text-faint">Reading the workflows&hellip;</p>}
-              {failed && <p className="px-4 py-3 text-[11.5px] text-faint">Not read: the configuration record failed (above).</p>}
+              {failed && <p className="px-4 py-3 text-[11.5px] text-faint">Not read.</p>}
               {data && rows.length === 0 && (
                 <p className="px-4 py-6 text-[12px] leading-[1.55] text-dim">
                   {notBuilt(unbuilt, "sources")
-                    ? "Not built: the platform names connected sources as not built, so this list is empty because nothing can fill it."
-                    : "No agent on this deployment holds a tool that reaches outside it. A connection appears here once an agent's definition names one: a dataset, a tool on a tool server, web fetch or the knowledge store."}
+                    ? "Not built"
+                    : "No agent holds a tool that reaches outside it."}
                 </p>
               )}
 
@@ -933,8 +919,7 @@ function ConfigurationTabs() {
               id="peers"
               {...fold("peers")}
               title={TITLES.peers}
-              caption="Other parties' agents this deployment speaks A2A with, and the agents it offers them. Nothing is sent to a peer, or heard from it, until a second person approves its agent card."
-              how="Each peer is admitted the way a tool server is: its agent card is fetched, its signature checked, and the card and its signing key pinned. A card or key that changes detaches the peer until a second person approves it again. Every request both ways is signed (HTTP Message Signatures) with the key on each side's card; a credential the peer's own door asks for is held in the vault and shown here by name only."
+              caption="Other parties' agents spoken with over A2A, once a second person approves."
               meta={peers.peers && !peers.error && peerCount.changed > 0 ? <Tag tone="err" solid>{peerCount.changed} changed</Tag> : undefined}
             >
               <PeerList peers={peers.peers} twoPerson={peers.twoPerson} me={meOf(session)} error={peers.error} refresh={peers.refresh} />
@@ -944,7 +929,7 @@ function ConfigurationTabs() {
               id="agents"
               {...fold("agents")}
               title={TITLES.agents}
-              caption="Agents built elsewhere, attached so they run under the same journal, cost accounting and guardrails as this deployment's own. Attach over the SDK when you own the agent's code, or over A2A when its code cannot change."
+              caption="Agents built elsewhere, run under this deployment's journal and guardrails."
               meta={
                 <>
                   <Tag tone="run" solid>SDK</Tag>
@@ -960,8 +945,7 @@ function ConfigurationTabs() {
               id="egress"
               {...fold("egress")}
               title={TITLES.egress}
-              caption={data && notBuilt(unbuilt, "egress") ? "An egress allowlist is not built on this deployment: nothing refuses an outbound request by its host. Below is where this service is set to send requests, as the platform describes it." : "The hosts a tool call may reach (web.fetch, notify.send and peer calls), besides a tool server's own registered host; a call to any other host is refused."}
-              how="The allowlist (EGRESS_HOSTS) holds tool calls only. The other requests the service makes, its model calls, knowledge fetches, sign-in key reads and calls to tool servers and authorization servers, go where its settings point them; the platform lists those below as a description, not as a list that refuses other hosts."
+              caption={data && notBuilt(unbuilt, "egress") ? undefined : "Hosts a tool call may reach; any other host is refused."}
               meta={data ? notBuilt(unbuilt, "egress") ? <NotBuiltValue field="egress" /> : <span className="tnum text-[10.5px] font-normal text-faint">{data.deployment.egress.length === 1 ? "1 host" : `${data.deployment.egress.length} hosts`}</span> : undefined}
             >
               <div className="flex flex-col gap-2 px-4 py-3">
@@ -977,7 +961,7 @@ function ConfigurationTabs() {
                   </div>
                 )}
                 {data && data.deployment.egress.length === 0 && !notBuilt(unbuilt, "egress") && (
-                  <span className="text-[12px] text-dim">No host is on the allowlist: a tool call reaches only a tool server&rsquo;s own registered host.</span>
+                  <span className="text-[12px] text-dim">No host is on the allowlist.</span>
                 )}
                 {data && notBuilt(unbuilt, "egress") && (
                   <span className="text-[12px] text-dim">
@@ -986,7 +970,7 @@ function ConfigurationTabs() {
                 )}
                 {data && (data.deployment.outbound ?? []).length > 0 && (
                   <>
-                    <span className="mt-1 text-[11px] font-semibold text-dim">Where the service is set to send requests</span>
+                    <span className="mt-1 text-[11px] font-semibold text-dim">Outbound destinations</span>
                     <ul className="flex flex-col gap-1">
                       {(data.deployment.outbound ?? []).map((line) => (
                         <li key={line} className="font-mono text-[11px] text-fg">
@@ -1010,8 +994,7 @@ function ConfigurationTabs() {
               id="credentials"
               {...fold("credentials")}
               title={TITLES.credentials}
-              caption="What the vault holds, by name. A value is pasted here once and never shown again."
-              how="A tool server's header or a workflow's tool argument names a credential as ${secret:name} and never holds the value, which is what makes a workflow safe to export. The value is read at the moment a call is made."
+              caption="Stored by name; a value is never shown again."
             >
               <Keys onChanged={changed} />
             </Panel>
@@ -1020,7 +1003,7 @@ function ConfigurationTabs() {
               id="ingress"
               {...fold("ingress")}
               title={TITLES.ingress}
-              caption="Who may post work to this factory, and what is in the queue. A key scoped to one workflow cannot start another."
+              caption="Keys that may post work here, and the queue."
             >
               <div className="grid gap-px bg-line lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
                 <div className="flex min-w-0 flex-col bg-surface">
@@ -1047,10 +1030,10 @@ function ConfigurationTabs() {
               id="gates"
               {...fold("gates")}
               title={TITLES.gates}
-              caption="Per deployed workflow: where an action stops and waits for a person, and who may answer. A gate that names no approver may be answered by anyone holding the approve permission, never by the person who started the run or wrote its version."
+              caption="Where each deployed workflow waits for a person, and who answers."
             >
               {(data?.gates ?? []).length === 0 && data && (
-                <p className="px-4 py-3 text-[11.5px] text-faint">No deployed workflow declares a gate; the platform&rsquo;s own holds, below, still apply.</p>
+                <p className="px-4 py-3 text-[11.5px] text-faint">No deployed workflow declares a gate.</p>
               )}
               {(data?.gates ?? []).map((g, i) => (
                 <div key={`${g.agent}-${i}`} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b border-line px-4 py-2.5 last:border-0">
@@ -1083,18 +1066,14 @@ function ConfigurationTabs() {
               ))}
               {data && (data.platform_holds?.length ? (
                 <div className="px-4 py-2.5 text-[10.5px] leading-[1.5] text-faint">
-                  The platform&rsquo;s own holds apply to every agent, whatever its definition declares:
+                  Platform holds, on every agent:
                   <ul className="mt-1 list-disc pl-4">
                     {data.platform_holds.map((h) => (
                       <li key={h}>{h}</li>
                     ))}
                   </ul>
                 </div>
-              ) : (
-                <p className="px-4 py-2.5 text-[10.5px] leading-[1.5] text-faint">
-                  The platform&rsquo;s own holds apply to every agent, whatever its definition declares: a call of a tool at destructive risk waits for a platform admin; repeated calls of one outside-acting tool wait for a person past the run&rsquo;s mass-action count; and during a lockdown or an operator&rsquo;s hold, every call at write risk or above waits for a person.
-                </p>
-              ))}
+              ) : null)}
             </Panel>
           </>,
         )}
@@ -1104,7 +1083,7 @@ function ConfigurationTabs() {
           "deployment",
           <>
             {/* ── deployment ── */}
-            <Panel id="deployment" {...fold("deployment")} title={TITLES.deployment} caption="Where this deployment keeps its records and what it sends model calls to.">
+            <Panel id="deployment" {...fold("deployment")} title={TITLES.deployment} caption="Where records are kept and where model calls go.">
               <div className="grid gap-px bg-line sm:grid-cols-2 lg:grid-cols-3">
                 {[
                   { k: "Registry", v: !data ? "—" : data.deployment.registry === "postgres" ? "Postgres" : "Workspace files" },
@@ -1112,7 +1091,7 @@ function ConfigurationTabs() {
                   { k: "Gateway resource", v: !data ? "—" : data.deployment.endpoint?.replace(/^https:\/\//, "") || "None set", mono: Boolean(data?.deployment.endpoint) },
                   { k: "Billing feed", v: !data ? "—" : notBuilt(unbuilt, "billing") ? "Not built" : data.deployment.billing ? "Connected" : "Not connected" },
                   { k: "Workflows", v: !data ? "—" : `${data.deployment.workflows} saved · ${data.deployment.deployed} deployed` },
-                  { k: "Runs on record", v: !data ? "—" : `${data.deployment.runs} · the basis for usage figures` },
+                  { k: "Runs on record", v: !data ? "—" : String(data.deployment.runs) },
                 ].map((f) => (
                   <div key={f.k} className="flex flex-col gap-0.5 bg-surface px-4 py-2.5">
                     <span className="text-[10.5px] text-ghost">{f.k}</span>
@@ -1126,32 +1105,26 @@ function ConfigurationTabs() {
               id="appearance"
               {...fold("appearance")}
               title={TITLES.appearance}
-              caption="How the console looks: one choice for every browser and every person. Card headers carry a colour for their subject, or the console stays on its monochrome base."
-              howLabel="Which colour means what"
-              how="Spend is green, approvals amber, live activity blue, controls red, knowledge violet, identity teal and traces indigo."
+              caption="One choice for every person and browser."
             >
               <Appearance />
             </Panel>
           </>,
         )}
 
-        <p className="pb-4 text-[10.5px] text-ghost">{data?.basis ?? ""}</p>
       </div>
     </div>
   );
 }
 
 /**
- * A folding panel: its heading, one or two sentences on what it is for, and
- * its body. `how` is what a person needs once (how the mechanism works, how
- * to read the table): kept behind a small disclosure under the caption.
+ * A folding panel: its heading, at most one short line on what it is for,
+ * and its body.
  */
 function Panel({
   id,
   title,
   caption,
-  how,
-  howLabel = "How this works",
   children,
   folded = false,
   onToggle,
@@ -1160,19 +1133,15 @@ function Panel({
 }: {
   id: string;
   title: string;
-  caption: string;
-  how?: string;
-  howLabel?: string;
+  caption?: string;
   children: React.ReactNode;
   folded?: boolean;
   onToggle?: () => void;
   meta?: React.ReactNode;
   className?: string;
 }) {
-  const [explained, setExplained] = useState(false);
   return (
     <section id={id} className={`flex scroll-mt-4 flex-col overflow-hidden rounded-md border border-line bg-surface ${className}`}>
-      {/* The heading band: the fold, and under the caption the disclosure, which is no part of the fold's button. */}
       <div data-hue={hueFor(title)} className={`flex flex-col bg-raise/55 transition-colors [&:where(:has(>button:hover))]:bg-raise ${folded ? "" : "border-b border-line"}`}>
         <button
           type="button"
@@ -1189,29 +1158,10 @@ function Panel({
               {title}
               {meta}
             </span>
-            {!folded && <span className="max-w-[92ch] text-[11px] leading-[1.55] text-faint">{caption}</span>}
+            {!folded && caption && <span className="max-w-[92ch] text-[11px] leading-[1.55] text-faint">{caption}</span>}
           </span>
           <span className="shrink-0 pt-0.5 text-[10.5px] text-ghost">{folded ? "show" : "hide"}</span>
         </button>
-        {!folded && how && (
-          <div className="flex flex-col items-start gap-1.5 pr-4 pb-2.5 pl-[42px]">
-            <button
-              type="button"
-              onClick={() => setExplained(!explained)}
-              aria-expanded={explained}
-              aria-controls={`${id}-how`}
-              className="focusable inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-sm border border-line bg-surface px-1.5 text-[10.5px] font-medium text-dim transition-colors hover:bg-raise hover:text-fg"
-            >
-              <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className={`shrink-0 transition-transform ${explained ? "" : "-rotate-90"}`}>
-                <path d="M6 9l6 6 6-6" />
-              </svg>
-              {howLabel}
-            </button>
-            <p id={`${id}-how`} hidden={!explained} className="max-w-[92ch] text-[11px] leading-[1.55] text-faint">
-              {how}
-            </p>
-          </div>
-        )}
       </div>
       <div id={`${id}-body`} hidden={folded}>
         {children}

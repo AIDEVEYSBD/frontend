@@ -102,9 +102,9 @@ function ModelRouting({ draft, onChange, catalogue, control, catalogueError = ""
     <div className="flex flex-col gap-2 border-t border-line pt-3">
       <span className="text-[12px] font-semibold text-fg">Model routing</span>
       <span className="text-[10.5px] leading-[1.5] text-faint">
-        The agent asks for <Mono className="text-[10px]">auto</Mono> or a tier, and the factory picks the model. Point its base URL at the gateway and it needs no model names or provider keys of its own.
+        The agent asks for <Mono className="text-[10px]">auto</Mono> or a tier; the platform picks the model.
       </span>
-      {catalogueError && <Failure inline message={`The deployment's models and tiers could not be read (GET /api/config: ${catalogueError}), so the picker offers only the deployment's default and this agent's own choice.`} />}
+      {catalogueError && <Failure inline what="The models and tiers could not be read" message={catalogueError} />}
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1">
           <span className="text-[10.5px] text-ghost">Default model</span>
@@ -194,7 +194,6 @@ function NoMachineCode({ machine, consequence, className = "" }: { machine: stri
   return (
     <p className={`px-4 py-3 text-[11.5px] leading-[1.55] ${machine === undefined ? "text-faint" : "text-warn"} ${className}`}>
       {machineLine(machine, "", consequence)}
-      {machine === null && " The code is shown once the deployment names that address."}
     </p>
   );
 }
@@ -207,24 +206,24 @@ type A2AOrigin = { origin: string | null; problem: string } | { failed: string }
  */
 function CardLine({ a2a, machine }: { a2a: A2AOrigin; machine: string | null | undefined }) {
   const mono = "text-[10.5px]";
-  if (!a2a || machine === undefined) return <>Reading where peers reach the factory&rsquo;s card&hellip;</>;
+  if (!a2a || machine === undefined) return <>Reading the card address&hellip;</>;
   if ("origin" in a2a && a2a.origin) {
     return (
       <>
-        The factory&rsquo;s own card is at <Mono className={mono}>{a2a.origin + PATHS.card}</Mono> (A2A_PUBLIC_URL, the address peers reach this platform at).
+        The platform&rsquo;s card: <Mono className={mono}>{a2a.origin + PATHS.card}</Mono>.
       </>
     );
   }
   // The platform's own reason when A2A_PUBLIC_URL is not set: the card is not served until it is.
-  const why = "failed" in a2a ? `whether A2A_PUBLIC_URL is set could not be read: ${a2a.failed}` : a2a.problem || "A2A_PUBLIC_URL is not set, and the platform serves no card until it is";
+  const why = "failed" in a2a ? `whether A2A_PUBLIC_URL is set could not be read: ${a2a.failed}` : a2a.problem || "A2A_PUBLIC_URL is not set, so no card is served";
   if (machine) {
     return (
       <>
-        Shown at the machine address (PUBLIC_API_URL), the factory&rsquo;s own card is <Mono className={mono}>{machine + PATHS.card}</Mono>; {why}.
+        The platform&rsquo;s card: <Mono className={mono}>{machine + PATHS.card}</Mono>; {why}.
       </>
     );
   }
-  return <>No address peers reach this platform at is set on this deployment (A2A_PUBLIC_URL or PUBLIC_API_URL): peers cannot read the factory&rsquo;s card through the console&rsquo;s sign-in.</>;
+  return <>No peer address is set (A2A_PUBLIC_URL or PUBLIC_API_URL).</>;
 }
 
 /* ═══════════════════ the panel body ═══════════════════ */
@@ -508,15 +507,11 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
               {machine && <CopyButton text={SNIPPETS[language](ctx)} />}
             </div>
             {machine ? <Code text={SNIPPETS[language](ctx)} lang={language} /> : <NoMachineCode machine={machine} consequence={unreachable} />}
-            <span className="border-t border-line px-4 py-2.5 text-[11px] leading-[1.55] text-faint">
-              The SDK carries no policy of its own. Every tool call goes through the broker and is decided here before it is made, every gate waits here and is answered on the Approvals page, and the run&rsquo;s record lands in the same store as the factory&rsquo;s own.
-              {machine && (
-                <>
-                  {" "}Runs open at <Mono className="text-[10.5px]">{machineAddress(machine, PATHS.ingest)}</Mono>, the platform&rsquo;s own address, outside the console&rsquo;s sign-in.
-                </>
-              )}{" "}
-              Go, Java and C# have a reference of the wire format (sdk/WIRE.md), not a tested SDK.
-            </span>
+            {machine && (
+              <span className="border-t border-line px-4 py-2.5 text-[11px] leading-[1.55] text-faint">
+                Runs open at <Mono className="text-[10.5px]">{machineAddress(machine, PATHS.ingest)}</Mono>.
+              </span>
+            )}
           </div>
           <div className="flex min-w-0 flex-col bg-surface">
             <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">What the factory records</span>
@@ -555,15 +550,15 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
             ))}
           </div>
           <div className="flex min-w-0 flex-col bg-surface">
-            <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">Enforced at the gateway and the broker, without a line of the agent&rsquo;s code</span>
+            <span className="border-b border-line px-4 py-2 text-[10.5px] text-ghost">Enforced at the gateway and the broker</span>
             {[
-              { k: "Capability", v: "a tool the agent was never granted is refused, and the refusal is recorded" },
-              { k: "Scope", v: "the argument values a granted tool may be called with, enforced on the call" },
-              { k: "Taint", v: "what an untrusted tool returns is marked; from then on no tool that acts outside is called in that run" },
-              { k: "Gates", v: "a call at or above the gate risk waits for a person on the Approvals page" },
-              { k: "Injection", v: "prompts are screened before they leave for the model" },
-              { k: "Stop", v: "a stopped run's next model or tool call is refused" },
-              { k: "Cost", v: "every completion priced at the configured price; a model with no price shows as unpriced" },
+              { k: "Capability", v: "an ungranted tool is refused, and the refusal recorded" },
+              { k: "Scope", v: "the argument values a granted tool may be called with" },
+              { k: "Taint", v: "after untrusted output, no outside-acting tool runs in that run" },
+              { k: "Gates", v: "a call at or above the gate risk waits for a person" },
+              { k: "Injection", v: "prompts are screened before they reach the model" },
+              { k: "Stop", v: "a stopped run's next call is refused" },
+              { k: "Cost", v: "every completion priced; a model with no price shows unpriced" },
             ].map((r) => (
               <span key={r.k} className="flex items-start gap-3 border-b border-line px-4 py-2">
                 <span className="w-[92px] shrink-0 text-[11.5px] text-fg">{r.k}</span>
@@ -571,7 +566,7 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
               </span>
             ))}
             <span className="px-4 py-2.5 text-[11px] leading-[1.55] text-faint">
-              An agent that lets you set an OpenAI-compatible base URL, an MCP server and the headers sent to each can attach this way; none of the products in the framework list has been tried against this platform. Handing this platform tasks over A2A is a separate door: register the agent under Peers. <CardLine a2a={a2a} machine={machine} />
+              <CardLine a2a={a2a} machine={machine} />
             </span>
           </div>
         </div>
@@ -628,7 +623,7 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
             <Status tone="ok">{minted.agent.name} attached</Status>
             <Mono className="text-[11px] text-fg">{minted.key}</Mono>
             <CopyButton text={minted.key} />
-            <span className="text-[10.5px] text-faint">This is the only time the key is shown; it works once someone else approves the attachment. Set its policy with Policy below before then.</span>
+            <span className="text-[10.5px] text-faint">Shown once. Works after someone else approves the attachment.</span>
             <span className="grow" />
             <Button size="sm" variant="solid" tone="neutral" onClick={() => setMinted(null)}>Dismiss</Button>
           </div>
@@ -753,7 +748,7 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
                     <div className="flex flex-col gap-3">
                       <div className="flex flex-wrap items-end gap-3">
                         <span className="text-[12px] font-semibold text-fg">Policy for {a.name}</span>
-                        <span className="text-[11px] text-faint">Enforced at the tool broker and the model gateway. An agent starts with nothing granted; agent.invoke cannot be granted.</span>
+                        <span className="text-[11px] text-faint">Starts with nothing granted; agent.invoke cannot be granted.</span>
                         <span className="grow" />
                         <label className="flex flex-col gap-1">
                           <span className="text-[10.5px] text-ghost">Gate at</span>
@@ -801,9 +796,7 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
                       </div>
                       <ModelRouting draft={draft} onChange={setDraft} catalogue={catalogue} control={control} catalogueError={catalogueError} />
                       <span className="text-[10.5px] leading-[1.5] text-faint">
-                        {awaiting(a)
-                          ? "The attachment waits for a second person's approval: every field saves here at once, and whoever saves it cannot approve it. The approval covers the policy exactly as it stands then."
-                          : "The gate, the grants, routing and limits go to review: someone other than you approves them on the Policy page, and they stand as they are until then. The injection filter applies at once."}
+                        {awaiting(a) ? "Saves at once; whoever saves it cannot approve it." : "Grants, gate, routing and limits go to review; injection applies at once."}
                       </span>
                       {!awaiting(a) && <OpenChanges target={{ kind: "attached", id: a.id }} tick={proposals} />}
                       {!awaiting(a) && Object.keys(attachedSplit(a, draft).reviewed).length > 0 && <ProposalNote reason={reason} onReason={setReason} effective={effective} onEffective={setEffective} />}
@@ -835,9 +828,9 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
                           </div>
                         ))}
                         {registryError ? (
-                          <span className="bg-surface px-3 py-2"><Failure inline message={`The tools on offer could not be read, so none can be granted here until they are: ${registryError}`} /></span>
+                          <span className="bg-surface px-3 py-2"><Failure inline what="The tools on offer could not be read" message={registryError} /></span>
                         ) : (
-                          registry.length === 0 && <span className="bg-surface px-3 py-2 text-[11px] text-faint">No tool server&rsquo;s tools are on offer yet; register one under Tool servers on this page, and its tools appear here once its pin is approved.</span>
+                          registry.length === 0 && <span className="bg-surface px-3 py-2 text-[11px] text-faint">No tool is on offer yet.</span>
                         )}
                       </div>
                     </div>
@@ -847,7 +840,7 @@ export function AttachedAgents({ onLoaded }: { onLoaded?: (agents: AttachedAgent
             })}
             {agents && agents.length === 0 && (
               <tr>
-                <td colSpan={11} className="px-4 py-3 text-[11.5px] text-faint">{unread ? <Failure what="The third-party agents could not be read" message={unread} /> : "No third-party agent is attached. The first one appears here with its key."}</td>
+                <td colSpan={11} className="px-4 py-3 text-[11.5px] text-faint">{unread ? <Failure what="The third-party agents could not be read" message={unread} /> : "No third-party agent is attached."}</td>
               </tr>
             )}
             {!agents && (

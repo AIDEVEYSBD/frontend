@@ -139,7 +139,7 @@ export function CloudFindingsCard({ now }: { /** The board's clock, stamped when
   // The security centre answers one page: when it holds more, every count below is of that page, and says so.
   const truncated = answer?.state === "ok" && answer.data?.truncated === true;
   const total = answer?.state === "ok" && typeof answer.data?.total === "number" ? answer.data.total : null;
-  const partial = truncated ? (total !== null ? ` · counted from the first ${fmtCount(findings.length)} of ${fmtCount(total)}` : ` · counted from the first ${fmtCount(findings.length)}; the security centre holds more`) : "";
+  const partial = truncated ? (total !== null ? ` · first ${fmtCount(findings.length)} of ${fmtCount(total)}` : ` · first ${fmtCount(findings.length)}; more exist`) : "";
 
   return (
     <Card
@@ -150,7 +150,7 @@ export function CloudFindingsCard({ now }: { /** The board's clock, stamped when
           <FootNote>
             {findings.length
               ? `${fmtCount(count("active"))} active${worst.length ? ` (${worst.map((x) => `${fmtCount(x.n)} ${x.s}`).join(", ")})` : ""} · ${fmtCount(count("muted"))} muted · ${fmtCount(count("fixed"))} fixed${partial}${source ? ` · from ${source}` : ""}`
-              : "Findings the cloud provider's security centre holds for this deployment's resources"}
+              : "Cloud provider findings for this deployment"}
           </FootNote>
           {findings.length > FINDINGS_SHOWN && (
             <Button size="sm" onClick={() => setAll((v) => !v)}>
@@ -169,7 +169,7 @@ export function CloudFindingsCard({ now }: { /** The board's clock, stamped when
       ) : answer.state === "error" ? (
         <ReadError>The cloud security findings could not be read: {answer.message}</ReadError>
       ) : findings.length === 0 ? (
-        <Nothing>The cloud security centre holds no finding for this deployment&rsquo;s resources.</Nothing>
+        <Nothing>No cloud security findings.</Nothing>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] border-collapse text-[12px]">

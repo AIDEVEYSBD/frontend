@@ -24,7 +24,7 @@ import { listAgents } from "@/lib/api/l2";
 import { editableDocument, evalRunViewOf, isEvalOver, retiredOf, retiredRefusalOf, saveAgent, startEval, type EvalCaseResult, type EvalRunView, type ModelSummary, type Retired } from "@/lib/api/l8";
 import { historyRowFromView, historyRowOf, lastComparison, liveOf, mergeHistory, mergeSetRows, rowStateText, settleOf, thresholdText, thresholdTone, thresholdWord, throttleOf, unfinishedComparison, type CompareResult, type HistoryRow, type SetRow, type UnfinishedComparison } from "@/lib/evals";
 import { getEvalSet, listEvalSets, type EvalSetDocument } from "@/lib/api/l8b";
-import { retiredLine, savedLine } from "@/lib/lifecycle";
+import { retiredLine } from "@/lib/lifecycle";
 
 /**
  * Evals: build a benchmark beside an agent, run it, keep the score.
@@ -363,7 +363,7 @@ export function Evals() {
     try {
       agents = await listAgents();
     } catch (e) {
-      failed.push({ what: "The agents could not be read, so their benchmarks were not asked for", message: (e as Error).message });
+      failed.push({ what: "The agents could not be read", message: (e as Error).message });
     }
     try {
       setSets(mergeSetRows(await listEvalSets(agents.map((a) => a.id)), consoleRows));
@@ -395,7 +395,7 @@ export function Evals() {
           ) : undefined
         }
       >
-        Evaluate an agent on representative cases: every case is a real run of the exact version assessed, graded by fixed checks or a model judge, and the score is read against the agent&rsquo;s release threshold.
+        Score an agent on representative cases against its release threshold.
       </GroupHeader>
 
       {building && (
@@ -418,10 +418,6 @@ export function Evals() {
         {sets?.length === 0 && !building && failures.length === 0 && (
           <div className="flex flex-col items-start gap-3 rounded-md border border-dashed border-line-strong bg-surface px-5 py-6">
             <p className="text-[13px] font-medium text-fg">No evaluations have been created.</p>
-            <p className="max-w-[60ch] text-[12px] leading-[1.6] text-dim">
-              Select an agent and define the expected outcomes for representative cases. Future
-              changes can then be assessed against the same evidence-based benchmark.
-            </p>
             <Button size="sm" variant="solid" onClick={() => setBuilding("new")}>
               Build the first one
             </Button>
@@ -618,7 +614,7 @@ function SetBuilder({
 
   return (
     <div className="mt-5 flex flex-col gap-4 rounded-md border border-line bg-surface p-4">
-      {keysError && <Failure what={`The definition of ${agent} could not be read, so its inputs are not known: the case fields and the CSV template below do not name them`} message={keysError} />}
+      {keysError && <Failure what={`The definition of ${agent} could not be read`} message={keysError} />}
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-[13.5px] font-semibold text-fg">
           {initial ? `Edit — ${initial.name}` : "New benchmark"}
@@ -673,8 +669,7 @@ function SetBuilder({
       </div>
       {agent && (
         <p className="text-[11px] leading-[1.5] text-faint">
-          CSV template — a spreadsheet with this agent&apos;s input columns; fill a row per case and upload it
-          back.
+          Fill one row per case in the CSV template, then upload it.
         </p>
       )}
 
@@ -719,17 +714,7 @@ function SetBuilder({
           </div>
 
           {!agent && (
-            <p className="text-[12px] text-faint">
-              Pick the agent first — its spec names the inputs each case needs, so the form builds
-              itself.
-            </p>
-          )}
-
-          {agent && (
-            <p className="text-[11.5px] leading-[1.5] text-faint">
-              Labeled benchmarks (a ground-truth label per case, scored with a confusion matrix) are not built on this platform: grade each case with checks,
-              including a model judge where a fixed check cannot say.
-            </p>
+            <p className="text-[12px] text-faint">Pick the agent first.</p>
           )}
 
           {/* the cases */}
@@ -1185,7 +1170,7 @@ function SetCard({
       if (failed.length) setRunError(failed.map((v) => `${modelLabel(v.model === "default" ? "" : v.model)}: ${v.error || "the eval failed"}`).join("; "));
     } catch (e) {
       const gone = retiredRefusalOf(e);
-      setRunError(gone ? `${row.agent} is retired. ${retiredLine(gone)}` : (e as Error).message);
+      setRunError(gone ? `${row.agent}: ${retiredLine(gone)}` : (e as Error).message);
     } finally {
       if (mounted.current) {
         setViews(null);
@@ -1199,7 +1184,7 @@ function SetCard({
     setRunError("");
     const d = await readSet(row.id);
     if (!d) {
-      setRunError(`The set ${row.id} could not be read, so its model was not changed.`);
+      setRunError(`The set ${row.id} could not be read.`);
       return;
     }
     const res = await fetch("/api/evals", {
@@ -1280,7 +1265,7 @@ function SetCard({
               {score.passed}/{score.total}
             </span>
             {score.threshold !== null && score.threshold !== undefined && (
-              <span title={score.threshold_why ?? undefined}>
+              <span>
                 <Tag tone={thresholdTone(score)}>
                   {thresholdWord(score) === "incomplete" ? `incomplete · threshold ${score.threshold}` : `${thresholdWord(score) ?? "threshold"} ${score.threshold}`}
                 </Tag>
@@ -1300,7 +1285,7 @@ function SetCard({
         <div className="flex flex-col gap-4 border-t border-line px-4 py-4">
           {retired && (
             <Banner tone="neutral" title={`${row.agent} is retired`}>
-              {retiredLine(retired)} Its history stays readable; a new eval is refused.
+              {retiredLine(retired)}
             </Banner>
           )}
           <div className="flex flex-wrap items-center gap-2.5">
@@ -1387,15 +1372,15 @@ function SetCard({
           {live && (
             <p className="text-[11.5px] text-dim">
               Measuring <span className="font-mono text-fg">{modelLabel(live.model === "default" ? "" : live.model)}</span>
-              {live.legs > 1 ? `, candidate ${live.leg} of ${live.legs}, as each run's default model` : ""}
-              <span className="text-faint"> · on the backend, each case a real run · {live.passed} passed so far</span>
+              {live.legs > 1 ? `, candidate ${live.leg} of ${live.legs}` : ""}
+              <span className="text-faint"> · {live.passed} passed so far</span>
             </p>
           )}
           {running && throttled && (
             <div className="flex flex-col gap-1">
               <RateLimitNote limit={throttled.limit} readAt={throttled.at} />
               <span className="text-[11px] text-faint">
-                Case <span className="font-mono text-dim">{throttled.caseId}</span> waits and is started again (attempt {throttled.attempt}); once its wait would pass the evaluation&rsquo;s allowance (EVAL_RATE_LIMIT_WAIT_SECONDS), the case is recorded as refused, naming the limit, and never counts as passed.
+                Case <span className="font-mono text-dim">{throttled.caseId}</span> waits and is started again (attempt {throttled.attempt}).
               </span>
             </div>
           )}
@@ -1454,8 +1439,8 @@ function SetCard({
                     </span>
                     {rowStateText(h) && <Tag tone={h.state === "failed" ? "err" : "run"}>{rowStateText(h)}</Tag>}
                     {h.threshold !== null && h.state === "done" && (
-                      <span title={h.threshold_why ?? undefined} className={`text-[10.5px] ${WORD_TEXT[thresholdWord(h) ?? ""] ?? "text-faint"}`}>
-                        {thresholdWord(h) === "incomplete" ? `incomplete: not judged against the threshold ${h.threshold}` : `${thresholdWord(h) ?? "threshold"} ${h.threshold}`}
+                      <span className={`text-[10.5px] ${WORD_TEXT[thresholdWord(h) ?? ""] ?? "text-faint"}`}>
+                        {thresholdWord(h) === "incomplete" ? `incomplete · threshold ${h.threshold}` : `${thresholdWord(h) ?? "threshold"} ${h.threshold}`}
                       </span>
                     )}
                     <Mono className="text-[10px] text-faint">{modelLabel(h.model === "default" ? "" : h.model)}</Mono>
@@ -1491,7 +1476,7 @@ function ScoreTrend({ runs, modelLabel }: { runs: HistoryRow[]; modelLabel: (id:
   const finished = runs.filter((r) => r.state === "done" && r.total > 0).sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || a.id.localeCompare(b.id));
   if (finished.length === 0) return null;
   if (finished.length === 1) {
-    return <p className="text-[11.5px] leading-[1.5] text-faint">One finished run is not a trend. The pass rate over time is drawn once this set has been run a second time.</p>;
+    return <p className="text-[11.5px] leading-[1.5] text-faint">The trend shows after a second finished run.</p>;
   }
   const shown = finished.slice(-TREND_RUNS);
   const pct = (r: HistoryRow) => (r.passed / r.total) * 100;
@@ -1546,7 +1531,7 @@ function ScoreTrend({ runs, modelLabel }: { runs: HistoryRow[]; modelLabel: (id:
                   <span className="text-[10.5px] text-dim">
                     {new Date(r.at).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })} · {ago(r.at)}
                   </span>
-                  <span className="text-[10.5px] text-faint">{own === null ? "no threshold applied to this run" : thresholdWord(r) === "incomplete" ? `incomplete: not judged against its threshold of ${Math.round(own)}%` : `${thresholdWord(r) ?? "against"} its threshold of ${Math.round(own)}%`}</span>
+                  <span className="text-[10.5px] text-faint">{own === null ? "no threshold applied to this run" : thresholdWord(r) === "incomplete" ? `incomplete · threshold ${Math.round(own)}%` : `${thresholdWord(r) ?? "against"} its threshold of ${Math.round(own)}%`}</span>
                   <span className="font-mono text-[10px] text-faint">
                     {modelLabel(r.model)} · spec {r.digest.slice(0, 8)}
                   </span>
@@ -1566,7 +1551,7 @@ function ScoreTrend({ runs, modelLabel }: { runs: HistoryRow[]; modelLabel: (id:
           ...(threshold !== null ? [{ label: `Threshold ${Math.round(threshold)}%${differing ? ", the latest: it differed between runs" : ""}`, color: "var(--t-fg-3)", dashed: true }] : []),
         ]}
       />
-      {threshold === null && <span className="text-[10.5px] text-ghost">No run in this history carried a threshold, so none is drawn.</span>}
+      {threshold === null && <span className="text-[10.5px] text-ghost">No threshold on these runs.</span>}
     </div>
   );
 }
@@ -1611,7 +1596,7 @@ export function CaseTable({ cases, grades }: { cases: CaseResult[]; grades?: Rec
                     Open the run behind this score
                   </Button>
                 ) : (
-                  <span className="text-[10.5px] text-faint">Its start was refused, so there is no run behind it.</span>
+                  <span className="text-[10.5px] text-faint">No run: its start was refused.</span>
                 )}
               </div>
             )}
@@ -1760,8 +1745,8 @@ function UnfinishedNote({ u, earlier, modelLabel }: { u: UnfinishedComparison; e
     <div className="flex flex-col gap-1 rounded-md border border-warn-line bg-warn-bg px-3 py-2.5">
       <span className="text-[12.5px] font-semibold text-warn">{u.open.length ? "The newest model comparison has not finished" : "The newest model comparison has no recommendation"}</span>
       <span className="text-[11.5px] leading-[1.5] text-dim">
-        Started {ago(u.at)}: {parts.join("; ")}. The platform writes its recommendation only when the last candidate finishes, so nothing is recommended for this comparison
-        {earlier ? ". The comparison below is an earlier one, with the version and time it measured." : "."}
+        Started {ago(u.at)}: {parts.join("; ")}
+        {earlier ? "; the comparison below is an earlier one." : "."}
       </span>
     </div>
   );
@@ -1794,7 +1779,7 @@ export function ComparePanel({
     <div className="flex flex-col overflow-hidden rounded-md border border-line">
       <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-3 py-2">
         <span className="text-[12px] font-semibold">Model comparison</span>
-        <span className="text-[11px] text-faint">{cmp.models.length} models, same cases, each as the runs&rsquo; default model</span>
+        <span className="text-[11px] text-faint">{cmp.models.length} models, same cases</span>
         {cmp.digest && <Mono className="text-[10px] text-ghost">spec {cmp.digest.slice(0, 8)}{cmp.at ? ` · ${ago(cmp.at)}` : ""}</Mono>}
         <span className="grow" />
         {cmp.recommended && (
@@ -1828,10 +1813,10 @@ export function ComparePanel({
                 {isInc && <Tag>incumbent</Tag>}
                 {isRec && <Tag tone="ok">recommended</Tag>}
                 {m.invalid !== null && m.invalid > 0 && <Tag tone="warn">{m.invalid} invalid</Tag>}
-                {m.state !== "done" && <Tag tone="warn">did not finish: {m.state}; left out of the recommendation</Tag>}
+                {m.state !== "done" && <Tag tone="warn">did not finish: {m.state}</Tag>}
                 {(m.refused ?? 0) > 0 && <Tag tone="warn">{m.refused} refused</Tag>}
                 {(m.not_graded ?? 0) > 0 && <Tag tone="warn">{m.not_graded} not graded</Tag>}
-                {m.incomplete && m.state === "done" && <Tag tone="warn">incomplete: not judged against the threshold</Tag>}
+                {m.incomplete && m.state === "done" && <Tag tone="warn">incomplete</Tag>}
                 <span className="grow" />
                 {!isInc && m.model !== currentModel && m.model !== "default" && (
                   <Button size="sm" variant="solid" onClick={() => onUse(m.model)}>
@@ -1855,7 +1840,6 @@ export function ComparePanel({
           </div>
         );
       })}
-      <p className="border-t border-line px-3 py-2 text-[11px] leading-[1.5] text-dim">{cmp.rationale}</p>
     </div>
   );
 }
@@ -1916,13 +1900,12 @@ function Recommendation({
       });
       const saved = await saveAgent(spec as Record<string, unknown>);
       // Fields of the saved document the parser does not read are said with the save, never left out.
-      setApplied(
-        `${savedLine(saved, edit.agent.deployed_version)}${saved.unread.length ? ` ${saved.unread.length === 1 ? "One field" : `${saved.unread.length} fields`} of it ${saved.unread.length === 1 ? "is" : "are"} not read by the platform: ${saved.unread.join("; ")}.` : ""}`,
-      );
+      const v = saved.version !== null ? `version ${saved.version}` : "a new version";
+      setApplied(`Saved ${v}${saved.draft ? " as a draft" : ""}${saved.unread.length ? `; not read by the platform: ${saved.unread.join("; ")}` : ""}.`);
       onChanged();
     } catch (e) {
       const gone = retiredRefusalOf(e);
-      setApplyError(gone ? `${agent} is retired. ${retiredLine(gone)}` : (e as Error).message);
+      setApplyError(gone ? `${agent}: ${retiredLine(gone)}` : (e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -1973,9 +1956,7 @@ function Recommendation({
           <li key={r} className="list-disc">{r}</li>
         ))}
       </ul>
-      <span className="text-[10.5px] text-faint">
-        Each candidate ran the same {rec.total} cases as the runs&rsquo; default model: a step that names its own model, or a tier, keeps it, and the comparison says so when that happened. Making it the workflow&rsquo;s model pins every model-calling node of {agent} to it in a new saved version (tier routing on those nodes is cleared); once the agent is deployed that version is a draft, and production keeps running until it is deployed through the promotion gate. The benchmark&rsquo;s own model changes only with the other button. Both are explicit: nothing switches on its own.
-      </span>
+      <span className="text-[10.5px] text-faint">Making it the workflow&rsquo;s model saves a new version of {agent}.</span>
     </div>
   );
 }

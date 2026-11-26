@@ -73,21 +73,23 @@ export function EvidencePackView({ pack }: { pack: EvidencePack }) {
         {p.pack.agent ? ` · ${p.pack.agent}` : ""} · built by {p.pack.generated_by}
       </p>
       {p.pack.framework && !p.controls.length && (
-        <Banner tone="warn" title={`No control is mapped to ${p.pack.framework}`}>
-          So this pack holds nothing about it, and cannot be read as meeting it.
-        </Banner>
+        <Banner tone="warn" title={`No control is mapped to ${p.pack.framework}`} />
       )}
       <Banner tone={chain.tone} title={chain.title}>
-        {chain.line}
-        {p.chain.broken.map((b) => (
-          <span key={b.run} className="mt-1 block font-mono text-[10.5px] break-words">
-            {b.run}: {b.reason}
-          </span>
-        ))}
+        {chain.line || p.chain.broken.length ? (
+          <>
+            {chain.line}
+            {p.chain.broken.map((b) => (
+              <span key={b.run} className="mt-1 block font-mono text-[10.5px] break-words">
+                {b.run}: {b.reason}
+              </span>
+            ))}
+          </>
+        ) : undefined}
       </Banner>
       {p.truncated && (
         <Banner tone="warn" title="This pack lists only the first firings">
-          The counts cover every firing in the period; the list holds the first {p.firings.length}. Narrow the period or name an agent to list the rest.
+          Narrow the period or name an agent to list the rest.
         </Banner>
       )}
 
@@ -101,11 +103,13 @@ export function EvidencePackView({ pack }: { pack: EvidencePack }) {
                   <span className="flex flex-wrap items-center gap-2">
                     <ControlRef control={c.id} />
                     <span className="text-[12px] font-semibold text-fg">{c.title}</span>
-                    {enforced && <Tag tone={enforced.state === "enforced" ? "ok" : enforced.state === "partly" ? "warn" : "err"}>{enforced.state ? enforced.state.replace("_", " ") : "enforcement unknown"}</Tag>}
+                    {enforced && (
+                      <span className="inline-flex">
+                        <Tag tone={enforced.state === "enforced" ? "ok" : enforced.state === "partly" ? "warn" : "err"}>{enforced.state ? enforced.state.replace("_", " ") : "enforcement unknown"}</Tag>
+                      </span>
+                    )}
                   </span>
                   <span className="text-[11.5px] leading-[1.5] text-dim">{c.statement}</span>
-                  <span className="text-[10.5px] leading-[1.5] text-faint">Counted from: {c.evidence}</span>
-                  {enforced?.why && <span className="text-[10.5px] leading-[1.5] text-faint">Enforcement now: {enforced.why}</span>}
                 </li>
               );
             })}
@@ -141,7 +145,7 @@ export function EvidencePackView({ pack }: { pack: EvidencePack }) {
         )}
       </Section>
 
-      <Section title="Signed decisions" hue="approvals" meta="each gate answered in the period whose controls are in the pack">
+      <Section title="Signed decisions" hue="approvals" meta="gates of these controls answered in the period">
         {p.decisions.length ? (
           <Rows head={["Run", "Decision", "Controls", "Record"]}>
             {p.decisions.map((d) => (
@@ -192,16 +196,16 @@ export function EvidencePackView({ pack }: { pack: EvidencePack }) {
         )}
         {notBuilt.length > 0 && (
           <ul className="flex flex-col gap-0.5 text-[11px] leading-[1.5] text-faint">
-            {notBuilt.map(([k, why]) => (
+            {notBuilt.map(([k]) => (
               <li key={k}>
-                <Mono className="text-[10.5px]">{k}</Mono>: {why}.
+                <Mono className="text-[10.5px]">{k}</Mono>: Not built
               </li>
             ))}
           </ul>
         )}
       </Section>
 
-      <Section title="Policy changes" hue="guardrail" meta="every change to the rules that moved in the period">
+      <Section title="Policy changes" hue="guardrail" meta="changes that moved in the period">
         {p.policy.changes.length > 0 ? (
           <Rows head={["Change", "Target", "State", "Proposed", "Approved", "Applied or ended"]} min={820}>
             {p.policy.changes.map((c) => (
@@ -253,7 +257,7 @@ export function EvidencePackView({ pack }: { pack: EvidencePack }) {
         ) : (
           <p className="text-[12px] text-faint">No deployment or rollback was made in the period.</p>
         )}
-        {p.policy.truncated && <p className="text-[11px] text-warn">The period held more changes or deployments than the pack cites; the newest are listed.</p>}
+        {p.policy.truncated && <p className="text-[11px] text-warn">Only the newest are listed.</p>}
       </Section>
 
       <Section title="Identities" hue="identity" meta="who acted, as what">
@@ -291,7 +295,7 @@ export function EvidencePackView({ pack }: { pack: EvidencePack }) {
             ))}
           </Rows>
         ) : (
-          <p className="text-[12px] text-faint">No run is cited: nothing fired and no gate was answered in the period.</p>
+          <p className="text-[12px] text-faint">No run is cited.</p>
         )}
       </Section>
     </div>
@@ -357,7 +361,7 @@ function EvidencePage() {
     try {
       const f = await downloadEvidence(packQuery(form));
       saveFile(f);
-      setSaved(f.sha256 ? `Saved ${f.filename}. Manifest SHA-256: ${f.sha256}` : `Saved ${f.filename}.`);
+      setSaved(f.sha256 ? `Saved ${f.filename} · manifest SHA-256 ${f.sha256}` : `Saved ${f.filename}.`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -372,7 +376,7 @@ function EvidencePage() {
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
       <GroupHeader group="assurance" tab="evidence">
-        An assessor&rsquo;s pack for a control or a framework over a period, built now from the records: what fired, the signed decisions, the definitions the runs ran, who acted, and the chain of every run cited. It downloads as a zip with a SHA-256 for each file and each cited run&rsquo;s journal as stored.
+        An assessor&rsquo;s pack for a control or framework over a period.
       </GroupHeader>
       {loadError && (
         <Banner tone="err" title="Could not read the controls or the frameworks">
@@ -385,19 +389,19 @@ function EvidencePage() {
           <Field label="Control">
             <Pick value={form.control} onChange={(v) => edit({ control: v })} options={controls} />
           </Field>
-          <Field label="Or a control key" hint="a key the journal names that the catalogue does not map">
+          <Field label="Or a control key" hint="a journal key the catalogue does not map">
             <Input mono value={form.key} onChange={(v) => edit({ key: v })} />
           </Field>
-          <Field label="Framework" hint={picked && !picked.obligations.length ? picked.why ?? "nothing is mapped to it: a pack would hold no controls" : undefined}>
+          <Field label="Framework" hint={picked && !picked.obligations.length ? "No controls are mapped to it." : undefined}>
             <Pick value={form.framework} onChange={(v) => edit({ framework: v })} options={frameworks} />
           </Field>
-          <Field label="From" hint="the door's default is 30 days back">
+          <Field label="From" hint="default: 30 days back">
             <Input type="datetime-local" value={form.from} onChange={(v) => edit({ from: v })} />
           </Field>
-          <Field label="To" hint="the default is now">
+          <Field label="To" hint="default: now">
             <Input type="datetime-local" value={form.to} onChange={(v) => edit({ to: v })} />
           </Field>
-          <Field label="Agent" error={agentsError ? `the agents could not be read, so none can be picked: ${agentsError}` : undefined}>
+          <Field label="Agent" error={agentsError ? `the agents could not be read: ${agentsError}` : undefined}>
             <Pick value={form.agent} onChange={(v) => edit({ agent: v })} options={[{ value: "", label: "The whole estate" }, ...agents.map((a) => ({ value: a.id, label: a.name }))]} />
           </Field>
         </div>

@@ -127,10 +127,10 @@ function SessionsPage() {
       tone: was.rows.some((r) => r.kind === "person") ? "warn" : "ok",
       text:
         was.what === "client"
-          ? `The registration of ${was.client} was ended, and every session issued to it with it.`
+          ? `The registration of ${was.client} and its sessions were ended.`
           : one
-            ? `Ended. ${consequence(one)}`
-            : `${ids.length.toLocaleString("en-GB")} sessions were ended. ${consequences(was.rows).join(" ")}`,
+            ? consequence(one)
+            : `${ids.length.toLocaleString("en-GB")} sessions were ended.`,
       keys: was.rows.some((r) => r.kind === "person") ? (a.data?.live_keys ?? []) : undefined,
     });
     reload();
@@ -158,9 +158,7 @@ function SessionsPage() {
           </Button>
         }
       >
-        Every connection to this deployment and who is behind it: people coming in through Google&rsquo;s proxy, and agents calling with an API key or a workload token. Ending a session stops that
-        caller from its next request: a person is held out until an administrator lets them back, a key is revoked, a service&rsquo;s tokens issued until now are refused.
-        {kindUnbuilt("tool_server") && " Connections held open to tool servers are not built."}
+        Every connection to this deployment, and who is behind it.
       </PageHeader>
 
       {notice && (
@@ -328,17 +326,13 @@ function SessionsPage() {
         {answer === null && <p className="px-4 py-4 text-[12px] text-faint">Reading the sessions…</p>}
         {pending && (
           <div className="p-4">
-            <NotConnected door={answer.door}>
-              Every live connection, each tied to who is behind it: people signed in to the console, agents holding a key or a workload sign-in, and each run&rsquo;s record of its calls to a tool
-              server (nothing is held open to a tool server, so that row cannot be ended). Each will be a row here, with what it connected with, what it is connected to, when it started, when it was
-              last active and when it must be renewed. Ending a session waits for the same door.
-            </NotConnected>
+            <NotConnected door={answer.door} />
           </div>
         )}
         {answer?.state === "error" && <div className="p-4">{<p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">The sessions could not be read: {answer.message}</p>}</div>}
         {connected && all.length === 0 && (
           <div className="p-4">
-            <EmptyState title="No sessions" detail="The platform has recorded no connection yet. People and agents are listed here from their first request." />
+            <EmptyState title="No sessions" detail="People and agents appear from their first request." />
           </div>
         )}
         {connected && all.length > 0 && shown.length === 0 && (
@@ -367,7 +361,7 @@ function SessionsPage() {
       )}
       {selectedId && connected && !row && (
         <p className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-line-strong bg-surface px-4 py-3 text-[12px] text-dim">
-          No session with this id is in the list. It may have ended and been cleared.
+          No session with this id is in the list.
           <Button size="sm" variant="solid" tone="neutral" onClick={() => open(null)}>
             Show the list
           </Button>
@@ -394,30 +388,20 @@ function SessionsPage() {
           <span className="flex flex-col gap-2">
             {ending.what === "client" ? (
               <>
-                <span>
-                  Ending a client&rsquo;s registration ends every session issued to it: {ending.rows.length === 1 ? "one live session" : `${ending.rows.length.toLocaleString("en-GB")} live sessions`}. {ending.client} has to
-                  register again before it can connect.
-                </span>
                 <Affected rows={ending.rows} />
-                {consequences(ending.rows).map((line) => (
-                  <span key={line}>{line}</span>
-                ))}
+                <span>
+                  Ends {ending.rows.length === 1 ? "one live session" : `${ending.rows.length.toLocaleString("en-GB")} live sessions`}; {ending.client} must register again.
+                </span>
               </>
             ) : ending.rows.length === 1 ? (
               <>
-                <span>{consequence(ending.rows[0])}</span>
                 <Affected rows={ending.rows} />
-                {ending.rows[0].client.registration && (
-                  <span>Only this session ends. The registration of {ending.rows[0].client.name} stays, so it can start a new one; ending the registration ends every session issued to it.</span>
-                )}
+                <span>{consequence(ending.rows[0])}</span>
               </>
             ) : (
               <>
-                <span>These are ended:</span>
                 <Affected rows={ending.rows} />
-                {consequences(ending.rows).map((line) => (
-                  <span key={line}>{line}</span>
-                ))}
+                {consequences(ending.rows) && <span>{consequences(ending.rows)}</span>}
               </>
             )}
           </span>

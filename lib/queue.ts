@@ -81,8 +81,8 @@ export function taintOf(source: string | null | undefined): Taint | null {
 
 /** A taint in a person's words: what the input is, and what holds it. */
 export function taintLine(t: Taint): string {
-  if (t.kind === "a2a") return `Untrusted input: an A2A task${t.from ? ` sent by ${t.from}` : ""} (taint ${t.source}). Its input is marked tainted, so a sink it reaches is gated as any outside text is.`;
-  return `Untrusted input (taint ${t.source}): a sink it reaches is gated as any outside text is.`;
+  if (t.kind === "a2a") return `Untrusted input: an A2A task${t.from ? ` sent by ${t.from}` : ""} (taint ${t.source}).`;
+  return `Untrusted input (taint ${t.source}).`;
 }
 
 /** One job in a line: its status, then why it was withdrawn, why it failed, or what its input is; L8 (second round): a shadow job, or which arm of a canary it ran on. */
@@ -109,7 +109,7 @@ export function canaryArmOf(job: { shadow?: boolean | null; canary?: Record<stri
   const c = job.canary ?? null;
   const str = (v: unknown) => (typeof v === "string" ? v : "");
   const version = typeof c?.version === "number" ? ` (version ${c.version})` : "";
-  if (job.shadow) return `shadow job${version}${str(c?.of_job) ? ` mirroring job ${str(c?.of_job).slice(0, 8)}` : ""}: a worker running shadow mode claims it`;
+  if (job.shadow) return `shadow job${version}${str(c?.of_job) ? ` mirroring job ${str(c?.of_job).slice(0, 8)}` : ""}`;
   if (!c || !str(c.id)) return "";
   if (str(c.variant) === "candidate") return `canary candidate${version}`;
   if (str(c.shadow_job)) return `production, mirrored by shadow job ${str(c.shadow_job).slice(0, 8)}`;

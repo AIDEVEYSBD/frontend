@@ -36,10 +36,6 @@ export function AutonomyPanelView({ tiers }: { tiers: AutonomyTiers }) {
           <Tag>no tier</Tag>
           <span className="text-[12px] text-dim">{a.problem}</span>
         </span>
-        <p className="text-[11px] leading-[1.5] text-faint">
-          A tier applies once its workload has a registered use case, or its definition declares one (metadata.autonomy); a deploy to production is then held to
-          every control that tier requires.
-        </p>
       </div>
     );
   const tier = tiers.tiers.find((t) => t.tier === a.tier);
@@ -56,10 +52,6 @@ export function AutonomyPanelView({ tiers }: { tiers: AutonomyTiers }) {
         </span>
       </span>
       <p className="text-[11.5px] leading-[1.55] text-dim">{tierLine(a, tiers.requirements)}</p>
-      <p className="text-[11px] leading-[1.5] text-faint">
-        The tier is the one its use case was registered and approved with; an agent that runs no workload with a registered use case is held to the tier its
-        definition declares. A deploy to production goes ahead only when every control below is met.
-      </p>
       {tier && <p className="text-[11px] leading-[1.5] text-faint">{tier.description}</p>}
       {tier && <p className="text-[10.5px] leading-[1.5] text-ghost">{tierDocLine(tier)}</p>}
       {a.requires.length > 0 && (

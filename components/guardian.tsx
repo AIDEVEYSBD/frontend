@@ -42,7 +42,7 @@ const ACTS: { value: Act; label: string }[] = [
 ];
 const LIMITS = [
   { name: "tool_calls_per_run", on: "on_tool_calls", label: "Tool calls one run may make", unit: "calls", hint: "a whole number; empty is off" },
-  { name: "cost_per_run_usd", on: "on_cost", label: "What one run may cost, in US dollars", unit: "USD", hint: "above 0; empty is off; a run with an unpriced model is raised, never compared" },
+  { name: "cost_per_run_usd", on: "on_cost", label: "What one run may cost, in US dollars", unit: "USD", hint: "above 0; empty is off" },
   { name: "refusals_per_run", on: "on_refusals", label: "Refused calls one run may have", unit: "refusals", hint: "a whole number; empty is off" },
 ] as const;
 type LimitName = (typeof LIMITS)[number]["name"];
@@ -269,11 +269,7 @@ export function Guardian() {
             <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">Guardian</h1>
             {view && <Status tone={view.enabled ? "ok" : "neutral"}>{view.enabled ? "watching" : "no limit set"}</Status>}
           </span>
-          <p className="text-[12.5px] leading-[1.6] text-dim">
-            A watcher that holds runs in flight to the limits set here. Past a limit it holds the run&rsquo;s next call at or above write for a person, stops the run, or only
-            raises it for a person, as each limit says; it raises, rather than acts, when it cannot decide. Every act is signed guardian on the run&rsquo;s record.
-          </p>
-          {view && <p className="text-[12px] text-fg">{view.says}</p>}
+          <p className="text-[12.5px] leading-[1.6] text-dim">Holds runs in flight to the limits set here.</p>
         </div>
       </header>
 
@@ -285,7 +281,7 @@ export function Guardian() {
           <div data-hue={hueFor("approvals person")} className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-4 py-2.5">
             <span className="text-[12px] font-semibold">Limits</span>
             <span className="text-[11px] text-faint">
-              {view ? (view.change ? `set by policy change ${view.change}, approved by ${view.set_by}, ${ago(view.set_at)}` : "never set: no limit, so it does nothing") : quietDown ? "not read" : "reading…"}
+              {view ? (view.change ? `set by policy change ${view.change}, approved by ${view.set_by}, ${ago(view.set_at)}` : "never set: no limit") : quietDown ? "not read" : "reading…"}
             </span>
           </div>
           {quietDown ? (
@@ -294,8 +290,8 @@ export function Guardian() {
             <p className="px-4 py-4 text-[12px] text-faint">Reading the guardian&rsquo;s limits…</p>
           ) : (
             <div className="flex flex-col gap-4 px-4 py-4">
-              {!editable && <p className="text-[11.5px] text-warn">Proposing a change to the guardian&rsquo;s limits needs the configure permission; these are shown as set.</p>}
-              {editable && <p className="text-[11px] text-faint">A change here goes to review: someone other than you approves it on the Policy page, and these read as they are until it applies.</p>}
+              {!editable && <p className="text-[11.5px] text-warn">Proposing needs the configure permission.</p>}
+              {editable && <p className="text-[11px] text-faint">Changes go to review on the Policy page.</p>}
               <OpenChanges target={{ kind: "guardian", id: "estate" }} tick={proposals} />
               {LIMITS.map((l) => (
                 <div key={l.name} className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
@@ -382,7 +378,6 @@ export function Guardian() {
           ) : (
             <p className="px-4 py-4 text-[12px] text-faint">{quietDown ? "Not read." : "Reading…"}</p>
           )}
-          {view && <p className="border-t border-line px-4 py-2 text-[10.5px] text-ghost">Counted from the record of its actions. A run is acted on at most once per limit.</p>}
         </section>
       </div>
 
@@ -409,7 +404,7 @@ export function Guardian() {
         <div className="overflow-x-auto">
           {shown.length > 0 && <GuardianActionsTable actions={shown} />}
           {!actions && actionsError && <p className="px-4 py-4 text-[12px] text-faint">Not read.</p>}
-          {actions && shown.length === 0 && <p className="px-4 py-4 text-[12px] text-faint">{actions.length ? "None of this kind." : "There are none: the guardian has not acted on or raised any run."}</p>}
+          {actions && shown.length === 0 && <p className="px-4 py-4 text-[12px] text-faint">{actions.length ? "None of this kind." : "The guardian has not acted on any run yet."}</p>}
         </div>
       </section>
     </div>

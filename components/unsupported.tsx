@@ -4,8 +4,8 @@ import type { UnsupportedPart } from "@/lib/unsupported";
 
 /**
  * The parts of an agent's definition the platform does not carry out yet
- * (lib/unsupported.ts), each with the platform's own reason. Drawn wherever
- * the agent can be deployed or run, beside the disabled control.
+ * (lib/unsupported.ts), each with the platform's own reason on hover. Drawn
+ * wherever the agent can be deployed or run, beside the disabled control.
  */
 export function UnsupportedParts({ parts, compact = false, className = "", heading }: { parts: UnsupportedPart[]; compact?: boolean; className?: string; /** What the parts stop, when it is not deploy and run both (lib/unsupported.ts unsupportedHeading). */ heading?: string }) {
   if (!parts.length) return null;
@@ -16,9 +16,8 @@ export function UnsupportedParts({ parts, compact = false, className = "", headi
       </span>
       <ul className="flex flex-col gap-0.5">
         {parts.map((p) => (
-          <li key={p.part} className="text-[11px] leading-[1.5] text-dim">
+          <li key={p.part} className="text-[11px] leading-[1.5] text-dim" title={p.why || undefined}>
             <span className="font-mono text-[10.5px] text-fg">{p.part}</span>
-            {p.why ? ` · ${p.why}` : ""}
           </li>
         ))}
       </ul>

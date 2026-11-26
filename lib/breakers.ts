@@ -58,12 +58,11 @@ export function openingLine(o: Pick<BreakerOpening, "why" | "count" | "calls" | 
   return o.count ? `${o.count} (${o.why || "opened"})` : o.why || "opened";
 }
 
-/** The thresholds in a sentence: a rule of 0 is off, a window of 0 turns the calls rule off, a cooldown of 0 turns breakers off. */
+/** The thresholds in a short line: a rule of 0 is off, a window of 0 turns the calls rule off, a cooldown of 0 turns breakers off. */
 export function thresholdsLine(t: BreakerThresholds): string {
-  if (!t.cooldown_s) return "Breakers are off: with a cooldown of 0, none opens.";
-  const rules = [t.calls && t.window_s ? `more than ${t.calls} calls of one tool across the estate within ${spanText(t.window_s)}` : "", t.failures ? `${t.failures} failed calls of one tool in a row` : ""].filter(Boolean);
-  const opens = rules.length ? `Opens on ${rules.join(", or on ")}` : "Never opens: the calls and the failures rules are both off";
-  return `${opens}; stays open ${spanText(t.cooldown_s)}, and the first call after that is a probe: if it fails, the breaker opens again at once.`;
+  if (!t.cooldown_s) return "Breakers are off: the cooldown is 0.";
+  const rules = [t.calls && t.window_s ? `past ${t.calls} calls in ${spanText(t.window_s)}` : "", t.failures ? `at ${t.failures} failures in a row` : ""].filter(Boolean);
+  return rules.length ? `Opens ${rules.join(", or ")}.` : "Never opens: both rules are off.";
 }
 
 /** Seconds until `until`, from `now` (epoch ms); 0 once it has passed or when it cannot be read. */

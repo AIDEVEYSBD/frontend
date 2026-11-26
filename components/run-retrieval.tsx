@@ -157,12 +157,14 @@ export function RetrievalBody({ r, initial = 3 }: { r: Retrieval; initial?: numb
   const [all, setAll] = useState(false);
   const shown = all ? r.passages : r.passages.slice(0, initial);
   const screened = r.passages.some((p) => p.verdict);
+  // The ranking and the notes are not drawn; a NOT_CLEARED one still shows where to clear a model.
+  const uncleared = [r.ranking, ...r.notes].some((t) => NOT_CLEARED.test(t));
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex flex-col gap-1">
         <span className="text-[10.5px] font-medium text-faint">Sources consulted</span>
         {r.consulted.length === 0 ? (
-          <span className="text-[11.5px] text-faint">The result does not say which sources were consulted.</span>
+          <span className="text-[11.5px] text-faint">Not recorded.</span>
         ) : (
           <ul className="flex flex-col gap-0.5">
             {r.consulted.map((c, i) => (
@@ -174,29 +176,16 @@ export function RetrievalBody({ r, initial = 3 }: { r: Retrieval; initial?: numb
                 {(c.ok || c.hits !== null) && <span className="tnum text-dim">{c.hits === null ? "hits not recorded" : `${c.hits} hit${c.hits === 1 ? "" : "s"}`}</span>}
                 {c.ok && c.searched && <span className={c.searched === "by wording only" ? "text-warn" : "text-faint"}>searched {c.searched}</span>}
                 {!c.ok && <span className={`min-w-0 break-words ${leftOut(c) ? "text-warn" : "text-err"}`}>{c.error || "no reason recorded"}</span>}
-                {c.note && <span className="basis-full pl-1 text-[10.5px] leading-[1.5] text-faint">{c.note}</span>}
               </li>
             ))}
           </ul>
         )}
       </div>
-      {(r.ranking || r.notes.length > 0 || r.note || r.atClass) && (
+      {(r.rerankModel || r.atClass || uncleared) && (
         <div className="flex flex-col gap-0.5 text-[11px] leading-[1.5]">
-          {r.ranking && (
-            <span className="text-dim">
-              <span className="text-faint">Ranked </span>
-              {r.ranking}
-              {r.rerankModel && !r.ranking.includes(r.rerankModel) ? ` (re-ranked by ${r.rerankModel})` : ""}.
-            </span>
-          )}
-          {r.atClass && <span className="text-faint">Searched at {r.atClass}: no passage above that class is handed over.</span>}
-          {r.note && <span className="text-warn">{r.note[0].toUpperCase() + r.note.slice(1)}.</span>}
-          {r.notes.map((n, i) => (
-            <span key={i} className="text-warn">
-              {n}
-            </span>
-          ))}
-          {[r.ranking, ...r.notes].some((t) => NOT_CLEARED.test(t)) && <ClearanceHint />}
+          {r.rerankModel && <span className="text-faint">Re-ranked by {r.rerankModel}</span>}
+          {r.atClass && <span className="text-faint">Searched at {r.atClass}</span>}
+          {uncleared && <ClearanceHint />}
         </div>
       )}
       <div className="flex flex-col gap-1">
@@ -243,7 +232,7 @@ export function RetrievalBody({ r, initial = 3 }: { r: Retrieval; initial?: numb
             {all ? "show fewer" : `show all ${r.passages.length}`}
           </Button>
         )}
-        {!screened && r.passages.length > 0 && <span className="text-[10px] text-faint">This entry carries no screening verdict for its passages.</span>}
+        {!screened && r.passages.length > 0 && <span className="text-[10px] text-faint">No screening verdict recorded.</span>}
       </div>
     </div>
   );

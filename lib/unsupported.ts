@@ -26,7 +26,7 @@ export function unsupportedOf(x: unknown): UnsupportedPart[] {
 export function unsupportedReason(parts: UnsupportedPart[]): string {
   if (!parts.length) return "";
   const names = parts.map((p) => p.part).join(", ");
-  return `Its definition uses ${parts.length === 1 ? "a part" : "parts"} the platform does not carry out yet (${names}), so it cannot be deployed or run.`;
+  return `Uses ${parts.length === 1 ? "a part" : "parts"} the platform does not carry out yet: ${names}`;
 }
 
 /**
@@ -45,6 +45,6 @@ export function runBlockers(parts: UnsupportedPart[], version: number | null | u
 /** The heading over the parts: what they stop, given which version they describe. */
 export function unsupportedHeading(version: number | null | undefined, deployed: number | null | undefined): string {
   if (deployed !== null && deployed !== undefined && deployed !== version)
-    return `The latest save${typeof version === "number" ? ` (version ${version})` : ""} uses parts the platform does not carry out yet, so it cannot be deployed. Production runs version ${deployed}.`;
+    return `Not carried out yet: deploy is off; production runs version ${deployed}`;
   return "Not carried out by the platform yet: deploy and run are off";
 }

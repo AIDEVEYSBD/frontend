@@ -39,7 +39,7 @@ import { runFlagsOf, type RunFlags } from "@/lib/lifecycle";
 import { deliverableFileUrl, downloadDeliverable } from "@/lib/api/l8b";
 import { fileRefusalText, sizeText } from "@/lib/deliverables";
 import { useDoorOff } from "@/lib/use-doors";
-import { wouldCallOf, wouldCallLine } from "@/lib/canary";
+import { wouldCallOf } from "@/lib/canary";
 import { KillAlreadyView, KillReceiptView, RunTreePanel } from "./run-tree";
 import { RateLimitNote, useRetryReady } from "./rate-limit";
 import { killRefusalOf, killRun, type KillReceipt, type KillRefusal, type RateLimit } from "@/lib/api/l7";
@@ -170,7 +170,7 @@ function artifactsOf(entries: Entry[]): RunFile[] {
  * the file. Returns the refusal's sentence, or "" when the file was saved.
  */
 async function saveRunFile(f: RunFile): Promise<string> {
-  if (!f.deliverable) return "the journal names no deliverable for this file, so the platform serves no copy of it";
+  if (!f.deliverable) return "No copy to download: the journal names no deliverable.";
   try {
     const got = await downloadDeliverable(f.deliverable);
     const url = URL.createObjectURL(got.blob);
@@ -297,7 +297,7 @@ function StreamLine({ stream, following, onRetry }: { stream: StreamState; follo
           </Button>
         </>
       ) : stream.reconnecting ? (
-        <span className="min-w-0 truncate text-[12px] text-warn" role="status">The live stream dropped; reconnecting… nothing new is shown until it is back.</span>
+        <span className="min-w-0 truncate text-[12px] text-warn" role="status">Live stream dropped; reconnecting…</span>
       ) : (
         <span className="min-w-0 truncate text-[12px] text-dim">{following}</span>
       )}
@@ -404,10 +404,7 @@ function RunHistory() {
               Start a run from an agent
             </Button>
           </div>
-          <p className="max-w-[720px] text-[13.5px] leading-relaxed text-dim">
-            Every run on this deployment, newest first: done, failed, waiting on a person or stopped. Open one for its
-            record: each model call, tool call, budget decision, approval and output, in order.
-          </p>
+          <p className="max-w-[720px] text-[13.5px] leading-relaxed text-dim">Every run on this deployment, newest first.</p>
         </header>
 
 
@@ -478,7 +475,7 @@ function RunHistory() {
               </div>
             )}
             {history && history.length > 0 && notBuilt(historyNotBuilt, "review") && (
-              <p className="border-b border-line px-4 py-2 text-[11px] text-faint">Not built: a run of a version someone rolled back from is not flagged for review here, so no row carries that mark.</p>
+              <p className="border-b border-line px-4 py-2 text-[11px] text-faint">Rollback review flag: not built</p>
             )}
             {history?.length === 0 && (
               <p className="px-4 py-5 text-[12px] text-faint">{scope === "mine" ? "No run of yours is recorded." : "No runs recorded yet."}</p>
@@ -786,7 +783,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
       const emptyOptional = (f: { name: string; kind: Kind; value: string }) => f.kind === "number" && f.value.trim() === "" && optional(f.name);
       const notNumber = fields.find((f) => f.kind === "number" && !emptyOptional(f) && (f.value.trim() === "" || !Number.isFinite(Number(f.value))));
       if (notNumber) {
-        setError(notNumber.value.trim() === "" ? `${notNumber.name} is a number the run requires, and it is empty: give it a value before starting.` : `${notNumber.name} is a number, and "${notNumber.value}" does not read as one.`);
+        setError(notNumber.value.trim() === "" ? `${notNumber.name} is required: enter a number.` : `${notNumber.name}: "${notNumber.value}" is not a number.`);
         return;
       }
       parsed = Object.fromEntries(
@@ -862,7 +859,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
       {killAsk && (
         <KillDialog
           title="Kill this run?"
-          what={`${system.name} · ${killAsk}. A worker running it stops before its next model call, step or node; a call already in flight finishes. A run waiting for a person stops at once. The kill also reaches every run below it in its tree, each stopped before its next model or tool call; tasks handed to peers are not reached. The journal records the reason and your name.`}
+          what={`${system.name} · ${killAsk}. It and every run below it stop before their next call.`}
           onClose={() => setKillAsk(null)}
           onConfirm={(reason) => {
             const id = killAsk;
@@ -914,11 +911,10 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
           <KillAlreadyView refusal={already} onDismiss={() => setAlready(null)} />
         ) : shadowRun ? (
           <Banner tone="neutral" title="Mirrored in shadow mode">
-            A canary&rsquo;s candidate is running on the same input as shadow run{" "}
+            Shadow run{" "}
             <Link href={`/runs?id=${encodeURIComponent(shadowRun)}`} className="focusable rounded-sm font-mono text-fg underline">
               {shadowRun}
             </Link>
-            : its calls at or above write and calls that act outside are recorded there, not made. The pair is compared on the lifecycle page.
           </Banner>
         ) : null
       }
@@ -1050,7 +1046,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
         phase === "live" && !suspension ? (
           <div className="flex h-11 shrink-0 items-center gap-3 border-t border-line bg-surface px-4">
             {!stream.lost && <Thinking height={10} />}
-            <StreamLine stream={stream} onRetry={() => liveRunId && follow(liveRunId)} following={killing ? "kill requested — the journal records it in a moment" : "running — every entry lands as the runtime writes it"} />
+            <StreamLine stream={stream} onRetry={() => liveRunId && follow(liveRunId)} following={killing ? "Kill requested" : "Running"} />
             <span className="grow" />
             <Mono className="tnum text-[11px] text-faint">{clock(Math.max(journalMs, wallMs))}</Mono>
             <Button
@@ -1545,7 +1541,7 @@ function FollowTheater({
       {killAsk && (
         <KillDialog
           title="Kill this run?"
-          what={`${system || "run"} · ${id}. A worker running it stops before its next model call, step or node; a call already in flight finishes. A run waiting for a person stops at once. The kill also reaches every run below it in its tree, each stopped before its next model or tool call; tasks handed to peers are not reached. The journal records the reason and your name.`}
+          what={`${system || "run"} · ${id}. It and every run below it stop before their next call.`}
           onClose={() => setKillAsk(false)}
           onConfirm={(reason) => {
             setKillAsk(false);
@@ -1608,12 +1604,12 @@ function FollowTheater({
                 onRetry={follow}
                 following={
                   killing || killed
-                    ? `kill requested${killed?.by ? ` by ${killed.by}` : ""} — the run stops before its next model call, step or node`
+                    ? `Kill requested${killed?.by ? ` by ${killed.by}` : ""}`
                     : waiting && !waiting.live && entries.length <= initial.length && waiting.stuck
-                      ? `stuck: ${waiting.reason || "no worker is carrying this run"}`
+                      ? `Stuck: ${waiting.reason || "no worker is carrying this run"}`
                       : waiting && !waiting.live && entries.length <= initial.length && waiting.on
-                        ? `queued — waiting on ${waiting.on}; nothing is written until it is taken up`
-                        : "following — every entry lands as the runtime writes it"
+                        ? `Queued: waiting on ${waiting.on}`
+                        : "Following live"
                 }
               />
               {error && <span className="min-w-0 truncate text-[11.5px] text-err">{error}</span>}
@@ -2206,7 +2202,7 @@ function Theater({
             {finalState === "killed" && (
               <Banner tone="err" title="Killed by operator">
                 <span className="flex flex-col gap-1.5">
-                  <span>{error || "The run was stopped on a kill request. The journal holds what it did before it stopped."}</span>
+                  <span>{error || "Stopped on a kill request."}</span>
                   <ControlRef control={KILL_CONTROL} size="md" />
                 </span>
               </Banner>
@@ -2300,10 +2296,7 @@ function TracePanel({ runId }: { runId: string }) {
             {span ? (
               <SpanDetail span={span} />
             ) : (
-              <p className="px-4 py-3 text-[11px] leading-[1.5] text-faint">
-                Pick a span. A faded bar is a duration inferred from the entries around it rather
-                than measured.
-              </p>
+              <p className="px-4 py-3 text-[11px] leading-[1.5] text-faint">Pick a span; a faded bar is inferred, not measured.</p>
             )}
           </div>
         </div>
@@ -2621,7 +2614,7 @@ function TheaterTranscript({ entries, all, live, runId = "", jump = null }: { en
       <div ref={scroller} onScroll={onScroll} className="flex min-h-0 grow flex-col gap-3.5 overflow-y-auto px-4 py-4">
         {absent && (
           <p role="status" className="rounded-md border border-warn-line bg-warn-bg px-3 py-2 text-[12px] leading-[1.5] text-fg">
-            The link points at entry <Mono className="text-[11px] text-fg">{linked}</Mono>, which is not in this run&rsquo;s journal{live ? " so far" : ""}.
+            Entry <Mono className="text-[11px] text-fg">{linked}</Mono> is not in this run&rsquo;s journal{live ? " so far" : ""}.
           </p>
         )}
         {shown.map((e, i) => {
@@ -2785,11 +2778,6 @@ function JournalRow({ e, entries, outcomes, live = false, located = false, onLin
               {intents ? `No text: the model asked for ${intents} tool call${intents === 1 ? "" : "s"}.` : "The journal holds no text for this call."}
             </span>
           )}
-          {e.tainted && (
-            <span className="text-[11px] text-faint">
-              Worked over content authored outside the system — untrusted input, tracked by the taint rules.
-            </span>
-          )}
           {asJson && !open ? (
             /* A structured decision reads as prose; the raw object is a click away. */
             <div className="flex max-w-[62ch] flex-col gap-1.5">
@@ -2890,11 +2878,11 @@ function JournalRow({ e, entries, outcomes, live = false, located = false, onLin
             )}
             {o.state === "unknown" && (
               <span className="text-[11.5px] leading-[1.5] text-warn">
-                → {o.gate ? "The worker stopped before the answer was recorded; the run waits for a person to say whether the call happened." : o.interrupted?.detail || "The worker stopped before the answer was recorded."}
+                → {o.gate ? "Worker stopped before the answer; a person decides if it ran." : o.interrupted?.detail || "The worker stopped before the answer was recorded."}
               </span>
             )}
             {o.state === "held" && o.gate && <span className="text-[11.5px] leading-[1.5] text-warn">→ {o.gate.title || "Held for a person"}{o.gate.detail ? `: ${o.gate.detail}` : ""}</span>}
-            {o.state === "open" && !live && <span className="text-[11.5px] leading-[1.5] text-faint">→ The run is not live and nothing in the journal closes this call.</span>}
+            {o.state === "open" && !live && <span className="text-[11.5px] leading-[1.5] text-faint">→ No outcome on record.</span>}
           </button>
           {open && (
             <div className="flex flex-col gap-2 border-t border-line px-3 py-2.5">
@@ -2978,8 +2966,7 @@ function JournalRow({ e, entries, outcomes, live = false, located = false, onLin
                 Condition: <Mono className="text-[10.5px] text-dim">{when}</Mono>
               </span>
             )}
-            {gate && conditionError && <span className="text-[11px] leading-[1.5] text-warn">The condition could not be read, so the call is held: {conditionError}</span>}
-            {unknownOutcome && <span className="text-[11px] leading-[1.5] text-faint">The answer says whether the call happened before the worker stopped.</span>}
+            {gate && conditionError && <span className="text-[11px] leading-[1.5] text-warn">Condition unreadable, call held: {conditionError}</span>}
             {gate && <span className="text-[11px] leading-[1.5] text-faint">{gateDeadlineLine(typeof e.data?.deadline === "string" ? e.data.deadline : null, (iso) => new Date(iso).toLocaleString("en-GB"))}</span>}
             {!gate && why.decides && (
               <span className="text-[11px] leading-[1.5] text-faint">
@@ -3141,7 +3128,11 @@ function JournalRow({ e, entries, outcomes, live = false, located = false, onLin
               {would.risk && <Tag>{would.risk}</Tag>}
               <Tag tone="queue">not executed</Tag>
             </span>
-            <span className="text-[11.5px] leading-[1.55] text-faint">{wouldCallLine(would)}</span>
+            {would.reason && (
+              <span className="text-[11.5px] leading-[1.55] text-faint">
+                Held: {would.reason === "gate" ? "a gate would hold it" : would.reason === "sink" ? "acts outside" : would.reason === "above_read" ? "at or above write" : would.reason.replace(/_/g, " ")}
+              </span>
+            )}
             {Object.keys(would.args).length > 0 && (
               <details className="pt-0.5">
                 <summary className="focusable cursor-pointer text-[10.5px] text-ghost">what it would have sent</summary>

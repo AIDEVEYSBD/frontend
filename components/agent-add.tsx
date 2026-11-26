@@ -85,7 +85,7 @@ export function AddAgent({ onSaved }: { onSaved?: () => void }) {
       {open && (
         <DrillModal
           title="Add an agent"
-          subtitle="An agent arrives as a definition document: the JSON file its author hands over. It is checked before anything is saved; a part of it the platform does not carry out yet is listed on the agent's page, and stops a deploy and a run. A document that names an agent already here is saved as its next version."
+          subtitle="The agent's JSON definition; checked before it is saved."
           onClose={close}
           actions={
             kept ? (
@@ -121,7 +121,7 @@ export function AddAgent({ onSaved }: { onSaved?: () => void }) {
                 {kept.id} is saved{kept.version !== null ? ` as version ${kept.version}` : ""}.
               </p>
               <UnreadFields unread={kept.unread} />
-              <p className="text-[11.5px] leading-[1.5] text-faint">To have a field read, correct its name or its value in the document and save it again: it is saved as the next version.</p>
+              <p className="text-[11.5px] leading-[1.5] text-faint">Fix the field in the document and save again.</p>
             </div>
           ) : (
           <div className="flex flex-col gap-3">

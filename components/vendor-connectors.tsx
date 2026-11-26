@@ -99,20 +99,20 @@ export function VendorConnectors() {
       setLabel("");
       setAccount("");
       setIdentity("");
-      return `${made.label} is connected. It has not synced yet.`;
+      return `${made.label} is connected.`;
     });
   const sync = (c: Connection) =>
     act(`sync:${c.id}`, async () => {
       const done = (await send("POST", `/api/vendors/${encodeURIComponent(c.id)}/sync`)) as Connection & { this_sync: { agents: number; records_new: number; more: boolean } };
       const s = done.this_sync;
-      return `${c.label} synced: ${s.agents} ${s.agents === 1 ? "agent" : "agents"} found, ${s.records_new} new audit ${s.records_new === 1 ? "record" : "records"}${s.more ? "; there are more, sync again to bring them in" : ""}.`;
+      return `${c.label} synced: ${s.agents} ${s.agents === 1 ? "agent" : "agents"} found, ${s.records_new} new audit ${s.records_new === 1 ? "record" : "records"}${s.more ? "; more remain, sync again" : ""}.`;
     });
   const remove = async () => {
     const c = removing;
     if (!c) return;
     await act(`remove:${c.id}`, async () => {
       const done = (await send("DELETE", `/api/vendors/${encodeURIComponent(c.id)}`)) as { records_kept: number };
-      return `${c.label} is removed. The ${done.records_kept} audit ${done.records_kept === 1 ? "record" : "records"} it brought in are kept.`;
+      return `${c.label} is removed; its ${done.records_kept} audit ${done.records_kept === 1 ? "record is" : "records are"} kept.`;
     });
     setRemoving(null);
   };
@@ -128,11 +128,7 @@ export function VendorConnectors() {
         </div>
       )}
       {!register && !failed && <p className="px-4 py-3 text-[11.5px] text-faint">Reading the vendor connectors…</p>}
-      {register && register.says && (
-        <p className="px-4 py-3 text-[12px] text-dim">
-          {register.says} A connector for a vendor is installed on the deployment by its operators; until one is, no vendor account can be connected here.
-        </p>
-      )}
+      {register && register.installed.length === 0 && <p className="px-4 py-3 text-[12px] text-dim">No vendor connector is installed.</p>}
 
       {register && register.installed.length > 0 && (
         <form
@@ -153,7 +149,7 @@ export function VendorConnectors() {
             <Field label="Account" hint={chosen ? `This vendor's account is ${chosen.account_means}.` : undefined}>
               <Input value={account} onChange={setAccount} mono autoComplete="off" />
             </Field>
-            <Field label="Integration identity" hint="The name of the vault credential the connector signs in with (Configuration, Access, Credentials). Its value is never shown.">
+            <Field label="Integration identity" hint="The vault credential name the connector signs in with.">
               <Input value={identity} onChange={setIdentity} mono autoComplete="off" />
             </Field>
           </div>
@@ -209,9 +205,12 @@ export function VendorConnectors() {
           </span>
           {c.last_error && <span className="text-[11px] leading-[1.5] text-err">{c.last_error}</span>}
           <span className="text-[11px] leading-[1.5] text-faint">
-            Routing: {c.routing.says}.{c.routing.model_calls || c.routing.tool_calls ? " How this connector would route them:" : ""}
-            {c.routing.model_calls ? ` model calls: ${c.routing.model_calls};` : ""}
-            {c.routing.tool_calls ? ` tool calls: ${c.routing.tool_calls}.` : ""}
+            Routing:{" "}
+            {c.routing.built ? (
+              [c.routing.model_calls && `model calls: ${c.routing.model_calls}`, c.routing.tool_calls && `tool calls: ${c.routing.tool_calls}`].filter(Boolean).join("; ") || "built"
+            ) : (
+              <span data-not-built="routing">Not built</span>
+            )}
           </span>
         </div>
       ))}
@@ -220,7 +219,7 @@ export function VendorConnectors() {
         <Dialog modal tone="err" cancel="Cancel" confirm="Remove account" title={`Remove ${removing.label}?`} loading={busy === `remove:${removing.id}`}
           onConfirm={() => void remove()} onClose={() => !busy && setRemoving(null)}>
           <span className="text-[12px] leading-[1.5] text-dim">
-            The account and the agents found in it are forgotten. The {removing.records} audit {removing.records === 1 ? "record" : "records"} it brought in are kept as they are.
+            Its agents are forgotten; its {removing.records} audit {removing.records === 1 ? "record is" : "records are"} kept.
           </span>
         </Dialog>
       )}

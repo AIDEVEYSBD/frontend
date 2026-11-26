@@ -128,23 +128,19 @@ export function WorkloadFindings({ profile, selected }: { profile: WorkloadProfi
 
       <Card title="Findings by severity" meta={answer?.state === "ok" ? `${count(total)} reported for ${profile.name.toLowerCase()}` : undefined} action={openAll}>
         {answer === null && <p className="text-[12px] text-faint">Reading the findings&hellip;</p>}
-        {answer?.state === "pending" && (
-          <NotConnected compact door={answer.door}>
-            What {profile.name.toLowerCase()} reported: the count at each severity, and the most recent findings with the detail of the one you pick.
-          </NotConnected>
-        )}
+        {answer?.state === "pending" && <NotConnected compact door={answer.door} />}
         {answer?.state === "error" && <Failure what="The findings could not be read" message={answer.message} />}
         {answer?.state === "ok" &&
           (rows.length === 0 ? (
             <p className="text-[12.5px] leading-[1.6] text-dim">
-              {answer?.state === "ok" && notBuilt(notBuiltOf(answer.data), "producer") ? "Nothing produces findings yet: the platform names their producer as not built." : "No finding is on record for this workload."}
+              {answer?.state === "ok" && notBuilt(notBuiltOf(answer.data), "producer") ? "Not built" : "No finding is on record for this workload."}
             </p>
           ) : (
             <>
               <SeverityBar counts={countBySeverity(rows)} href={(s) => `${all}&severity=${s}`} />
               {total > rows.length && (
                 <Note>
-                  The counts cover the {count(rows.length)} findings read here, of {count(total)} on record. The full list has the rest.
+                  Counts cover {count(rows.length)} of {count(total)} findings.
                 </Note>
               )}
             </>
@@ -153,7 +149,7 @@ export function WorkloadFindings({ profile, selected }: { profile: WorkloadProfi
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
         <Card title="Most recent" hue="finding" meta={answer?.state === "ok" && rows.length ? `${count(recent.length)} of ${count(total)}` : undefined} pad={false}>
-          {answer?.state !== "ok" && <p className="px-4 py-3 text-[12px] text-faint">{answer === null ? "Reading…" : answer.state === "pending" ? "Nothing is listed until the findings door answers." : "Not read."}</p>}
+          {answer?.state !== "ok" && <p className="px-4 py-3 text-[12px] text-faint">{answer === null ? "Reading…" : answer.state === "pending" ? "Not built" : "Not read."}</p>}
           {answer?.state === "ok" && rows.length === 0 && <p className="px-4 py-3 text-[12px] text-faint">Nothing to list yet.</p>}
           {recent.length > 0 && (
             <ul className="flex flex-col">
@@ -193,10 +189,10 @@ export function WorkloadFindings({ profile, selected }: { profile: WorkloadProfi
             <FindingBeside finding={picked} />
           ) : selected && answer?.state === "ok" ? (
             <Note>
-              That finding is not among the ones read here. It may still be on <TextLink href={`/findings?id=${encodeURIComponent(selected)}`}>its own page</TextLink>.
+              Not in this list; try <TextLink href={`/findings?id=${encodeURIComponent(selected)}`}>its own page</TextLink>.
             </Note>
           ) : (
-            <p className="text-[12px] leading-[1.6] text-faint">The detail of a finding is shown here when you pick one: what it is, and the part that differs for {profile.name.toLowerCase()}.</p>
+            <p className="text-[12px] leading-[1.6] text-faint">Pick a finding to see its detail.</p>
           )}
         </Card>
       </div>
@@ -206,7 +202,7 @@ export function WorkloadFindings({ profile, selected }: { profile: WorkloadProfi
 
 /* ═══════════════════ report ═══════════════════ */
 
-export function WorkloadReport({ profile, reading }: { profile: WorkloadProfile; reading: OfferReading }) {
+export function WorkloadReport({ reading }: { reading: OfferReading }) {
   const router = useRouter();
   // The agent whose deliverables are the workload's reports: the saved agent the door names, or the attached agent that runs it.
   const agent = reading.agent || reading.attached;
@@ -240,16 +236,9 @@ export function WorkloadReport({ profile, reading }: { profile: WorkloadProfile;
         </Button>
       }
     >
-      <p className="max-w-[86ch] text-[12.5px] leading-[1.6] text-dim">
-        A report is a deliverable: a document a run wrote, kept with its state, its history and its file. The reports of {profile.name.toLowerCase()} are the deliverables of the agent that runs it.
-      </p>
-
       {!agent && (
         <div className="flex flex-col gap-1 rounded-md border border-line bg-canvas px-3 py-2.5">
-          <span className="max-w-[86ch] text-[12px] leading-[1.55] text-dim">
-            {reading.state === "reading" ? "Reading the workloads…" : `Which agent that is cannot be said here. ${reading.why}`} Every deliverable on record, whichever agent wrote it, is on{" "}
-            <TextLink href="/deliverables">Deliverables</TextLink>.
-          </span>
+          <span className="max-w-[86ch] text-[12px] leading-[1.55] text-dim">{reading.state === "reading" ? "Reading the workloads…" : reading.why}</span>
         </div>
       )}
 
@@ -271,7 +260,7 @@ export function WorkloadReport({ profile, reading }: { profile: WorkloadProfile;
           )}
           {mine?.list &&
             (mine.list.deliverables.length === 0 ? (
-              <p className="rounded-md border border-line bg-canvas px-3 py-2.5 text-[12px] leading-[1.55] text-dim">This agent has no deliverable on record. A report appears here once a run of the workload writes one.</p>
+              <p className="rounded-md border border-line bg-canvas px-3 py-2.5 text-[12px] leading-[1.55] text-dim">No deliverable on record for this agent yet.</p>
             ) : (
               <DeliverablesListView list={mine.list} onSelect={(d) => router.push(`/deliverables?agent=${encodeURIComponent(agent)}&id=${encodeURIComponent(d)}`)} />
             ))}
@@ -318,11 +307,7 @@ export function WorkloadAcceptance({ profile }: { profile: WorkloadProfile }) {
     >
       {answer === null && <p className="text-[12px] text-faint">Reading the acceptance record&hellip;</p>}
 
-      {answer?.state === "pending" && (
-        <NotConnected compact door={answer.door}>
-          This use case&rsquo;s acceptance record in brief: its status, how many criteria are met, the issues still open and who has signed.
-        </NotConnected>
-      )}
+      {answer?.state === "pending" && <NotConnected compact door={answer.door} />}
 
       {answer?.state === "error" && (
         <Banner
@@ -389,7 +374,7 @@ export function WorkloadAcceptance({ profile }: { profile: WorkloadProfile }) {
               )}
             </Block>
           </div>
-          <Note>The criteria with their results and the runs they were measured on, the issues and the Sign control are on the Acceptance page.</Note>
+          <Note>Criteria results and signing are on the Acceptance page.</Note>
         </>
       )}
     </Card>

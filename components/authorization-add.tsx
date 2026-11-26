@@ -85,7 +85,7 @@ function trustProblem(f: Form): string {
   if (!subjects.length) return "Name at least one subject to admit.";
   for (const s of subjects) {
     if (/\s/.test(s)) return `"${s}" has a space in it; a subject is one word.`;
-    if (s === "*") return "A lone * would admit every workload from this issuer. Name a prefix before it.";
+    if (s === "*") return "A lone * admits every workload; name a prefix before it.";
     if (s.slice(0, -1).includes("*")) return `"${s}": a * may only end a subject, as a prefix.`;
   }
   return "";
@@ -256,7 +256,7 @@ export function AddAuthServerDialog({ onClose, onAdded }: { onClose: () => void;
 
   /* What the metadata rules out, once it has been read. Before that every method can be chosen and the door decides. */
   const noDynamic = meta && !meta.registration_endpoint ? "It publishes no address where a client can register itself." : undefined;
-  const noHosted = meta && meta.client_id_metadata_document_supported === false ? "It says it does not accept a client known by a hosted metadata document." : undefined;
+  const noHosted = meta && meta.client_id_metadata_document_supported === false ? "It does not accept a hosted metadata document." : undefined;
   const methodOff = (form.registration === "dynamic" && noDynamic) || (form.registration === "metadata" && noHosted) || "";
 
   // Escape closes; Tab stays inside; focus returns to where it was.
@@ -336,7 +336,7 @@ export function AddAuthServerDialog({ onClose, onAdded }: { onClose: () => void;
               {done ? `${done.name} added` : "Add an authorization server"}
             </span>
             <span className="max-w-[80ch] text-[11.5px] leading-[1.5] text-faint">
-              {done ? "This deployment now trusts it for what was chosen." : "An outside issuer this deployment will trust for workloads: a service signs in with a token it signed. Upstream trust, a per-person token for a tool, is not built."}
+              {done ? "This deployment now trusts it for what was chosen." : "An outside issuer whose signed tokens a service signs in with."}
             </span>
           </span>
           {!done && <Steps step={step} canTwo={!atIssuer} onStep={setStep} />}
@@ -374,9 +374,7 @@ export function AddAuthServerDialog({ onClose, onAdded }: { onClose: () => void;
                 </Row>
               )}
             </dl>
-            <p className="max-w-[80ch] text-[12.5px] leading-[1.55] text-dim">
-              It is in the list under {(done.server?.purpose ?? form.purpose) === "upstream" ? "Upstream services" : "Workloads"}, with the state the control plane found it in.
-            </p>
+            <p className="max-w-[80ch] text-[12.5px] leading-[1.55] text-dim">Listed under {(done.server?.purpose ?? form.purpose) === "upstream" ? "Upstream services" : "Workloads"}.</p>
           </div>
         ) : (
           <div className="grid min-h-0 grow overflow-y-auto md:grid-cols-[minmax(0,1fr)_280px] md:overflow-hidden">
@@ -391,7 +389,7 @@ export function AddAuthServerDialog({ onClose, onAdded }: { onClose: () => void;
             >
               {step === 1 ? (
                 <>
-                  <Field label="Issuer address" hint="Starting https://, as the issuer names itself. The platform reads what it publishes from there.">
+                  <Field label="Issuer address" hint="Starting https://, as the issuer names itself.">
                     <Input value={form.issuer} onChange={(v) => patch({ issuer: v })} mono type="url" autoComplete="off" />
                   </Field>
                   <div className="grid gap-4 sm:grid-cols-2">
@@ -405,8 +403,7 @@ export function AddAuthServerDialog({ onClose, onAdded }: { onClose: () => void;
                       <span className="flex min-w-0 grow basis-[260px] flex-col gap-0.5">
                         <span className="text-[12.5px] font-medium text-mist">What the platform reads from the issuer</span>
                         <span className="text-[11.5px] leading-[1.5] text-faint">
-                          The metadata document the issuer publishes at its well-known address (<Mono className="text-[10.5px]">/.well-known/oauth-authorization-server</Mono>, or{" "}
-                          <Mono className="text-[10.5px]">/.well-known/openid-configuration</Mono>). Nothing is typed in by hand, and nothing is stored until the server is added.
+                          <Mono className="text-[10.5px]">/.well-known/oauth-authorization-server</Mono> or <Mono className="text-[10.5px]">/.well-known/openid-configuration</Mono>
                         </span>
                       </span>
                       <Button size="sm" variant="solid" tone="neutral" permission="iam" disabled={Boolean(atIssuer)} loading={probing} onClick={() => void read()}>
@@ -417,9 +414,7 @@ export function AddAuthServerDialog({ onClose, onAdded }: { onClose: () => void;
                     {probe?.state === "pending" && <NotConnectedNote door={probe.door} />}
                     {probe?.state === "error" && (<span className="text-[11.5px] leading-[1.5] text-err">The metadata could not be read: {probe.message}</span>)}
                     {noS256 && (
-                      <span className="text-[11.5px] leading-[1.5] text-warn">
-                        This issuer does not advertise PKCE with S256, the check that stops a stolen sign-in code from being used. A sign-in through it for an upstream service is weaker for that.
-                      </span>
+                      <span className="text-[11.5px] leading-[1.5] text-warn">This issuer does not advertise PKCE with S256.</span>
                     )}
                   </div>
                 </>
@@ -442,14 +437,14 @@ export function AddAuthServerDialog({ onClose, onAdded }: { onClose: () => void;
                           <Choice title={REGISTRATIONS.metadata.label} line={REGISTRATIONS.metadata.line} selected={form.registration === "metadata"} unavailable={noHosted} onSelect={() => patch({ registration: "metadata" })} />
                           <Choice title={REGISTRATIONS.manual.label} line={REGISTRATIONS.manual.line} selected={form.registration === "manual"} onSelect={() => patch({ registration: "manual" })} />
                         </div>
-                        {!meta && <span className="text-[11.5px] leading-[1.5] text-faint">Which of these the issuer offers is known once its metadata has been read; the control plane refuses one it does not offer.</span>}
+                        {!meta && <span className="text-[11.5px] leading-[1.5] text-faint">Read the issuer&rsquo;s metadata to see which it offers.</span>}
                       </div>
                       {form.registration === "manual" && (
                         <div className="grid gap-4 sm:grid-cols-2">
                           <Field label="Client id" hint="As the issuer gave it when this deployment was registered there.">
                             <Input value={form.clientId} onChange={(v) => patch({ clientId: v })} mono autoComplete="off" />
                           </Field>
-                          <Field label="Vault name of the client secret (optional)" hint="Referenced by name; the value never leaves the vault. Blank for a client with no secret.">
+                          <Field label="Vault name of the client secret (optional)" hint="Referenced by name; blank for a client with no secret.">
                             <Input value={form.secret} onChange={(v) => patch({ secret: v })} mono autoComplete="off" />
                           </Field>
                         </div>
@@ -462,7 +457,7 @@ export function AddAuthServerDialog({ onClose, onAdded }: { onClose: () => void;
                     </>
                   ) : (
                     <div className="flex flex-col gap-2">
-                      <Field label="Admitted subjects, one per line" hint="Each is exact, or a prefix ending in *. A token whose subject matches none of them is refused.">
+                      <Field label="Admitted subjects, one per line" hint="Each exact, or a prefix ending in *.">
                         <Textarea rows={4} value={form.subjects} onChange={(v) => patch({ subjects: v })} mono />
                       </Field>
                       {subjectsOf(form.subjects).length > 0 && (
@@ -475,9 +470,7 @@ export function AddAuthServerDialog({ onClose, onAdded }: { onClose: () => void;
                           ))}
                         </span>
                       )}
-                      <p className="max-w-[72ch] text-[11.5px] leading-[1.5] text-faint">
-                        Nothing is registered with a workload issuer: a token from it is checked against the keys it publishes. A service admitted from it acts with its own authority: it may read and start runs, and never approve, configure or change identity.
-                      </p>
+                      <p className="max-w-[72ch] text-[11.5px] leading-[1.5] text-faint">An admitted service may read and start runs, never approve or configure.</p>
                     </div>
                   )}
 
@@ -523,17 +516,6 @@ export function AddAuthServerDialog({ onClose, onAdded }: { onClose: () => void;
                     </Row>
                   )}
                 </dl>
-              </div>
-              <div className="flex flex-col gap-1.5 border-t border-line pt-3">
-                <span className="text-[12px] font-semibold text-fg">On adding</span>
-                <p className="text-[11.5px] leading-[1.55] text-dim">
-                  The platform reads the issuer&rsquo;s published metadata again and keeps its endpoints and the address of its keys.{" "}
-                  {step === 1
-                    ? "What it is trusted for is chosen in step 2."
-                    : upstream
-                      ? "It is then registered with the issuer the way chosen here, and tool servers can be set to get their tokens from it."
-                      : "From then on a service whose token it signed, for an admitted subject, is signed in on every request it sends. Removing the issuer later stops every workload from it."}
-                </p>
               </div>
             </aside>
           </div>

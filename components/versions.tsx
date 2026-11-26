@@ -75,13 +75,13 @@ export function VersionHistory({ agent }: { agent: string }) {
     );
   }
   if (rows.length === 0) {
-    return <p className="px-4 py-4 text-[12px] leading-[1.55] text-faint">No version is on record yet. Saving the agent writes the first.</p>;
+    return <p className="px-4 py-4 text-[12px] leading-[1.55] text-faint">No version on record yet.</p>;
   }
 
   return (
     <div className="flex flex-col">
       <p className="border-b border-line px-4 py-2.5 text-[11.5px] leading-[1.55] text-faint">
-        {rows.length} version{rows.length === 1 ? "" : "s"}, newest first. Every save that changes what the agent runs writes one; a deploy writes none. Pick a pair with the two columns on the left to see what changed between them.
+        {rows.length} version{rows.length === 1 ? "" : "s"}, newest first; pick from and to to compare.
       </p>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-[11.5px]">
@@ -172,7 +172,7 @@ export function SpecDiffView({
   toDigestLabel,
   shown,
   sections,
-  quietNote = "The digests differ, but nothing the comparison names moved; export the two versions to read them side by side.",
+  quietNote = "Digests differ; nothing the comparison names moved.",
 }: {
   fromLabel: string;
   toLabel: string;
@@ -212,9 +212,7 @@ export function SpecDiffView({
       )}
       {shown?.error && <p className="px-4 py-3 text-[11.5px] leading-[1.55] text-err">{shown.error}</p>}
       {shown?.diff?.same && (
-        <p className="px-4 py-3 text-[11.5px] leading-[1.55] text-faint">
-          Nothing that runs changed: the two versions have the same digest. What moved was layout or a field left at its default.
-        </p>
+        <p className="px-4 py-3 text-[11.5px] leading-[1.55] text-faint">Same digest: nothing that runs changed.</p>
       )}
       {shown?.diff && !shown.diff.same && sections.length === 0 && <p className="px-4 py-3 text-[11.5px] leading-[1.55] text-faint">{quietNote}</p>}
       {sections.map((s) => (

@@ -18,7 +18,6 @@ import { explainControl } from "@/lib/guardrails";
 import { ControlRef, KILL_CONTROL } from "./control-ref";
 import { hueFor } from "@/lib/hue";
 import { usePageFacts } from "./assistant";
-import { machineLine } from "@/lib/site";
 import { useMachineOrigin } from "@/lib/use-session";
 import { ApproveDialog, useGates, type Gate } from "./approve";
 import { soon } from "@/lib/soon";
@@ -710,8 +709,7 @@ export function Control() {
             </span>
           </div>
           <p className="max-w-[64ch] text-[12.5px] leading-[1.55] text-dim">
-            Monitor deployed workflows, active runs, approvals, performance, cost and control
-            events. Each measure is calculated from platform records and opens to its supporting detail.
+            Deployed agents, live runs, approvals, cost and control events.
           </p>
         </div>
         <span className="grow" />
@@ -734,12 +732,12 @@ export function Control() {
           <AnswerFailure answer={estateAnswer} compact={false} />
         </div>
       )}
-      {error && <Failure className="mt-4" what={raw ? "The estate stopped answering; the figures below are as it last answered" : "The estate could not be read"} message={error} />}
+      {error && <Failure className="mt-4" what={raw ? "The estate stopped answering" : "The estate could not be read"} message={error} />}
 
-      {lockdownError && <Failure className="mt-4" what={lockdown ? "The lockdown stopped answering; the switch shows it as it last answered" : "The lockdown could not be read; the switch cannot be used until it is"} message={lockdownError} />}
-      {data && fleetError && <Failure className="mt-4" what={fleetState ? "Which agents are held stopped answering; the marks below are as it last answered" : "Which agents are paused or draining could not be read; no mark is shown"} message={fleetError} />}
-      {data && liveError && <Failure className="mt-4" what="The run ledger (GET /api/runs) could not be read; the runs in flight below are the estate read's own list" message={liveError} />}
-      {attachedError && <Failure className="mt-4" what={attached.length ? "The attached agents stopped answering; the Estate lists them as they last answered" : "The attached agents could not be read; the Estate does not list them"} message={attachedError} />}
+      {lockdownError && <Failure className="mt-4" what={lockdown ? "The lockdown stopped answering" : "The lockdown could not be read"} message={lockdownError} />}
+      {data && fleetError && <Failure className="mt-4" what={fleetState ? "The agent holds stopped answering" : "The agent holds could not be read"} message={fleetError} />}
+      {data && liveError && <Failure className="mt-4" what="The run ledger could not be read" message={liveError} />}
+      {attachedError && <Failure className="mt-4" what={attached.length ? "The attached agents stopped answering" : "The attached agents could not be read"} message={attachedError} />}
 
       {/* ── Lockdown: the banner stays while it is on ── */}
       {locked && (
@@ -806,7 +804,7 @@ export function Control() {
       <section className="mt-4 flex flex-col overflow-hidden rounded-md border border-line bg-surface">
         <PanelHead
           title="Agent lifecycle"
-          meta="the latest version of each agent, each stage lit only by its own record: a version, a review, a gate decision, a deployment, a retirement"
+          meta="latest version of each agent"
         />
         <div className="af-list overflow-x-auto">
           <div className="min-w-[720px]">
@@ -869,11 +867,11 @@ export function Control() {
               );
             })}
             {!data && !regOff && <p className="px-4 py-4 text-[12px] text-faint">Reading the registry…</p>}
-            {regOff && <p className="px-4 py-4 text-[12px] text-faint">Each agent is a row here, its stages lit by their own records.</p>}
+            {regOff && <p className="px-4 py-4 text-[12px] text-faint">Not read.</p>}
             {Object.keys(spineErrors).length > 0 && (
               <div className="px-4 py-2">
                 <Failure
-                  what={`The lifecycle of ${Object.keys(spineErrors).join(", ")} could not be read; ${Object.keys(spineErrors).length === 1 ? "its stages are" : "their stages are"} not shown`}
+                  what={`The lifecycle of ${Object.keys(spineErrors).join(", ")} could not be read`}
                   message={[...new Set(Object.values(spineErrors))].join("; ")}
                 />
               </div>
@@ -882,7 +880,7 @@ export function Control() {
         </div>
         {!regOff && (
           <p className="truncate border-t border-line px-4 py-1.5 text-[10.5px] text-faint" aria-live="polite">
-            {stageHint ?? "Hover a stage for the record behind it and what a click does."}
+            {stageHint ?? "Hover a stage for its record; click to open it."}
           </p>
         )}
       </section>
@@ -913,7 +911,7 @@ export function Control() {
         <section className="flex h-fit flex-col overflow-hidden rounded-md border border-line bg-surface">
           <PanelHead
             title="Estate"
-            meta={selected.size ? "pause, resume, drain or kill the agents ticked" : "every agent, its whole record — click a row, tick rows for a fleet action"}
+            meta={selected.size ? "pause, resume, drain or kill the agents ticked" : "click a row; tick rows for a fleet action"}
             right={
               selected.size > 0 ? (
                 <FleetBar
@@ -1003,7 +1001,7 @@ export function Control() {
                   <span className="flex flex-col gap-1">
                     {a.evals === null ? (
                       // No benchmark in the answer: the platform's own reason, never one written here.
-                      <span className="text-[11px] text-faint" title={data.not_built.evals || "The platform's answer carries no benchmark for this agent and gives no reason."}>
+                      <span className="text-[11px] text-faint">
                         {data.not_built.evals ? "Not built" : "Not in the answer"}
                       </span>
                     ) : a.evals.length ? (
@@ -1073,19 +1071,16 @@ export function Control() {
                 </div>
               ))}
 
-              {regOff && attached.length === 0 && <p className="px-4 py-6 text-[12.5px] text-faint">Deployed workflows are listed here, each with its whole record.</p>}
+              {regOff && attached.length === 0 && <p className="px-4 py-6 text-[12.5px] text-faint">Not read.</p>}
               {data && !regOff && data.agents.length === 0 && attached.length === 0 && (
-                <p className="px-4 py-6 text-[12.5px] text-faint">
-                  Nothing in the registry. Build a workflow and deploy it — it appears here with
-                  its whole record.
-                </p>
+                <p className="px-4 py-6 text-[12.5px] text-faint">Nothing in the registry.</p>
               )}
               {!data && !regOff && <p className="px-4 py-6 text-[12.5px] text-faint">Reading the registry…</p>}
             </div>
           </div>
           {!regOff && (
             <p className="truncate border-t border-line px-4 py-1.5 text-[10.5px] text-faint" aria-live="polite">
-              {tickHint ?? "Health: one tick per run — hover for its state and age, click to open."}
+              {tickHint ?? "Health: one tick per run; hover or click one."}
             </p>
           )}
 
@@ -1095,7 +1090,7 @@ export function Control() {
               <span className="text-[11px] font-semibold text-dim">Recent runs</span>
               {(data?.shadowTotal ?? 0) > 0 && (
                 <span className="text-[10.5px] text-faint" title="A canary's shadow runs: the candidate version on production runs' input. Marked in the list, counted in no figure on this page.">
-                  · {data!.shadowTotal} shadow run{data!.shadowTotal === 1 ? "" : "s"} on record, counted in no figure
+                  · {data!.shadowTotal} shadow run{data!.shadowTotal === 1 ? "" : "s"} on record
                 </span>
               )}
               <span className="grow" />
@@ -1164,12 +1159,8 @@ export function Control() {
               </div>
             ))}
             {!data && !off && <p className="px-3 py-4 text-[12px] text-faint">Reading the process table…</p>}
-            {off && <p className="px-3 py-4 text-[12px] text-faint">Runs appear here the moment they start, kill switch beside each.</p>}
-            {data && !off && data.live.length === 0 && (
-              <p className="px-3 py-4 text-[12px] text-faint">
-                Nothing in flight. Runs appear here the moment they start, kill switch beside each.
-              </p>
-            )}
+            {off && <p className="px-3 py-4 text-[12px] text-faint">Not read.</p>}
+            {data && !off && data.live.length === 0 && <p className="px-3 py-4 text-[12px] text-faint">Nothing in flight.</p>}
           </section>
           </>)}
 
@@ -1255,12 +1246,7 @@ export function Control() {
                   <Failure what="The inbox could not be read" message={gatesFailed} />
                 </div>
               )}
-              {gates && gates.length === 0 && !gatesFailed && (
-                <p className="px-3 py-4 text-[12px] text-faint">
-                  No gates open. When a workflow suspends for a person, it queues here with an
-                  Answer button.
-                </p>
-              )}
+              {gates && gates.length === 0 && !gatesFailed && <p className="px-3 py-4 text-[12px] text-faint">No gates open.</p>}
               {gates === null && <p className="px-3 py-4 text-[12px] text-faint">Reading the inbox…</p>}
             </div>
           </section>
@@ -1286,14 +1272,10 @@ export function Control() {
                 </button>
               ))}
             </div>
-            <p className={`${off ? "" : "border-t border-line "}px-3 py-2 text-[10.5px] leading-[1.5] text-faint`}>
-              Every refusal, gate and kill is a journal entry with a because-chain. Gates answered
-              opens them in Explore; open any run to read the exact rule that fired.
-            </p>
           </section>
 
           {/* FinOps — the gateway's own balance, and the budget beside the burn */}
-          <FinOpsPanel finops={data?.finops ?? null} window={win} onSaved={load} off={off} billingNote={data?.not_built.billing ?? "no billed figure: the platform's answer carries none and gives no reason"} />
+          <FinOpsPanel finops={data?.finops ?? null} window={win} onSaved={load} off={off} billingNotBuilt={Boolean(data?.not_built.billing)} />
           </>)}
         </div>
       </div>
@@ -1311,7 +1293,7 @@ export function Control() {
             </span>
           } />
           {off ? (
-            <p className="px-3 py-4 text-[12px] text-faint">Runs per day, with their cost, chart here.</p>
+            <p className="px-3 py-4 text-[12px] text-faint">Not read.</p>
           ) : (
             <ActivityChart days={cut("activity")?.days ?? []} selected={drill?.kind === "day" ? drill.day : null} onPick={(day) => open({ kind: "day", day })} />
           )}
@@ -1376,14 +1358,10 @@ export function Control() {
               ))}
             {off && (
               <p className="px-3 py-4 text-[12px] text-faint">
-                {estateAnswer?.state === "pending" ? "Not built: the files runs wrote are listed from the estate read, which the platform does not build yet." : "Not read: the estate could not be read."}
+                {estateAnswer?.state === "pending" ? "Not built" : "Not read."}
               </p>
             )}
-            {data && !off && !data.runs.some((r) => r.artifactNames.length) && (
-              <p className="px-3 py-4 text-[12px] text-faint">
-                Nothing written yet — documents land here the moment a run produces them.
-              </p>
-            )}
+            {data && !off && !data.runs.some((r) => r.artifactNames.length) && <p className="px-3 py-4 text-[12px] text-faint">Nothing written yet.</p>}
           </div>
         </section>
 
@@ -1393,7 +1371,7 @@ export function Control() {
           {/* No peer list in the answer: the platform's own reason when it names one, else that the list is missing. */}
           {data && data.peers === null && (
             <p className="px-3 py-4 text-[12px] leading-[1.55] text-faint">
-              {data.not_built.peers ? `Not built, as the platform answers: ${data.not_built.peers}.` : "The platform's answer carries no peer list and gives no reason. The peers it holds are listed on Configuration, under Peers."}
+              {data.not_built.peers ? "Not built" : "Not in the answer; see Configuration, Peers."}
             </p>
           )}
           {(data?.peers ?? []).map((p) => {
@@ -1413,22 +1391,14 @@ export function Control() {
             );
           })}
           {data && !regOff && data.peers !== null && data.peers.length === 0 && (
-            <p className="px-3 py-4 text-[12px] leading-[1.55] text-faint">
-              No peer is registered or named by a workflow. Register one on Configuration, under Peers: its card is pinned and nothing is sent to it until a person
-              approves it.
-            </p>
-          )}
-          {data && data.peers !== null && (
-            <p className="border-t border-line px-3 py-2 text-[10.5px] leading-[1.5] text-faint">
-              Spoken to only once registered and approved, signed both ways. Their answers arrive marked untrusted — the same taint rules as every other boundary.
-            </p>
+            <p className="px-3 py-4 text-[12px] leading-[1.55] text-faint">No peers yet; register one on Configuration, under Peers.</p>
           )}
         </section>
 
         {/* Least-privilege posture */}
         <section className="mb-4 flex break-inside-avoid flex-col overflow-hidden rounded-md border border-line bg-surface">
           <PanelHead title="Least privilege" meta="grants × risk × gates, by the engine's rule" />
-          {regOff && <p className="px-3 py-4 text-[12px] leading-[1.55] text-faint">Grants by declared risk, and the sinks behind a gate, are counted here from the specs.</p>}
+          {regOff && <p className="px-3 py-4 text-[12px] leading-[1.55] text-faint">Not read.</p>}
           {data && !regOff && (
             <>
               <div className="grid grid-cols-4 divide-x divide-line border-b border-line">
@@ -1480,8 +1450,8 @@ export function Control() {
                 {(data.posture.unregistered.length > 0 || data.posture.undeclared.length > 0) && (
                   <p className="text-[11px] leading-[1.5] text-warn">
                     {[
-                      data.posture.unregistered.length ? `${data.posture.unregistered.length} grant${data.posture.unregistered.length === 1 ? "" : "s"} of a tool that is not registered (a run of that agent is refused at its start)` : "",
-                      data.posture.undeclared.length ? `${data.posture.undeclared.length} grant${data.posture.undeclared.length === 1 ? "" : "s"} of a tool the definition does not declare (every call of it is refused)` : "",
+                      data.posture.unregistered.length ? `${data.posture.unregistered.length} grant${data.posture.unregistered.length === 1 ? "" : "s"} of an unregistered tool` : "",
+                      data.posture.undeclared.length ? `${data.posture.undeclared.length} grant${data.posture.undeclared.length === 1 ? "" : "s"} of an undeclared tool` : "",
                     ]
                       .filter(Boolean)
                       .join("; ")}
@@ -1489,9 +1459,6 @@ export function Control() {
                   </p>
                 )}
               </div>
-              <p className="border-t border-line px-3 py-2 text-[10.5px] leading-[1.5] text-faint" title={data.posture.basis}>
-                Read from each agent&rsquo;s deployed version (its latest when none is deployed) and judged by the rule the engine applies to a call.
-              </p>
             </>
           )}
         </section>
@@ -1511,11 +1478,7 @@ export function Control() {
               </div>
             ))}
           </div>
-          <p className="px-3 py-2.5 text-[11px] leading-[1.55] text-dim">
-            Every model call, tool call, refusal, gate and kill — one entry each, carrying the
-            evidence chain it rests on. The journal is what an auditor reads; nothing on this
-            page exists that it doesn&rsquo;t.
-          </p>
+          <p className="px-3 py-2.5 text-[11px] leading-[1.55] text-dim">One entry per model call, tool call, refusal, gate and kill.</p>
           <div className="border-t border-line px-3 py-2.5">
             <Button size="sm" variant="outline" href="/api/logs">
               Download NDJSON
@@ -1529,7 +1492,7 @@ export function Control() {
       {data && (
         <p className="mt-4 flex items-center gap-2 text-[10.5px] text-ghost">
           <Icon name="database" size={11} />
-          {`${data.store} · cost basis: ${data.costBasis}`}
+          {data.store}
         </p>
       )}
 
@@ -1560,7 +1523,7 @@ export function Control() {
       {killAsk?.id && (
         <KillDialog
           title="Kill this run?"
-          what={`${(data?.live ?? []).find((l) => l.id === killAsk.id)?.system ?? "run"} · ${killAsk.id}. A worker running it stops before its next model call, step or node; a call already in flight finishes. A run waiting for a person stops at once. Every run it started, and theirs, is stopped the same way. The journal records the reason and your name.`}
+          what={`${(data?.live ?? []).find((l) => l.id === killAsk.id)?.system ?? "run"} · ${killAsk.id}. It stops before its next step, with every run it started.`}
           confirm="Kill run"
           busy={killing !== null}
           onClose={() => setKillAsk(null)}
@@ -1610,14 +1573,14 @@ function FinOpsPanel({
   finops,
   window,
   onSaved,
-  billingNote,
+  billingNotBuilt,
   off = false,
 }: {
   finops: ControlData["finops"] | null;
   window: Win;
   onSaved: () => void;
-  /** Why no billed figure is shown: the platform's `not_built.billing`. */
-  billingNote: string;
+  /** The platform names reading a cloud bill as not built (`not_built.billing`). */
+  billingNotBuilt: boolean;
   /** The estate was not read: no figure is shown for a spend that was not read. */
   off?: boolean;
 }) {
@@ -1642,7 +1605,7 @@ function FinOpsPanel({
   return (
     <section className="flex flex-col overflow-hidden rounded-md border border-line bg-surface">
       <PanelHead title="Costs" meta="recorded spend vs budget" />
-      {off && <p className="border-b border-line px-3 py-3 text-[12px] text-faint">What the model calls recorded as spent shows here, beside the budget.</p>}
+      {off && <p className="border-b border-line px-3 py-3 text-[12px] text-faint">Not read.</p>}
       <div className={off ? "hidden" : "grid grid-cols-2 divide-x divide-line border-b border-line"}>
         {[
           { label: [`Recorded · ${window}`, unpricedLine(finops?.unpriced7d ?? 0)].filter(Boolean).join(" · "), value: fmtCost(spend), tone: "text-fg" },
@@ -1659,7 +1622,7 @@ function FinOpsPanel({
           <span className="font-medium">{state.exceeded === true ? "Budget exhausted · new runs are refused" : state.exceeded === null ? `This ${PERIOD_LABEL[per]} so far: whether it is spent is unknown` : `This ${PERIOD_LABEL[per]} so far`}</span>
           <span className="tnum">{state.spent === null ? "spent: unknown" : `${state.exceeded === null ? "at least " : ""}${fmtCost(state.spent)}`} of ${finops.budget.toFixed(2)}{usedPct !== null ? ` · ${usedPct}%` : ""}</span>
           {state.remaining !== null && state.exceeded === false && <span className="tnum">{fmtCost(Math.max(0, state.remaining))} left</span>}
-          {state.unknown_why ? <span className="text-warn">{state.unknown_why[0].toUpperCase() + state.unknown_why.slice(1)}.</span> : state.unpriced > 0 && <span>{unpricedLine(state.unpriced)}, not counted against it</span>}
+          {state.unpriced > 0 && <span className={state.unknown_why ? "text-warn" : undefined}>{unpricedLine(state.unpriced)}</span>}
         </div>
       )}
       {burnPct !== null && windowBudget !== null && (
@@ -1743,11 +1706,7 @@ function FinOpsPanel({
               {finops?.budget != null ? "Change budget" : "Set a budget"}
             </Button>
             <span className="grow" />
-            <span className="truncate text-[10px] text-ghost" title={billingNote}>
-              {/* The platform's own sentence when it names billing as not built; otherwise that the answer lacks a billed figure. */}
-              {billingNote[0]?.toUpperCase()}
-              {billingNote.slice(1)}.
-            </span>
+            <span className="truncate text-[10px] text-ghost">Billed · {billingNotBuilt ? "Not built" : "—"}</span>
             {saveError && <Failure inline message={saveError} />}
           </>
         )}
@@ -1784,10 +1743,7 @@ function LogExport() {
               <span className="text-[10.5px] text-faint">Every run&rsquo;s journal, one entry per line</span>
             </span>
           </a>
-          <p className="px-3 py-2 text-[10px] leading-[1.5] text-ghost">
-            The audit trail is forwarded as it is written, as OpenTelemetry logs or syslog, when the deployment names a destination
-            (LOG_FORWARD_TO). What receives it is outside this platform.
-          </p>
+          <p className="px-3 py-2 text-[10px] leading-[1.5] text-ghost">Forwarded live when LOG_FORWARD_TO names a destination.</p>
         </div>
       )}
     </div>
@@ -1996,7 +1952,7 @@ function ModelMix({
 }) {
   const total = Math.max(1, models.reduce((s, m) => s + m.tokens, 0));
   const unpriced = models.reduce((s, m) => s + m.unpricedCalls, 0);
-  if (off) return <p className="px-3 py-4 text-[12px] text-faint">Where the tokens went, model by model, shows here.</p>;
+  if (off) return <p className="px-3 py-4 text-[12px] text-faint">Not read.</p>;
   if (!models.length) return <p className="px-3 py-4 text-[12px] text-faint">No model calls in this window.</p>;
   return (
     <div className="flex flex-col gap-2.5 p-3">
@@ -2011,7 +1967,7 @@ function ModelMix({
         ))}
       </div>
       <p className="text-[10.5px] text-faint">
-        Tokens and recorded spend per model{unpriced ? `; ${unpricedLine(unpriced)}, counted apart beside each sum rather than as $0` : ""}.
+        Tokens and recorded spend per model{unpriced ? `; ${unpricedLine(unpriced)}` : ""}.
       </p>
       <div className="flex flex-col">
         {models.map((m) => (
@@ -2146,7 +2102,7 @@ function TruncatedNote({ data }: { data: ControlData }) {
   if (prod >= data.runsTotal) return null;
   return (
     <p className="border-b border-line px-4 py-2 text-[10.5px] text-faint">
-      Listing from the newest {prod} of {data.runsTotal} runs; the figures count every run.
+      Newest {prod} of {data.runsTotal} runs.
     </p>
   );
 }
@@ -2201,7 +2157,7 @@ function renderDrill(
             {l.stuck && (
               <Fact
                 k="Stuck"
-                v={`${l.step || "this step"} has run ${fmtMs(l.stepMs ?? null)}, past the agent's p95 of ${fmtMs(l.stepP95Ms ?? null)} for it${l.waitingOn ? ` · waiting on ${l.waitingOn}` : ""}`}
+                v={`${l.step || "this step"} has run ${fmtMs(l.stepMs ?? null)}, past its p95 of ${fmtMs(l.stepP95Ms ?? null)}${l.waitingOn ? ` · waiting on ${l.waitingOn}` : ""}`}
                 tone="text-warn"
               />
             )}
@@ -2215,10 +2171,7 @@ function renderDrill(
               </Button>
               <KillButton id={l.id} label="Kill this run" busy={killing === l.id || killing === "*"} onKill={onKill} />
             </div>
-            <p className="px-4 pb-4 text-[11px] leading-[1.5] text-faint">
-              The journal is being written right now; the full record lands here the moment the
-              run settles.
-            </p>
+            <p className="px-4 pb-4 text-[11px] leading-[1.5] text-faint">Still running; the full record lands when it settles.</p>
           </div>
         ),
       };
@@ -2341,7 +2294,7 @@ function renderDrill(
           <Fact k={`Spend · ${data.window}`} v={partialCost(a.cost7d, a.unpriced7d)} tone={a.unpriced7d ? "text-warn" : undefined} />
           {a.pending > 0 && <Fact k="Awaiting approval" v={String(a.pending)} tone="text-warn" />}
 
-          {a.evals === null && <Fact k="Benchmark" v={data.not_built.evals ? `Not built: ${data.not_built.evals}` : "not in the platform's answer"} />}
+          {a.evals === null && <Fact k="Benchmark" v={data.not_built.evals ? "Not built" : "not in the answer"} />}
           {a.evals !== null && a.evals.length === 0 && <Fact k="Benchmark" v="none yet: no finished evaluation" />}
           {a.evals !== null && a.evals.length > 0 && (
             <div className="border-b border-line px-4 py-2.5">
@@ -2498,7 +2451,7 @@ function renderDrill(
           <RunList
             runs={runs.filter((r) => r.state === "suspended")}
             onOpen={onOpen}
-            empty="No gates are open. When a workflow suspends for a person, it appears here."
+            empty="No gates are open."
           />
         ),
       };
@@ -2516,7 +2469,7 @@ function renderDrill(
                 <div key={m.model} className="mt-1.5 flex items-center gap-2">
                   <span className="size-1.5 shrink-0 rounded-[2px] bg-run" />
                   <span className="min-w-0 grow truncate font-mono text-[10.5px] text-mist">{m.model}</span>
-                  {m.unpricedCalls > 0 && <span className="text-[10px] text-warn">{unpricedLine(m.unpricedCalls)}, not in the sum</span>}
+                  {m.unpricedCalls > 0 && <span className="text-[10px] text-warn">{unpricedLine(m.unpricedCalls)}</span>}
                   <span className="tnum w-14 text-right text-[10.5px] text-mist">{m.cost === null && m.unpricedCalls ? "no price set" : fmtCost(m.cost)}</span>
                 </div>
               ))}
@@ -2564,10 +2517,7 @@ function renderDrill(
               </div>
             )}
             {refusals !== null && !refusals.error && hard.length === 0 && (
-              <p className="px-4 py-4 text-[12px] leading-[1.55] text-faint">
-                No call was refused in this window. The Guardrails page shows which controls are in
-                force and how often each has fired.
-              </p>
+              <p className="px-4 py-4 text-[12px] leading-[1.55] text-faint">No call was refused in this window.</p>
             )}
             {refusals !== null && refusals.total > hard.length && (
               <p className="border-b border-line px-4 py-2 text-[10.5px] text-faint">
@@ -2617,16 +2567,8 @@ function renderDrill(
                 <Status tone="err">kill switch</Status>
                 <ControlRef control={KILL_CONTROL} size="md" />
               </span>
-              <span className="text-[11px] leading-[1.5] text-faint">
-                Every kill is an operator decision the runtime traps, journals and persists as a partial
-                record. The run below is the evidence that control produces.
-              </span>
             </div>
-            <RunList
-              runs={recent.filter((r) => r.state === "killed")}
-              onOpen={onOpen}
-              empty="No run was killed in this window. When an operator throws the switch, the journalled decision lands here."
-            />
+            <RunList runs={recent.filter((r) => r.state === "killed")} onOpen={onOpen} empty="No run was killed in this window." />
           </div>
         ),
       };
@@ -2800,9 +2742,7 @@ function TradeoffTriangle({
                   <span className="text-faint">{a.sub}</span>
                 </span>
               ))}
-              <span className="basis-full text-[10px] leading-[1.5] text-faint">
-                The outline is the ideal. The shape inside is the model. Dashed corner: no evidence on that axis yet.
-              </span>
+              <span className="basis-full text-[10px] leading-[1.5] text-faint">Outline: ideal · shape: the model · dashed corner: no evidence yet</span>
             </div>
           </div>
 
@@ -2870,12 +2810,7 @@ function TradeoffTriangle({
             })}
           </div>
 
-          <p className="px-3 py-2 text-[10.5px] leading-[1.5] text-faint">
-            Cost and Time bars are log-scaled against the best model in view: full is the best, half is ten
-            times worse, empty is a hundred times worse. Accuracy is the eval pass rate measured on that model
-            {evalsBuilt ? "" : evalsWhy ? `; no model has one here, as the platform answers: ${evalsWhy}` : "; the platform's answer carries no benchmark for any agent, so no model has one"}. A model with calls that had no price has no cost per run.
-            Click a model for the runs behind it.
-          </p>
+          <p className="px-3 py-2 text-[10.5px] leading-[1.5] text-faint">Bars are log-scaled against the best model; click one for its runs.</p>
         </div>
       )}
     </>
@@ -2918,8 +2853,8 @@ function QueuePanel({ queue, error, now }: { queue: QueueData | null; error: str
       </div>
       {rows.length === 0 ? (
         <p className="px-3 py-3 text-[11.5px] text-faint">
-          Nothing posted in the last hour.{" "}
-          {machine ? `External systems post to ${machine}/api/trigger/<agent>.` : machineLine(machine, "", "external systems cannot reach the trigger door")}
+          Nothing posted in the last hour
+          {machine ? ` · trigger address: ${machine}/api/trigger/<agent>` : machine === null ? " · no machine address set (PUBLIC_API_URL)" : ""}.
         </p>
       ) : (
         <div className="flex flex-col">

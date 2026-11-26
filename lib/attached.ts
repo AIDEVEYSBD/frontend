@@ -37,12 +37,12 @@ export type SnippetLanguage = "python" | "typescript";
 export const MODE_META: Record<AttachMode, { label: string; blurb: string; enforcement: string }> = {
   sdk: {
     label: "Saros SDK",
-    blurb: "For an agent whose code you own. The SDK opens a run, reports its steps, sends its model calls through the gateway and its tool calls through the broker, and waits at a gate for a person.",
+    blurb: "For an agent whose code you own.",
     enforcement: "gateway + broker",
   },
   a2a: {
     label: "Gateway and broker",
-    blurb: "For an agent whose code cannot change. Point its OpenAI-compatible base URL at the gateway and its MCP configuration at the broker; each call names the run it belongs to.",
+    blurb: "For an agent whose code cannot change.",
     enforcement: "gateway + broker",
   },
 };
@@ -91,20 +91,20 @@ export const FRAMEWORK_BY_ID = new Map(FRAMEWORKS.map((f) => [f.id, f]));
 
 /** What lands in a run's record from an attached agent, and who writes it. */
 export const RECORDED: { kind: string; what: string }[] = [
-  { kind: "run.start · run.end", what: "written by the platform when the run opens and when the agent finishes it: state, result, duration" },
-  { kind: "note · error", what: "the steps and failures the agent reports, marked as reported by it; it cannot report a cost, an approver or an outcome" },
-  { kind: "model.call", what: "every call through the gateway naming the run: model, tokens in and out, latency, priced at the configured price" },
-  { kind: "tool.call · tool.result", what: "every call through the broker naming the run, with its arguments, its result and the risk it is registered at" },
-  { kind: "denied", what: "a call the platform refused, and the rule that refused it" },
-  { kind: "gate.open · gate.answer · resume", what: "who was asked, who answered, when, the note they left, and the agent taking the answer" },
-  { kind: "taint", what: "untrusted content the broker handed the run: from then on no tool that acts outside is called in that run" },
+  { kind: "run.start · run.end", what: "when the run opens and ends: state, result, duration" },
+  { kind: "note · error", what: "steps and failures the agent reports, marked as its own" },
+  { kind: "model.call", what: "each gateway call: model, tokens, latency, price" },
+  { kind: "tool.call · tool.result", what: "each broker call: arguments, result, registered risk" },
+  { kind: "denied", what: "a refused call, and the rule that refused it" },
+  { kind: "gate.open · gate.answer · resume", what: "who was asked, who answered, when, and their note" },
+  { kind: "taint", what: "untrusted content handed to the run" },
 ];
 
 export const SHOWN_ON: { page: string; what: string }[] = [
-  { page: "Runs", what: "every run readable afterwards, entry by entry, with a chain that verifies like any run's" },
-  { page: "Approvals", what: "its gates and its held tool calls, answered under the same rules as any run's" },
-  { page: "Costs", what: "its model calls by model, agent, person and team, beside the factory's own" },
-  { page: "Control", what: "pause, stop, steer and lockdown reach its runs as they reach any run" },
+  { page: "Runs", what: "every run, entry by entry, with a verifiable chain" },
+  { page: "Approvals", what: "its gates and held tool calls" },
+  { page: "Costs", what: "its model calls by model, agent, person and team" },
+  { page: "Control", what: "pause, stop, steer and lockdown reach its runs" },
 ];
 
 /* ═══════════════════ Endpoints an attached agent talks to ═══════════════════ */
@@ -199,7 +199,7 @@ export interface A2AStep {
 export const A2A_STEPS: A2AStep[] = [
   {
     title: "Attach the agent, and have it approved",
-    body: "Name it, say who owns it, and attach it. Before a second person approves, set its policy here (the tools it is granted, its gate, its model routing and limits): an agent starts with nothing granted. The key is shown once; every door refuses it until the attachment is approved.",
+    body: "Attach it, set its policy, and have a second person approve it.",
     // People attach and approve, through the console and its sign-in: these are the console's addresses.
     snippet: (c) => `POST ${PUBLIC_ORIGIN}/api/attached                      { "name": "…", "mode": "a2a", "grants": ["<tool>"], "gate_at": "write" }
 →    { "agent": { "id": "${c.agent}", "policy_digest": "sha256:…" }, "key": "${KEY(c)}" }
@@ -208,7 +208,7 @@ POST ${PUBLIC_ORIGIN}/api/attached/${c.agent}/approve   { "digest": "sha256:…"
   },
   {
     title: "Open a run for the work",
-    body: "Each piece of work is a run of the agent, opened with its key and finished when the work ends. Its model and tool calls name it, so their cost and their decisions are the run's. A run whose agent sends nothing for the platform's lease is closed as abandoned.",
+    body: "Each piece of work is a run, opened with the agent's key.",
     snippet: (c) => `POST ${c.origin}${PATHS.ingest}                  Authorization: Bearer ${KEY(c)}
 { "run": { "input": { "…": "…" } } }       →  { "run_id": "<run id>" }
 POST ${c.origin}${PATHS.ingest}/<run id>/finish   { "state": "done", "result": { … } }`,
@@ -217,7 +217,7 @@ POST ${c.origin}${PATHS.ingest}/<run id>/finish   { "state": "done", "result": {
   },
   {
     title: "Route its model calls through the gateway",
-    body: "Point the agent's OpenAI-compatible base URL at the gateway and give it the key. Every completion is screened, priced at the configured price and recorded; send X-Agentfactory-Run to record it in the run. The model may be auto, a tier or a model its policy lets it name. Tool calling and streaming pass through: each tool call the model proposes and each tool result is screened and recorded in the run, a tool result marks the run untrusted, and a stream arrives whole, after screening. A tool the agent runs itself is outside the broker and cannot be gated: route sensitive tools through the broker.",
+    body: "Point its OpenAI-compatible base URL at the gateway, with its key.",
     snippet: (c) => `# OpenAI SDKs and anything that honours these
 OPENAI_BASE_URL=${c.origin}${PATHS.gateway}
 OPENAI_API_KEY=${KEY(c)}
@@ -227,7 +227,7 @@ OPENAI_API_KEY=${KEY(c)}
   },
   {
     title: "Route its tools through the broker",
-    body: "Point the agent's MCP configuration at the broker. It serves exactly the tools the agent was granted, through the platform's own policy: an ungranted tool is refused and the refusal recorded, a call at or above the gate waits for a person on the Approvals page, and every call lands in the run. Every tool call names its run; one that names none is refused.",
+    body: "Point its MCP configuration at the broker; each call names its run.",
     snippet: (c) => `{
   "mcpServers": {
     "agent-factory": {

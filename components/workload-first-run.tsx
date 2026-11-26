@@ -71,27 +71,27 @@ const plural = (n: number, one: string, many: string): string => `${count(n)} ${
 
 /** The headline and the sentence under it, from the record. */
 function wordsOf(r: RunReading): { title: string; body: string } {
-  if (r.phase === "started") return { title: "Started", body: "The agent is working on what was handed over. Nothing is needed from you; this step reads the run again every few seconds." };
-  if (r.phase === "gate") return { title: "Waiting at a gate", body: "The run has stopped and waits for a person's answer. It goes no further until the gate is answered." };
+  if (r.phase === "started") return { title: "Started", body: "The agent is working; nothing is needed from you." };
+  if (r.phase === "gate") return { title: "Waiting at a gate", body: "The run waits for a person to answer its gate." };
   if (r.phase === "finished") {
     const along = r.refusals.reduce((n, x) => n + x.times, 0);
-    return { title: "Finished", body: along ? `The run completed. Along the way ${plural(along, "step was", "steps were")} refused by a control; they are listed below.` : "The run completed." };
+    return { title: "Finished", body: along ? `The run completed; ${plural(along, "step was", "steps were")} refused along the way.` : "The run completed." };
   }
   if (r.phase === "refused") {
     if (r.person) {
       const who = r.person.by || "A person";
       return r.person.closed
         ? { title: "Closed at the gate", body: `${who} closed the run at a gate, so it went no further.` }
-        : { title: "Refused at the gate", body: `${who} answered a gate with a refusal, so the run went no further.` };
+        : { title: "Refused at the gate", body: `${who} refused at a gate, so the run went no further.` };
     }
-    if (r.state === "closed") return { title: "Closed at the gate", body: `The run was closed at a gate and went no further. ${r.answer ? "The answer its journal recorded is below." : "Its record does not carry the answer; open the run to read its journal."}` };
-    return { title: "Refused by a control", body: "The run did not finish: a control refused a step, and the run ended there. What was refused, and by which control, is below as the run's journal recorded it." };
+    if (r.state === "closed") return { title: "Closed at the gate", body: "The run was closed at a gate and went no further." };
+    return { title: "Refused by a control", body: "A control refused a step, and the run ended there." };
   }
   if (r.phase === "failed") {
     if (r.state === "killed") return { title: "Stopped by an operator", body: "An operator stopped the run before it finished." };
-    return { title: "Failed", body: "The run ended with an error before it finished. The error is below as the run recorded it." };
+    return { title: "Failed", body: "The run ended with an error before it finished." };
   }
-  return { title: r.state ? `State: ${r.state}` : "State not recorded", body: "The run's record carries a state this step does not explain. Open the run to read its journal." };
+  return { title: r.state ? `State: ${r.state}` : "State not recorded", body: "Open the run to read its journal." };
 }
 
 function Block({ title, children }: { title: string; children: ReactNode }) {
@@ -173,9 +173,7 @@ export function FirstRun({ run }: { run: string }) {
   if (!run) {
     return (
       <Card title="First run" hue="run" meta="no run started from this set-up">
-        <p className="max-w-[80ch] text-[12.5px] leading-[1.6] text-dim">
-          This step follows the first run once it is started, and says where it is. No run has been started from this set-up yet: start one on the step before, Review and start.
-        </p>
+        <p className="max-w-[80ch] text-[12.5px] leading-[1.6] text-dim">Start one on the step before, Review and start.</p>
         <Block title="Where a first run can be">
           <Places at={null} />
         </Block>
@@ -214,7 +212,6 @@ export function FirstRun({ run }: { run: string }) {
           }
         >
           {error}
-          {record ? " What is shown below is the last record read." : ""}
         </Banner>
       )}
 
@@ -276,7 +273,7 @@ export function FirstRun({ run }: { run: string }) {
 
           {(r.phase === "failed" || r.phase === "refused") && (r.error || (r.phase === "failed" && r.state !== "killed")) && (
             <Block title={r.phase === "refused" ? "What the run recorded as it ended" : "The error"}>
-              {r.error ? <Said>{r.error}</Said> : <Note>The record carries no error text. The run&rsquo;s journal has the last step it reached.</Note>}
+              {r.error ? <Said>{r.error}</Said> : <Note>No error text recorded.</Note>}
             </Block>
           )}
 
@@ -300,7 +297,7 @@ export function FirstRun({ run }: { run: string }) {
               Open the run
             </Button>
           </div>
-          {r.phase === "gate" && <Note>The gate is answered in Approvals by a person the gate names. Once it is answered this step moves on by itself.</Note>}
+          {r.phase === "gate" && <Note>Answered in Approvals; this step moves on by itself.</Note>}
         </>
       )}
 

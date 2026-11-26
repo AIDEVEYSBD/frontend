@@ -82,9 +82,9 @@ export function thresholdWord(v: { passed_threshold?: boolean | null; incomplete
 
 /** The threshold against the score, in words: met, not met, incomplete, still measuring, or none applies (not the spec's own suite, or a forced model). */
 export function thresholdText(v: { threshold: number | null; passed_threshold: boolean | null; incomplete?: boolean; state?: string; forced?: boolean }): string {
-  if (v.threshold === null) return v.forced ? "no threshold: a forced model is a comparison, never the gate's eval" : "no threshold: not the spec's own suite";
+  if (v.threshold === null) return v.forced ? "no threshold: forced model" : "no threshold: not the spec's own suite";
   const word = thresholdWord(v);
-  if (word === "incomplete") return `incomplete: not every case could run or be graded, so it is not judged against the threshold ${v.threshold}`;
+  if (word === "incomplete") return `incomplete · threshold ${v.threshold}`;
   if (word === "met") return `at or above the threshold ${v.threshold}`;
   if (word === "under") return `under the threshold ${v.threshold}`;
   return v.state && v.state !== "done" ? `threshold ${v.threshold}, still measuring` : `threshold ${v.threshold}`;

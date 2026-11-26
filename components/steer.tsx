@@ -74,9 +74,7 @@ export function SteerPanel({ runId, atGate = false }: { runId: string; /** The r
 
   if (notBuilt)
     return (
-      <NotConnected door={notBuilt} compact title="Steering a run is not built yet">
-        The platform does not take guidance, a hold or a model for a run in flight yet.
-      </NotConnected>
+      <NotConnected door={notBuilt} compact title="Steering a run is not built yet" />
     );
 
   const modelOptions = [{ value: "", label: !modelsRead && !modelsError ? "reading the offered models…" : models.length ? "choose a model" : "no model offered" }, ...models.map((m) => ({ value: m.id, label: m.label || m.id }))];
@@ -87,13 +85,11 @@ export function SteerPanel({ runId, atGate = false }: { runId: string; /** The r
       <span className="flex flex-col gap-0.5">
         <span className="text-[12px] font-semibold text-fg">Steer this run</span>
         <span className="text-[10.5px] leading-[1.45] text-faint">
-          {atGate
-            ? "Waiting at a gate: each lever waits on the run and is taken at its next step after the gate is answered. A lever still waiting when the run ends is never applied."
-            : "Each lever is taken at the run's next step. A lever still waiting when the run ends is never applied."}
+          {atGate ? "Waiting at a gate: each lever is taken after the gate is answered." : "Each lever is taken at the run's next step."}
         </span>
       </span>
 
-      <Field label="Guidance for the next model call" hint="Added to the run's next model call as your words, with your name in its journal.">
+      <Field label="Guidance for the next model call" hint="Added to the next model call, signed with your name.">
         <Textarea rows={2} value={guidance} onChange={setGuidance} placeholder="What the next step should bear in mind." disabled={busy !== null} />
       </Field>
       <Button size="sm" variant="solid" tone="ink" permission="run" className="self-start" loading={busy === "guidance"} disabled={!guidance.trim() || busy !== null} onClick={() => send("guidance", { guidance: guidance.trim() }, "Guidance")}>
@@ -105,10 +101,10 @@ export function SteerPanel({ runId, atGate = false }: { runId: string; /** The r
           <span className="text-[12.5px] font-medium text-mist">Hold the next write for a person</span>
           <span className="text-[11px] leading-[1.45] text-faint">
             {held
-              ? "Asked. The run's next tool call at or above write waits for a person; a hold cannot be withdrawn."
+              ? "Asked. A hold cannot be withdrawn."
               : atGate
-                ? "The run's next tool call at or above write after this gate waits for a person, even if no gate names it."
-                : "The run's next tool call at or above write waits for a person, even if no gate names it."}
+                ? "After this gate, the next write-level tool call waits for a person."
+                : "The next tool call at or above write waits for a person."}
           </span>
         </span>
         <Button size="sm" variant="solid" tone="warn" permission="run" className="shrink-0" loading={busy === "hold"} disabled={held || busy !== null} onClick={() => send("hold", { hold_at_next_gate: true }, "Hold on the next write")}>
@@ -127,9 +123,9 @@ export function SteerPanel({ runId, atGate = false }: { runId: string; /** The r
           </Button>
         </div>
         {modelsError ? (
-          <span className="text-[11px] leading-[1.45] text-err">The models this deployment offers could not be read: {modelsError}</span>
+          <span className="text-[11px] leading-[1.45] text-err">The offered models could not be read: {modelsError}</span>
         ) : modelsRead && models.length === 0 ? (
-          <span className="text-[11px] leading-[1.45] text-faint">This deployment offers no model (Configuration, Models), so there is none to steer to.</span>
+          <span className="text-[11px] leading-[1.45] text-faint">No model offered; set them under Configuration, Models.</span>
         ) : (
           <span className="text-[11px] leading-[1.45] text-faint">The models this deployment offers (Configuration, Models).</span>
         )}

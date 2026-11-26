@@ -7,13 +7,13 @@ import { soon } from "@/lib/soon";
 import { Mono, Status, Tag } from "./ui";
 import { DrillModal } from "./drill";
 import { usePageFacts } from "./assistant";
-import { CORE_PRINCIPLE, DOMAINS, EXECUTIVE_TAKEAWAY, GUARDRAILS, SCOPE } from "@/lib/data-guardrails";
+import { DOMAINS, EXECUTIVE_TAKEAWAY, GUARDRAILS } from "@/lib/data-guardrails";
 import { CLIENT_RESPONSIBILITIES, CONTROLS, FAMILIES, RESIDUAL_RISK, type Control } from "@/lib/guardrails";
 import type { WatchEvent } from "@/lib/guardrails-watch";
 import { GuardrailsWatch } from "./guardrails-watch";
 import { GroupHeader } from "./page-tabs";
 import { enforcementOf, servedReferences, useControls, type ServedFramework } from "@/lib/controls-status";
-import { notBuiltOf, unknownWhy } from "@/lib/not-built";
+import { notBuilt, notBuiltOf } from "@/lib/not-built";
 import { ScreenerHealthLine } from "./screener-health";
 
 /**
@@ -41,10 +41,10 @@ interface Data {
   not_built?: string[];
 }
 
-/** A figure of the firing record as a reader sees it: the number, or "unknown" when the answer gives null. */
+/** A figure of the firing record as a reader sees it: the number, or "—" when the answer gives null. */
 function figure<T extends object>(row: T, key: keyof T & string): string {
   const v = (row as Record<string, unknown>)[key];
-  return typeof v === "number" ? String(v) : "unknown";
+  return typeof v === "number" ? String(v) : "—";
 }
 
 type View = "register" | "framework" | "watch";
@@ -77,7 +77,7 @@ export function Guardrails() {
   const cited = (served ?? []).filter((f) => f.basis === "cited");
   const placed = (served ?? []).filter((f) => f.basis === "placed");
   /** Why the service's mapping is not on the page, when it is not: still reading, not built, failed, or an answer without it. */
-  const mapWhy = !status ? "Reading where each control is cited…" : status.state !== "ok" ? `Where each control is cited is not shown: ${status.state === "pending" ? "the controls address is not built" : `the controls could not be read (${status.message})`}.` : served === null ? "Where each control is cited is not shown: the platform's answer carries no framework list." : "";
+  const mapWhy = !status ? "Reading…" : status.state === "pending" ? "Not built" : status.state !== "ok" ? "Not read" : served === null ? "—" : "";
   const refsOf = (c: Control) => servedReferences(status, c.id);
   /** The domain a framework places a control in, as the service serves it. */
   const placedIn = (f: ServedFramework, id: string) => f.obligations.find((o) => o.controls.includes(id)) ?? null;
@@ -152,7 +152,7 @@ export function Guardrails() {
     if (status?.state === "ok") {
       const st = status.byId.get(c.id);
       if (!st) return null;
-      return st.fired === null ? { text: "fired: unknown", title: st.firedWhy, n: 0 } : { text: `${st.fired} fired`, n: st.fired };
+      return st.fired === null ? { text: "fired: —", title: st.firedWhy, n: 0 } : { text: `${st.fired} fired`, n: st.fired };
     }
     const n = fired(c);
     return n === null || bare ? null : { text: `${n} fired`, n };
@@ -216,21 +216,14 @@ export function Guardrails() {
         }
       >
         {view === "watch"
-          ? "The injection and exfiltration watch: prompts, replies, tool arguments and tool results a screener matched, untrusted content that reached a tool acting outside, and hosts the egress check refused, read from the run journals."
+          ? "Screener matches, taint-to-sink refusals and egress refusals from the run journals."
           : view === "register"
-            ? `The ${CONTROLS.length} controls in the catalogue a deployment starts with. Each documents how it is meant to be implemented, the evidence it would leave and the standards it references.`
-            : `The framework used to assess data security. ${CORE_PRINCIPLE}`}
+            ? `The ${CONTROLS.length} controls a deployment starts with.`
+            : "The framework used to assess data security."}
       </GroupHeader>
 
       {/* While the platform does not report the controls it applies (GET /api/controls), the page says so before anything else. */}
-      {status && status.state !== "ok" && view !== "watch" && (
-        <div className="flex flex-col gap-2">
-          <p className="rounded-md border border-line bg-surface px-3 py-2.5 text-[12px] leading-[1.55] text-dim">
-            This is the catalogue a deployment starts with. Enforcement is not connected: the platform does not report which of these controls this deployment enforces, so nothing on this page says that one does.
-          </p>
-          <AnswerFailure answer={status} what="Whether each control is enforced could not be read" />
-        </div>
-      )}
+      {status && status.state !== "ok" && view !== "watch" && <AnswerFailure answer={status} what="Whether each control is enforced could not be read" />}
       {noRecord && answer && view !== "watch" && <AnswerFailure answer={answer} what="The record of control firings could not be read" />}
 
       {view === "register" && (
@@ -241,9 +234,9 @@ export function Guardrails() {
               {[
                 { label: "Controls", value: String(CONTROLS.length), sub: fromControls ? `${enforcedCount} enforced on this deployment now` : `${FAMILIES.length} families` },
                 { label: "Standards cited", value: served ? String(cited.length) : "—", sub: served ? "sources, not examiners" : "not read" },
-                { label: "Workflows on record", value: noRecord ? "" : data ? figure(data.posture, "agents") : "—", sub: data && data.posture.agents === null ? unknownWhy(data.posture, "agents", unbuilt) : "deployed" },
-                { label: "Tools in definitions", value: noRecord ? "" : data ? figure(data.posture, "tools") : "—", sub: data && !noRecord ? (data.posture.tools === null ? unknownWhy(data.posture, "tools", unbuilt) : data.posture.sinks === null ? `act outside: unknown (${unknownWhy(data.posture, "sinks", unbuilt)})` : `${data.posture.sinks} act outside`) : "" },
-                { label: "Runs on record", value: noRecord ? "" : data ? figure(data, "runs") : "—", sub: data && data.runs === null ? unknownWhy(data, "runs", unbuilt) : "the evidence base" },
+                { label: "Workflows on record", value: noRecord ? "" : data ? figure(data.posture, "agents") : "—", sub: data && data.posture.agents === null && notBuilt(unbuilt, "agents") ? "not built" : "deployed" },
+                { label: "Tools in definitions", value: noRecord ? "" : data ? figure(data.posture, "tools") : "—", sub: data && !noRecord ? (data.posture.tools === null ? (notBuilt(unbuilt, "tools") ? "not built" : "") : data.posture.sinks === null ? "act outside: —" : `${data.posture.sinks} act outside`) : "" },
+                { label: "Runs on record", value: noRecord ? "" : data ? figure(data, "runs") : "—", sub: data && data.runs === null && notBuilt(unbuilt, "runs") ? "not built" : "the evidence base" },
                 { label: "Control firings", value: noRecord ? "" : data ? String(totalFired) : "—", sub: "refusals, marks, gates" },
               ].slice(0, bare && !noRecord ? 2 : 6).map((k) => (
                 <div key={k.label} className="flex flex-col justify-center gap-0.5 bg-surface px-4 py-3">
@@ -256,7 +249,7 @@ export function Guardrails() {
             {noRecord ? (
               <section className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4 elev-1">
                 <span className="text-[11px] font-medium tracking-[0.06em] text-faint uppercase">Firings by family</span>
-                <p className="text-[11.5px] leading-[1.55] text-faint">Not read: the record of control firings did not answer (above).</p>
+                <p className="text-[11.5px] leading-[1.55] text-faint">Not read.</p>
                 {FAMILIES.map((f) => (
                   <span key={f.id} className="flex items-center gap-1.5 text-[11px] text-fg">
                     <span className="size-1.5 rounded-[2px]" style={{ background: FAMILY_COLOR[f.id] }} />
@@ -307,7 +300,6 @@ export function Guardrails() {
                 );
               })}
             </div>
-            {std && <p className="border-t border-line px-4 py-2.5 text-[11.5px] leading-[1.55] text-faint">{cited.find((s) => s.short === std)?.scope}. A citation says where a control comes from, not that it is enforced.</p>}
           </section>
 
           {/* ── group by: the platform's families, or a framework's domains ── */}
@@ -325,7 +317,7 @@ export function Guardrails() {
                 </button>
               ))}
             </span>
-            {grouping && <span className="text-[11px] text-faint">{grouping.name}: {grouping.scope || "each control shelved under the domain whose intent it serves"}.</span>}
+            {grouping && <span className="text-[11px] text-faint">{grouping.name}</span>}
           </div>
 
           {/* ── the register, as a card grid per group ── */}
@@ -362,7 +354,7 @@ export function Guardrails() {
                             <Mono className="text-[10.5px] text-faint">{c.id}</Mono>
                             <span className="grow" />
                             {enf && (
-                              <span title={enf.why || undefined} className="inline-flex">
+                              <span className="inline-flex">
                                 <Tag tone={enf.tone}>{enf.label}</Tag>
                               </span>
                             )}
@@ -377,7 +369,7 @@ export function Guardrails() {
                           <span className="flex flex-wrap gap-1 pt-1">
                             {(() => {
                               const r = refsOf(c);
-                              if (r.refs === null) return <span className="text-[9.5px] text-ghost">references: {r.why}</span>;
+                              if (r.refs === null) return <span className="text-[9.5px] text-ghost">—</span>;
                               if (!r.refs.length) return <span className="text-[9.5px] text-ghost">no standard cited</span>;
                               return r.refs.map((x) => <Chip key={`${x.std}${x.ref}`} std={x.std} ref_={x.ref} name={x.name} />);
                             })()}
@@ -397,16 +389,15 @@ export function Guardrails() {
           <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
             <div className="flex flex-col gap-0.5 border-b border-line px-4 py-3">
               <span className="text-[13px] font-semibold tracking-[-0.005em]">Retained by the deploying organisation</span>
-              <span className="max-w-[92ch] text-[11.5px] leading-[1.5] text-faint">Controls that cannot be implemented from inside the platform, stated so they are assigned rather than assumed.</span>
+              <span className="max-w-[92ch] text-[11.5px] leading-[1.5] text-faint">Controls the platform cannot implement from inside.</span>
             </div>
             <div className="grid gap-px bg-line md:grid-cols-2">
               {CLIENT_RESPONSIBILITIES.map((r) => (
-                <div key={r.title} className="flex flex-col gap-1 bg-surface px-4 py-3">
+                <div key={r.title} className="flex flex-col gap-1 bg-surface px-4 py-3" title={r.body}>
                   <span className="flex flex-wrap items-baseline gap-2">
                     <span className="text-[12.5px] font-medium text-fg">{r.title}</span>
                     {r.references.map((x) => <Chip key={`${x.std}${x.ref}`} std={x.std} ref_={x.ref} name={x.name} />)}
                   </span>
-                  <span className="text-[11.5px] leading-[1.55] text-faint">{r.body}</span>
                 </div>
               ))}
             </div>
@@ -421,11 +412,7 @@ export function Guardrails() {
             <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4 elev-1">
               <span className="text-[11px] font-medium tracking-[0.06em] text-faint uppercase">Who implements what</span>
               <span className="text-[12px] leading-[1.55] text-dim">
-                Only the guardrails the platform carries, in full or in part, are listed here: {resp[0].value} given to the platform and {resp[1].value} shared. The framework&rsquo;s guardrails the platform has no control for (encryption at rest, retention, incident response and the like) are left out of this list and held by the deploying organisation, so nothing below is a measure of coverage.
-              </span>
-              <span className="text-[11px] leading-[1.5] text-faint">
-                Each guardrail names the catalogue controls meant to carry it. Platform means the catalogue gives it to the platform in full; shared means the platform does its part and the deployment completes it.{" "}
-                {fromControls ? "Whether each of those controls is enforced on this deployment now is on the control's card in the catalogue." : "Whether this deployment enforces those controls is not reported (GET /api/controls)."}
+                {resp[0].value} given to the platform, {resp[1].value} shared; the rest stay with the deployment.
               </span>
             </section>
             <section className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line elev-1 sm:grid-cols-3">
@@ -448,7 +435,6 @@ export function Guardrails() {
 
           <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-[1.6] text-fg elev-1">
             {EXECUTIVE_TAKEAWAY}
-            <span className="mt-1 block text-[11px] text-faint">{SCOPE}</span>
           </p>
 
           <div className="flex flex-wrap items-center gap-1">
@@ -527,7 +513,7 @@ export function Guardrails() {
           <div className="flex flex-wrap gap-1 border-b border-line px-4 py-3">
             {(() => {
               const r = refsOf(openControl);
-              if (r.refs === null) return <span className="text-[11px] text-faint">References: {r.why}.</span>;
+              if (r.refs === null) return <span className="text-[11px] text-faint">—</span>;
               if (!r.refs.length) return <span className="text-[11px] text-faint">No standard is cited for it.</span>;
               return r.refs.map((x) => <Chip key={`${x.std}${x.ref}`} std={x.std} ref_={x.ref} name={x.name} />);
             })()}
@@ -542,10 +528,7 @@ export function Guardrails() {
                       const facts = status.byId.get(openControl.id)?.facts ?? [];
                       return (
                         <span className="flex flex-col gap-1">
-                          <span>
-                            {`${enf.label[0].toUpperCase()}${enf.label.slice(1)}`}
-                            {enf.why ? `: ${enf.why}` : "."}
-                          </span>
+                          <span>{`${enf.label[0].toUpperCase()}${enf.label.slice(1)}`}</span>
                           {facts.length > 0 && (
                             <span className="flex flex-col gap-0.5 text-[10.5px]">
                               {facts.map((f, i) => (
@@ -568,7 +551,7 @@ export function Guardrails() {
                 k="Firings on this deployment"
                 v={(() => {
                   const st = status.byId.get(openControl.id)!;
-                  return st.fired === null ? `Unknown: ${st.firedWhy}` : `${st.fired.toLocaleString("en-GB")}, as the platform counts them.`;
+                  return st.fired === null ? <span title={st.firedWhy || undefined}>—</span> : st.fired.toLocaleString("en-GB");
                 })()}
               />
             )}
@@ -577,7 +560,7 @@ export function Guardrails() {
             {openControl.journal !== "—" && <Cell k="Journalled as" v={<Mono className="text-[11px]">{openControl.journal}</Mono>} />}
             <Cell k="Platform family" v={FAMILIES.find((f) => f.id === openControl.family)?.name ?? openControl.family} />
             <Cell k="Framework domains" v={placed.length ? placed.map((g) => `${g.short}: ${placedIn(g, openControl.id)?.name ?? "—"}`).join(" · ") : mapWhy || "No framework places it in a domain."} />
-            <Cell k="Derives from" v={(() => { const r = refsOf(openControl); return r.refs === null ? `Not shown: ${r.why}.` : r.refs.length ? r.refs.map((x) => `${x.std} ${x.ref}: ${x.name}`).join(" · ") : "No standard is cited for it."; })()} />
+            <Cell k="Derives from" v={(() => { const r = refsOf(openControl); return r.refs === null ? "—" : r.refs.length ? r.refs.map((x) => `${x.std} ${x.ref}: ${x.name}`).join(" · ") : "No standard is cited for it."; })()} />
             {data && openFired !== null && openFired > 0 && Object.entries(data.byAgent ?? {}).some(([, m]) => sumOf(m, openControl) > 0) && (
               <Cell k="Fired in" v={Object.entries(data.byAgent ?? {}).map(([a, m]) => [a, sumOf(m, openControl)] as const).filter(([, n]) => n > 0).map(([a, n]) => `${a} (${n})`).join(", ")} />
             )}
@@ -643,16 +626,16 @@ export function Guardrails() {
       {/* ── residual risk ── */}
       <section className="flex flex-col gap-1.5 rounded-lg border border-warn/40 bg-surface px-4 py-3 elev-1">
         <span className="text-[13px] font-semibold tracking-[-0.005em]">{RESIDUAL_RISK.title}</span>
-        <p className="max-w-[100ch] text-[11.5px] leading-[1.6] text-faint">{RESIDUAL_RISK.body}</p>
+        <p className="max-w-[100ch] text-[11.5px] leading-[1.6] text-faint" title={RESIDUAL_RISK.body}>Compensated by the decision record and sampled review of automated decisions.</p>
       </section>
 
       {/* ── evidence ── */}
       {(!bare || noRecord) && <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
         <div className="flex items-center gap-2 border-b border-line px-4 py-3">
           <span className="text-[13px] font-semibold tracking-[-0.005em]">Latest control firings</span>
-          <span className="text-[11.5px] text-faint">{noRecord ? "not read" : data ? "from the run journals · click through to the run" : "reading the record…"}</span>
+          <span className="text-[11.5px] text-faint">{noRecord ? "not read" : data ? "click through to the run" : "reading the record…"}</span>
         </div>
-        {noRecord && <p className="px-4 py-3 text-[11.5px] text-faint">Not read: the record of control firings did not answer (above).</p>}
+        {noRecord && <p className="px-4 py-3 text-[11.5px] text-faint">Not read.</p>}
         {!noRecord && data?.recent.length === 0 && <p className="px-4 py-3 text-[11.5px] text-faint">No control has fired on this deployment yet.</p>}
         {(data?.recent ?? []).slice(0, 10).map((e, i) => (
           <a key={`${e.run}-${i}`} href={`/runs?id=${encodeURIComponent(e.run)}`} className="focusable flex items-baseline gap-3 border-b border-line px-4 py-2 last:border-0 hover:bg-raise/40">

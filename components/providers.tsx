@@ -83,8 +83,7 @@ export function Providers() {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-4 py-2 last:border-b-0">
         {!none && <span className="tnum text-[11px] text-faint">{`${config.providers.length} endpoint${config.providers.length === 1 ? "" : "s"}`}</span>}
         <span className="min-w-0 max-w-[92ch] text-[12px] leading-[1.55] text-dim">
-          {none && "No model endpoint is connected, so this deployment has nowhere to send a model call yet. "}
-          Endpoints are set when the platform is deployed.
+          {none ? "No model endpoint is connected." : "Set when the platform is deployed."}
         </span>
       </div>
 
@@ -105,11 +104,11 @@ export function Providers() {
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10.5px] text-faint">
               <span className="truncate font-mono" title={p.endpoint}>{p.endpoint || "address not stated"}</span>
               {p.checked_at && <span>checked {new Date(p.checked_at).toLocaleTimeString("en-GB")}</span>}
-              {p.listed_from && <span>models listed from {p.listed_from === "MODEL_NAMES" ? "the MODEL_NAMES setting, not the endpoint's own list" : p.listed_from}</span>}
+              {p.listed_from && <span>models listed from {p.listed_from === "MODEL_NAMES" ? "MODEL_NAMES" : p.listed_from}</span>}
             </div>
             {p.connected === false && (
               <p className="text-[11.5px] leading-[1.5] text-err" role="alert">
-                The platform could not reach this endpoint{p.error ? `: ${p.error}` : ", and gave no reason"}. A model offered on it cannot be called.
+                Not reachable{p.error ? `: ${p.error}` : ""}.
               </p>
             )}
             {models.length > 0 && (

@@ -6,12 +6,12 @@ import { PAGE_GROUPS, type PageGroup, type PageGroupId } from "@/lib/page-groups
 
 /**
  * The header of a page that is one tab of a group (lib/page-groups.ts): the
- * group's name, what the person can do here, the tabs, then one paragraph on
- * the tab that is open. Every member page draws this in place of a header of
+ * group's name, what the person can do here, the tabs, then at most one short
+ * line on the tab that is open (about 12 words, never a paragraph). Every member page draws this in place of a header of
  * its own, so moving between tabs changes the body and nothing above it.
  *
  *   <GroupHeader group="results" tab="findings" actions={<Button…/>}>
- *     What this tab is, in a sentence or two.
+ *     What a person does here, in one short line.
  *   </GroupHeader>
  *
  * `subject` is carried to every tab that names a parameter for it; `title`
@@ -62,7 +62,7 @@ export function GroupHeader({
           );
         })}
       </nav>
-      {children && <p className="max-w-[92ch] text-[12.5px] leading-[1.6] text-dim">{children}</p>}
+      {children && <p className="max-w-[92ch] text-[12.5px] leading-[1.5] text-dim">{children}</p>}
     </header>
   );
 }

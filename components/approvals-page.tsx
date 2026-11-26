@@ -94,7 +94,7 @@ function secondPerson(g: Gate, s: { sub: string; email: string } | null): { ok: 
   const same = (p: { sub: string; email: string } | null) =>
     Boolean(p && ((p.sub && p.sub === s.sub) || (p.email && s.email && p.email.toLowerCase() === s.email.toLowerCase())));
   if (same(g.started_by)) return { ok: false, reason: "You started this run, so a second person answers its gate." };
-  if (same(g.author)) return { ok: false, reason: "You wrote the version of the agent this run uses, so a second person answers its gate." };
+  if (same(g.author)) return { ok: false, reason: "You wrote this run's agent version, so a second person answers." };
   return null;
 }
 
@@ -182,10 +182,7 @@ export function ApprovalsView() {
 
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
-      <PageHeader title="Approvals">
-        Gates waiting for a person, the oldest first. Open one to read what the run asks and the evidence it shows, and to answer it; the answer is recorded under your sign-in. Below, the gates answered
-        recently, with who answered and how.
-      </PageHeader>
+      <PageHeader title="Approvals">Gates waiting for a person, and the gates answered recently.</PageHeader>
 
       {error && (
         <Banner tone="err" title="Could not read the approvals inbox">
@@ -240,7 +237,7 @@ export function ApprovalsView() {
         </FilterBar>
 
         {gates === null && !error && <p className="text-[12px] text-faint">Reading the inbox…</p>}
-        {gates && all.length === 0 && <EmptyState title="No gates are waiting" detail="When a run stops for a person, it is listed here with what it asks, who may answer and its deadline." />}
+        {gates && all.length === 0 && <EmptyState title="No gates are waiting" />}
         {gates && all.length > 0 && shown.length === 0 && <p className="text-[12px] text-faint">No waiting gate matches these filters.</p>}
 
         {shown.length > 0 && (
@@ -304,7 +301,7 @@ export function ApprovalsView() {
                       <td className="max-w-[240px] px-3 py-2.5">
                         <span className="flex flex-col gap-1">
                           <span className="flex flex-wrap gap-1">{g.approvers.length ? g.approvers.map((r) => <Tag key={r}>{r}</Tag>) : <span className="text-dim">Anyone with the approve permission</span>}</span>
-                          <span className="text-[10.5px] leading-[1.4] text-faint">Never the person who started the run, nor the author of its version.</span>
+                          <span className="text-[10.5px] leading-[1.4] text-faint">Never the run&rsquo;s starter or its version&rsquo;s author.</span>
                           {who && !access.ok && <span className="text-[11px] leading-[1.4] text-warn">{access.reason.startsWith("You ") ? access.reason : `Not yours to answer: it needs ${g.approvers.join(" or ")}.`}</span>}
                         </span>
                       </td>

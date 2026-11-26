@@ -82,7 +82,7 @@ export function historyLine(h: HistoryStep): string {
     default:
       line = `${h.state.replace(/_/g, " ")}${h.by ? ` by ${h.by}` : ""}${h.note ? `: ${h.note}` : ""}`;
   }
-  if (!h.applied) line += ". Not applied: only a forward move by the run that wrote it changes the state; this one is kept as the record of the attempt";
+  if (!h.applied) line += ". Not applied";
   return `${line}${h.at ? ` · ${whenText(h.at)}` : ""}`;
 }
 
@@ -121,8 +121,8 @@ export function gateDeliverableLine(d: GateDeliverable): string {
 
 /** What answering the report gate does to what it names. */
 export function reportGateNote(n: number, sink: string): string {
-  const what = n === 1 ? "this deliverable" : `these ${n} deliverables`;
-  return `The run wrote ${what} and wants to call ${sink || "a sink"}. Approving reviews ${n === 1 ? "it" : "them"}, signed with your name; the sink then fires and publishes ${n === 1 ? "it" : "them"}. Refusing withdraws ${n === 1 ? "it" : "them"}: nothing leaves.`;
+  const it = n === 1 ? "it" : "them";
+  return `Approving reviews ${it} and lets ${sink || "the sink"} publish ${it}; refusing withdraws ${it}.`;
 }
 
 /** The sink a report gate holds, from what it asks: "notify.send — notify.send is a sink…" names it first. */

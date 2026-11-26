@@ -55,7 +55,7 @@ function ControlsPage() {
           ) : undefined
         }
       >
-        What governs one agent: its gates and who signs them, the tools it is granted, its limits, the estate rules that apply to it now, its autonomy tier and the controls those bring into force. Each block links to the page where the rule is kept.
+        Gates, tools, limits, estate rules and controls governing one agent.
       </GroupHeader>
 
       {/* The registry's failure, once, with its status and address. */}
@@ -65,7 +65,7 @@ function ControlsPage() {
           <Skeleton lines={4} />
         </div>
       )}
-      {agents && agents.length === 0 && !asked && <EmptyState title="No agents yet" detail="Once an agent is saved, pick it here to read what governs it." action={<Button size="sm" variant="solid" tone="ink" href="/agents">Open agents</Button>} />}
+      {agents && agents.length === 0 && !asked && <EmptyState title="No agents yet" action={<Button size="sm" variant="solid" tone="ink" href="/agents">Open agents</Button>} />}
       {agent && <ControlsInForce key={agent} agent={agent} />}
     </div>
   );

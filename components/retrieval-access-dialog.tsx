@@ -62,9 +62,7 @@ export function ChangeDialog({ act, data, busy, onConfirm, onClose }: { act: Act
     const g = act.grant;
     const agent = agentName(g);
     const store = names.store(g.store);
-    const off = names.storeById.get(g.store)?.retrieval === "disabled";
     const taking = act.what === "revoke";
-    const rest = among.filter((r) => !picked.includes(r));
     return (
       <ReasonDialog
         title={taking ? `Revoke ${agent}'s access to ${store}?` : `Restore ${agent}'s access to ${store}?`}
@@ -88,15 +86,13 @@ export function ChangeDialog({ act, data, busy, onConfirm, onClose }: { act: Act
         {picked.length > 0 &&
           (taking ? (
             <span>
-              <span className="font-medium text-fg">{agent}</span> can no longer {rightsPhrase(picked)} <span className="font-medium text-fg">{store}</span>. The revocation is recorded and refuses its next retrieval through retrieval.search, including in a run already under way.
+              <span className="font-medium text-fg">{agent}</span> can no longer {rightsPhrase(picked)} <span className="font-medium text-fg">{store}</span>, from its next call.
             </span>
           ) : (
             <span>
               <span className="font-medium text-fg">{agent}</span> can again {rightsPhrase(picked, "and")} <span className="font-medium text-fg">{store}</span>, from its next call.
             </span>
           ))}
-        {picked.length > 0 && rest.length > 0 && <span>{taking ? `It can still ${rightsPhrase(rest, "and")} this store.` : `It still cannot ${rightsPhrase(rest)} this store.`}</span>}
-        {off && <span>{taking ? "Retrieval from this store is switched off for every agent already. This revocation stays in place when it is switched back on." : "Retrieval from this store is switched off for every agent, so nothing is retrieved from it until that is switched back on."}</span>}
       </ReasonDialog>
     );
   }
@@ -130,7 +126,7 @@ export function ChangeDialog({ act, data, busy, onConfirm, onClose }: { act: Act
       >
         {taking ? (
           <span>
-            <span className="font-medium text-fg">{agent}</span> can no longer read from, write to or delete in any store it holds. The revocation is recorded and refuses its next retrieval through retrieval.search, including in a run already under way.
+            <span className="font-medium text-fg">{agent}</span> loses every right in every store it holds.
           </span>
         ) : (
           <span>
@@ -138,7 +134,6 @@ export function ChangeDialog({ act, data, busy, onConfirm, onClose }: { act: Act
           </span>
         )}
         {rows.length > 0 && <Affected rows={rows} />}
-        {taking && <span>The agent&rsquo;s definition is not changed. What is revoked can be restored on this page.</span>}
       </ReasonDialog>
     );
   }
@@ -160,21 +155,17 @@ export function ChangeDialog({ act, data, busy, onConfirm, onClose }: { act: Act
         onConfirm={(reason) => onConfirm({ door: "retrieverDisable", store: s.id, body: { reason }, done: `Retrieval from ${name} is switched off for every agent.` })}
       >
         <span>
-          Retrieval from <span className="font-medium text-fg">{name}</span> is switched off: every search and answer from it on the Knowledge page is refused until it is switched back on.
+          Every search and retrieval from <span className="font-medium text-fg">{name}</span> is refused until switched back on.
         </span>
-        {rows.length > 0 ? (
+        {rows.length > 0 && (
           <>
             <span>{rows.length === 1 ? "One agent holds access to it:" : `${rows.length.toLocaleString("en-GB")} agents hold access to it:`}</span>
             <Affected rows={rows} />
           </>
-        ) : (
-          <span>No agent holds access to it at the moment.</span>
         )}
-        <span>Each agent&rsquo;s rights stay as they are and apply again when retrieval is switched back on.</span>
       </ReasonDialog>
     );
   }
-  const stillRevoked = holders.some((g) => revokedOf(g).length > 0);
   return (
     <ReasonDialog
       title={`Switch retrieval from ${name} back on?`}
@@ -187,10 +178,9 @@ export function ChangeDialog({ act, data, busy, onConfirm, onClose }: { act: Act
       onConfirm={(reason) => onConfirm({ door: "retrieverEnable", store: s.id, body: { reason }, done: `Retrieval from ${name} is switched back on.` })}
     >
       <span>
-        Agents that hold access to <span className="font-medium text-fg">{name}</span> can retrieve from it again, from their next call.
+        Agents with access to <span className="font-medium text-fg">{name}</span> can retrieve again from their next call.
       </span>
       {rows.length > 0 && <Affected rows={rows} />}
-      {stillRevoked && <span>Access that was revoked for a single agent stays revoked.</span>}
     </ReasonDialog>
   );
 }

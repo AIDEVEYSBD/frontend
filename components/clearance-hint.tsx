@@ -15,9 +15,9 @@ export const NOT_CLEARED = /no model cleared for|not cleared for it|so no model 
 export function ClearanceHint({ className = "" }: { className?: string }) {
   return (
     <span className={`text-[11px] leading-[1.5] text-faint ${className}`}>
-      A model is sent only the classes of data it is cleared for. A platform admin clears a model for a class, or names a cleared fallback, under{" "}
+      Clear a model for this data under{" "}
       <Link href="/configuration?tab=models#models" className="focusable rounded-sm text-fg underline decoration-line-strong underline-offset-2 hover:decoration-fg">
-        Configuration, Models, Clearance and fallbacks
+        Configuration, Models
       </Link>
       .
     </span>

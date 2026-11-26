@@ -41,7 +41,7 @@ export interface WorkloadProfile {
   approval?: { gate: string; scope: string; methods: string };
 }
 
-const TRIAGE = "Each finding is then triaged by a person on the Findings page: confirmed, marked a false positive, accepted or remediated, with a note.";
+const TRIAGE = "Each finding is triaged by a person on the Findings page.";
 
 const PROFILES: Record<string, Omit<WorkloadProfile, "id" | "name" | "line">> = {
   sast: {
@@ -72,7 +72,7 @@ const PROFILES: Record<string, Omit<WorkloadProfile, "id" | "name" | "line">> = 
     approval: {
       gate: "Scope and methods",
       scope: "The scope is what is handed over on the first step: the rules of engagement, the allowed targets, the test window and the inventory.",
-      methods: "The methods are the ones the agent proposes for these targets, within the signed rules of engagement. The approver reads them at the gate, and nothing is executed before the answer.",
+      methods: "Proposed by the agent within the signed rules; none run before approval.",
     },
   },
   firewall: {
@@ -96,11 +96,11 @@ const PROFILES: Record<string, Omit<WorkloadProfile, "id" | "name" | "line">> = 
     decides: ["On each assessment, on the shared review and report screens"],
     produces: ["An investigation of suspicious activity", "Assessments, on the shared review and report screens"],
     inputs: [
-      { name: "telemetry", label: "Security telemetry", kind: "dataset", dataset_kind: "telemetry", required: true, help: "An offline extract, or a dataset that reads through an approved live connection." },
+      { name: "telemetry", label: "Security telemetry", kind: "dataset", dataset_kind: "telemetry", required: true, help: "An offline extract, or a dataset on an approved live connection." },
       { name: "threat_intelligence", label: "Threat intelligence", kind: "dataset", required: false, help: "The intelligence the telemetry is investigated against." },
     ],
     gates: [],
-    afterwards: "Each assessment is then reviewed by a person on the shared screens: Findings for the assessment, Deliverables for the report.",
+    afterwards: "Each assessment is reviewed by a person on Findings and Deliverables.",
   },
 };
 
@@ -176,7 +176,7 @@ const words = (raw: string): string => {
 export function readOffer(answer: Answer<WorkloadList> | null, id: string): OfferReading {
   const none = { offer: null, agent: "", attached: "" };
   if (answer === null) return { state: "reading", label: "Reading", tone: "neutral", why: "The control plane has not answered yet.", short: "", ...none };
-  if (answer.state === "pending") return { state: "pending", label: "Not built", tone: "neutral", why: "The platform does not answer the workloads address yet, so no agent is named to run it.", short: "No agent is named to run it yet.", door: answer.door, ...none };
+  if (answer.state === "pending") return { state: "pending", label: "Not built", tone: "neutral", why: "The workloads address is not built yet.", short: "The workloads address is not built yet.", door: answer.door, ...none };
   if (answer.state === "error") return { state: "error", label: "Could not be read", tone: "err", why: `The workloads could not be read: ${answer.message}`, short: "Its state could not be read.", ...none };
   const list = Array.isArray(answer.data?.workloads) ? answer.data.workloads : [];
   const offer = list.find((w) => w && w.id === id) ?? null;
@@ -185,18 +185,18 @@ export function readOffer(answer: Answer<WorkloadList> | null, id: string): Offe
   const attached = typeof offer.attached === "string" ? offer.attached : "";
   if (offer.status === "available" && attached) {
     // An attached agent runs outside the platform and opens its own runs through the SDK: the platform refuses a start of it, so none is offered here.
-    const why = `Run by the attached agent ${attached}, written and run outside the platform: it opens its own runs through the SDK, so a run is not started from this page. Its runs and findings are filed under this workload.`;
+    const why = `Run by the attached agent ${attached}, which opens its own runs.`;
     return { state: "runs_outside", label: "Attached agent", tone: "ok", why, short: why, offer, agent: "", attached };
   }
   if (offer.status === "available") {
     // `available` means the workload's agent is deployed. The platform does not name that agent, so a run is not started from this page; chat starts one by the workload's name.
-    if (!agent) return { state: "not_deployed", label: "Deployed", tone: "ok", why: "The platform says this workload's agent is deployed and does not name the agent, so a run is not started from this page.", short: "Its agent is deployed; it is not named here.", offer, agent, attached };
+    if (!agent) return { state: "not_deployed", label: "Deployed", tone: "ok", why: "Its agent is deployed but not named, so no run starts here.", short: "Its agent is deployed; it is not named here.", offer, agent, attached };
     return { state: "available", label: "Available", tone: "ok", why: "", short: "", offer, agent, attached };
   }
   // Not available: the status in words, and the platform's own reason (no deployed agent, no use case, a use case not yet approved).
   const said = typeof offer.reason === "string" && offer.reason.trim() ? offer.reason.trim() : "";
   const known = offer.status === "not_deployed";
-  const why = said ? `${said[0].toUpperCase()}${said.slice(1)}.` : known ? "No agent is deployed to run this workload yet." : `The control plane reports this workload as ${words(String(offer.status)).toLowerCase() || "not available"}, and gives no reason.`;
+  const why = said ? `${said[0].toUpperCase()}${said.slice(1)}.` : known ? "No agent is deployed to run this workload yet." : `The control plane reports this workload as ${words(String(offer.status)).toLowerCase() || "not available"}.`;
   return { state: "not_deployed", label: known ? "Not deployed" : words(String(offer.status).replace(/^use_case_/, "use case ")) || "Not available", tone: "queue", why, short: why, offer, agent, attached };
 }
 
@@ -306,11 +306,11 @@ export const localWhen = (v: string): string => v.replace("T", " ");
 
 /** The five places a first run can be. */
 export const RUN_PHASES = [
-  { id: "started", label: "Started", means: "The agent is working. Nothing is needed from you." },
-  { id: "gate", label: "Waiting at a gate", means: "The run has stopped for a person's answer and goes no further until it has one." },
-  { id: "refused", label: "Refused", means: "A control refused a step, or the run was refused or closed at a gate. The run's record names which." },
+  { id: "started", label: "Started", means: "The agent is working; nothing is needed from you." },
+  { id: "gate", label: "Waiting at a gate", means: "Stopped until a person answers." },
+  { id: "refused", label: "Refused", means: "A control or a person refused it." },
   { id: "failed", label: "Failed", means: "The run ended with an error, or an operator stopped it." },
-  { id: "finished", label: "Finished", means: "The run completed. Its findings and its report are where the links point." },
+  { id: "finished", label: "Finished", means: "The run completed, with its findings and report." },
 ] as const;
 export type RunPhase = (typeof RUN_PHASES)[number]["id"];
 

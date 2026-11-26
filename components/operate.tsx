@@ -25,8 +25,15 @@ import { soon } from "@/lib/soon";
  */
 
 /** What a lockdown holds while it is on, as the platform carries it out (agentfactory/control/lockdown.py). */
-export const LOCKDOWN_HOLDS =
-  "Every start is refused, and no worker takes up a run that has not started. Runs already in flight go on, and each of their tool calls at or above write, and each call of a tool that acts outside, waits for a person.";
+export const LOCKDOWN_HOLDS = "Every start is refused; runs in flight go on with writes held.";
+
+/** Each fleet action's consequence, in one short line. */
+export const FLEET_LINE: Record<FleetAction, string> = {
+  pause: "Nothing new starts; their runs in flight stop, until resumed.",
+  resume: "Their runs start again.",
+  drain: "Nothing new starts; their runs in flight finish, until resumed.",
+  kill: "Stops their runs in flight; new runs still start.",
+};
 
 /* ═══════════════════ a reason dialog ═══════════════════ */
 
@@ -89,7 +96,7 @@ function ReasonDialog({
             </h3>
             <p className="text-[13px] leading-[1.55] text-dim">{what}</p>
           </div>
-          <Field label="Reason" error={missing ? "This needs a reason; it goes into the audit event with your name." : undefined} hint={missing ? undefined : "Written into the audit event with your name."}>
+          <Field label="Reason" error={missing ? "This needs a reason." : undefined} hint={missing ? undefined : "Written into the audit event with your name."}>
             <Textarea
               rows={2}
               value={reason}
@@ -169,7 +176,7 @@ export function FleetBar({
       {ask && action && (
         <ReasonDialog
           title={`${action.label} ${agents.length} agent${agents.length === 1 ? "" : "s"}?`}
-          what={`${list}. ${action.label} ${action.what}. One audit event records the action, the reason and your name.${error ? ` Last attempt: ${error}` : ""}`}
+          what={`${list}. ${FLEET_LINE[action.id]}${error ? ` Last attempt: ${error}` : ""}`}
           confirm={`${action.label} ${agents.length === 1 ? "agent" : `${agents.length} agents`}`}
           tone={action.tone}
           permission="run"
@@ -279,12 +286,12 @@ export function FleetPanel({
     <section className="flex h-fit flex-col overflow-hidden rounded-md border border-line bg-surface">
       <div data-hue={hueFor("Estate")} className="flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-3 py-1.5">
         <span className="text-[12px] font-semibold">Agents</span>
-        <span className="truncate text-[11px] text-faint">{selected.size ? "pause, resume, drain or stop the runs of the agents ticked" : "each agent, its hold and its runs in flight — tick rows for a fleet action"}</span>
+        <span className="truncate text-[11px] text-faint">{selected.size ? "pause, resume, drain or stop the runs of the agents ticked" : "tick rows for a fleet action"}</span>
         <span className="grow" />
         {selected.size > 0 && <FleetBar agents={[...selected]} names={name} onDone={onDone} onClear={() => onSelect(new Set())} onStop={onStop} />}
       </div>
       {agentsError && <Failure className="m-3" what="The agents could not be read" message={agentsError} />}
-      {fleetError && <Failure className="m-3" what={state ? "Which agents are held stopped answering; the marks below are as it last answered" : "Which agents are paused or draining could not be read"} message={fleetError} />}
+      {fleetError && <Failure className="m-3" what={state ? "The agent holds stopped answering" : "The agent holds could not be read"} message={fleetError} />}
       {agents === null && !agentsError && <p className="px-4 py-3 text-[12px] text-faint">Reading the agents…</p>}
       {agents && rows.length === 0 && <p className="px-4 py-3 text-[12px] text-faint">There are no saved agents.</p>}
       {rows.length > 0 && (
@@ -387,7 +394,7 @@ export function LockdownSwitch({
     try {
       const s = await setLockdown(ask, reason);
       onChanged(s);
-      onNotice(`${ask ? "Lockdown on: every start is refused, and every write and outside call waits for a person, until it is lifted" : "Lockdown lifted"}${auditLine(s.audit_id)}`);
+      onNotice(`${ask ? "Lockdown on" : "Lockdown lifted"}${auditLine(s.audit_id)}`);
       setAsk(null);
     } catch (e) {
       onNotice(`Lockdown refused: ${(e as Error).message.slice(0, 140)}`);
@@ -403,8 +410,8 @@ export function LockdownSwitch({
           title={ask ? "Lock the estate down?" : "Lift the lockdown?"}
           what={
             ask
-              ? `Until it is lifted: ${LOCKDOWN_HOLDS} One audit event records it, with the reason and your name.`
-              : `Runs start again and workers take up the runs waiting; tool calls go back to what each agent's policy says. The lockdown was set${state?.by ? ` by ${state.by}` : ""}${state?.reason ? ` because: ${state.reason}` : ""}. One audit event records the lift, with the reason and your name.`
+              ? LOCKDOWN_HOLDS
+              : `The lockdown was set${state?.by ? ` by ${state.by}` : ""}${state?.reason ? ` because: ${state.reason}` : ""}. Runs start again.`
           }
           confirm={ask ? "Lock down" : "Lift lockdown"}
           tone={ask ? "err" : "ink"}
@@ -432,12 +439,6 @@ export function LockdownBanner({ state }: { state: LockdownState | null }) {
         {state.at ? ` at ${new Date(state.at).toLocaleString()}` : ""}
         {state.audit_id !== null ? ` · audit event #${state.audit_id}` : ""}
       </span>
-      {/* What it holds, in the platform's words; the console's own sentence only when the answer names nothing. */}
-      <ul className="flex w-full flex-col gap-0.5 text-[11.5px] leading-[1.5] text-faint">
-        {(state.controls.length ? state.controls : [LOCKDOWN_HOLDS]).map((c) => (
-          <li key={c}>{c}</li>
-        ))}
-      </ul>
     </div>
   );
 }

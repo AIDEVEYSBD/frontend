@@ -12,7 +12,7 @@ export function UnreadFields({ unread, className = "" }: { unread: string[]; cla
   return (
     <div role="note" className={`flex flex-col gap-1 rounded-md border border-warn/50 bg-surface px-3 py-2 ${className}`}>
       <span className="text-[12px] font-medium text-warn">
-        Saved, but {unread.length === 1 ? "one field is" : `${unread.length} fields are`} not read by the platform: the version runs as if {unread.length === 1 ? "it were" : "they were"} not written.
+        Saved; {unread.length === 1 ? "one field is" : `${unread.length} fields are`} ignored when it runs:
       </span>
       <ul className="list-disc pl-4 font-mono text-[11px] leading-[1.55] break-words text-dim">
         {unread.map((u, i) => (

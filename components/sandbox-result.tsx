@@ -46,7 +46,7 @@ export function SandboxOutput({ run }: { run: SandboxRun }) {
       <SandboxSummary run={run} />
       <Stream label="stdout" text={run.stdout} />
       {run.stderr && <Stream label="stderr" text={run.stderr} err />}
-      {run.truncated && <span className="text-[10.5px] text-warn">The output was cut at the sandbox&rsquo;s bound; what is shown is what the run kept.</span>}
+      {run.truncated && <span className="text-[10.5px] text-warn">Output cut at the sandbox&rsquo;s bound.</span>}
     </div>
   );
 }

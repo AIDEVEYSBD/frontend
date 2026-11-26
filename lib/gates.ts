@@ -565,14 +565,13 @@ export function rollbackOfAttention(item: Pick<AttentionItem, "kind" | "data" | 
  * spent, the run is aborted and fails naming the gate. A gate never proceeds
  * by itself.
  */
-export const GATE_TIMEOUT_LINE =
-  "When a gate's deadline passes, a gate set to escalate moves to the next role on its chain with a new deadline; otherwise, or when no role is left, the run is ended as failed. The platform checks every 30 seconds, and a gate never proceeds by itself.";
+export const GATE_TIMEOUT_LINE = "Unanswered in time, a gate escalates if set to, else the run fails.";
 
 /** What a passed timeout does, in a few words, for a field or a line beside one gate. */
-export const GATE_TIMEOUT_SHORT = "acted on when it passes: escalates if set to and a role is left, else ends the run as failed";
+export const GATE_TIMEOUT_SHORT = "Then it escalates if set to, else the run fails";
 
 /** One gate's deadline, as the inbox and the run record state it. */
 export function gateDeadlineLine(deadline: string | null | undefined, when: (iso: string) => string = (iso) => iso): string {
-  if (!deadline) return "It waits until someone answers; no deadline is set.";
-  return `Deadline ${when(deadline)}. When it passes, the gate escalates to the next role on its chain if it is set to and one is left; otherwise the run is ended as failed.`;
+  if (!deadline) return "Waits until answered; no deadline.";
+  return `Deadline ${when(deadline)}: then escalates if set to, else the run fails.`;
 }

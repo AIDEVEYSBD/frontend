@@ -973,7 +973,7 @@ export function refusedResult(run: string, e: unknown): AnswerResult {
 
 /** What `delivered` says, in words: `queued` is a new job carrying the run on from the gate. */
 export function deliveredText(delivered: string): string {
-  if (delivered === "queued") return "The run is back on the queue: a worker carries it on from the gate.";
+  if (delivered === "queued") return "The run is back on the queue.";
   return delivered;
 }
 

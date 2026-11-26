@@ -26,8 +26,8 @@ export const MODE_LABEL: Record<CanaryMode, string> = { canary: "Canary", shadow
 
 /** What each mode does, in a line. */
 export const MODE_MEANS: Record<CanaryMode, string> = {
-  canary: "a share of the agent's new starts runs the candidate instead of production (never a sub-run or an evaluation's run); each run records which it ran, and both arms' outcomes are shown",
-  shadow: "a share of production runs is mirrored by a candidate run on the same input: its reads and model calls are made, its calls at or above write and calls that act outside are recorded as would-call instead, it asks no one, and each pair's outcomes and calls are compared",
+  canary: "a share of new starts runs the candidate instead of production",
+  shadow: "a share of production runs is mirrored; writes are recorded, not made",
 };
 
 /* ═══════════════════ the form ═══════════════════ */
@@ -89,10 +89,10 @@ export function canaryHeadline(c: CanaryView): string {
   const beside = c.production ? ` beside production's ${v_(c.production)}` : "";
   const what = c.mode === "shadow" ? `mirrors ${shareText(c.share)} of production runs in shadow mode${beside}` : `takes ${shareText(c.share)} of new starts${beside}`;
   const until = c.until ? `, until ${whenText(c.until)}` : "";
-  const started = `Configured by ${c.by || "someone"} ${whenText(c.at)}.`;
-  if (c.active) return `${who} ${what}${until}. ${started}`;
-  const ended = c.ended ? ` Ended ${whenText(c.ended.at)}${c.ended.reason ? `: ${c.ended.reason}` : ""}.` : " It no longer stands.";
-  return `${who} ${c.mode === "shadow" ? "mirrored" : "took"} ${shareText(c.share)} of ${c.mode === "shadow" ? "production runs" : "new starts"}${beside}. ${started}${ended}`;
+  const started = `configured by ${c.by || "someone"} ${whenText(c.at)}`;
+  if (c.active) return `${who} ${what}${until} · ${started}`;
+  const ended = c.ended ? ` · ended ${whenText(c.ended.at)}${c.ended.reason ? `: ${c.ended.reason}` : ""}` : " · no longer stands";
+  return `${who} ${c.mode === "shadow" ? "mirrored" : "took"} ${shareText(c.share)} of ${c.mode === "shadow" ? "production runs" : "new starts"}${beside} · ${started}${ended}`;
 }
 
 /** Production moved since the canary was configured (a deploy or a rollback): the comparison is against what ran then. */
@@ -113,25 +113,25 @@ export function rateText(c: Pick<CanaryView, "mode" | "compared" | "disagreement
 
 /** Why a pair is skipped, not counted, in a person's words. */
 export const SKIP_WHY: Record<string, string> = {
-  candidate_refused: "the candidate would not start on that input, so there is no shadow run (the production run says why)",
-  stand_in: "the shadow only had a stand-in to compare (it failed on a would-call placeholder, or the compared field is one)",
-  await: "the shadow ended at an await node: a shadow run asks no one",
-  budget: "the shadow ended at a budget instead of pausing for a person: a shadow run asks no one",
-  interrupted: "the shadow ended at a call whose worker died: a shadow run asks no one whether it happened",
+  candidate_refused: "the candidate would not start",
+  stand_in: "only a stand-in to compare",
+  await: "the shadow reached an await node",
+  budget: "the shadow reached a budget",
+  interrupted: "the shadow's worker died mid-call",
   killed: "either run was stopped",
 };
 
 /** What is pending and what was skipped, in a line; "" when nothing is. */
 export function pendingSkippedText(c: Pick<CanaryView, "pending" | "skipped" | "skipped_why">): string {
   const parts: string[] = [];
-  if (c.pending) parts.push(`${plural(c.pending, "pair")} pending: either side still in flight`);
+  if (c.pending) parts.push(`${plural(c.pending, "pair")} pending`);
   if (c.skipped) {
     const why = Object.entries(c.skipped_why)
       .filter(([, n]) => n > 0)
       .map(([k, n]) => `${n} because ${SKIP_WHY[k] ?? k.replace(/_/g, " ")}`);
-    parts.push(`${plural(c.skipped, "pair")} skipped, not counted${why.length ? `: ${why.join("; ")}` : ""}`);
+    parts.push(`${plural(c.skipped, "pair")} skipped${why.length ? `: ${why.join("; ")}` : ""}`);
   }
-  return parts.join(". ");
+  return parts.join(" · ");
 }
 
 /** An outcome as compared: the field's value, or a run that did not finish done (`state:failed`). */
@@ -154,7 +154,7 @@ export function armRows(arms: { candidate: CanaryArm; production: CanaryArm }): 
 
 /** One arm in a line: its runs, how many finished, and what they cost (unknown once one used a model with no price set). */
 export function armLine(arm: CanaryArm): string {
-  const cost = typeof arm.cost_usd === "number" ? `$${arm.cost_usd.toFixed(4)}` : arm.cost_usd === null ? "cost unknown (a model with no price set)" : "cost not read";
+  const cost = typeof arm.cost_usd === "number" ? `$${arm.cost_usd.toFixed(4)}` : arm.cost_usd === null ? "no price set" : "cost not read";
   return `${plural(arm.runs, "run")}, ${arm.finished} finished, ${cost}`;
 }
 
@@ -162,7 +162,7 @@ export function armLine(arm: CanaryArm): string {
 export function callsText(c: Pick<CanaryView, "mode" | "calls">): string {
   if (c.mode !== "shadow" || !c.calls) return "";
   if (!c.calls.compared) return "No pair's calls compared yet.";
-  return `${c.calls.differ} of ${plural(c.calls.compared, "compared pair")} called differently (a tool or its arguments); ${c.calls.same} called the same tools with the same arguments.`;
+  return `${c.calls.differ} of ${plural(c.calls.compared, "compared pair")} called differently; ${c.calls.same} called the same.`;
 }
 
 /** A condition as the canary reads it: met, unmet and holding the canary, or unmet and only shown (regression). */
@@ -184,16 +184,16 @@ export function canaryConditionRows(conditions: readonly CanaryCondition[]): { c
 export function canaryRefusalText(r: Pick<CanaryRefusal, "version" | "digest" | "environment" | "unmet">): string {
   const what = r.version !== null ? `version ${r.version} (${shortDigest(r.digest)})` : shortDigest(r.digest);
   const unmet = r.unmet.map((u) => conditionLabel(u.condition).toLowerCase());
-  return `The deploy conditions hold ${what} back from ${r.environment}: ${unmet.length ? unmet.join(", ") : "nothing"} unmet. A canary runs only a version that meets production's conditions; a shadow needs all but the release threshold. Nothing changed: what stands, stands.`;
+  return `The deploy conditions hold ${what} back from ${r.environment}: ${unmet.length ? unmet.join(", ") : "nothing"} unmet.`;
 }
 
 /** Any other refusal of the canary door, in a person's words; the backend's message when nothing more is known. */
 export function canaryErrorText(e: { status: number; message: string; field?: string; control?: string }): string {
-  if (e.status === 409 && e.control === "retired") return `The agent is retired: no canary runs beside it. ${e.message}`;
-  if (e.status === 409 && e.field === "version") return `${e.message}. A canary runs a saved version other than production's, beside a production deployment.`;
+  if (e.status === 409 && e.control === "retired") return `The agent is retired: ${e.message}`;
+  if (e.status === 409 && e.field === "version") return e.message;
   if (e.status === 404 && e.field === "version") return `${e.message}.`;
   if (e.status === 400 && e.field === "share") return "The share is above 0 and at most 100%.";
-  if (e.status === 400 && e.field === "until") return "The end must be in the future: the canary ends itself then.";
+  if (e.status === 400 && e.field === "until") return "The end must be in the future.";
   if (e.status === 400 && e.field === "mode") return "The mode is canary or shadow.";
   return e.message;
 }
@@ -261,7 +261,7 @@ export function runMarkersOf(row: MarkedRun): RunMarker[] {
 export function canaryRunLine(a: CanaryAssignment, shadow: boolean): string {
   const v = a.version !== null ? `version ${a.version}` : "the candidate";
   if (shadow) {
-    return `A shadow run of ${v}${a.id ? ` (canary ${a.id})` : ""}${a.of ? `, mirroring production run ${a.of} on the same input` : ""}. Its reads and model calls were made; each call at or above write and each call that acts outside is journalled as would-call with its arguments, not made, so it wrote no deliverable or finding. It asks no one, so it ends where a run would wait for a person. Its cost is its own and counts toward spend and budgets; it counts toward no rate limit, drift window or results summary, and never waits on the Approvals list.`;
+    return `A shadow run of ${v}${a.id ? ` (canary ${a.id})` : ""}${a.of ? `, mirroring production run ${a.of}` : ""}; its writes were recorded, not made.`;
   }
   if (a.variant === "candidate") return `This run used the candidate, ${v}, of canary ${a.id}${a.share !== null ? ` (${shareText(a.share)} of new starts)` : ""}, instead of production's ${v_(a.production)}.`;
   if (a.mode === "shadow" && a.shadow_refused) return `Production's run (${v}). The shadow ${a.id} drew it and could not mirror it: the candidate ${v_(a.candidate)} would not start on its input (${a.shadow_refused}).`;

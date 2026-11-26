@@ -52,27 +52,18 @@ export function PolicyBaseline({ rules = null, rulesError = "" }: { rules?: Rule
       hue="controls"
       meta={`${BASELINE.length} in the catalogue · ${BASELINE.filter((p) => p.kind === "fixed").length} with no setting · ${BASELINE.filter((p) => p.kind === "default").length} with a default · ${BASELINE.filter((p) => p.kind === "off").length} off until set`}
     >
-      {status && status.state !== "ok" && (
-        <div className="flex max-w-[96ch] flex-col gap-2">
-          <p className="rounded-md border border-line bg-surface px-3 py-2.5 text-[12px] leading-[1.55] text-dim">
-            Enforcement is not connected: the platform does not report which of the controls carrying these policies it enforces, so this is the catalogue a deployment starts with, not a statement of what this deployment does.
-          </p>
-          <AnswerFailure answer={status} what="Whether each control is enforced could not be read" />
-        </div>
-      )}
+      {status && status.state !== "ok" && <AnswerFailure className="max-w-[96ch]" answer={status} what="Whether each control is enforced could not be read" />}
       {rulesError && !rules && (
         <p className="max-w-[96ch] rounded-md border border-warn-line bg-warn-bg px-3 py-2 text-[12px] leading-[1.55] text-warn">
-          The rules now could not be read (GET /api/policy/targets: {rulesError}). The rate limits, breakers and guardian rows show the platform&rsquo;s defaults, which this deployment&rsquo;s settings or an applied change may have moved.
+          The rules now could not be read: {rulesError}
         </p>
       )}
       <p className="max-w-[96ch] text-[12.5px] leading-[1.6] text-dim">
-        The policy set a deployment starts with, as the catalogue writes it.{" "}
-        {rules ? "The rate limits, breakers and guardian rows show the platform’s rules now, as it answers them. " : rulesError ? "" : "The rate limits, breakers and guardian rows show the platform’s rules now once they are read. "}
-        A default changes only the way its row says, and each row names the{" "}
+        The policy set a deployment starts with, and the{" "}
         <Link href="/guardrails" className="focusable font-medium text-fg underline underline-offset-2">
           catalogue controls
         </Link>{" "}
-        that carry it and the standards those controls answer to.
+        carrying it.
       </p>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -159,7 +150,7 @@ function Row({ p, status, rules, open, onToggle }: { p: BaselinePolicy; status: 
         <div className="grid gap-x-8 gap-y-4 border-t border-line bg-raise/25 px-4 py-3.5 pl-[84px] xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
           <div className="flex flex-col gap-2">
             <span className="text-[11px] font-semibold text-dim">
-              {live ? "The rules now, as the platform answers them" : p.live ? "The platform's defaults (the rules now were not read)" : "What it ships with"}
+              {live ? "The rules now" : p.live ? "The platform's defaults (rules now not read)" : "What it ships with"}
             </span>
             <dl className="flex flex-col">
               {settings.map((s) => (
@@ -170,7 +161,7 @@ function Row({ p, status, rules, open, onToggle }: { p: BaselinePolicy; status: 
               ))}
             </dl>
             <p className="text-[11.5px] leading-[1.55] text-faint">
-              <span className="font-medium text-dim">{KIND_LABEL[p.kind]}.</span> {KIND_MEANS[p.kind]} <span className="font-medium text-dim">How it changes:</span> {CHANGES_LABEL[p.changes]}
+              <span className="font-medium text-dim">How it changes:</span> {CHANGES_LABEL[p.changes]}
             </p>
           </div>
           <div className="flex flex-col gap-3">
@@ -184,7 +175,7 @@ function Row({ p, status, rules, open, onToggle }: { p: BaselinePolicy; status: 
                       <span className="font-mono text-[11px] text-faint">{c.id}</span>
                       <span className="text-fg">{c.title}</span>
                       {enf && (
-                        <span title={enf.why || undefined} className="inline-flex">
+                        <span className="inline-flex">
                           <Tag tone={enf.tone}>{enf.label}</Tag>
                         </span>
                       )}

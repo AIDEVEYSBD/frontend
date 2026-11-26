@@ -243,9 +243,9 @@ export function ApproveDialog({
 
   const resultLine = (r: AnswerResult, label: string) =>
     r.ok
-      ? `${label}. ${deliveredText(r.delivered) || `The run is continuing (${r.state || "running"}); its record settles as it runs.`}`
+      ? `${label}. ${deliveredText(r.delivered) || `The run is ${r.state || "running"}.`}`
       : r.skipped
-        ? `Not answered: ${r.error || "the platform gave no reason"}${r.state ? ` (the run is ${r.state})` : ""}.`
+        ? `Not answered${r.error ? `: ${r.error}` : ""}${r.state ? ` (the run is ${r.state})` : ""}.`
         : r.state === "closed"
           ? `${label} and recorded. ${r.error}`.trim()
           : `${label}, but the run could not continue. ${r.error}`.trim();
@@ -285,8 +285,8 @@ export function ApproveDialog({
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 pt-2.5 pb-2">
                 <span className="text-[11px] font-semibold text-dim">Sample</span>
                 <span className="text-[11px] text-faint">
-                  {count.sampled === count.total ? `all ${count.total} gates, each with its evidence` : `${count.sampled} of the ${count.total} gates, picked at random, each with its evidence`}
-                  {count.seen > count.sampled ? ` · ${count.seen} of ${count.total} read in samples so far` : ""}
+                  {count.sampled === count.total ? `all ${count.total} gates` : `${count.sampled} of ${count.total} gates, picked at random`}
+                  {count.seen > count.sampled ? ` · ${count.seen} of ${count.total} read so far` : ""}
                 </span>
                 <span className="grow" />
                 {count.total > SAMPLE_SIZE && (
@@ -312,7 +312,7 @@ export function ApproveDialog({
                     <ReportGateDeliverables gate={g} />
                     <EvidencePanel evidence={g.evidence} />
                     {g.shape === "verdicts" && <p className="px-3 py-2 text-[11px] text-faint">{g.items.length} item{g.items.length === 1 ? "" : "s"} on the register to rule on.</p>}
-                    {bare && g.shape !== "verdicts" && <p className="px-3 py-2 text-[11px] text-faint">The backend laid out no evidence for this gate; open the run to read its journal.</p>}
+                    {bare && g.shape !== "verdicts" && <p className="px-3 py-2 text-[11px] text-faint">No evidence for this gate.</p>}
                   </div>
                 );
               })}
@@ -362,8 +362,8 @@ export function ApproveDialog({
             <SignerLine initials={me?.initials ?? CURRENT_USER.initials} name={by} />
             {batch && (
               <span className="text-[11px] text-faint">
-                The answer below goes to {count.shared} of the {count.total} gates
-                {count.own ? `; ${count.own} ${count.own === 1 ? "is" : "are"} answered on ${count.own === 1 ? "its" : "their"} own` : ""}. You have read {count.seen} of them in the sample.
+                The answer below goes to {count.shared} of {count.total} gates
+                {count.own ? `; ${count.own} answered on ${count.own === 1 ? "its" : "their"} own` : ""}.
               </span>
             )}
             <GateAnswer gate={gate} draft={draft} onChange={setDraft} disabled={Boolean(busy) || done} />
@@ -371,7 +371,7 @@ export function ApproveDialog({
 
           {gate.external.allowed && !batch && linksBuilt === false && (
             <div className="flex flex-col gap-1 border-t border-line px-4 py-3">
-              <span className="text-[11.5px] text-faint">This gate&rsquo;s definition allows an answer from outside, and links for an outside approver are not built.</span>
+              <span className="text-[11.5px] text-faint">Links for an outside approver</span>
               <NotConnectedNote door={{ method: "POST", path: "/api/approvals/{run_id}/links" }} />
             </div>
           )}
@@ -379,9 +379,7 @@ export function ApproveDialog({
             <div className="flex flex-col gap-2 border-t border-line px-4 py-3">
               {!linking ? (
                 <span className="flex flex-wrap items-center gap-2">
-                  <span className="min-w-0 text-[11.5px] leading-[1.5] text-faint">
-                    This gate&rsquo;s definition allows an answer from outside: a single-use link for one person, who signs in with that address and holds no role here.
-                  </span>
+                  <span className="min-w-0 text-[11.5px] leading-[1.5] text-faint">May be answered from outside, by single-use link.</span>
                   <span className="grow" />
                   <Button size="sm" variant="solid" tone="neutral" permission="approve" onClick={() => setLinking(true)} disabled={done}>
                     Send to someone outside
@@ -409,9 +407,7 @@ export function ApproveDialog({
                       {copied ? "Copied" : "Copy link"}
                     </Button>
                   </span>
-                  <span className="text-[10.5px] leading-[1.5] text-ghost">
-                    Copy it now and send it yourself: it is shown only here, the platform keeps no copy of it, and the console never emails it. Only {minted.email}, signed in as that address, can open it. Their answer is signed external:{minted.email}.
-                  </span>
+                  <span className="text-[10.5px] leading-[1.5] text-ghost">Shown only once; copy it and send it yourself.</span>
                 </div>
               ) : (
                 <div className="flex flex-wrap items-end gap-2">
@@ -419,7 +415,7 @@ export function ApproveDialog({
                     <Field
                       label="Their email address"
                       error={linkError || undefined}
-                      hint={linkError ? undefined : "Only this address, signed in as itself, can use the link, and only for this gate. Not the run's starter or the author of the agent's version."}
+                      hint={linkError ? undefined : "Only this address can use the link, for this gate only."}
                     >
                       <Input type="email" value={email} onChange={setEmail} placeholder="name@example.com" disabled={minting} />
                     </Field>
@@ -514,8 +510,8 @@ function GateAnswer({ gate, draft, onChange, disabled, decisionPick = false }: {
       {gate.shape === "decision" && decisionPick && <OwnDecision draft={draft} onChange={onChange} disabled={disabled} />}
       {/* A form with its own note field takes the note there: a second box would overwrite it. */}
       {!declaresNote(gate) && (
-        <Field label={gate.shape === "decision" ? "Reason" : "Note"} hint="Optional, and the first thing a reviewer reads six months from now.">
-          <Textarea rows={2} value={draft.note} onChange={(v) => onChange({ ...draft, note: v })} placeholder={gate.shape === "decision" ? "Why this decision stands, or why it is being overridden." : "Anything the record should carry beside the answer."} disabled={disabled} />
+        <Field label={gate.shape === "decision" ? "Reason" : "Note"} hint="Optional; recorded with the answer.">
+          <Textarea rows={2} value={draft.note} onChange={(v) => onChange({ ...draft, note: v })} placeholder={gate.shape === "decision" ? "Why this decision stands, or why it is overridden." : "Anything the record should carry beside the answer."} disabled={disabled} />
         </Field>
       )}
     </div>

@@ -86,7 +86,7 @@ export function CanaryConditions({ conditions }: { conditions: CanaryCondition[]
 export function CanaryRefusalView({ refusal }: { refusal: CanaryRefusal }) {
   return (
     <div className="flex flex-col gap-2">
-      <Banner tone="err" title={`Version ${refusal.version ?? "?"} cannot stand as the ${refusal.environment}: a condition does not hold`}>
+      <Banner tone="err" title={`Version ${refusal.version ?? "?"} cannot stand as the ${refusal.environment}`}>
         {canaryRefusalText(refusal)}
         <span className="mt-0.5 block font-mono text-[10px] text-faint">gate decision {refusal.decision}</span>
       </Banner>
@@ -288,7 +288,6 @@ export function CanaryReport({ canary }: { canary: CanaryView }) {
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          <p className="text-[11.5px] text-dim">{rateText(canary)}</p>
           <ArmsTable canary={canary} />
         </div>
       )}
@@ -415,7 +414,7 @@ export function CanaryPanel({ agent, versions, production, retired, onChanged }:
           <CanaryReport canary={canary} />
           {canary.active && (
             <span className="flex items-center gap-2">
-              <span className="text-[11px] text-faint">Ending it stops new diversions and mirrors; runs already started go on to their end.</span>
+              <span className="text-[11px] text-faint">Runs already started finish.</span>
               <span className="grow" />
               <Button size="sm" variant="solid" tone="neutral" onClick={() => void load()}>
                 Refresh
@@ -443,9 +442,9 @@ export function CanaryPanel({ agent, versions, production, retired, onChanged }:
             One canary per agent: starting one ends the one standing.
           </span>
           {production === null ? (
-            <p className="text-[12px] text-faint">Nothing of {agent} is deployed to production yet: a canary runs beside production.</p>
+            <p className="text-[12px] text-faint">Nothing is deployed to production yet.</p>
           ) : !choices.length ? (
-            <p className="text-[12px] text-faint">No saved version other than the one production runs. A canary needs a second version to run beside it.</p>
+            <p className="text-[12px] text-faint">No saved version other than the one production runs.</p>
           ) : (
             <>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">

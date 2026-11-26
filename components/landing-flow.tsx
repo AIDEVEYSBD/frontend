@@ -20,15 +20,15 @@ interface Stage {
 }
 
 const STAGES: Stage[] = [
-  { by: "01 / Define", title: "Scope and inputs", text: "An authorised user selects the workload and provides the approved data and scope." },
+  { by: "01 / Define", title: "Scope and inputs", text: "An authorised user selects the workload, data and scope." },
   { by: "02 / Execute", title: "Controlled analysis", text: "The agent uses approved models, knowledge and tools within defined execution limits.", bounded: true },
-  { by: "03 / Approve", title: "Human review", text: "At each approval gate, the designated role decides whether the work can proceed.", gate: true },
+  { by: "03 / Approve", title: "Human review", text: "At each approval gate, the designated role decides whether work proceeds.", gate: true },
   { by: "04 / Assess", title: "Findings and evidence", text: "Review findings alongside the supporting evidence and the steps that produced them." },
   { by: "05 / Report", title: "Documented outcomes", text: "Retain the assessment report with its review status and history." },
 ];
 
 const LIMITS = "Independent controls: budgets, step limits and emergency stop";
-const JOURNAL = "A chronological record of execution, tool activity and decisions, available for verification and review.";
+const JOURNAL = "A chronological record of execution, tool activity and decisions.";
 
 /** Three steps in a row: the agent's work is a sequence, not one act. */
 function StepMarks() {

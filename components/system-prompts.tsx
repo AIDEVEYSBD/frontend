@@ -5,7 +5,7 @@ import { Button, Mono, Tag } from "./ui";
 import { Field, Textarea } from "./forms";
 import { DigestChip } from "./digest-chip";
 import { Skeleton } from "./loaders";
-import { leakWindowLine, setSystemPrompt, systemPrompts, type Application, type PromptHistory } from "@/lib/api/l4";
+import { setSystemPrompt, systemPrompts, type Application, type PromptHistory } from "@/lib/api/l4";
 
 /**
  * A chatbot's system prompt, version by version.
@@ -52,7 +52,7 @@ export function SystemPromptPanel({ app, onApplication }: { app: Application; on
     try {
       const { application, recorded } = await setSystemPrompt(app.id, draft.trim());
       onApplication(application);
-      setReceipt(recorded ? `Recorded as version ${recorded.version}${recorded.set_by ? `, signed ${recorded.set_by}` : ""}.` : "Unchanged: the text is the same as the current version, so no version was recorded.");
+      setReceipt(recorded ? `Recorded as version ${recorded.version}${recorded.set_by ? `, signed ${recorded.set_by}` : ""}.` : "Unchanged: no new version recorded.");
       setEditing(false);
       load();
     } catch (e) {
@@ -69,7 +69,7 @@ export function SystemPromptPanel({ app, onApplication }: { app: Application; on
       <div className="flex w-full flex-wrap items-start gap-3 border-b border-line bg-raise/55 px-4 py-2.5">
         <span className="text-[12.5px] font-semibold tracking-[-0.005em]">System prompt</span>
         <span className="text-[11px] leading-[1.55] text-faint">
-          {history?.says ? history.says : history ? `${history.count} version${history.count === 1 ? "" : "s"} · every change is a new version, signed by whoever made it` : "the prompt the gateway puts first, version by version"}
+          {history?.says ? "none for this application" : history ? `${history.count} version${history.count === 1 ? "" : "s"}` : "the prompt the gateway puts first"}
         </span>
         <span className="grow" />
         {history && !history.says && !editing && (
@@ -96,20 +96,22 @@ export function SystemPromptPanel({ app, onApplication }: { app: Application; on
       )}
       {history === null && (
         <p className="px-4 py-3 text-[11.5px] leading-[1.55] text-faint">
-          {error || "Only a registered chatbot has a system prompt the gateway puts first."}
+          {error || "Only a registered chatbot has a system prompt."}
         </p>
       )}
 
       {history && !history.says && (
         <>
-          <p className="border-b border-line px-4 py-2.5 text-[11.5px] leading-[1.55] text-dim" title={history.leak_check.says}>
+          <p className="border-b border-line px-4 py-2.5 text-[11.5px] leading-[1.55] text-dim">
             <span className="font-medium text-fg">Leak check · </span>
-            {leakWindowLine(history.leak_check)} A reply that repeats the prompt in force is withheld, and the call is refused; an empty prompt guards nothing.
+            {history.leak_check.window_days || history.leak_check.max_versions
+              ? `current prompt and versions retired in the last ${history.leak_check.window_days} day${history.leak_check.window_days === 1 ? "" : "s"} (at most ${history.leak_check.max_versions})`
+              : "—"}
           </p>
 
           {editing && (
             <div className="flex flex-col gap-3 border-b border-line px-4 py-3">
-              <Field label="New system prompt" hint="Recorded as the next version under your name. Leave it empty to clear the prompt: the chatbot then has none, and may send a system message of its own.">
+              <Field label="New system prompt" hint="Recorded under your name. Empty clears the prompt.">
                 <Textarea rows={5} value={draft} onChange={setDraft} disabled={busy} />
               </Field>
               <span className="flex items-center gap-2">
@@ -178,7 +180,7 @@ export function SystemPromptPanel({ app, onApplication }: { app: Application; on
                 {history.versions.length === 0 && (
                   <tr>
                     <td colSpan={8} className="px-4 py-4 text-center text-faint">
-                      No system prompt has been registered; the application sends its own, and the gateway has nothing to guard.
+                      No system prompt registered.
                     </td>
                   </tr>
                 )}

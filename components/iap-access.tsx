@@ -96,7 +96,7 @@ export function IapAccess() {
         <Card title="Who can open this console" meta={<span className="text-err">not read</span>}>
           <div className="flex flex-col gap-2.5 px-4 py-3">
             <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err" role="alert">
-              The platform could not read Google Identity-Aware Proxy&rsquo;s access list, so who may open this console is not known here: {failed.message}
+              The IAP access list could not be read: {failed.message}
             </p>
             {levels.length > 0 && <LevelsNotRead levels={levels} />}
             <dl className="flex flex-col gap-1 text-[12px] leading-[1.55]">
@@ -112,7 +112,6 @@ export function IapAccess() {
                 </div>
               )}
             </dl>
-            {needs.note && <p className="text-[11.5px] leading-[1.5] text-faint">{needs.note.charAt(0).toUpperCase() + needs.note.slice(1)}.</p>}
           </div>
         </Card>
       );
@@ -129,16 +128,13 @@ export function IapAccess() {
   if (!answer.enabled)
     return (
       <Card title="Who can open this console">
-        <p className="px-4 py-3 text-[12.5px] leading-[1.55] text-dim">Sign-in through Google Identity-Aware Proxy is not set up on this deployment, so there is no access list of its to read.</p>
+        <p className="px-4 py-3 text-[12.5px] leading-[1.55] text-dim">IAP sign-in is not set up on this deployment.</p>
       </Card>
     );
   if (!answer.readable) {
     return (
       <Card title="Who can open this console">
-        <p className="px-4 py-3 text-[12.5px] leading-[1.55] text-dim">
-          Sign-in is through Google Identity-Aware Proxy, but its access list could not be read: this server&rsquo;s service account needs permission to read the IAP policy
-          of the service.
-        </p>
+        <p className="px-4 py-3 text-[12.5px] leading-[1.55] text-dim">The IAP access list could not be read: the service account lacks permission.</p>
       </Card>
     );
   }
@@ -149,19 +145,15 @@ export function IapAccess() {
     <Card
       id="iap-access"
       title="Who can open this console"
-      meta={`${rows.length} ${rows.length === 1 ? "entry" : "entries"} on Google Identity-Aware Proxy's access list`}
+      meta={`${rows.length} ${rows.length === 1 ? "entry" : "entries"} on IAP's access list`}
       action={
         <Button size="sm" variant="solid" tone="neutral" loading={busy} onClick={() => { setBusy(true); setTick((t) => t + 1); }}>
           Read again
         </Button>
       }
     >
-      <p className="border-b border-line px-4 py-2.5 text-[12px] leading-[1.55] text-dim">
-        Everyone Google lets through to this console, as granted on its access list, with the role each holds here. A group or a domain is one entry: its members are
-        listed in the directory, not here.
-      </p>
       {rows.length === 0 ? (
-        <p className="px-4 py-4 text-[12.5px] text-dim">Nobody is on the access list at the levels read, so nobody can open the console through the proxy.</p>
+        <p className="px-4 py-4 text-[12.5px] text-dim">Nobody is on the access list at the levels read.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] border-collapse text-[12px]">
@@ -206,7 +198,7 @@ export function IapAccess() {
         <div className="flex flex-col gap-1.5 border-t border-line px-4 py-2.5 text-[11.5px] leading-[1.55] text-faint">
           {answer.mappedOnly.length > 0 && (
             <span>
-              Named in the role mapping but not on the access list, so they cannot get in:{" "}
+              In the role mapping, not on the access list:{" "}
               <span className="font-mono text-[11px] text-dim">{answer.mappedOnly.join(", ")}</span>
             </span>
           )}
@@ -223,7 +215,7 @@ function LevelsNotRead({ levels }: { levels: IapLevel[] }) {
   if (!unread.length) return null;
   return (
     <span className="flex flex-col gap-1">
-      <span className="text-[11.5px] text-faint">Not read; a grant made at one of these would also let someone in:</span>
+      <span className="text-[11.5px] text-faint">Not read (a grant here would also let someone in):</span>
       {unread.map((l) => (
         <span key={l.level} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11.5px] leading-[1.5]">
           <Status tone="err">Not read</Status>

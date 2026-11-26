@@ -159,20 +159,7 @@ function AuditTrail({ ledger }: { ledger: LedgerVerification }) {
           At row {a.broken_at}: {a.reason}
         </p>
       )}
-      <p className="text-faint">{a.scope ? `${a.scope.charAt(0).toUpperCase()}${a.scope.slice(1)}.` : ""}</p>
     </div>
-  );
-}
-
-/** What the checks cannot show, said once under the walk. */
-function Limits({ items }: { items: string[] }) {
-  if (!items.length) return null;
-  return (
-    <ul className="flex list-disc flex-col gap-0.5 pl-4 text-[11px] leading-[1.5] text-faint">
-      {items.map((x) => (
-        <li key={x}>{x}</li>
-      ))}
-    </ul>
   );
 }
 
@@ -194,18 +181,12 @@ export function RetentionPanel({ view }: { view: RetentionView }) {
               <tr key={c.class} className="border-b border-line align-top last:border-0">
                 <td className="px-3 py-1.5 text-fg">{c.label}</td>
                 <td className="px-3 py-1.5 text-dim">{c.holds}</td>
-                <td className="px-3 py-1.5 text-dim">{c.days !== null ? `${c.days} days, then removed by the sweep` : c.kept_because}</td>
+                <td className="px-3 py-1.5 text-dim">{c.days !== null ? `${c.days} days` : c.kept_because}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <p className="text-[11px] leading-[1.5] text-faint">
-        {[view.changeable, view.not_reached]
-          .filter(Boolean)
-          .map((s) => `${s.charAt(0).toUpperCase()}${s.slice(1)}.`)
-          .join(" ")}
-      </p>
       {view.last_sweep_error ? (
         <p className="text-[11.5px] leading-[1.5] text-err">
           The last sweep ({whenText(view.last_sweep_at)}) failed: {view.last_sweep_error}
@@ -215,7 +196,7 @@ export function RetentionPanel({ view }: { view: RetentionView }) {
           Last swept {whenText(view.last_sweep_at)} by the {view.last_sweep_by}: {view.last_sweep.map((s) => s.said).join("; ")}.
         </p>
       ) : (
-        <p className="text-[11px] leading-[1.5] text-faint">No sweep is on record: it runs once an hour in a process that runs workers.</p>
+        <p className="text-[11px] leading-[1.5] text-faint">No sweep is on record.</p>
       )}
       {view.tombstones.length > 0 ? (
         <div className="af-list af-list-tall overflow-x-auto rounded-md border border-line">
@@ -248,7 +229,7 @@ export function RetentionPanel({ view }: { view: RetentionView }) {
           </table>
         </div>
       ) : (
-        <p className="text-[12px] text-faint">No tombstone on record: the sweep has removed nothing.</p>
+        <p className="text-[12px] text-faint">No tombstone on record.</p>
       )}
     </div>
   );
@@ -306,7 +287,7 @@ function LedgerPage() {
   return (
     <div className="mx-auto flex w-full max-w-[1520px] flex-col gap-4 px-5 py-7">
       <GroupHeader group="assurance" tab="ledger">
-        Each run&rsquo;s journal is hash-chained from a genesis bound to the run and its definition, and the run&rsquo;s own record holds the last hash. This page checks every run&rsquo;s chain and the audit trail&rsquo;s now, and names the first entry where any breaks. The last hashes are kept in this deployment&rsquo;s database only.
+        Checks every run&rsquo;s hash chain and the audit trail.
       </GroupHeader>
       {error && (
         <Banner tone="err" title="Could not check the record">
@@ -320,7 +301,7 @@ function LedgerPage() {
       )}
       <Section title="Runs" action={<Button size="sm" variant="solid" tone="neutral" loading={busy} onClick={walk}>Check again</Button>}>
         <div className="grid gap-3 md:grid-cols-3">
-          <Field label="Agent" error={agentsError ? `the agents could not be read, so none can be picked: ${agentsError}` : undefined}>
+          <Field label="Agent" error={agentsError ? `the agents could not be read: ${agentsError}` : undefined}>
             <Pick value={agent} onChange={setAgent} options={[{ value: "", label: "The whole estate" }, ...agents.map((a) => ({ value: a.id, label: a.name }))]} />
           </Field>
           <Field label="From" hint="runs created at or after it">
@@ -340,7 +321,6 @@ function LedgerPage() {
             ))}
             <LedgerBreaks ledger={ledger} />
             <LedgerWalk ledger={ledger} />
-            <Limits items={ledger.limits} />
           </>
         )}
         {quietDown && (
@@ -353,7 +333,7 @@ function LedgerPage() {
       <Section title="Audit trail" hue="ledger" meta="sign-ins, every change and every refusal, hash-chained">
         {ledger ? <AuditTrail ledger={ledger} /> : <p className="text-[12px] text-faint">{quietDown ? "Not read." : "Reading…"}</p>}
       </Section>
-      <Section title="Retention" hue="ledger" meta="what is kept, and the tombstones left by what was removed">
+      <Section title="Retention" hue="ledger" meta="what is kept, and tombstones of what was removed">
         {retention ? (
           <RetentionPanel view={retention} />
         ) : retentionDown ? (

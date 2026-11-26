@@ -14,7 +14,7 @@ import { Assistant } from "./assistant";
 import { applyAccent } from "./appearance";
 import { isOpenPage } from "@/lib/route-policy";
 import { consolePath } from "@/lib/api/client";
-import { PERMISSION_META, roleLabel as roleName, type Permission } from "@/lib/permissions";
+import { roleLabel as roleName, type Permission } from "@/lib/permissions";
 
 /**
  * The navigation, grouped by what a person came for: what is running, the
@@ -378,16 +378,13 @@ function Sidebar({ groups, auto, onAuto, who }: { groups: NavGroup[]; auto: Grou
   );
 }
 
-/** A page a person may not open: which permission it needs, what that permission is, and what they hold. */
+/** A page a person may not open: which permission it needs, and what they hold. */
 function NoPermission({ page, needs, roles }: { page: string; needs: Permission; roles: string[] }) {
   return (
     <div className="mx-auto flex max-w-[560px] flex-col gap-3 px-6 py-16">
       <span className="text-[11px] font-medium tracking-[0.08em] text-faint uppercase">Not available to you</span>
       <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.01em] text-fg">{page} needs the &ldquo;{needs}&rdquo; permission.</h1>
-      <p className="text-[13px] leading-[1.6] text-dim">{PERMISSION_META[needs]}</p>
-      <p className="text-[12.5px] leading-[1.6] text-faint">
-        Your roles: {roles.length ? roles.map(roleName).join(", ") : "none assigned"}. An administrator assigns roles; the change applies the next time you sign in.
-      </p>
+      <p className="text-[12.5px] leading-[1.6] text-faint">Your roles: {roles.length ? roles.map(roleName).join(", ") : "none assigned"}.</p>
     </div>
   );
 }
@@ -398,12 +395,7 @@ function NoRole({ roles }: { roles: string[] }) {
     <div className="mx-auto flex max-w-[560px] flex-col gap-3 px-6 py-16">
       <span className="text-[11px] font-medium tracking-[0.08em] text-faint uppercase">Not available to you</span>
       <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.01em] text-fg">This console is open to the platform admin and the auditor.</h1>
-      <p className="text-[13px] leading-[1.6] text-dim">
-        {roles.length
-          ? `You are signed in as ${roles.map(roleName).join(", ")}. That role works in the consoles of the security workloads, not in this one.`
-          : "You are signed in, but nobody has given you a role on this console."}
-      </p>
-      <p className="text-[12.5px] leading-[1.6] text-faint">A platform admin assigns roles; a change applies the next time you open the console.</p>
+      <p className="text-[13px] leading-[1.6] text-dim">{roles.length ? `Your roles: ${roles.map(roleName).join(", ")}.` : "You hold no role on this console."}</p>
     </div>
   );
 }

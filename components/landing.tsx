@@ -60,7 +60,7 @@ export function Hero() {
             AI-powered security.<br /><span className="text-dim">Human-led control.</span>
           </h1>
           <p className="mt-7 max-w-[47ch] text-[17px] leading-[1.65] text-dim">
-            Bring AI to security operations with clear accountability. Saros brings four security workloads together, with defined approvals, controlled execution and traceable evidence.
+            Saros brings four security workloads together, with approvals and evidence.
           </p>
           <div className="mt-9 flex flex-wrap items-center gap-x-7 gap-y-5">
             <OpenConsole primary />
@@ -100,7 +100,7 @@ export function Workloads() {
   return (
     <section id="workloads" className="border-t border-line bg-surface">
       <div className={`${WRAP} flex flex-col gap-12 py-20 lg:py-24`}>
-        <Head title="Four workloads. One coordinated approach.">From code analysis to threat hunting, bring security assessments into a shared operating model. Define the scope, review the findings and retain the evidence in one place.</Head>
+        <Head title="Four workloads. One coordinated approach.">Define the scope, review the findings and retain the evidence.</Head>
         <div className="grid gap-5 md:grid-cols-2">
           {WORKLOADS.map((w, i) => (
             <article key={w.name} data-reveal data-reveal-delay={i % 2 * 90} className="landing-workload flex flex-col border border-line p-6 sm:p-8">
@@ -114,7 +114,6 @@ export function Workloads() {
             </article>
           ))}
         </div>
-        <p className="-mt-5 text-[12px] leading-relaxed text-faint">Workload availability depends on your deployment. The console identifies services that are not yet connected.</p>
       </div>
     </section>
   );
@@ -143,7 +142,7 @@ const AREAS: Area[] = [
     pages: [
       { href: "/workloads", label: "Workloads", what: "Configure security workloads and access their findings and reports." },
       { href: "/agents", label: "Agents", what: "Define execution steps, approval roles and resource limits." },
-      { href: "/evals", label: "Evaluations", what: "Run benchmark cases against an agent version before release: each case is a new run." },
+      { href: "/evals", label: "Evaluations", what: "Run benchmark cases against an agent version before release." },
       { href: "/acceptance", label: "Acceptance", what: "Review acceptance criteria, results and accountable sign-off." },
     ],
   },
@@ -152,7 +151,7 @@ const AREAS: Area[] = [
     line: "Assign access. Establish accountability.",
     pages: [
       { href: "/iam", label: "People and agents", what: "Manage role-based access for people and agents." },
-      { href: "/sessions", label: "Sessions", what: "See every live connection, who is behind it, and end it when needed." },
+      { href: "/sessions", label: "Sessions", what: "See every live connection, and end it when needed." },
       { href: "/authorization", label: "Authorization servers", what: "Decide which outside sign-in services the platform trusts." },
     ],
   },
@@ -190,7 +189,7 @@ export function Controls() {
   return (
     <section id="controls" className="border-t border-line bg-canvas">
       <div className={`${WRAP} flex flex-col gap-12 py-20 lg:py-24`}>
-        <Head title="Control at every stage.">Give teams a common framework for operating AI agents. Manage access, set execution limits and review decisions through controls enforced independently of the model.</Head>
+        <Head title="Control at every stage.">Manage access, set execution limits and review every decision.</Head>
         <div data-reveal className="grid overflow-hidden border border-line bg-surface lg:grid-cols-2">
           <figure className="flex min-w-0 flex-col">
             <div className="landing-photo relative min-h-60 grow overflow-hidden sm:min-h-72"><Image src="/images/landing/industrial-operations.webp" alt="ABB illustration of an industrial automation environment with connected control systems" fill sizes="(min-width: 1240px) 580px, (min-width: 1024px) 46vw, 100vw" className="object-cover" /></div>
@@ -198,7 +197,7 @@ export function Controls() {
           </figure>
           <div className="flex flex-col justify-center gap-5 p-7 sm:p-10">
             <Rule /><h3 className="max-w-[22ch] text-[28px] leading-[1.15] font-semibold tracking-[-0.025em] text-fg">Empower your people.<br />Keep decisions accountable.</h3>
-            <p className="max-w-[48ch] text-[15px] leading-[1.7] text-dim">AI supports the assessment. Your teams define the scope, approve consequential actions and review the results. Budgets, permissions and stop controls establish the boundaries for execution.</p>
+            <p className="max-w-[48ch] text-[15px] leading-[1.7] text-dim">Your teams set the scope, approve actions and review results.</p>
             <Link href="/approvals" className="landing-action focusable inline-flex min-h-11 w-fit items-center gap-3 text-[14px] font-semibold text-fg">Explore approvals <NavIcon name="arrow-right" size={16} /></Link>
           </div>
         </div>
@@ -220,7 +219,7 @@ export function Passage() {
   return (
     <section id="passage" className="border-t border-line bg-surface">
       <div className={`${WRAP} flex flex-col gap-12 py-20 lg:py-24`}>
-        <Head title="From assessment to action.">Follow a consistent process from the initial request to the final report. Defined approval gates keep people involved, while the execution journal preserves the record for review.</Head>
+        <Head title="From assessment to action.">From request to report, with people at every approval gate.</Head>
         <WorkFlow />
       </div>
     </section>
@@ -231,7 +230,7 @@ export function Closing() {
   return (
     <section className="border-t border-line bg-canvas">
       <div data-reveal className={`${WRAP} flex flex-col gap-9 py-20 lg:flex-row lg:items-end lg:justify-between lg:gap-16 lg:py-24`}>
-        <div className="flex flex-col gap-6"><Rule /><h2 className="max-w-[23ch] text-[36px] leading-[1.1] font-semibold tracking-[-0.035em] text-fg sm:text-[48px]">Bring clarity to your security operations.</h2><p className="max-w-[48ch] text-[17px] leading-[1.65] text-dim">Access your workloads, review decisions and follow the evidence. All through one console.</p></div>
+        <div className="flex flex-col gap-6"><Rule /><h2 className="max-w-[23ch] text-[36px] leading-[1.1] font-semibold tracking-[-0.035em] text-fg sm:text-[48px]">Bring clarity to your security operations.</h2><p className="max-w-[48ch] text-[17px] leading-[1.65] text-dim">Workloads, decisions and evidence, in one console.</p></div>
         <OpenConsole primary />
       </div>
     </section>

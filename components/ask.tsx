@@ -132,7 +132,7 @@ export function AskCorpus({
       else {
         setHits(d.hits ?? []);
         setStages({ stages: d.stages, timings: d.timings, rerankModel: d.rerankModel, ranking: d.ranking ?? "", note: typeof d.note === "string" ? d.note : "" });
-        if (!(d.hits ?? []).length) setNotice(d.note ?? `Nothing in the "${namespace}" corpus answers that.`);
+        if (!(d.hits ?? []).length) setNotice(`Nothing in "${namespace}" answers that.`);
         onResult?.({ mode: "search", namespace, query: probe, stages: d.stages, hits: (d.hits ?? []).map((h: Hit) => h.source) });
       }
     } catch (e) {
@@ -179,7 +179,8 @@ export function AskCorpus({
           else if (e.type === "error") setNotice(e.error, true);
           else if (e.type === "done") {
             setAnswer(e as Answer);
-            if (e.note) setNotice(e.note);
+            // Why no answer was given: the service's first sentence only.
+            if (e.note) setNotice(String(e.note).replace(/\.\s[\s\S]*$/, "."));
             // No answer was given: the passages that were found are what there is to show.
             if (!e.answer) setShowEvidence(true);
             onResult?.({
@@ -210,12 +211,7 @@ export function AskCorpus({
     <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
       <div className="flex flex-col gap-1 border-b border-line px-4 py-3">
         <span className="text-[13px] font-semibold tracking-[-0.005em]">Search and answer from this corpus</span>
-        <span className="max-w-[100ch] text-[11.5px] leading-[1.55] text-faint">
-          Search runs the retrieval stages and shows the passages: hybrid search over meaning and words, a re-rank against the question by a
-          chat model when this deployment offers one, and the guardrails in the query. Answer runs the whole loop: it judges the evidence,
-          rewrites and retries the query when the evidence is weak, answers from the passages only with every claim cited, then checks each
-          cited sentence against the passage it cites. A question the sources do not answer is declined.
-        </span>
+        <span className="max-w-[100ch] text-[11.5px] leading-[1.55] text-faint">Answer cites each claim; Search lists the passages.</span>
       </div>
       <div className="flex flex-wrap items-center gap-2 px-4 py-3">
         <input
@@ -323,13 +319,12 @@ export function AskCorpus({
                 <Status tone={answer.grounding.unsupported ? "warn" : "ok"}>
                   grounding {answer.grounding.supported}/{answer.grounding.checked} cited sentences supported
                 </Status>
-                {answer.grounding.unsupported > 0 && <span>{answer.grounding.unsupported} not supported by the passage cited, marked in the text</span>}
-                {(answer.grounding.uncited ?? 0) > 0 && <span>{answer.grounding.uncited} sentence{answer.grounding.uncited === 1 ? "" : "s"} cite no passage and were not checked</span>}
+                {answer.grounding.unsupported > 0 && <span>{answer.grounding.unsupported} unsupported, marked in the text</span>}
+                {(answer.grounding.uncited ?? 0) > 0 && <span>{answer.grounding.uncited} uncited, not checked</span>}
               </span>
             )}
             <span>{answer.citations.filter((c) => c.used).length} of {answer.citations.length} passages cited</span>
             <span>judge {answer.models.judge}</span>
-            {answer.ranking && <span>ranked {answer.ranking}</span>}
             <span className="grow" />
             <button type="button" onClick={() => setShowEvidence((v) => !v)} className="focusable underline hover:text-fg">
               {showEvidence ? "Hide the passages" : "Show the passages"}
@@ -372,12 +367,10 @@ export function AskCorpus({
           ))}
         </div>
       )}
-      {mode === "search" && stages && (stages.ranking || (stages.note && (hits ?? []).length > 0)) && (
+      {/* The ranking and notes are not drawn; a NOT_CLEARED one still shows where to clear a model. */}
+      {mode === "search" && stages && NOT_CLEARED.test(`${stages.ranking} ${stages.note}`) && (
         <div className="flex flex-col gap-1 border-t border-line px-4 py-2 text-[10.5px] leading-[1.5]">
-          {stages.ranking && <span className="text-faint">Ranked {stages.ranking}.</span>}
-          {/* With no hit the note is the notice above; with hits it is said here, so a store left out or a re-ranking not made is never dropped. */}
-          {stages.note && (hits ?? []).length > 0 && <span className="text-warn">{stages.note}</span>}
-          {NOT_CLEARED.test(`${stages.ranking} ${stages.note}`) && <ClearanceHint />}
+          <ClearanceHint />
         </div>
       )}
       {((mode === "search" ? hits ?? [] : showEvidence && answer ? answer.citations : []) as (Hit | Citation)[]).map((h, i) => {

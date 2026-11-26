@@ -5,9 +5,18 @@ import Link from "next/link";
 import { Banner } from "./overlays";
 import { Tag } from "./ui";
 import { api, type Schemas } from "@/lib/api/client";
-import { hasRunFlags, inboundLine, runFlagLine, type RunFlags } from "@/lib/lifecycle";
-import { jobLine, taintLine } from "@/lib/queue";
-import { canaryRunLine, runMarkersOf, type MarkedRun } from "@/lib/canary";
+import { hasRunFlags, inboundLine, runFlagLine, whenText, type CanaryAssignment, type RunFlags } from "@/lib/lifecycle";
+import { jobLine } from "@/lib/queue";
+import { runMarkersOf, shareText, type MarkedRun } from "@/lib/canary";
+
+/** A canary arm in one line of data: the canary, the share, the other arm, or why a shadow could not mirror the run. */
+function canaryLine(c: CanaryAssignment): string {
+  const ver = (p: { version: number | null } | null) => (p ? `version ${p.version ?? "?"}` : "nothing deployed");
+  if (c.variant === "candidate") return `Canary ${c.id}${c.share !== null ? ` · ${shareText(c.share)} of new starts` : ""} · production ${ver(c.production)}.`;
+  if (c.mode === "shadow" && c.shadow_refused) return `Shadow ${c.id} could not mirror it: ${c.shadow_refused}.`;
+  if (c.mode === "shadow") return `Mirrored by canary ${c.id}${!c.shadow_run && c.shadow_job ? ` (job ${c.shadow_job})` : ""}.`;
+  return `Canary ${c.id} · candidate ${ver(c.candidate)}.`;
+}
 
 /**
  * A run's marks wherever runs are listed (phase L8, second round, from the
@@ -68,7 +77,7 @@ export function RunFlagsBanner({ flags, agent }: { flags: RunFlags; agent: strin
     <div className="flex shrink-0 flex-col gap-2 border-b border-line bg-canvas px-4 py-2.5">
       {flags.shadow && (
         <Banner tone="neutral" title="A shadow run: nothing at or above write was carried out">
-          {flags.canary ? canaryRunLine(flags.canary, true) : "Each call at or above write and each call that acts outside is journalled as would-call, not made. It asks no one."}
+          {flags.canary ? `${flags.canary.version !== null ? `Version ${flags.canary.version}` : "The candidate"}${flags.canary.id ? ` · canary ${flags.canary.id}` : ""}.` : null}
           {flags.canary?.of && (
             <>
               {" "}
@@ -79,7 +88,7 @@ export function RunFlagsBanner({ flags, agent }: { flags: RunFlags; agent: strin
           )}
           {agent && (
             <>
-              {" · "}
+              {flags.canary ? " · " : null}
               <Link href={`/lifecycle?agent=${encodeURIComponent(agent)}#canary`} className="focusable rounded-sm font-medium text-fg underline">
                 The canary
               </Link>
@@ -89,7 +98,7 @@ export function RunFlagsBanner({ flags, agent }: { flags: RunFlags; agent: strin
       )}
       {!flags.shadow && flags.canary && (
         <Banner tone="neutral" title={flags.canary.variant === "candidate" ? `Canary: version ${flags.canary.version ?? "?"} ran this` : "Production, beside a canary"}>
-          {canaryRunLine(flags.canary, false)}
+          {canaryLine(flags.canary)}
           {flags.canary.shadow_run && (
             <>
               {" "}
@@ -102,7 +111,9 @@ export function RunFlagsBanner({ flags, agent }: { flags: RunFlags; agent: strin
       )}
       {flags.review && (
         <Banner tone="warn" title={flags.review.flag === "rolled_back" ? "Flagged for review: its version was rolled back" : "Flagged for review"}>
-          {runFlagLine(flags.review)}
+          {flags.review.flag === "rolled_back"
+            ? `Version ${flags.review.from.version ?? "?"} rolled back to ${flags.review.to.version ?? "?"} by ${flags.review.by || "someone"}${flags.review.at ? ` ${whenText(flags.review.at)}` : ""}${flags.review.reason ? `: ${flags.review.reason}` : ""}.`
+            : runFlagLine(flags.review)}
           {agent && (
             <>
               {" "}
@@ -115,7 +126,7 @@ export function RunFlagsBanner({ flags, agent }: { flags: RunFlags; agent: strin
       )}
       {flags.taint && (
         <Banner tone="warn" title="Untrusted input">
-          {taintLine(flags.taint)}
+          {flags.taint.kind === "a2a" ? `From an A2A task${flags.taint.from ? ` sent by ${flags.taint.from}` : ""} (taint ${flags.taint.source}).` : `Taint ${flags.taint.source}.`}
           {flags.inbound && <span className="mt-0.5 block font-mono text-[11px] text-faint">{inboundLine(flags.inbound)}</span>}
           {job && <span className="mt-0.5 block font-mono text-[11px] text-faint">Job {job.job}: {jobLine(job)}</span>}
         </Banner>
@@ -126,7 +137,7 @@ export function RunFlagsBanner({ flags, agent }: { flags: RunFlags; agent: strin
           <Link href={`/evals?set=${encodeURIComponent(flags.eval.set)}`} className="focusable rounded-sm font-mono text-fg underline">
             {flags.eval.set}
           </Link>
-          , run by the backend&rsquo;s eval runner. Drift leaves an eval&rsquo;s runs out of production&rsquo;s windows.
+          .
         </Banner>
       )}
     </div>

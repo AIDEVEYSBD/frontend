@@ -34,13 +34,13 @@ type Environment = "production" | "staging";
 
 /** What each condition asks, in the platform's terms. */
 const ASKS: Record<string, string> = {
-  review: "an approving review of this digest by someone who did not author it",
-  supported: "no part of the definition the platform does not carry out",
-  retrieval: "every retrieval tool names the knowledge stores it reads",
+  review: "an approving review by a non-author",
+  supported: "every part of the definition carried out",
+  retrieval: "retrieval tools name the stores they read",
   not_retired: "the agent is not retired",
-  use_case: "its use case approved, and every gate it registers held by an await node with that approver and no longer a timeout",
-  autonomy: "every control its autonomy tier requires: the tier of its use case, else the one its definition declares",
-  eval: "the latest evaluation of this digest at or above the agent's release threshold",
+  use_case: "its use case approved, each gate held by an await node",
+  autonomy: "every control its autonomy tier requires",
+  eval: "the latest evaluation meets the release threshold",
 };
 
 /** Where a person goes to make a condition hold. */
@@ -134,16 +134,16 @@ export function GatePanel({
 }) {
   const what = refusal.version !== null ? `version ${refusal.version} (${shortDigest(refusal.digest)})` : shortDigest(refusal.digest);
   const unmet = refusal.unmet.map((u) => conditionLabel(u.condition).toLowerCase());
-  const kept = refusal.saved ? ` Version ${refusal.saved.version ?? "?"} is saved${refusal.saved.draft ? " as a draft" : ""}.` : "";
+  const kept = refusal.saved ? `; version ${refusal.saved.version ?? "?"} is saved${refusal.saved.draft ? " as a draft" : ""}` : "";
   return (
     <div className="flex flex-col gap-3">
       <Banner tone="err" title="The platform refused this deploy">
-        {`${what} is not deployed to ${refusal.environment}: ${unmet.join(", ") || "a condition"} ${unmet.length === 1 ? "does" : "do"} not hold. Nothing that runs changed.${kept}`}
+        {`${what} is not deployed to ${refusal.environment}: ${unmet.join(", ") || "a condition"} ${unmet.length === 1 ? "does" : "do"} not hold${kept}.`}
         <span className="mt-0.5 block font-mono text-[10.5px] text-faint">decision {refusal.decision || "not recorded"}</span>
       </Banner>
       <GateConditions refusal={refusal} agent={agent} />
       {error && <span className="text-[11.5px] text-err">{error}</span>}
-      <p className="text-[11.5px] leading-[1.5] text-faint">There is no override: meet the conditions above, then deploy again.</p>
+      <p className="text-[11.5px] leading-[1.5] text-faint">Meet the conditions above, then deploy again.</p>
     </div>
   );
 }
@@ -153,7 +153,7 @@ export function DeployedReceipt({ d }: { d: Deployed }) {
   const production = d.environment === "production";
   return (
     <Banner tone="ok" title={`Version ${d.version ?? "?"} deployed to ${d.environment}`}>
-      {production ? "Every condition held. New runs of this agent use this version." : "The review held. Recorded for staging: nothing runs it, and production runs what it ran."}
+      {production ? "New runs use this version." : "Recorded for staging; nothing runs it."}
       {d.conditions.length > 0 && (
         <span className="mt-0.5 block text-[11.5px] text-dim">Held: {d.conditions.map((c) => conditionLabel(c.condition).toLowerCase()).join(", ")}.</span>
       )}
@@ -221,7 +221,7 @@ export function DeployDialog({
       const gate = gateRefusalOf(e);
       const gone = retiredRefusalOf(e);
       if (gate) setRefusal(gate);
-      else if (gone) setError(`${agent} is retired. ${retiredLine(gone)}`);
+      else if (gone) setError(retiredLine(gone));
       else if (e instanceof DoorError && e.status === 409 && unsupportedOf(e.body).length) setError(`${e.message}: ${unsupportedReason(unsupportedOf(e.body))}`);
       else setError((e as Error).message);
     } finally {
@@ -238,8 +238,8 @@ export function DeployDialog({
           </h3>
           <p className="text-[12.5px] leading-[1.55] text-dim">
             {environment === "production"
-              ? "Production is held to every condition: a review by someone who did not author the version, parts the platform carries out, its use case and the gates it registers, the controls its autonomy tier requires, and the release threshold. The answer lists each with whether it holds; the version becomes what new runs use only when all do."
-              : "Staging needs the review only, by someone who did not author the version. It is a record: nothing runs a staging deployment, and production keeps running what it runs."}
+              ? "New runs use this version once every condition holds."
+              : "A record only: needs the review, and nothing runs it."}
           </p>
           <div className="mt-1 flex items-center gap-4" role="radiogroup" aria-label="Environment">
             {(["production", "staging"] as Environment[]).map((env) => (

@@ -192,7 +192,7 @@ export function FinOps() {
           <div className="flex flex-col gap-1.5">
             <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">Costs</h1>
             <p className="max-w-[80ch] text-[12.5px] leading-[1.55] text-dim">
-              What model calls cost, from the cost recorded with each call: by model, agent, step, application, person and team, for runs, for calls through the model gateway and for the service&rsquo;s own calls (the Ask assistant, knowledge answers, re-ranking, evaluation judges). A call on a model with no price set has no cost: it is counted apart, never as $0. Budgets per period, what the same work would cost on another model, and where each step&rsquo;s calls go.
+              What model calls cost, by model, agent, step, application, person and team.
             </p>
           </div>
           <span className="grow" />
@@ -210,13 +210,12 @@ export function FinOps() {
             <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
               <div data-hue="green" className="flex min-h-9 flex-wrap items-center gap-2 border-b border-line bg-raise/55 px-3 py-1.5">
                 <span className="text-[12px] font-semibold">Spend · {s.window}</span>
-                <span className="text-[11px] text-faint">{d.costBasis}</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
                 <Kpi label="Spend" value={groupCost(s.totals)} sub={`${plural(s.totals.priced_calls, "priced call")}${s.since ? ` since ${when(s.since)}` : ""}`} tone={s.totals.cost_usd === null ? undefined : "ok"}
-                  onOpen={() => setDrill({ kind: "calls", title: `Model calls · ${s.window}`, subtitle: "Every recorded call in the window, newest first, with the cost recorded with it.", rows: [...callsIn].reverse() })} />
-                <Kpi label="No price set" value={s.totals.unpriced_calls.toLocaleString("en-GB")} sub={s.totals.unpriced_calls ? `calls on ${s.totals.unpriced_models.join(", ")}, in no sum` : "every call was priced"} tone={s.totals.unpriced_calls ? "warn" : undefined}
-                  onOpen={() => setDrill({ kind: "calls", title: "Calls with no price set", subtitle: "Their model had no price set when they were made, so they have no cost. Setting a price later does not price them.", rows: callsIn.filter((c) => c.unpriced).reverse() })} />
+                  onOpen={() => setDrill({ kind: "calls", title: `Model calls · ${s.window}`, subtitle: "Every recorded call, newest first.", rows: [...callsIn].reverse() })} />
+                <Kpi label="No price set" value={s.totals.unpriced_calls.toLocaleString("en-GB")} sub={s.totals.unpriced_calls ? `calls on ${s.totals.unpriced_models.join(", ")}` : "every call was priced"} tone={s.totals.unpriced_calls ? "warn" : undefined}
+                  onOpen={() => setDrill({ kind: "calls", title: "Calls with no price set", subtitle: "Setting a price later does not price them.", rows: callsIn.filter((c) => c.unpriced).reverse() })} />
                 <Kpi label="Model calls" value={s.totals.calls.toLocaleString("en-GB")} sub={`${plural(runCalls, "run call")} · ${plural(gatewayCalls, "gateway call")} · ${plural(serviceCalls, "service call")}`}
                   onOpen={() => setDrill({ kind: "calls", title: `Model calls · ${s.window}`, rows: [...callsIn].reverse() })} />
                 <Kpi label="Tokens" value={fmtTokens(s.totals.tokens_in + s.totals.tokens_out)} sub={`${fmtTokens(s.totals.tokens_in)} in · ${fmtTokens(s.totals.tokens_out)} out`}
@@ -231,7 +230,7 @@ export function FinOps() {
                       ? d.budgetState.exceeded === true
                         ? "spent: new runs refused, running ones pause"
                         : d.budgetState.exceeded === null
-                          ? d.budgetState.unknown_why || "what was spent is not known"
+                          ? "what was spent is not known"
                           : `${d.budgetState.spent === null ? "unknown" : fmtUsd(d.budgetState.spent)} of ${fmtUsd(d.budgetState.budget_usd)}`
                       : "for the deployment, set below"
                   }
@@ -243,11 +242,11 @@ export function FinOps() {
 
             {/* ── over time + by model ── */}
             <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.2fr_1fr]">
-              <Section id="time" title="Spend over time" caption={`Priced spend ${s.series.bucket === "hour" ? "each hour" : "each day"}. A call with no price set is in no bar; the buckets that hold one are named below. Click a bar for its calls.`} folded={folds.time} onToggle={() => toggleFold("time")}>
+              <Section id="time" title="Spend over time" caption={`Priced spend ${s.series.bucket === "hour" ? "each hour" : "each day"}; click a bar for its calls.`} folded={folds.time} onToggle={() => toggleFold("time")}>
                 <Series spend={s} calls={callsIn} onDrill={setDrill} />
               </Section>
 
-              <Section id="models" title="Spend by model" caption="Every call by the model that answered it, with the price set for it now. A model no longer offered keeps its recorded costs." folded={folds.models} onToggle={() => toggleFold("models")}>
+              <Section id="models" title="Spend by model" caption="Every call by the model that answered it." folded={folds.models} onToggle={() => toggleFold("models")}>
                 <div className="af-list overflow-x-auto">
                   <table className="w-full border-collapse text-[11.5px]">
                     <thead>
@@ -281,37 +280,37 @@ export function FinOps() {
 
             {/* ── by person + by team ── */}
             <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-              <Section id="people" title="Spend by person" caption="A run's calls count for the person who started it; a gateway call for the person who chatted from the console, else for the application's owner. Click for the runs they started." folded={folds.people} onToggle={() => toggleFold("people")}>
+              <Section id="people" title="Spend by person" caption="Click for the runs they started." folded={folds.people} onToggle={() => toggleFold("people")}>
                 <Groups
                   rows={s.by_person.map((p) => ({ key: p.sub, label: p.name, f: p }))}
                   totals={s.totals}
                   empty="No model call was recorded in this window."
-                  onPick={(key, label) => setDrill({ kind: "runs", title: label, subtitle: "Runs this person started in the window. Calls they made through the gateway are counted in the row, and listed on each application's page.", rows: runsIn.filter((r) => (key ? r.owner?.sub === key : !r.owner)) })}
+                  onPick={(key, label) => setDrill({ kind: "runs", title: label, subtitle: "Runs this person started in the window.", rows: runsIn.filter((r) => (key ? r.owner?.sub === key : !r.owner)) })}
                 />
               </Section>
-              <Section id="teams" title="Spend by team" caption="The same calls by the team the run or the application records. Click for the team's runs." folded={folds.teams} onToggle={() => toggleFold("teams")}>
+              <Section id="teams" title="Spend by team" caption="Click for the team's runs." folded={folds.teams} onToggle={() => toggleFold("teams")}>
                 <Groups
                   rows={s.by_team.map((t) => ({ key: t.team, label: t.label, f: t }))}
                   totals={s.totals}
                   empty="No model call was recorded in this window."
-                  onPick={(key, label) => setDrill({ kind: "runs", title: label, subtitle: "Runs of this team in the window. Gateway calls are counted in the row and listed on each application's page.", rows: runsIn.filter((r) => (r.owner?.team ?? "") === key) })}
+                  onPick={(key, label) => setDrill({ kind: "runs", title: label, subtitle: "Runs of this team in the window.", rows: runsIn.filter((r) => (r.owner?.team ?? "") === key) })}
                 />
               </Section>
             </div>
 
             {/* ── by agent + by application ── */}
             <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-              <Section id="agents" title="Spend by agent" caption="The calls of runs, by the agent they carried out. Click for its runs." folded={folds.agents} onToggle={() => toggleFold("agents")}>
+              <Section id="agents" title="Spend by agent" caption="Run calls by agent; click for its runs." folded={folds.agents} onToggle={() => toggleFold("agents")}>
                 <Groups
                   rows={s.by_agent.map((a) => ({ key: a.agent, label: name(a.agent), f: a }))}
                   empty="No run made a model call in this window."
                   onPick={(key, label) => setDrill({ kind: "runs", title: label, subtitle: "Runs of this agent in the window.", rows: runsIn.filter((r) => r.system === key) })}
                 />
               </Section>
-              <Section id="applications" title="Spend by application" caption="Calls registered applications made through the model gateway; they belong to no run or step. Click for the application." folded={folds.applications} onToggle={() => toggleFold("applications")}>
+              <Section id="applications" title="Spend by application" caption="Gateway calls by registered application; click for the application." folded={folds.applications} onToggle={() => toggleFold("applications")}>
                 <Groups
                   rows={s.by_application.map((a) => ({ key: a.application, label: a.application, f: a }))}
-                  empty="No registered application made a call through the gateway in this window."
+                  empty="No gateway call in this window."
                   href={(key) => `/applications/${encodeURIComponent(key)}`}
                 />
               </Section>
@@ -319,7 +318,7 @@ export function FinOps() {
             <AddsUpLine label="Agents and applications together" rows={[...s.by_agent, ...s.by_application]} totals={s.totals} />
 
             {/* ── by step ── */}
-            <Section id="steps" title="Spend by step" caption="Every step of an agent that made model calls in the window. Click for its calls." folded={folds.steps} onToggle={() => toggleFold("steps")}>
+            <Section id="steps" title="Spend by step" caption="Each agent step that made model calls; click for its calls." folded={folds.steps} onToggle={() => toggleFold("steps")}>
               <div className="af-list overflow-x-auto">
                 <table className="w-full border-collapse text-[11.5px]">
                   <thead>
@@ -347,16 +346,16 @@ export function FinOps() {
             </Section>
 
             {/* ── cost planning ── */}
-            <Section id="planning" title="Cost planning" caption="What each step's recorded tokens in the window would cost on every other offered, priced model. A price comparison, not a measured cost: another model counts tokens its own way and may answer at another length." folded={folds.planning} onToggle={() => toggleFold("planning")}>
+            <Section id="planning" title="Cost planning" caption="Each step's tokens priced on other models; not a measured cost." folded={folds.planning} onToggle={() => toggleFold("planning")}>
               <PlanningView plan={plan?.win === win ? plan.p : null} error={planError} name={name} />
             </Section>
 
             {/* ── runs checked ── */}
-            <Section id="check" title="Runs checked against their calls" caption="For every run with a call in the window: whether its recorded calls add up to the cost the run records. A run with a call on a model with no price set records no cost, and agrees when its calls show the same." folded={folds.check} onToggle={() => toggleFold("check")}>
+            <Section id="check" title="Runs checked against their calls" caption="Whether each run's recorded calls add up to its recorded cost." folded={folds.check} onToggle={() => toggleFold("check")}>
               <div className="flex flex-col gap-2 px-4 py-3 text-[12px] leading-[1.55]">
                 <p className="text-dim">
                   {plural(s.runs.runs, "run")} with calls in this window: <span className="text-ok">{s.runs.agree} agree</span>
-                  {s.runs.cost_unknown ? `, ${s.runs.cost_unknown} of them with no cost because a call had no price set` : ""}
+                  {s.runs.cost_unknown ? `, ${s.runs.cost_unknown} with no price set` : ""}
                   {s.runs.differ.length ? <span className="text-err">; {plural(s.runs.differ.length, "run does", "runs do")} not add up</span> : ""}.
                 </p>
                 {s.runs.differ.length > 0 && (
@@ -385,21 +384,14 @@ export function FinOps() {
             </Section>
 
             {/* ── budgets ── */}
-            <Section id="budgets" title="Budgets" caption="An amount in USD per rolling period (the last 24 hours, 7 days or 30 days). Once one is spent, a new run it applies to is refused (and, once the deployment's is spent, every application's gateway call), and a run already going pauses after the model call that reached it, until a person decides under Paused at budget on the Approvals page. Calls with no price set are not counted against it, so while one applies such a call is refused." folded={folds.budgets} onToggle={() => toggleFold("budgets")}>
+            <Section id="budgets" title="Budgets" caption="Once spent, new runs are refused and running ones pause." folded={folds.budgets} onToggle={() => toggleFold("budgets")}>
               <Budgets state={d.budgetState} rows={d.budgets} onSaved={() => load(win)} />
             </Section>
 
             {/* ── routing ── */}
-            <Section id="routing" title="Model routing" caption="Where each step's calls go now, and by which rule. In order: a model forced for a measurement, a route set here, the model the step names, its tier's default, the deployment default. The model shown is for data of no stated class and a run started without a model of its own; a call whose data class its model is not cleared for goes to that model's first cleared fallback (Configuration, Models). Saved routes apply from the next call." folded={folds.routing} onToggle={() => toggleFold("routing")}>
+            <Section id="routing" title="Model routing" caption="Where each step's calls go now, and by which rule." folded={folds.routing} onToggle={() => toggleFold("routing")}>
               <Routing agents={d.agents} config={d.config} bySteps={s.by_step} window={s.window} onSaved={() => load(win)} />
             </Section>
-
-            {/* What the service names as not built, in its own words; only the bare key "billing" is spelt out. */}
-            {d.not_built.length > 0 && (
-              <p className="pb-2 text-[10.5px] text-ghost">
-                Not built on this deployment, as the platform answers: {d.not_built.map((k) => (k === "billing" ? "a cloud billing feed, so recorded spend is not compared with an invoice" : k)).join("; ")}.
-              </p>
-            )}
           </>
         )}
         {!d && !error && <p className="text-[12px] text-faint">Reading the costs…</p>}
@@ -450,8 +442,8 @@ function AddsUp({ rows, totals }: { rows: Figures[]; totals: Figures }) {
   const a = addsUp(rows, totals);
   return (
     <p className={`border-t border-line px-3 py-2 text-[10.5px] leading-[1.5] ${a.ok ? "text-faint" : "text-err"}`}>
-      {a.ok ? "The rows add up to the window's total: " : "The rows do not add up to the window's total: "}
-      {fmtUsd(a.cost)} over {plural(a.calls - a.unpriced, "priced call")}, and {plural(a.unpriced, "call")} with no price set{a.ok ? "." : `; the total is ${groupCost(totals)} over ${plural(totals.calls - totals.unpriced_calls, "priced call")}, and ${plural(totals.unpriced_calls, "call")} with no price set.`}
+      {a.ok ? "Adds up: " : "Does not add up: "}
+      {fmtUsd(a.cost)} over {plural(a.calls - a.unpriced, "priced call")}, {a.unpriced} with no price set{a.ok ? "" : `; total ${groupCost(totals)} over ${plural(totals.calls - totals.unpriced_calls, "priced call")}, ${totals.unpriced_calls} with no price set`}
     </p>
   );
 }
@@ -461,8 +453,8 @@ function AddsUpLine({ label, rows, totals }: { label: string; rows: Figures[]; t
   const a = addsUp(rows, totals);
   return (
     <p className={`-mt-3 px-1 text-[10.5px] leading-[1.5] ${a.ok ? "text-faint" : "text-err"}`}>
-      {label} {a.ok ? "add up to" : "do not add up to"} the window&rsquo;s total: {fmtUsd(a.cost)} over {plural(a.calls - a.unpriced, "priced call")}, and {plural(a.unpriced, "call")} with no price set
-      {a.ok ? "." : `, against ${groupCost(totals)} over ${plural(totals.calls - totals.unpriced_calls, "priced call")}, and ${plural(totals.unpriced_calls, "call")} with no price set.`}
+      {label} {a.ok ? "add up" : "do not add up"}: {fmtUsd(a.cost)} over {plural(a.calls - a.unpriced, "priced call")}, {a.unpriced} with no price set
+      {a.ok ? "" : `; total ${groupCost(totals)} over ${plural(totals.calls - totals.unpriced_calls, "priced call")}, ${totals.unpriced_calls} with no price set`}
     </p>
   );
 }
@@ -524,7 +516,7 @@ function Series({ spend, calls, onDrill }: { spend: Spend; calls: Call[]; onDril
         <div className="flex flex-col gap-1">
           <div className="flex items-baseline justify-between text-[10px] text-faint">
             <span>{fmtUsd(max)} at the highest</span>
-            <span>a warn mark under a bar: calls with no price set in it</span>
+            <span>warn mark: calls with no price set</span>
           </div>
           <div className="flex h-[170px] items-end gap-px border-b border-line">
             {points.map((p) => (
@@ -549,11 +541,11 @@ function Series({ spend, calls, onDrill }: { spend: Spend; calls: Call[]; onDril
           </div>
         </div>
       ) : (
-        <p className="px-1 py-6 text-center text-[12px] text-faint">{points.some((p) => p.calls > 0) ? "No call in this window was priced, so there is no spend to chart." : "No model call was recorded in this window."}</p>
+        <p className="px-1 py-6 text-center text-[12px] text-faint">{points.some((p) => p.calls > 0) ? "No priced call in this window." : "No model call was recorded in this window."}</p>
       )}
       {withUnpriced.length > 0 && (
         <p className="px-1 text-[10.5px] leading-[1.5] text-warn">
-          Calls with no price set, in no bar: {withUnpriced.slice(0, 8).map((p) => `${label(p)} (${p.unpriced_calls})`).join(", ")}
+          No price set: {withUnpriced.slice(0, 8).map((p) => `${label(p)} (${p.unpriced_calls})`).join(", ")}
           {withUnpriced.length > 8 ? `, and ${withUnpriced.length - 8} more ${hourly ? "hours" : "days"}` : ""}.
         </p>
       )}
@@ -585,13 +577,13 @@ function PlanningView({ plan, error, name }: { plan: Planning | null; error: str
                 <td className="tnum px-3 py-2 text-right text-dim">{fmtTokens(p.tokens_in)} / {fmtTokens(p.tokens_out)}</td>
                 <td className="tnum px-3 py-2 text-right">
                   {groupCost(p)}
-                  {p.unpriced_calls > 0 && p.cost_usd !== null && <span className="block text-[10px] text-warn">{unpricedNote(p)}, not in it</span>}
+                  {p.unpriced_calls > 0 && p.cost_usd !== null && <span className="block text-[10px] text-warn">{unpricedNote(p)}</span>}
                 </td>
                 <td className="px-3 py-2">
                   {p.elsewhere.length ? (
                     <span className="flex flex-wrap gap-x-4 gap-y-1">
                       {p.elsewhere.map((e) => (
-                        <span key={e.model} className="tnum whitespace-nowrap" title={e.why}>
+                        <span key={e.model} className="tnum whitespace-nowrap">
                           <Mono className="text-[10.5px]">{e.model}</Mono> {fmtUsd(e.cost_usd)}
                           {e.cleared === false ? (
                             <span className="text-err"> (not cleared for this step&rsquo;s data)</span>
@@ -612,10 +604,11 @@ function PlanningView({ plan, error, name }: { plan: Planning | null; error: str
           </tbody>
         </table>
       </div>
-      <div className="flex flex-col gap-1 border-t border-line px-3 py-2 text-[10.5px] leading-[1.5] text-faint">
-        <span>{plan.basis}</span>
-        {plan.unpriced_models.length > 0 && <span className="text-warn">Given no figure, because no price is set: {plan.unpriced_models.join(", ")}.</span>}
-      </div>
+      {plan.unpriced_models.length > 0 && (
+        <div className="flex flex-col gap-1 border-t border-line px-3 py-2 text-[10.5px] leading-[1.5] text-faint">
+          <span className="text-warn">No price set: {plan.unpriced_models.join(", ")}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -676,19 +669,15 @@ function Budgets({ state, rows, onSaved }: { state: BudgetState | null; rows: Bu
       {/* the deployment's */}
       <div className="flex flex-col gap-2 border-b border-line px-4 py-3">
         <span className="text-[12px] font-semibold text-fg">The deployment</span>
+        {/* Unpriced calls in the period leave what was spent unknown; the service's reason stays in the tooltip. */}
         <span className="text-[11.5px] leading-[1.5] text-dim">
           {state
             ? state.exceeded === null || state.spent === null || state.remaining === null
-              ? // Unpriced calls in the period: what was spent, what is left and whether it is spent are not known; the service says why.
-                `${fmtUsd(state.budget_usd)} per ${state.period}, since ${when(state.since)}: ${state.exceeded === true ? "spent by the priced calls alone, so new runs and applications' gateway calls are refused, and running runs pause. " : "what remains is unknown. "}${state.unknown_why ? `${state.unknown_why[0].toUpperCase()}${state.unknown_why.slice(1)}.` : "The platform gives no reason."}`
-              : `${fmtUsd(state.budget_usd)} per ${state.period}: ${fmtUsd(state.spent)} spent since ${when(state.since)}, ${state.exceeded ? "nothing left, so new runs and applications' gateway calls are refused, and running runs pause" : `${fmtUsd(state.remaining)} left`}${state.unpriced ? `; ${plural(state.unpriced, "call")} with no price set are not counted` : ""}.`
-            : "No budget is set for the deployment: every recorded call still counts in the figures above, and nothing is refused or paused for spend."}
+              ? `${fmtUsd(state.budget_usd)} per ${state.period}, since ${when(state.since)}: ${state.exceeded === true ? "spent" : "remaining unknown"}.`
+              : `${fmtUsd(state.budget_usd)} per ${state.period}: ${fmtUsd(state.spent)} spent since ${when(state.since)}, ${state.exceeded ? "nothing left" : `${fmtUsd(state.remaining)} left`}${state.unpriced ? `; ${plural(state.unpriced, "call")} with no price set` : ""}.`
+            : "No budget set for the deployment."}
         </span>
-        {state && (
-          <span className="text-[11.5px] leading-[1.5] text-faint">
-            Every recorded call counts against it, applications&rsquo; gateway calls among them. While it is set, a call with no price is refused: a run&rsquo;s call to a model with no price set, and an application&rsquo;s gateway call to one, or for embeddings (the embedding interface reports no token counts).
-          </span>
-        )}
+        {state && <span className="text-[11.5px] leading-[1.5] text-faint">While set, a call with no price set is refused.</span>}
         <div className="flex flex-wrap items-center gap-2">
           <label className="flex items-center gap-2 text-[11.5px] text-dim">
             USD
@@ -714,7 +703,7 @@ function Budgets({ state, rows, onSaved }: { state: BudgetState | null; rows: Bu
       {/* each use case's */}
       <div className="flex flex-col gap-2 px-4 py-3">
         <span className="text-[12px] font-semibold text-fg">Use cases</span>
-        <span className="text-[11.5px] leading-[1.5] text-faint">The calls of the runs that served a use case count against its budget, beside the deployment&rsquo;s. Applications serve no use case: their gateway calls count against the deployment&rsquo;s budget only.</span>
+        <span className="text-[11.5px] leading-[1.5] text-faint">Runs that served a use case count against its budget too.</span>
         {useCaseRows.length > 0 && (
           <table className="w-full border-collapse text-[11.5px]">
             <thead>
@@ -739,9 +728,8 @@ function Budgets({ state, rows, onSaved }: { state: BudgetState | null; rows: Bu
                     {r.spent_usd === null ? "unknown" : `${r.remaining_usd === null ? "at least " : ""}${fmtUsd(r.spent_usd)}`}
                     {r.unpriced_calls > 0 && <span className="block text-[10px] text-warn">{plural(r.unpriced_calls, "call")} with no price set</span>}
                   </td>
-                  <td className={`tnum px-3 py-1.5 text-right ${r.remaining_usd !== null && r.remaining_usd <= 0 ? "text-err" : r.remaining_usd === null ? "text-warn" : ""}`} title={r.unknown_why ?? undefined}>
+                  <td className={`tnum px-3 py-1.5 text-right ${r.remaining_usd !== null && r.remaining_usd <= 0 ? "text-err" : r.remaining_usd === null ? "text-warn" : ""}`}>
                     {r.remaining_usd === null ? "unknown" : r.remaining_usd <= 0 ? "spent" : fmtUsd(r.remaining_usd)}
-                    {r.remaining_usd === null && r.unknown_why && <span className="block max-w-[34ch] text-left text-[10px] leading-[1.4] whitespace-normal text-faint">{r.unknown_why}</span>}
                   </td>
                   <td className="px-3 py-1.5 text-dim">{by(r)}{r.set_at ? `, ${when(r.set_at)}` : ""}</td>
                   <td className="py-1.5 pl-3 text-right">
@@ -756,7 +744,7 @@ function Budgets({ state, rows, onSaved }: { state: BudgetState | null; rows: Bu
           </table>
         )}
         {ucError && <Failure inline message={ucError} />}
-        {useCases?.length === 0 && !ucError && <span className="text-[11.5px] text-faint">No use case is registered, so none can have a budget.</span>}
+        {useCases?.length === 0 && !ucError && <span className="text-[11.5px] text-faint">No use case is registered.</span>}
         {useCases && useCases.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
             <div className="w-64">

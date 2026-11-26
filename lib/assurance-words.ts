@@ -15,13 +15,13 @@ import type { ChainReading, EvidencePack, EvidenceQuery, FrameworkInfo, LedgerVe
 /* ═══════════════════ the chain ═══════════════════ */
 
 export const CHAIN_META: Record<ChainReading, { label: string; tone: Tone; means: string }> = {
-  ok: { label: "Chain holds", tone: "ok", means: "every entry hashes to the next from the run's genesis, and the run's row holds the last hash and the count" },
+  ok: { label: "Chain holds", tone: "ok", means: "every entry hashes to the next from the run's genesis" },
   broken: { label: "Chain broken", tone: "err", means: "the record is not what was written" },
 };
 
 export const PACK_CHAIN_META: Record<PackChainStatus, { label: string; tone: Tone; means: string }> = {
-  no_runs: { label: "No run to verify", tone: "neutral", means: "this pack cites no run, so the chain says nothing about it" },
-  ok: { label: "Every cited run holds", tone: "ok", means: "each run cited verifies against its own chain, checked when the pack was built" },
+  no_runs: { label: "No run to verify", tone: "neutral", means: "this pack cites no run" },
+  ok: { label: "Every cited run holds", tone: "ok", means: "each cited run verifies against its own chain" },
   broken: { label: "A cited run is broken", tone: "err", means: "a run cited is not what was written" },
 };
 
@@ -35,8 +35,7 @@ export function verifyLine(v: RunVerification): string {
 /** What a pack's chain says, from the platform's own status. A pack that cites no run has its own: `no_runs`, never `ok`. */
 export function packChainLine(c: { status: PackChainStatus; runs: number }): { title: string; tone: Tone; line: string } {
   const m = PACK_CHAIN_META[c.status];
-  const means = `${m.means.charAt(0).toUpperCase()}${m.means.slice(1)}.`;
-  return { title: m.label, tone: m.tone, line: c.status === "no_runs" ? means : `${means} ${c.runs} run${c.runs === 1 ? "" : "s"} cited.` };
+  return { title: m.label, tone: m.tone, line: c.status === "no_runs" ? "" : `${c.runs} run${c.runs === 1 ? "" : "s"} cited.` };
 }
 
 /** The walk as a headline: every run's chain and the audit trail's. */
@@ -54,7 +53,7 @@ export function ledgerHeadline(l: LedgerVerification): { title: string; tone: To
 
 /** What sits beside the walk. */
 export function ledgerNotes(l: LedgerVerification): string[] {
-  return [l.truncated ? "The walk stopped at its limit; narrow the period or the agent to read the rest" : ""].filter(Boolean);
+  return [l.truncated ? "Stopped at the limit; narrow the period or the agent" : ""].filter(Boolean);
 }
 
 /* ═══════════════════ evidence packs ═══════════════════ */
@@ -134,9 +133,9 @@ export const stampLine = (d: { chained: boolean; disagrees: { field: string }[] 
 /** Why a pack has no firing: said plainly, since an assessor reads silence as a pass. */
 export const noFiringLine = (p: EvidencePack): string =>
   p.controls.length && p.outside_a_run.length === p.controls.length
-    ? "These controls act outside a run: no journal entry names them, so no firing of them is counted."
+    ? "These controls act outside a run."
     : p.controls.length
-      ? "No firing in the period. A control that never fired is not evidence that it works."
+      ? "No firing in the period."
       : "No firing of this key in the period.";
 
 /* ═══════════════════ frameworks ═══════════════════ */

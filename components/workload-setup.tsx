@@ -95,13 +95,12 @@ function StepNav({ id, step, run }: { id: string; step: SetupStep; run: string }
 }
 
 /** Why the form or the gates are the default ones and not the control plane's. */
-function WhyDefault({ reading, what }: { reading: OfferReading; what: string }) {
+function WhyDefault({ reading }: { reading: OfferReading }) {
   if (reading.state === "reading") return <Note>Reading the workloads&hellip;</Note>;
+  if (!reading.why && !reading.door) return null;
   return (
     <div className="flex flex-col gap-1 rounded-md border border-line bg-canvas px-3 py-2.5">
-      <span className="max-w-[86ch] text-[12px] leading-[1.55] text-dim">
-        {what} {reading.why}
-      </span>
+      <span className="max-w-[86ch] text-[12px] leading-[1.55] text-dim">{reading.why}</span>
       {reading.door && <NotConnectedNote door={reading.door} />}
     </div>
   );
@@ -141,7 +140,7 @@ function inputFacts(inputs: WorkloadInput[], values: InputValues, datasets: Data
 /** What a refused start said, in the platform's words, as the Runs page shows the same refusals (lib/start-refusal.ts). */
 function startRefusal(agent: string, status: number, error: unknown, retryAfter: string | null, response: Response): string {
   const refusal = startRefusalOf(agent, status, error, retryAfter, response);
-  return refusal.kind === "rate_limit" ? `${refusal.text} It can be tried again in ${count(refusal.limit.retry_after_s)} seconds.` : refusal.text;
+  return refusal.kind === "rate_limit" ? `${refusal.text} Try again in ${count(refusal.limit.retry_after_s)} seconds.` : refusal.text;
 }
 
 export function WorkloadSetup({
@@ -211,8 +210,6 @@ export function WorkloadSetup({
   // The gate that approves scope and methods: the requirements' own, or the one the control plane lists under that name.
   const approvalGate = !profile.approval ? "" : gates.from === "default" ? profile.approval.gate : (gates.gates.find((g) => /scope|method/i.test(g.name))?.name ?? "");
 
-  const fromDefault = "From the workload's requirements; the control plane's own list replaces it when it answers.";
-
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[232px_minmax(0,1fr)] lg:gap-5">
       <Rail id={id} step={step} run={run} lines={lines} />
@@ -220,24 +217,15 @@ export function WorkloadSetup({
       <div className="flex min-w-0 flex-col gap-4">
         {step === "inputs" && (
           <Card title="What it runs on" hue="source" meta={form.from === "door" ? "as the control plane names them" : "the default set-up"}>
-            {!form.open && (
-              <WhyDefault
-                reading={reading}
-                what={
-                  reading.attached
-                    ? "This is the form the workload is set up with, shown for reference: the attached agent that runs it takes its input in the runs it opens itself, so the form does not open here."
-                    : "This is the form the workload is set up with, shown so you can see what will be asked. It opens once the workload is available."
-                }
-              />
-            )}
+            {!form.open && <WhyDefault reading={reading} />}
             {form.inputs.length === 0 ? (
-              <p className="text-[12.5px] leading-[1.6] text-dim">{form.from === "door" ? "This workload takes no input: it can be started as it is." : "The control plane has not named what this workload takes."}</p>
+              <p className="text-[12.5px] leading-[1.6] text-dim">{form.from === "door" ? "This workload takes no input." : "The control plane has not named what this workload takes."}</p>
             ) : (
               <InputFields inputs={form.inputs} values={values} onChange={onValue} disabled={!form.open} />
             )}
             {hasDataset && (
               <Note>
-                A dataset is something handed over once and named in a run. They are uploaded and listed on <TextLink href="/datasets">Datasets</TextLink>.
+                Datasets are uploaded on <TextLink href="/datasets">Datasets</TextLink>.
               </Note>
             )}
           </Card>
@@ -247,21 +235,19 @@ export function WorkloadSetup({
           <>
             <Card title="Who decides" hue="gate" meta={gates.from === "door" ? "as the control plane lists them" : "from the requirements"}>
               <p className="max-w-[86ch] text-[12.5px] leading-[1.6] text-dim">
-                A gate is a point where the run stops and waits for a person. Each gate names what it guards, the role that signs and when it opens. A gate that is waiting is answered in{" "}
-                <TextLink href="/approvals">Approvals</TextLink>.
+                A waiting gate is answered in <TextLink href="/approvals">Approvals</TextLink>.
               </p>
               {gates.gates.length > 0 ? (
                 <GateRows gates={gates.gates} />
               ) : (
                 <p className="rounded-md border border-line bg-canvas px-3 py-2.5 text-[12px] leading-[1.55] text-dim">
                   {gates.from === "door" && reading.attached
-                    ? "The attached agent's approved policy holds none of its tool calls for a person. It can still stop its own run for a person (a gate it opens through the SDK, answered in Approvals), and a destructive call always waits for a platform admin."
+                    ? "Its policy holds no tool call for a person."
                     : gates.from === "door"
-                      ? "The control plane lists no gate for this workload: a run goes from start to finish without waiting for a person."
-                      : "The requirements name no gate before or during a run of this workload. The control plane lists any gate the deployed agent carries."}
+                      ? "No gate: a run does not wait for a person."
+                      : "The requirements name no gate for this workload."}
                 </p>
               )}
-              {gates.from === "default" && gates.gates.length > 0 && <Note>{fromDefault}</Note>}
               {profile.afterwards && (
                 <div className="flex flex-col gap-1">
                   <span className="text-[11px] font-semibold text-dim">After the run</span>
@@ -274,7 +260,6 @@ export function WorkloadSetup({
               <Card title="What the approver is asked to approve" hue="approval" meta={`the "${approvalGate}" gate`}>
                 <div className="flex flex-col gap-2">
                   <span className="text-[11px] font-semibold text-dim">Scope</span>
-                  <p className="max-w-[86ch] text-[12.5px] leading-[1.6] text-dim">{profile.approval.scope}</p>
                   <div className="rounded-md border border-line bg-canvas p-3">
                     <Facts items={inputFacts(form.inputs, values, datasets)} />
                   </div>
@@ -291,15 +276,9 @@ export function WorkloadSetup({
         {step === "limits" && (
           <Card title="Limits" hue="budget" meta={reading.agent ? "the agent's own" : undefined}>
             {reading.attached ? (
-              <p className="max-w-[86ch] text-[12.5px] leading-[1.6] text-dim">
-                A run of this workload is held to the policy of the attached agent that runs it. The platform refuses a model call through its gateway past the requests per minute, tokens per day or cost per day the policy
-                sets, and refuses a new run past a budget that applies to it.
-              </p>
+              <p className="max-w-[86ch] text-[12.5px] leading-[1.6] text-dim">Held to the rate, token and cost limits in the agent&rsquo;s policy.</p>
             ) : (
-              <p className="max-w-[86ch] text-[12.5px] leading-[1.6] text-dim">
-                A run of this workload is held to the budget and the bounds of the agent that runs it. They are set on the agent, not here, and they apply to every run it makes. A run that reaches its cost budget pauses for a
-                person to decide; a run that reaches another bound stops. Its journal names which.
-              </p>
+              <p className="max-w-[86ch] text-[12.5px] leading-[1.6] text-dim">Held to the budget and bounds set on its agent.</p>
             )}
             {reading.agent ? (
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-line bg-canvas px-3 py-2.5">
@@ -313,7 +292,7 @@ export function WorkloadSetup({
             ) : reading.attached ? (
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-line bg-canvas px-3 py-2.5">
                 <span className="max-w-[86ch] text-[12px] leading-[1.55] text-dim">
-                  Run by the attached agent <span className="font-mono text-[11px] break-all">{reading.attached}</span>. Its limits (requests per minute, tokens and cost per day) are in its policy; once its attachment is approved, they change only through a reviewed policy change.
+                  Run by the attached agent <span className="font-mono text-[11px] break-all">{reading.attached}</span>.
                 </span>
                 <span className="grow" />
                 <Button size="sm" variant="solid" tone="neutral" href="/configuration?tab=connections#agents">
@@ -321,7 +300,7 @@ export function WorkloadSetup({
                 </Button>
               </div>
             ) : (
-              <WhyDefault reading={reading} what="The budget and bounds are on the configuration page of the agent that runs the workload, and no agent is named yet." />
+              <WhyDefault reading={reading} />
             )}
           </Card>
         )}
@@ -353,13 +332,13 @@ export function WorkloadSetup({
               ) : (
                 <Note>
                   {gates.from === "door" && reading.attached
-                    ? "The attached agent's approved policy holds none of its tool calls for a person; the agent can still open a gate of its own."
+                    ? "Its policy holds no tool call for a person."
                     : gates.from === "door"
-                      ? "The control plane lists no gate: the run does not wait for a person."
+                      ? "No gate: the run does not wait for a person."
                       : "The requirements name no gate for this workload."}
                 </Note>
               )}
-              {gates.from === "default" && gates.gates.length > 0 && <Note>{fromDefault}</Note>}
+              {gates.from === "default" && gates.gates.length > 0 && <Note>From the workload&rsquo;s requirements.</Note>}
             </div>
 
             <div className="flex flex-col gap-2">
@@ -370,7 +349,7 @@ export function WorkloadSetup({
                     Held to the budget and bounds of <AgentLink agent={reading.agent} />.
                   </>
                 ) : (
-                  reading.attached ? `Held to the limits in the policy of the attached agent ${reading.attached}, in the runs it opens itself.` : "Held to the budget and bounds of the agent that runs it, once one is named."
+                  reading.attached ? `Held to the policy of the attached agent ${reading.attached}.` : "Held to the budget and bounds of the agent that runs it."
                 )}
               </p>
             </div>
@@ -397,7 +376,7 @@ export function WorkloadSetup({
 
             {refused && (
               <Banner tone="err" title="The run was not started">
-                {/[.!?]$/.test(refused.trim()) ? refused.trim() : `${refused.trim()}.`} Nothing was started, and what you chose is still here.
+                {/[.!?]$/.test(refused.trim()) ? refused.trim() : `${refused.trim()}.`}
               </Banner>
             )}
           </Card>

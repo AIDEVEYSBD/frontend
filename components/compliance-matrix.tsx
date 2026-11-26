@@ -251,7 +251,7 @@ function Opened({ c, p, byId }: { c: Control; p: MatrixProps; byId: Map<string, 
           <div className="flex flex-col gap-1.5">
             <span className={LABEL}>On this deployment</span>
             {!custom ? (
-              <span className="text-[12px] leading-[1.55] text-faint">Nothing is changed. The control applies as the catalogue states it.</span>
+              <span className="text-[12px] leading-[1.55] text-faint">Applies as the catalogue states it.</span>
             ) : (
               <dl className="grid grid-cols-[96px_minmax(0,1fr)] gap-x-3 gap-y-1 text-[12px]">
                 <dt className="text-faint">Applies</dt>
@@ -327,7 +327,7 @@ function Edit({ c, p, byId }: { c: Control; p: MatrixProps; byId: Map<string, Ic
       <div className="flex flex-col gap-2">
         <span className={LABEL}>{ICL} controls this answers</span>
         {!p.list ? (
-          <span className="text-[12px] leading-[1.55] text-faint">No list is loaded, so there is nothing to map to yet. Load the {ICL} first.</span>
+          <span className="text-[12px] leading-[1.55] text-faint">No list is loaded.</span>
         ) : (
           <>
             {mapped.length === 0 ? (
@@ -373,7 +373,7 @@ function Edit({ c, p, byId }: { c: Control; p: MatrixProps; byId: Map<string, Ic
                       </span>
                     );
                   })}
-                  {choices.length > SHOWN && <span className="pt-1.5 text-[11px] text-faint">{plural(choices.length - SHOWN, "more control")} in the list. Search to narrow them.</span>}
+                  {choices.length > SHOWN && <span className="pt-1.5 text-[11px] text-faint">{plural(choices.length - SHOWN, "more control")} in the list; search to narrow them.</span>}
                 </span>
               )}
             </div>
@@ -386,12 +386,12 @@ function Edit({ c, p, byId }: { c: Control; p: MatrixProps; byId: Map<string, Ic
         <Switch label="This control applies to this deployment" checked={form.applies} onChange={(on) => change({ ...form, applies: on })} />
         <Field
           label={form.applies ? "Note" : "Reason it does not apply"}
-          hint={form.applies ? "Optional. How the control is met here, when that differs from the catalogue." : "Required. The control stays in the matrix, marked, and is left out of the coverage counts."}
+          hint={form.applies ? "Optional; how it is met here, if that differs." : "Required; it is left out of the coverage counts."}
           error={needsReason ? "A reason is needed to mark a control as not applying." : undefined}
         >
           <Textarea rows={2} value={form.note} onChange={(v) => change({ ...form, note: v })} />
         </Field>
-        <Field label="Owner" hint="Optional. Who answers for this control here.">
+        <Field label="Owner" hint="Optional; who answers for it here.">
           <Input value={form.owner} onChange={(v) => change({ ...form, owner: v })} autoComplete="off" />
         </Field>
       </div>
@@ -405,7 +405,7 @@ function Edit({ c, p, byId }: { c: Control; p: MatrixProps; byId: Map<string, Ic
             Undo the changes to this control
           </Button>
         )}
-        <span className="text-[11.5px] text-faint">Changes are kept on this page until they are saved.</span>
+        <span className="text-[11.5px] text-faint">Kept on this page until saved.</span>
       </span>
     </div>
   );

@@ -31,47 +31,47 @@ export const KNOWLEDGE_LANE: Lane = {
     {
       id: "curated",
       label: "Register",
-      detail: "The sources a person added to this corpus, each with its licence, which governs whether its text may be held at all.",
+      detail: "Sources added to this corpus, each with its licence.",
     },
     {
       id: "fetch",
       label: "Fetch",
-      detail: "A person asks for a source to be fetched from its address. An index page is followed to the pages under it, and the result is normalised to one document.",
+      detail: "Fetched from its address and normalised to one document.",
     },
     {
       id: "sections",
       label: "Documents to sections",
-      detail: "Headings are found before chunking, so a citation can name the section it came from and not a byte offset.",
+      detail: "Headings found first, so a citation names its section.",
     },
     {
       id: "chunks",
       label: "Sections to chunks",
-      detail: "Each section is split by paragraph, with an overlap, so a definition still reaches the sentence that uses it.",
+      detail: "Each section split by paragraph, with an overlap.",
     },
     {
       id: "metadata",
       label: "Metadata per chunk",
-      detail: "Identifiers a security reader searches for (CVE, CWE, control references) are extracted by rule, not summarised by a model.",
+      detail: "CVE, CWE and control references, extracted by rule.",
     },
     {
       id: "lexical",
       label: "Lexical index",
-      detail: "A term index built at ingestion: the keyword half of hybrid retrieval.",
+      detail: "A term index: the keyword half of hybrid retrieval.",
     },
     {
       id: "hitl",
       label: "Admission by a person",
-      detail: "A fetched document waits, staged, until a person admits or refuses it. The admission records who decided and why.",
+      detail: "Waits, staged, until a person admits or refuses it.",
     },
     {
       id: "embedding",
       label: "Embedding model",
-      detail: "On admission each chunk is embedded. The same model embeds a question, because a mismatch between the two is silent.",
+      detail: "Each admitted chunk is embedded with the question's model.",
     },
     {
       id: "pgvector",
       label: "Vector index",
-      detail: "The admitted chunks with their embeddings, one corpus per namespace. Only what is here can be retrieved.",
+      detail: "Admitted chunks and embeddings; only these can be retrieved.",
     },
   ],
 };
@@ -81,12 +81,12 @@ export const RETRIEVAL_STAGES: Stage[] = [
   {
     id: "hybrid",
     label: "Hybrid search",
-    detail: "Dense similarity finds passages that mean the same thing; lexical ranking finds those that say the same words. The two rankings are fused by reciprocal rank.",
+    detail: "Dense and lexical rankings, fused by reciprocal rank.",
   },
   {
     id: "adjacent",
     label: "Top-k and adjacent chunks",
-    detail: "The chunks either side of a hit come with it as context, because a clause is rarely self-contained.",
+    detail: "Neighbouring chunks come with each hit as context.",
   },
   {
     id: "rerank",
@@ -96,6 +96,6 @@ export const RETRIEVAL_STAGES: Stage[] = [
   {
     id: "guardrails",
     label: "Exclusions",
-    detail: "A source removed from the register and a document nobody admitted are left out in the query itself.",
+    detail: "Removed sources and unadmitted documents are left out.",
   },
 ];

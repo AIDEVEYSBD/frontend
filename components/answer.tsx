@@ -16,13 +16,13 @@ import { Deadline, EvidencePanel, GateFields, NextLines, ShapeTag, VerdictTable,
  * another address than the one signed in, 401 nobody signed in, 409 a gate
  * that has moved on (answered elsewhere, or the run moved on or ended).
  */
-function linkTrouble(status: number): { title: string; tail: string } {
-  if (status === 410) return { title: "This link has been used or has expired", tail: "Ask the person who sent it for a new one." };
-  if (status === 404) return { title: "This link is not valid", tail: "Check that the whole address was copied, or ask the person who sent it for a new one." };
-  if (status === 403) return { title: "This link was made for someone else", tail: "Sign in with the address it was sent to, or ask the person who sent it for a link to your own address." };
-  if (status === 401) return { title: "You are not signed in", tail: "Sign in, then open the link again." };
-  if (status === 409) return { title: "The question this link was made for has moved on", tail: "It was answered, or the workflow moved on or ended; this link cannot answer anything else." };
-  return { title: "This link cannot be opened", tail: "Try again, or ask the person who sent it for a new one." };
+function linkTrouble(status: number): string {
+  if (status === 410) return "This link has been used or has expired";
+  if (status === 404) return "This link is not valid";
+  if (status === 403) return "This link was made for someone else";
+  if (status === 401) return "You are not signed in";
+  if (status === 409) return "The question this link was made for has moved on";
+  return "This link cannot be opened";
 }
 
 /**
@@ -119,8 +119,8 @@ export function AnswerPage({ token }: { token: string }) {
 
       <main className="mx-auto flex w-full max-w-[860px] flex-col gap-4 px-4 py-7 sm:px-5">
         {loadError && (
-          <Banner tone="err" title={linkTrouble(loadError.status).title}>
-            {loadError.message}. {linkTrouble(loadError.status).tail}
+          <Banner tone="err" title={linkTrouble(loadError.status)}>
+            {loadError.message}
           </Banner>
         )}
         {!data && !loadError && <p className="text-[12.5px] text-faint">Reading the gate…</p>}
@@ -130,12 +130,11 @@ export function AnswerPage({ token }: { token: string }) {
             <div className="flex flex-col gap-1.5">
               <span className="text-[11px] font-medium tracking-[0.08em] text-faint uppercase">Human gate</span>
               <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">{data.gate.agent} is waiting for your answer</h1>
-              <p className="max-w-[64ch] text-[12.5px] leading-[1.55] text-dim">{data.gate.asks || "A workflow paused here for a person, and that person is you."}</p>
+              <p className="max-w-[64ch] text-[12.5px] leading-[1.55] text-dim">{data.gate.asks || "A workflow paused here for your answer."}</p>
             </div>
 
             <Banner tone="queue" title={`Answering as ${data.answered_as || "an external participant"}`}>
-              Your answer is written into the run record under that name, with the time and this note. The link works once
-              {data.expires_at ? ` and expires ${new Date(data.expires_at).toLocaleString()}` : ""}.
+              The link works once{data.expires_at ? ` and expires ${new Date(data.expires_at).toLocaleString()}` : ""}.
             </Banner>
 
             <section className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface elev-1">
@@ -166,14 +165,14 @@ export function AnswerPage({ token }: { token: string }) {
                 {data.gate.shape === "decision" && errors.decision && <p className="text-[11.5px] text-err">{errors.decision}</p>}
                 {/* A form with its own note field takes the note there: a second box would overwrite it. */}
                 {!declaresNote(data.gate) && (
-                  <Field label={data.gate.shape === "decision" ? "Reason" : "Note"} hint="Optional. It goes into the record beside your answer.">
+                  <Field label={data.gate.shape === "decision" ? "Reason" : "Note"} hint="Optional; recorded beside your answer.">
                     <Textarea rows={3} value={note} onChange={setNote} disabled={Boolean(busy) || done} placeholder={data.gate.shape === "decision" ? "Why this decision stands." : "Anything the record should carry beside the answer."} />
                   </Field>
                 )}
                 {failure && <p className="text-[11.5px] leading-[1.55] text-err">{failure}</p>}
                 {result && (
                   <p className={`text-[11.5px] leading-[1.55] ${done ? "text-ok" : "text-err"}`}>
-                    {done ? `${label}. Your answer is recorded and the workflow carries on from here; this link is now spent.` : `${label}, but the workflow could not continue. ${result.error}`.trim()}
+                    {done ? `${label}; the link is now spent.` : `${label}, but the workflow could not continue${result.error ? `: ${result.error}` : "."}`}
                   </p>
                 )}
               </div>
@@ -194,7 +193,7 @@ export function AnswerPage({ token }: { token: string }) {
                   </Button>
                 )}
                 <span className="grow" />
-                <span className="text-[10.5px] text-ghost">Signed {data.answered_as || "external"}. Opening this page and answering are written to the platform&rsquo;s audit trail under your sign-in.</span>
+                <span className="text-[10.5px] text-ghost">Signed {data.answered_as || "external"} · opening and answering are audited</span>
               </footer>
             </section>
           </>

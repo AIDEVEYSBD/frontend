@@ -82,9 +82,9 @@ function WorkloadCard({ id, name, line, entry, state, win, unproduced = false }:
 
       <div className="flex flex-col gap-4 p-4">
         {state === "reading" && <p className="text-[12px] text-faint">Reading the summary…</p>}
-        {state === "pending" && <p className="text-[12px] text-faint">No figures: the platform does not build the summary yet.</p>}
-        {state === "error" && <p className="text-[12px] text-faint">No figures: the summary could not be read.</p>}
-        {state === "ok" && nothing && unproduced && <p className="text-[12px] text-dim">Nothing produces findings yet: the platform names their producer as not built.</p>}
+        {state === "pending" && <p className="text-[12px] text-faint">Not built</p>}
+        {state === "error" && <p className="text-[12px] text-faint">Not read.</p>}
+        {state === "ok" && nothing && unproduced && <p className="text-[12px] text-dim">Not built</p>}
         {state === "ok" && nothing && !unproduced && <p className="text-[12px] text-faint">No findings recorded{win === "all" ? "" : " in this window"}.</p>}
         {state === "ok" && !nothing && (
           <>
@@ -106,7 +106,7 @@ function WorkloadCard({ id, name, line, entry, state, win, unproduced = false }:
                     )}
                   </span>
                 ) : (
-                  <span className="text-[11.5px] text-faint">None named by the summary.</span>
+                  <span className="text-[11.5px] text-faint">—</span>
                 )}
               </div>
             </div>
@@ -162,17 +162,17 @@ export function OutcomesBody({ win, figures, compact = false }: { win: Win; figu
 
       {figures?.(answer)}
 
-      <p className="text-[11.5px] leading-[1.55] text-faint">
-        {offeredIds === null
-          ? offered?.state === "pending"
-            ? "The four security workloads this console is built for. Which of them this deployment offers is not built yet: the platform answers 501 to GET /api/workloads."
-            : offered?.state === "error"
-              ? `The four security workloads this console is built for. Which of them this deployment offers could not be read: ${offered.message}`
-              : "The four security workloads this console is built for."
-          : offeredIds.size === 0
-            ? "The four security workloads this console is built for. None of them is offered on this deployment yet; they are separate products with their own consoles."
-            : `The four security workloads this console is built for; ${offeredIds.size} of them ${offeredIds.size === 1 ? "is" : "are"} offered on this deployment.`}
-      </p>
+      {(offeredIds !== null || offered?.state === "pending" || offered?.state === "error") && (
+        <p className="text-[11.5px] leading-[1.55] text-faint">
+          {offeredIds === null
+            ? offered?.state === "pending"
+              ? "Offered on this deployment: Not built"
+              : `The offered workloads could not be read: ${offered?.state === "error" ? offered.message : ""}`
+            : offeredIds.size === 0
+              ? "None of the four is offered on this deployment yet."
+              : `${offeredIds.size} of the four ${offeredIds.size === 1 ? "is" : "are"} offered on this deployment.`}
+        </p>
+      )}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {WORKLOADS.map((w) => (
@@ -201,7 +201,7 @@ export function OutcomesView() {
           </span>
         }
       >
-        What each security workload reported over the window: its findings by severity and by status, and the runs that recorded them. A figure opens the findings it counts. A run records a finding through the finding.record tool. A workload's last run may be older than the window.
+        Findings and runs per security workload over the window.
       </GroupHeader>
 
       <OutcomesBody win={win} />

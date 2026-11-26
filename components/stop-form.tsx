@@ -6,6 +6,7 @@ import { Button, Mono, Status, Tag } from "./ui";
 import { Field, Textarea } from "./forms";
 import { api, errorText, type RunRow } from "@/lib/api/client";
 import { auditLine, fleet, FLEET_ACTIONS, getFleet, setLockdown, stoppable, type FleetAction, type FleetResult, type LockdownState, type PauseInfo } from "@/lib/api/l5";
+import { FLEET_LINE, LOCKDOWN_HOLDS } from "./operate";
 import type { Owner } from "@/lib/api/pending";
 import { useDoorBuilt } from "@/lib/use-doors";
 
@@ -49,34 +50,15 @@ export function stopNotice(o: StopOutcome): string {
   if (o.scope === "agents") {
     const r = o.result;
     const n = `${r.agents.length} agent${r.agents.length === 1 ? "" : "s"}`;
-    if (r.action === "pause") return `Paused ${n}: nothing new starts for them${r.killed.length ? ` · ${runs(r.killed.length)} stopped` : ""}${auditLine(r.audit_id)}`;
-    if (r.action === "drain") return `Draining ${n}: their runs in flight finish, nothing new starts${auditLine(r.audit_id)}`;
-    if (r.action === "resume") return `Resumed ${n}: their runs start again${auditLine(r.audit_id)}`;
+    if (r.action === "pause") return `Paused ${n}${r.killed.length ? ` · ${runs(r.killed.length)} stopped` : ""}${auditLine(r.audit_id)}`;
+    if (r.action === "drain") return `Draining ${n}${auditLine(r.audit_id)}`;
+    if (r.action === "resume") return `Resumed ${n}${auditLine(r.audit_id)}`;
     return `Stopped the runs of ${n}${r.killed.length ? ` · ${runs(r.killed.length)} stopped` : ""}${auditLine(r.audit_id)}`;
   }
   if (!o.state.on) return `Lockdown lifted${auditLine(o.state.audit_id)}`;
-  return `Lockdown on: every start is refused, and every write and outside call waits for a person, until it is lifted${auditLine(o.state.audit_id)}`;
+  return `Lockdown on${auditLine(o.state.audit_id)}`;
 }
 
-/** What a lockdown does and does not do, as the platform carries it out (agentfactory/control/lockdown.py). */
-const LOCKDOWN_WILL = [
-  "Refuse every start until it is lifted.",
-  "Let no worker take up a run that has not started yet; it waits on the queue.",
-  "Make each tool call at or above write, and each call of a tool that acts outside, of the runs already in flight wait for a person to approve it.",
-  "Write one audit event with the reason and your name.",
-];
-const LOCKDOWN_WILL_NOT = ["Stop the runs already in flight: they go on, with the calls above held for a person."];
-
-/** What lifting a lockdown does. */
-const UNLOCK_WILL = [
-  "Runs start again, and workers take up the runs waiting on the queue.",
-  "Tool calls go back to what each agent's policy says; a call already waiting for a person keeps waiting until it is answered.",
-  "One audit event records who lifted it and why.",
-];
-
-/** A fleet action in the fleet bar's own words, as a sentence: "Kills every run in flight for these agents ...". */
-const fleetWhat = (id: FleetAction): string => ((w: string) => (w ? `${w[0].toUpperCase()}${w.slice(1)}.` : ""))(FLEET_ACTIONS.find((a) => a.id === id)?.what ?? "");
-const KILL_WHAT = fleetWhat("kill");
 const fleetVerb = (id: FleetAction): string => FLEET_ACTIONS.find((a) => a.id === id)?.verb ?? "";
 
 /** A run row with the owner the runs door will gain; shown when present. */
@@ -165,7 +147,7 @@ export function StopForm({
   const fleetBuilt = useDoorBuilt("POST", "/api/fleet");
   const lockdownBuilt = useDoorBuilt("POST", "/api/lockdown");
   const built = { all: killAllBuilt, fleet: fleetBuilt, lockdown: lockdownBuilt };
-  const notBuiltLine = (path: string) => `Not built yet: the platform answers 501 to POST ${path}.`;
+  const notBuiltLine = (path: string) => `Not built yet: POST ${path}`;
   const fleetOff = built.fleet === false ? notBuiltLine("/api/fleet") : "";
   const lockOff = built.lockdown === false ? notBuiltLine("/api/lockdown") : "";
   const off: Record<StopScope, string> = {
@@ -272,12 +254,12 @@ export function StopForm({
     {
       id: "all",
       title: "Every run in flight",
-      line: "Running or waiting at a gate. A run a worker holds stops before its next model call, step or node (a call already under way finishes); a run waiting at a gate, or not taken up yet, stops at once. Each run's record keeps the reason and your name.",
+      line: "Running or waiting at a gate; each stops before its next step.",
     },
-    { id: "agents", title: "The selected agents' runs", line: agents.length ? `${agentList}. ${KILL_WHAT}` : KILL_WHAT },
-    { id: "lockdown", title: "Lock the estate down", line: "Every start is refused and no worker takes up a run not yet started, until it is lifted. Runs already in flight go on, with their writes and outside calls held for a person." },
-    { id: "pause", title: "Pause the selected agents", line: "Nothing new starts for them, and their runs in flight (running or waiting at a gate) are stopped, until they are resumed." },
-    { id: "drain", title: "Drain the selected agents", line: "Nothing new starts for them; their runs in flight finish, with the sub-runs they start, until they are resumed." },
+    { id: "agents", title: "The selected agents' runs", line: agents.length ? `${agentList}. ${FLEET_LINE.kill}` : FLEET_LINE.kill },
+    { id: "lockdown", title: "Lock the estate down", line: LOCKDOWN_HOLDS },
+    { id: "pause", title: "Pause the selected agents", line: FLEET_LINE.pause },
+    { id: "drain", title: "Drain the selected agents", line: FLEET_LINE.drain },
     { id: "resume", title: "Resume the selected agents", line: "Lifts a pause or a drain: their runs start again." },
     { id: "unlock", title: "Lift the lockdown", line: "Runs start again, and workers take up the runs waiting." },
   ];
@@ -354,7 +336,7 @@ export function StopForm({
                   );
                 })}
               </div>
-              <Field label="Reason" error={missing ? "This needs a reason; it is recorded with your name." : undefined} hint={missing ? undefined : "Recorded with your name: on each run a stop reaches, and in the audit trail."}>
+              <Field label="Reason" error={missing ? "This needs a reason." : undefined} hint={missing ? undefined : "Recorded with your name on each run and in the audit trail."}>
                 <Textarea
                   rows={2}
                   value={reason}
@@ -376,50 +358,13 @@ export function StopForm({
                 <span className="text-[12px] leading-[1.5] text-dim">Reason: {reason.trim()}</span>
               </div>
 
-              {scope === "lockdown" && (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-[11px] font-medium text-faint">It will</span>
-                    <ul className="flex flex-col gap-1.5">
-                      {LOCKDOWN_WILL.map((l) => (
-                        <li key={l} className="flex items-start gap-2 text-[12.5px] leading-[1.5] text-fg">
-                          <span className="mt-[7px] size-1.5 shrink-0 rounded-[2px] bg-err" />
-                          {l}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-[11px] font-medium text-faint">It will not</span>
-                    <ul className="flex flex-col gap-1.5">
-                      {LOCKDOWN_WILL_NOT.map((l) => (
-                        <li key={l} className="flex items-start gap-2 text-[12.5px] leading-[1.5] text-fg">
-                          <span className="mt-[7px] size-1.5 shrink-0 rounded-[2px] bg-faint" />
-                          {l}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              )}
+              {scope === "lockdown" && <p className="text-[12.5px] leading-[1.55] text-fg">{LOCKDOWN_HOLDS}</p>}
 
-              {action && action !== "kill" && (
-                <p className="text-[12.5px] leading-[1.55] text-fg">
-                  {fleetWhat(action)} {action === "resume" ? "" : "It holds until the agents are resumed. "}One audit event records the action, the reason and your name.
-                </p>
-              )}
+              {action && action !== "kill" && <p className="text-[12.5px] leading-[1.55] text-fg">{FLEET_LINE[action]}</p>}
 
               {scope === "unlock" && (
                 <div className="flex flex-col gap-1.5">
-                  <span className="text-[11px] font-medium text-faint">It will</span>
-                  <ul className="flex flex-col gap-1.5">
-                    {UNLOCK_WILL.map((l) => (
-                      <li key={l} className="flex items-start gap-2 text-[12.5px] leading-[1.5] text-fg">
-                        <span className="mt-[7px] size-1.5 shrink-0 rounded-[2px] bg-ink" />
-                        {l}
-                      </li>
-                    ))}
-                  </ul>
+                  <p className="text-[12.5px] leading-[1.55] text-fg">Runs start again; tool calls follow each agent&rsquo;s policy.</p>
                   {lockdown?.on && (lockdown.by || lockdown.reason) && (
                     <span className="pt-1 text-[12px] leading-[1.5] text-dim">
                       The lockdown was set{lockdown.by ? ` by ${lockdown.by}` : ""}
@@ -442,7 +387,7 @@ export function StopForm({
                   </div>
                   {heldError && (
                     <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">
-                      Which agents are paused or draining could not be read: {heldError}. Confirming still sends the resume.
+                      Which agents are paused could not be read: {heldError}
                     </p>
                   )}
                   {!held && !heldError && <p className="text-[12px] text-faint">Reading which agents are paused or draining…</p>}
@@ -466,7 +411,7 @@ export function StopForm({
                       })}
                     </ul>
                   )}
-                  {held && agents.every((id) => !held[id]) && <p className="text-[12px] leading-[1.5] text-dim">None of these agents is paused or draining right now. Confirming still sends the resume; the door answers how they stand.</p>}
+                  {held && agents.every((id) => !held[id]) && <p className="text-[12px] leading-[1.5] text-dim">None of these agents is paused or draining.</p>}
                 </div>
               )}
 
@@ -474,7 +419,7 @@ export function StopForm({
               <div className="flex flex-col gap-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-[12.5px] font-semibold text-fg">
-                    {STOPS_RUNS.includes(scope) ? "Runs in flight that will be stopped" : scope === "lockdown" ? "Runs in flight, which go on with their writes and outside calls held for a person" : "Runs in flight, which finish"}
+                    {STOPS_RUNS.includes(scope) ? "Runs in flight that will be stopped" : scope === "lockdown" ? "Runs in flight, which go on with writes held" : "Runs in flight, which finish"}
                   </span>
                   {runs && <span className="tnum text-[12px] text-faint">{affected.length}</span>}
                   <span className="grow" />
@@ -485,15 +430,13 @@ export function StopForm({
                 </div>
                 {runsError && (
                   <p className="rounded-md border border-err/40 bg-surface px-3 py-2 text-[11.5px] leading-[1.5] text-err">
-                    The runs in flight could not be read: {runsError}. Nothing is listed; the door still answers what it reached.
+                    The runs in flight could not be read: {runsError}
                   </p>
                 )}
                 {!runs && !runsError && <p className="text-[12px] text-faint">Reading the runs in flight…</p>}
                 {runs && affected.length === 0 && (
                   <p className="rounded-md border border-line bg-surface px-3 py-2 text-[12px] leading-[1.5] text-dim">
                     {action ? "None of these agents has a run in flight right now." : "Nothing is in flight right now."}
-                    {(scope === "all" || scope === "agents") && " Confirming still sends the stop; the door answers what it reached."}
-                    {(scope === "pause" || scope === "drain") && " Confirming still closes them to new work."}
                   </p>
                 )}
                 {runs && affected.length > 0 && <RunList rows={affected} />}
@@ -521,23 +464,6 @@ export function StopForm({
                     </span>
                   </span>
                   <span className="text-[12px] leading-[1.5] text-dim">Reason: {outcome.state.reason}</span>
-                  {!outcome.state.on ? (
-                    <span className="text-[12.5px] leading-[1.5] text-fg">Runs start again, and workers take up the runs waiting. Tool calls go back to what each agent&rsquo;s policy says; a call already waiting for a person keeps waiting until it is answered.</span>
-                  ) : outcome.state.controls.length > 0 ? (
-                    <div className="flex flex-col gap-1.5">
-                      <span className="text-[11px] font-medium text-faint">What it holds, as the platform answered</span>
-                      <ul className="flex flex-col gap-1">
-                        {outcome.state.controls.map((c) => (
-                          <li key={c} className="flex items-start gap-2 text-[12.5px] leading-[1.5] text-fg">
-                            <span className="mt-[7px] size-1.5 shrink-0 rounded-[2px] bg-err" />
-                            {c}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : (
-                    <span className="text-[12px] text-faint">The door named no controls in its answer.</span>
-                  )}
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
@@ -558,7 +484,7 @@ export function StopForm({
                   {(!done || done === "kill" || done === "pause") && (
                   <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                     <span className="tnum text-[22px] leading-none font-semibold tracking-[-0.02em]">{reached.length}</span>
-                    <span className="text-[13px] text-fg">run{reached.length === 1 ? "" : "s"} stopped, as the platform answered</span>
+                    <span className="text-[13px] text-fg">run{reached.length === 1 ? "" : "s"} stopped</span>
                   </span>
                   )}
                   <span className="text-[12px] leading-[1.5] text-dim">
@@ -578,11 +504,11 @@ export function StopForm({
                       ))}
                     </ul>
                   )}
-                  {reached.length === 0 && (!done || done === "kill" || done === "pause") && <p className="text-[12px] text-dim">The platform answered that it stopped no run{alreadyStopping.length ? " it was not already stopping" : ""}.</p>}
+                  {reached.length === 0 && (!done || done === "kill" || done === "pause") && <p className="text-[12px] text-dim">No run stopped.</p>}
                   {alreadyStopping.length > 0 && (
                     <div className="flex flex-col gap-1">
                       <span className="text-[11.5px] leading-[1.5] text-dim">
-                        {alreadyStopping.length} run{alreadyStopping.length === 1 ? " was" : "s were"} already being stopped by an earlier request, which this one did not ask again:
+                        {alreadyStopping.length} run{alreadyStopping.length === 1 ? "" : "s"} already being stopped:
                       </span>
                       <span className="flex flex-wrap gap-1.5">
                         {alreadyStopping.map((id) => (
@@ -596,7 +522,7 @@ export function StopForm({
                   {notReached.length > 0 && (
                     <div className="flex flex-col gap-1">
                       <span className="text-[11.5px] leading-[1.5] text-warn">
-                        {notReached.length} run{notReached.length === 1 ? "" : "s"} listed at review {notReached.length === 1 ? "is" : "are"} not in the platform&rsquo;s answer (it may have ended in the meantime).
+                        {notReached.length} run{notReached.length === 1 ? "" : "s"} listed at review not reached (may have ended):
                       </span>
                       <span className="flex flex-wrap gap-1.5">
                         {notReached.map((id) => (

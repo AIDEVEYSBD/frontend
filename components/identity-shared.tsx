@@ -377,7 +377,7 @@ export function LiveKeys({ keys, onRevoked }: { keys: LiveKey[]; onRevoked?: () 
   const [revoked, setRevoked] = useState<Record<string, string>>({});
   const [failed, setFailed] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState("");
-  if (keys.length === 0) return <span className="text-[12px] leading-[1.5] text-dim">No unrevoked API key answers to them, so nothing of theirs keeps working.</span>;
+  if (keys.length === 0) return <span className="text-[12px] leading-[1.5] text-dim">No API key of theirs still works.</span>;
   const left = keys.filter((k) => !revoked[k.id]).length;
   const revoke = async (k: LiveKey) => {
     setBusy(k.id);
@@ -397,7 +397,7 @@ export function LiveKeys({ keys, onRevoked }: { keys: LiveKey[]; onRevoked?: () 
       <span className="text-[12px] leading-[1.5] text-fg">
         {left === 0
           ? "Every API key that answered to them is now revoked."
-          : `${left === 1 ? "One API key" : `${left} API keys`} that answer${left === 1 ? "s" : ""} to them keep${left === 1 ? "s" : ""} working: a key acts with its own authority, not the person's. Revoke ${left === 1 ? "it" : "each"} unless someone else should answer for ${left === 1 ? "it" : "them"}.`}
+          : `${left === 1 ? "One API key of theirs still works" : `${left} API keys of theirs still work`}.`}
       </span>
       <span className="flex flex-col overflow-hidden rounded-md border border-line">
         {keys.map((k) => (

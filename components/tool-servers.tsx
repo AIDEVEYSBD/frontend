@@ -208,12 +208,7 @@ export function AddServerForm({
         void submit();
       }}
     >
-      <span className="flex flex-wrap items-center gap-2">
-        <span className="text-[12px] font-semibold text-fg">Register a tool server</span>
-        <span className="text-[10.5px] text-faint">
-          with no headers it is asked for its tool list now, screened and pinned; with headers naming a vault credential nothing is sent to it until a second platform admin approves its address and credentials. Nothing attaches until a platform admin approves the pin
-        </span>
-      </span>
+      <span className="text-[12px] font-semibold text-fg">Register a tool server</span>
       <div className={stacked ? "flex flex-col gap-2" : "flex flex-wrap items-end gap-2"}>
         <label className={cell}>
           <span className="text-[10.5px] text-ghost">Name</span>
@@ -234,12 +229,12 @@ export function AddServerForm({
           <input value={form.url} onChange={(e) => set({ url: e.target.value })} placeholder="https://tools.example.com/mcp" spellCheck={false} className={`${INPUT} font-mono text-[11.5px]`} />
         </label>
         <label className="flex min-w-0 flex-col gap-1">
-          <span className="text-[10.5px] text-ghost">Headers, one Name: value per line, each naming a vault credential (optional)</span>
+          <span className="text-[10.5px] text-ghost">Headers, one Name: value per line (optional)</span>
           <textarea rows={2} value={form.headers} onChange={(e) => set({ headers: e.target.value })} placeholder={"Authorization: Bearer ${secret:tools-token}"} spellCheck={false} className={AREA} />
         </label>
       </div>
       <p className="text-[10.5px] leading-[1.5] text-faint">
-        A header value names a vault credential as <Mono className="text-[10px]">{"${secret:name}"}</Mono>, with any text around it; the registry refuses a plain value and a name the vault does not hold. Only the header names are shown again.
+        Each value names a vault credential as <Mono className="text-[10px]">{"${secret:name}"}</Mono>.
       </p>
       {error && <Refusal error={error} />}
       <div className="flex flex-wrap items-center gap-2">
@@ -249,7 +244,7 @@ export function AddServerForm({
         <Button size="sm" variant="solid" tone="err" onClick={onCancel}>
           Cancel
         </Button>
-        {addDoor.off ? <span className="text-[11px] text-faint">{addDoor.why}</span> : problem && (form.label || form.url) && <span className="text-[11px] text-faint">{problem}</span>}
+        {!addDoor.off && problem && (form.label || form.url) && <span className="text-[11px] text-faint">{problem}</span>}
       </div>
     </form>
   );
@@ -309,10 +304,10 @@ function RiskApproval({ server: s, busy, onApprove, onCancel }: { server: Regist
     <div className="flex flex-col gap-2 rounded-md border border-line bg-canvas p-3">
       <span className="flex flex-wrap items-baseline gap-2">
         <span className="text-[12px] font-semibold text-fg">{s.status === "approved" ? "Change the risks of the approved list" : "Approve the pinned list"}</span>
-        <span className="text-[11px] text-faint">set each tool&rsquo;s risk; a tool left unset is destructive, and every call to it waits for a platform admin</span>
+        <span className="text-[11px] text-faint">a tool left unset is destructive</span>
       </span>
       <span className="text-[11px] leading-[1.5] text-dim">
-        Tick &ldquo;Sends data outside&rdquo; for a read tool that passes what it is given on to another system (it forwards, notifies or logs it elsewhere): content that came from outside the platform may then never reach it, as for every tool at write or above.
+        Tick &ldquo;Sends data outside&rdquo; for a read tool that forwards its input.
       </span>
       <div className="overflow-x-auto rounded-sm border border-line">
         <table className="w-full min-w-[720px] border-collapse text-[11.5px]">
@@ -406,7 +401,7 @@ function CredentialsApproval({ server: s, busy, onApprove, onCancel }: { server:
     <div className="flex flex-col gap-2 rounded-md border border-line bg-canvas p-3">
       <span className="text-[12px] font-semibold text-fg">Approve the address and its credentials</span>
       <span className="text-[11.5px] leading-[1.55] text-dim">
-        {who(s.added_by)} registered this server. Approving sends{" "}
+        Sends{" "}
         {s.credentials.length ? (
           <>
             the vault credential{s.credentials.length === 1 ? "" : "s"} <Names names={s.credentials} none="" />
@@ -414,7 +409,7 @@ function CredentialsApproval({ server: s, busy, onApprove, onCancel }: { server:
         ) : (
           "its headers"
         )}{" "}
-        in the header{s.header_names.length === 1 ? "" : "s"} <Names names={s.header_names} none="none" /> to <Mono className="text-[11px] text-fg">{s.url ?? "its address"}</Mono>, for the first time. The service then asks it for its tool list with them, screens every tool and pins the list. The pin still waits for its own approval, where each tool&rsquo;s risk is set. The approval is bound to this address and these headers: a registration that changes either sends nothing.
+        in the header{s.header_names.length === 1 ? "" : "s"} <Names names={s.header_names} none="none" /> to <Mono className="text-[11px] text-fg">{s.url ?? "its address"}</Mono>, then reads its tool list.
       </span>
       <span className="flex flex-wrap items-center gap-2">
         <span className="grow" />
@@ -465,7 +460,7 @@ function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { ser
         setDeciding(false);
         setNotice({
           tone: "ok",
-          text: `Sending ${s.credentials.length ? s.credentials.join(", ") : "its headers"} to ${s.url ?? "its address"} is approved. Its tool list was read with them, screened and pinned: ${n} tool${n === 1 ? "" : "s"}. Nothing attaches to a run until a platform admin${twoPerson ? " other than the one who registered it" : ""} approves the pin and sets each tool's risk.`,
+          text: `Credentials approved: ${n} tool${n === 1 ? "" : "s"} pinned, waiting for pin approval.`,
         });
       } else if (what === "approve") {
         const set = Object.keys(decided?.risks ?? {}).length;
@@ -476,7 +471,7 @@ function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { ser
         setDeciding(false);
         setNotice({
           tone: "ok",
-          text: `Approved: its tools attach to runs at the risks set${left ? `; ${left} tool${left === 1 ? " is" : "s are"} left destructive, so every call to ${left === 1 ? "it" : "them"} waits for a platform admin` : ""}${outbound.length ? `; marked as sending data outside: ${outbound.join(", ")}` : ""}.`,
+          text: `Approved${left ? `; ${left} tool${left === 1 ? "" : "s"} left destructive` : ""}.`,
         });
       } else if (what === "rescan") {
         const r = await rescanServer(s.id);
@@ -484,10 +479,10 @@ function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { ser
           !r.changed
             ? { tone: "ok", text: "Rescanned: the tool list still matches the pin." }
             : r.server.status === "refused"
-              ? { tone: "err", text: "Rescanned: the screener refused the list it found. The server is detached; the hits are below." }
+              ? { tone: "err", text: "Rescanned: the screener refused the new list; the server is detached." }
               : r.server.status === "pending"
-                ? { tone: "ok", text: "Rescanned: the list it found is clean and pinned; it waits for an approval." }
-                : { tone: "err", text: "Tool list changed — re-approval needed. The server is detached until someone approves the new list." },
+                ? { tone: "ok", text: "Rescanned: the new list is pinned and waits for approval." }
+                : { tone: "err", text: "Tool list changed — re-approval needed." },
         );
       } else {
         await deleteServer(s.id);
@@ -563,15 +558,8 @@ function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { ser
       {deciding && access.ok && !access.credentials && <RiskApproval server={s} busy={busy === "approve"} onCancel={() => setDeciding(false)} onApprove={(risks, cls, outbound) => void act("approve", { risks, cls, outbound })} />}
 
       {where && <Mono className="block truncate text-[10.5px] text-ghost">{where}</Mono>}
-      {waiting ? (
-        <span className="text-[11px] leading-[1.5] text-warn">
-          Nothing has been sent to this server: its headers name the vault credential{s.credentials.length === 1 ? "" : "s"} {s.credentials.join(", ") || "named in them"}, and no platform admin other than {who(s.added_by)} has approved sending {s.credentials.length === 1 ? "it" : "them"} to its address. Its tool list is read, screened and pinned once one does.
-        </span>
-      ) : (
-        <span className="text-[11px] leading-[1.5] text-faint">{meta.means}.</span>
-      )}
-      {s.adopted && <span className="text-[11px] leading-[1.5] text-warn">This entry was {adoptedLine(s)}.</span>}
-      {isolated && <span className="text-[11px] leading-[1.5] text-faint">Runs {isolated}, at discovery as at every run.</span>}
+      {waiting && <span className="text-[11px] leading-[1.5] text-warn">Nothing sent yet: its credentials wait for a second platform admin.</span>}
+      {isolated && <span className="text-[11px] leading-[1.5] text-faint">Runs {isolated}.</span>}
 
       <div className="grid gap-x-6 gap-y-2 sm:grid-cols-2 xl:grid-cols-4">
         <Fact k={s.status === "changed" ? "Pin (new list, waiting)" : "Pin"}>
@@ -589,7 +577,7 @@ function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { ser
         <Fact k="Last scan">
           {s.last_scan && !s.last_scan.digest && s.last_scan.note ? (
             // A registration whose credentials wait carries a scan that read nothing: its note says so, and no time is given as if a list had been read.
-            <span className="leading-[1.5]">{s.last_scan.note}</span>
+            <span className="leading-[1.5]">{s.last_scan.note.split(":")[0]}</span>
           ) : s.last_scan ? (
             <span title={`${s.last_scan.by}${s.last_scan.server ? `\nThe server reported itself as ${s.last_scan.server.name}${s.last_scan.server.version ? ` ${s.last_scan.server.version}` : ""}` : ""}`}>
               {ago(s.last_scan.at)} by {who(s.last_scan.by)}
@@ -682,9 +670,7 @@ function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { ser
 
       {s.status === "changed" && (
         <div className="flex flex-col gap-1.5">
-          <p className="text-[11.5px] leading-[1.5] font-medium text-err">
-            Tool list changed — re-approval needed. A rescan found a list other than the one approved and pinned it, waiting; the runtime will not attach this server until someone approves the new list.
-          </p>
+          <p className="text-[11.5px] leading-[1.5] font-medium text-err">Tool list changed — re-approval needed.</p>
           {change && (
             <span className="flex flex-wrap items-center gap-1.5 text-[11px] text-dim">
               <span>Approved</span>
@@ -706,7 +692,7 @@ function ServerRow({ server: s, twoPerson, me, onChanged, fresh = false }: { ser
             <span className="flex flex-wrap items-center gap-1.5 text-[11px] text-dim">
               <span>
                 {refusedWhen(s) === "when it was approved"
-                  ? "Refused when someone approved it: the screener read the list it was pinned on"
+                  ? "Refused on approval; it was pinned on"
                   : s.approvals.some((a) => a.digest === s.previous_pin?.digest)
                     ? "Refused on a rescan; the list approved before was"
                     : "Refused on a rescan; it had been pinned on"}
@@ -773,12 +759,7 @@ export function ToolServers({
             <Status tone={count("refused") ? "err" : "neutral"}>{count("refused")} refused</Status>
           </span>
         )}
-        {!unread && <span className="min-w-0 max-w-[70ch] text-[11px] leading-[1.5] text-faint">
-          {twoPerson
-            ? "A platform admin approves each pin and sets its tools' risks. Two-person approval is on: whoever registers a server cannot approve it."
-            : "A platform admin approves each pin and sets its tools' risks."}{" "}
-          A server whose headers name a vault credential is sent nothing until a platform admin other than the one who registered it approves its address and credentials.
-        </span>}
+        {!unread && twoPerson && <span className="min-w-0 max-w-[70ch] text-[11px] leading-[1.5] text-faint">Two-person approval is on.</span>}
         <span className="grow" />
         <Button size="sm" variant="solid" tone="ink" permission="configure" disabled={addDoor.off} title={addDoor.why} onClick={() => setAdding(true)}>
           Add a server
@@ -800,9 +781,7 @@ export function ToolServers({
       {added && credentialsWaiting(added) && (
         <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raise/40 px-4 py-2">
           <Status tone="warn">{added.label} registered</Status>
-          <span className="min-w-0 grow text-[11px] leading-[1.5] text-faint">
-            Nothing has been sent to it. Its headers name {added.credentials.join(", ") || "vault credentials"}; a platform admin other than you approves sending them to {added.url ?? "its address"}, and only then is its tool list read, screened and pinned.
-          </span>
+          <span className="min-w-0 grow text-[11px] leading-[1.5] text-faint">Nothing sent yet: a second platform admin approves its credentials.</span>
           <Button size="sm" variant="solid" tone="neutral" onClick={() => setAdded(null)}>
             Dismiss
           </Button>
@@ -815,7 +794,7 @@ export function ToolServers({
             {pinnedTools(added).length} tool{pinnedTools(added).length === 1 ? "" : "s"} pinned
           </span>
           {added.pin && <DigestChip digest={added.pin.digest} label="Pin" />}
-          <span className="text-[11px] text-faint">and pending: nothing attaches to a run until a platform admin{twoPerson ? " other than you" : ""} approves the pin and sets each tool&rsquo;s risk.</span>
+          <span className="text-[11px] text-faint">pending approval</span>
           <span className="grow" />
           <Button size="sm" variant="solid" tone="neutral" onClick={() => setAdded(null)}>
             Dismiss
@@ -839,9 +818,7 @@ export function ToolServers({
         />
       ))}
       {servers !== null && shown.length === 0 && !error && (
-        <p className="px-4 py-3 text-[11.5px] text-faint">
-          No tool server is registered. A team&rsquo;s own tools reach agents by registering the MCP server that serves them; its tools become available to agents once a platform admin approves the pin.
-        </p>
+        <p className="px-4 py-3 text-[11.5px] text-faint">No tool server is registered.</p>
       )}
     </div>
   );
