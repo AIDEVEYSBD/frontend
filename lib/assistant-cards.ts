@@ -516,8 +516,8 @@ export async function answerDecision(run: string, approved: boolean, note: strin
 export async function killFromCard(id: string, reason: string): Promise<ActionOutcome> {
   try {
     const r = await killRun(id, reason);
-    const more = r.reached.length > 1 ? `; it reached ${r.reached.length} runs` : "";
-    return { ok: true, at: new Date(), detail: `${r.delivery === "tree" ? "sent to what the run set off" : "sent"}${more}` };
+    const parts = [r.delivery === "tree" ? "it reached what the run set off" : "", r.reached.length > 1 ? `${r.reached.length} runs reached` : ""].filter(Boolean);
+    return { ok: true, at: new Date(), detail: parts.join(", ") };
   } catch (e) {
     const refusal = killRefusalOf(e);
     return { ok: false, reason: refusal ? refusal.error : (e as Error).message };

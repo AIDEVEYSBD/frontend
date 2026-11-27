@@ -42,7 +42,19 @@ import { useDoorOff } from "@/lib/use-doors";
 import { wouldCallOf } from "@/lib/canary";
 import { KillAlreadyView, KillReceiptView, RunTreePanel } from "./run-tree";
 import { RateLimitNote, useRetryReady } from "./rate-limit";
-import { killRefusalOf, killRun, type KillReceipt, type KillRefusal, type RateLimit } from "@/lib/api/l7";
+import {
+  ALREADY_STOPPING,
+  killFailureText,
+  killRefusalOf,
+  killRun,
+  killTooLateOf,
+  pendingKillOf,
+  stoppingTitle,
+  type KillInfo,
+  type KillReceipt,
+  type KillRefusal,
+  type RateLimit,
+} from "@/lib/api/l7";
 import { LineageDrawer } from "./lineage";
 import { ProvenanceDrawer, RunAssurance } from "./provenance";
 import { decisionsOf, type SignedDecision } from "@/lib/api/l9";
@@ -345,9 +357,30 @@ const SCOPES: { id: Scope; label: string; off?: string }[] = [
   { id: "all", label: "All" },
 ];
 
-function StateBadge({ state }: { state: string }) {
+/** A run's state. One still running or waiting at a gate with a stop asked and not yet carried out reads "Stopping" (amber), who asked on hover. */
+function StateBadge({ state, kill = null }: { state: string; kill?: KillInfo | null }) {
+  if (kill && (state === "running" || state === "suspended")) return <StoppingBadge kill={kill} />;
   const s = RUN_STATE[state];
   return <Status tone={s?.tone ?? "queue"}>{s?.label ?? (state || "Ready")}</Status>;
+}
+
+function StoppingBadge({ kill }: { kill: KillInfo }) {
+  return (
+    <span title={stoppingTitle(kill)} className="inline-flex">
+      <Status tone="warn">Stopping</Status>
+    </span>
+  );
+}
+
+/** A run's Kill button while a stop asked for it is still being carried out: off, saying why on hover (a disabled button takes no hover itself). */
+function KillOff({ label = "Kill run" }: { label?: string }) {
+  return (
+    <span title={ALREADY_STOPPING} className="inline-flex">
+      <Button tone="err" variant="solid" size="sm" permission="run" disabled title={ALREADY_STOPPING}>
+        {label}
+      </Button>
+    </span>
+  );
 }
 
 /** The runs page: every run on record, newest first, each opening its record. A run is started from its agent (Agents, the Control room), not here. */
@@ -523,7 +556,7 @@ function RunHistory() {
                   )}
                   {r.stuck && <Status tone="warn">stuck</Status>}
                   {r.denials > 0 && <Status tone="err">{r.denials} refused</Status>}
-                  <StateBadge state={r.state} />
+                  <StateBadge state={r.state} kill={pendingKillOf(r)} />
                 </button>
                 );
               })}
@@ -606,6 +639,10 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
   /** What the kill reached: the run and its whole tree (L7). */
   const [receipt, setReceipt] = useState<KillReceipt | null>(null);
   const [already, setAlready] = useState<KillRefusal | null>(null);
+  /** The stop asked for the run launched here and not yet carried out: this page's kill while the run still runs (its worker or agent
+   *  stops it at its next step), or an earlier one a second kill found stopping it. Null once the run has ended. */
+  const liveStop: KillInfo | null =
+    receipt && receipt.state !== "killed" && receipt.run === liveRunId ? receipt.kill : (already?.already.find((a) => a.run === liveRunId)?.kill ?? null);
   /** A start refused for a rate limit (429): nothing started; the form stays, with the limit and a countdown. */
   const [limited, setLimited] = useState<{ limit: RateLimit; at: number; said: string } | null>(null);
   const retry = useRetryReady(limited?.limit ?? null, limited?.at ?? 0);
@@ -882,7 +919,8 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
                 // Everything in flight is already stopping on an earlier kill: that, not an error.
                 const refusal = killRefusalOf(e);
                 if (refusal?.already.length) setAlready(refusal);
-                else setError(e.message);
+                // A run that had already ended says so plainly; any other refusal is the service's own sentence.
+                else setError(killFailureText(e));
               });
           }}
         />
@@ -897,6 +935,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
       entries={entries}
       live={phase === "live" && !suspension}
       finalState={suspension ? "suspended" : phase === "done" ? finalState : phase === "live" ? "running" : ""}
+      stopping={phase === "live" || suspension ? liveStop : null}
       error={error}
       outputs={outputs}
       result={result}
@@ -1046,9 +1085,19 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
         phase === "live" && !suspension ? (
           <div className="flex h-11 shrink-0 items-center gap-3 border-t border-line bg-surface px-4">
             {!stream.lost && <Thinking height={10} />}
-            <StreamLine stream={stream} onRetry={() => liveRunId && follow(liveRunId)} following={killing ? "Kill requested" : "Running"} />
+            <StreamLine
+              stream={stream}
+              onRetry={() => liveRunId && follow(liveRunId)}
+              following={liveStop ? `Stopping: asked by ${liveStop.by || "an operator"}` : killing ? "Kill requested" : "Running"}
+            />
             <span className="grow" />
             <Mono className="tnum text-[11px] text-faint">{clock(Math.max(journalMs, wallMs))}</Mono>
+            {liveStop ? (
+              <>
+                <StoppingBadge kill={liveStop} />
+                <KillOff />
+              </>
+            ) : (
             <Button
               tone="err"
               variant="solid"
@@ -1064,6 +1113,7 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
             >
               {killing ? "Killing…" : liveRunId ? "Kill run" : "Starting…"}
             </Button>
+            )}
           </div>
         ) : phase === "done" || suspension ? (
           <div className="flex h-11 shrink-0 items-center gap-3 border-t border-line bg-surface px-4">
@@ -1072,7 +1122,8 @@ function LiveTheater({ agentId, draft }: { agentId: string | null; draft: boolea
             <span className="grow" />
 
             <Mono className="tnum text-[11px] text-faint">{clock(journalMs)}</Mono>
-            {suspension && liveRunId && (
+            {suspension && liveRunId && liveStop && <KillOff />}
+            {suspension && liveRunId && !liveStop && (
               // A run waiting at a gate is still in flight: the platform stops it at once.
               <Button tone="err" variant="solid" size="sm" permission="run" loading={killing} onClick={() => runId.current && setKillAsk(runId.current)}>
                 {killing ? "Killing…" : "Kill run"}
@@ -1449,6 +1500,8 @@ function FollowTheater({
   /** What the kill reached: the run and its whole tree (L7). */
   const [receipt, setReceipt] = useState<KillReceipt | null>(null);
   const [already, setAlready] = useState<KillRefusal | null>(null);
+  /** A kill refused because the run had already ended: the sentence that says so, in the viewer's time. */
+  const [tooLate, setTooLate] = useState("");
   const stop = useRef<(() => void) | null>(null);
   const stream = useStreamState();
   const [now, setNow] = useState(() => Date.now());
@@ -1463,6 +1516,10 @@ function FollowTheater({
   }, [entries, specNodes]);
   const journalMs = entries.length ? entries[entries.length - 1].t : 0;
   const running = state === "running" && !suspension;
+  /** The stop asked for the run and not yet carried out (on the record when the page opened, this page's, or an earlier one a second kill
+   *  found stopping it): the run reads "Stopping" and its Kill button is off. Null once the run has ended. */
+  const stopping: KillInfo | null =
+    state === "running" || suspension ? (killed ?? already?.already.find((a) => a.run === id)?.kill ?? null) : null;
   // A run waiting at a gate is steered too: each lever waits for its next step after the gate.
   const offer = steerOffer({ state, atGate: Boolean(suspension) });
 
@@ -1549,11 +1606,12 @@ function FollowTheater({
             setAlready(null);
             killRun(id, reason)
               .then((r) => {
+                // The stop is on the record: from here the run reads "Stopping" until it ends.
+                setKilling(false);
                 setKilled(r.kill);
                 setReceipt(r);
                 // A run nobody was carrying (waiting at a gate) is stopped here and now: it has ended, and no stream frame will say so.
                 if (r.state === "killed") {
-                  setKilling(false);
                   setSuspension(null);
                   setState("killed");
                 }
@@ -1563,7 +1621,9 @@ function FollowTheater({
                 // Everything in flight is already stopping on an earlier kill: that, not an error.
                 const refusal = killRefusalOf(e);
                 if (refusal?.already.length) setAlready(refusal);
-                else setError(e.message);
+                // The run had ended before the kill arrived: said plainly, with when.
+                else if (killTooLateOf(e)) setTooLate(killFailureText(e));
+                else setError(killFailureText(e));
               });
           }}
         />
@@ -1587,7 +1647,24 @@ function FollowTheater({
         runLive={running}
         limits={facts ? { facts, system, error } : undefined}
         locate={locate}
-        notice={receipt ? <KillReceiptView receipt={receipt} onDismiss={() => setReceipt(null)} /> : already ? <KillAlreadyView refusal={already} onDismiss={() => setAlready(null)} /> : null}
+        stopping={stopping}
+        notice={
+          tooLate ? (
+            <Banner
+              tone="neutral"
+              title={tooLate}
+              action={
+                <Button tone="ink" variant="solid" size="sm" onClick={onReplay}>
+                  Replay the record
+                </Button>
+              }
+            />
+          ) : receipt ? (
+            <KillReceiptView receipt={receipt} onDismiss={() => setReceipt(null)} />
+          ) : already ? (
+            <KillAlreadyView refusal={already} onDismiss={() => setAlready(null)} />
+          ) : null
+        }
         steer={offer.show ? <SteerPanel runId={id} atGate={offer.atGate} /> : null}
         setup={
           <>
@@ -1603,8 +1680,10 @@ function FollowTheater({
                 stream={stream}
                 onRetry={follow}
                 following={
-                  killing || killed
-                    ? `Kill requested${killed?.by ? ` by ${killed.by}` : ""}`
+                  stopping
+                    ? `Stopping: asked by ${stopping.by || "an operator"}`
+                    : killing
+                    ? "Kill requested"
                     : waiting && !waiting.live && entries.length <= initial.length && waiting.stuck
                       ? `Stuck: ${waiting.reason || "no worker is carrying this run"}`
                       : waiting && !waiting.live && entries.length <= initial.length && waiting.on
@@ -1615,17 +1694,25 @@ function FollowTheater({
               {error && <span className="min-w-0 truncate text-[11.5px] text-err">{error}</span>}
               <span className="grow" />
               <Mono className="tnum text-[11px] text-faint">{clock(elapsed)}</Mono>
-              <Button tone="err" variant="solid" size="sm" permission="run" loading={killing} onClick={() => setKillAsk(true)}>
-                {killing ? "Killing…" : "Kill run"}
-              </Button>
+              {stopping ? (
+                <>
+                  <StoppingBadge kill={stopping} />
+                  <KillOff />
+                </>
+              ) : (
+                <Button tone="err" variant="solid" size="sm" permission="run" loading={killing} onClick={() => setKillAsk(true)}>
+                  {killing ? "Killing…" : "Kill run"}
+                </Button>
+              )}
             </div>
           ) : (
             <div className="flex h-11 shrink-0 items-center gap-3 border-t border-line bg-surface px-4">
-              <StateBadge state={suspension ? "suspended" : state} />
+              <StateBadge state={suspension ? "suspended" : state} kill={stopping} />
               {error && <span className="min-w-0 truncate text-[11.5px] text-err">{error}</span>}
               <span className="grow" />
               <Mono className="tnum text-[11px] text-faint">{clock(journalMs)}</Mono>
-              {suspension && (
+              {suspension && stopping && <KillOff />}
+              {suspension && !stopping && (
                 // A run waiting at a gate is still in flight: the platform stops it at once.
                 <Button tone="err" variant="solid" size="sm" permission="run" loading={killing} onClick={() => setKillAsk(true)}>
                   {killing ? "Killing…" : "Kill run"}
@@ -1924,6 +2011,7 @@ function Theater({
   notice,
   limits,
   locate = "",
+  stopping = null,
 }: {
   title: string;
   subtitle: string;
@@ -1966,6 +2054,8 @@ function Theater({
   limits?: { facts: RunFacts; system: string; error: string };
   /** `?entry=`: the journal entry a link points at; the transcript opens on it, marked. */
   locate?: string;
+  /** In flight with a stop asked and not yet carried out: the header reads "Stopping", who asked on hover. */
+  stopping?: KillInfo | null;
 }) {
   const modelCalls = entries.filter((e) => e.kind === "model.call").length;
   const denied = entries.filter((e) => e.kind === "denied" || e.kind === "contract.breach").length;
@@ -2041,7 +2131,9 @@ function Theater({
         </div>
         <span className="text-[13px] font-semibold tracking-[-0.01em]">{title}</span>
         <RunSourceTag run={{ source }} />
-        {suspension ? (
+        {stopping && (suspension || (runLive ?? live)) ? (
+          <StoppingBadge kill={stopping} />
+        ) : suspension ? (
           <Status tone="warn">Awaiting approval</Status>
         ) : (runLive ?? live) ? (
           // A replay's `live` is the film playing; the badge says what the run is, so a finished run replaying reads as finished.

@@ -74,10 +74,10 @@ const KIND: Record<CardKind, { label: string; colour: string; button: string; ic
 };
 
 const SEVERITY_TONE: Record<string, ToneName> = { critical: "critical", high: "high", medium: "medium", low: "low", info: "info" };
-/** The Findings page's words and meanings (components/finding-marks.tsx), in the chat's tones. */
+/** The Findings page's words (components/finding-marks.tsx) in the answer blocks' tones (components/answer-blocks.tsx STATE), so a row and the card it opens agree. */
 const FINDING_STATUS: Record<string, { tone: ToneName; label: string }> = {
-  open: { tone: "warn", label: FINDING_STATUS_META.open.label },
-  confirmed: { tone: "err", label: FINDING_STATUS_META.confirmed.label },
+  open: { tone: "run", label: FINDING_STATUS_META.open.label },
+  confirmed: { tone: "violet", label: FINDING_STATUS_META.confirmed.label },
   false_positive: { tone: "slate", label: FINDING_STATUS_META.false_positive.label },
   accepted: { tone: "slate", label: FINDING_STATUS_META.accepted.label },
   remediated: { tone: "ok", label: FINDING_STATUS_META.remediated.label },
@@ -509,7 +509,7 @@ function RunBody({ r, open }: { r: RunCard; open: (href: string, label?: string)
         </Fact>
         <Fact label="Started">{when(r.startedAt)}</Fact>
         <Fact label="Ended">{when(r.finishedAt) ?? (r.state === "running" || r.state === "suspended" ? <None>not yet</None> : null)}</Fact>
-        <Fact label="Took">{took(r.startedAt, r.finishedAt)}</Fact>
+        <Fact label="Took">{took(r.startedAt, r.finishedAt) ?? (!r.finishedAt && (r.state === "running" || r.state === "suspended") ? <None>not yet</None> : null)}</Fact>
         <Fact label="Cost">{cost}</Fact>
         <Fact label="Tool calls">{r.toolCalls === null ? null : r.toolCalls.toLocaleString("en-GB")}</Fact>
         <Fact label="Refusals">{r.refusals === null ? <span title={r.refusalsUnread} className="text-ghost italic">not read: {r.refusalsUnread || "no count"}</span> : r.refusals.toLocaleString("en-GB")}</Fact>
@@ -742,7 +742,7 @@ function StatusAction({ f, acted }: { f: Finding; acted: (text: string) => void 
   };
   return (
     <ActionBox>
-      <div className="grid gap-2 sm:grid-cols-[180px_1fr]">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-2">
         <Pick<FindingStatus | "">
           value={to}
           onChange={setTo}

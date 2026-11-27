@@ -36,7 +36,7 @@ import { partnerStatus, type PartnerPeer } from "@/lib/peers";
 import { auditLine, inFlight, type RunRowL5 } from "@/lib/api/l5";
 import { KillDialog } from "./kill-dialog";
 import { StopForm, stopNotice, type StopScope } from "./stop-form";
-import { killRefusalOf, killRun } from "@/lib/api/l7";
+import { ALREADY_STOPPING, killFailureText, killRefusalOf, killRun, killTooLateOf, pendingKillOf, stoppingTitle, type KillInfo } from "@/lib/api/l7";
 import { alreadySummary, killSummary } from "@/lib/run-tree";
 import { RunSourceTag } from "./run-source";
 import { JobsList } from "./jobs";
@@ -241,7 +241,7 @@ interface ControlData {
   windows: Record<Win, WindowFigures>;
   agents: AgentRow[];
   /** In flight. `step`, `stuck` and `waitingOn` come from the run ledger (GET /api/runs), laid over by `withLive`. */
-  live: { id: string; system: string; startedAt: string; stuck?: boolean; waitingOn?: string | null; step?: string; stepMs?: number; stepP95Ms?: number | null; source?: string; state?: string }[];
+  live: { id: string; system: string; startedAt: string; stuck?: boolean; waitingOn?: string | null; step?: string; stepMs?: number; stepP95Ms?: number | null; source?: string; state?: string; kill?: KillInfo | null }[];
   days: DayRow[];
   models: ModelRow[];
   latency: WindowFigures["latency"];
@@ -314,6 +314,8 @@ function withLive(d: ControlData, rows: LedgerRow[] | null): ControlData {
     source: runSourceOf(r),
     // An SDK run its agent holds open stays live at a gate (phase L6): in flight, waiting on a person.
     state: r.state,
+    // A stop asked and not yet carried out: the run reads "Stopping" and its Kill button is off.
+    kill: pendingKillOf(r),
   }));
   const bySystem = new Map<string, number>();
   for (const l of live) bySystem.set(l.system, (bySystem.get(l.system) ?? 0) + 1);
@@ -628,7 +630,8 @@ export function Control() {
         } catch (e) {
           // Everything in flight already stopping on an earlier kill is that, not a refusal.
           const refusal = killRefusalOf(e);
-          notice(refusal?.already.length ? alreadySummary(refusal) : `Kill refused: ${(e as Error).message.slice(0, 120)}`);
+          // A run that had ended before the kill arrived says so plainly, with when; any other refusal is the service's own sentence.
+          notice(refusal?.already.length ? alreadySummary(refusal) : killTooLateOf(e) ? killFailureText(e) : `Kill refused: ${killFailureText(e).slice(0, 160)}`);
         }
         await load();
       } catch (e) {
@@ -1148,6 +1151,7 @@ export function Control() {
                   <span className="flex items-center gap-2">
                     <span className="truncate text-[12.5px] font-medium text-fg">{r.system}</span>
                     <RunSourceTag run={r} />
+                    {r.kill && <StoppingBadge kill={r.kill} />}
                     {r.stuck && <Status tone="warn">stuck</Status>}
                   </span>
                   <span className={`truncate font-mono text-[10px] ${r.stuck ? "text-warn" : "text-faint"}`}>
@@ -1155,7 +1159,7 @@ export function Control() {
                     {r.state === "suspended" ? " · at a gate, waiting on a person" : r.waitingOn ? ` · waiting on ${r.waitingOn}` : ""}
                   </span>
                 </button>
-                <KillButton id={r.id} busy={killing === r.id || killing === "*"} onKill={askKill} />
+                <KillButton id={r.id} busy={killing === r.id || killing === "*"} onKill={askKill} stopping={r.kill} />
               </div>
             ))}
             {!data && !off && <p className="px-3 py-4 text-[12px] text-faint">Reading the process table…</p>}
@@ -1757,16 +1761,37 @@ function KillButton({
   label = "Kill",
   busy,
   onKill,
+  stopping = null,
 }: {
   id: string;
   label?: string;
   busy: boolean;
   onKill: (id: string) => void;
+  /** A stop asked for the run and not yet carried out: the button is off, saying why on hover (a disabled button takes no hover itself). */
+  stopping?: KillInfo | null;
 }) {
+  if (stopping) {
+    return (
+      <span title={ALREADY_STOPPING} className="inline-flex">
+        <Button permission="run" size="sm" variant="solid" tone="err" disabled title={ALREADY_STOPPING}>
+          {label}
+        </Button>
+      </span>
+    );
+  }
   return (
     <Button permission="run" size="sm" variant="solid" tone="err" loading={busy} onClick={() => onKill(id)}>
       {label}
     </Button>
+  );
+}
+
+/** A run in flight with a stop asked and not yet carried out: amber "Stopping", who asked on hover. */
+function StoppingBadge({ kill }: { kill: KillInfo }) {
+  return (
+    <span title={stoppingTitle(kill)} className="inline-flex">
+      <Status tone="warn">Stopping</Status>
+    </span>
   );
 }
 
@@ -2149,7 +2174,7 @@ function renderDrill(
               k="State"
               v={
                 <span className="flex items-center gap-2">
-                  {l.state === "suspended" ? <Status tone="warn">at a gate</Status> : <Status tone="run">running</Status>}
+                  {l.kill ? <StoppingBadge kill={l.kill} /> : l.state === "suspended" ? <Status tone="warn">at a gate</Status> : <Status tone="run">running</Status>}
                   <RunSourceTag run={l} />
                 </span>
               }
@@ -2169,7 +2194,7 @@ function renderDrill(
               <Button size="sm" variant="solid" tone="ink" href={`/runs?id=${encodeURIComponent(l.id)}`}>
                 Open theater
               </Button>
-              <KillButton id={l.id} label="Kill this run" busy={killing === l.id || killing === "*"} onKill={onKill} />
+              <KillButton id={l.id} label="Kill this run" busy={killing === l.id || killing === "*"} onKill={onKill} stopping={l.kill} />
             </div>
             <p className="px-4 pb-4 text-[11px] leading-[1.5] text-faint">Still running; the full record lands when it settles.</p>
           </div>
@@ -2181,7 +2206,14 @@ function renderDrill(
       title: `Run · ${r.system}`,
       body: (
         <div className="flex flex-col">
-          <Fact k="State" v={<Status tone={STATE_TONE[r.state] ?? "queue"}>{r.state}</Status>} />
+          <Fact
+            k="State"
+            v={(() => {
+              // Still in flight with a stop asked and not yet carried out (from the live read): "Stopping".
+              const stopping = data.live.find((x) => x.id === r.id)?.kill;
+              return stopping ? <StoppingBadge kill={stopping} /> : <Status tone={STATE_TONE[r.state] ?? "queue"}>{r.state}</Status>;
+            })()}
+          />
           {r.state === "killed" && <Fact k="Control" v={<ControlRef control={KILL_CONTROL} size="md" />} />}
           {r.denials > 0 && (
             <Fact
@@ -2430,13 +2462,14 @@ function renderDrill(
                   <span className="flex min-w-0 items-center gap-1.5">
                     <span className="truncate text-[12px] font-medium text-fg">{l.system}</span>
                     <RunSourceTag run={l} />
+                    {l.kill && <StoppingBadge kill={l.kill} />}
                   </span>
                   <span className="truncate font-mono text-[9.5px] text-faint">
                     {ago(l.startedAt)}
                     {l.state === "suspended" ? " · at a gate" : ""}
                   </span>
                 </button>
-                <KillButton id={l.id} busy={killing === l.id || killing === "*"} onKill={onKill} />
+                <KillButton id={l.id} busy={killing === l.id || killing === "*"} onKill={onKill} stopping={l.kill} />
               </div>
             ))}
           </div>

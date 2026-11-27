@@ -324,6 +324,66 @@ export function killRefusalOf(e: unknown): KillRefusal | null {
   return { error: e.message, already: reachedList(e.body.already) };
 }
 
+/* ═══════════════════ a stop under way, and a stop too late ═══════════════════ */
+
+/** Why a run's Kill button is off while a stop asked for it is still being carried out. */
+export const ALREADY_STOPPING = "Already being stopped";
+
+/**
+ * The stop asked for a run that is still running or waiting at a gate: it is
+ * being stopped (a worker stops it at its next checkpoint, an attached agent
+ * when it is told), and reads "Stopping". Read from a run's record or a row
+ * of the run list (`kill`: who, when, why). Null when no stop is pending:
+ * none was asked, or the run has ended.
+ */
+export function pendingKillOf(run: { state?: string | null; kill?: unknown } | null | undefined): KillInfo | null {
+  if (!run || (run.state !== "running" && run.state !== "suspended")) return null;
+  if (!run.kill || typeof run.kill !== "object" || Array.isArray(run.kill)) return null;
+  const k = killInfoOf(run.kill);
+  return k.by || k.at || k.reason ? k : null;
+}
+
+const clockOf = (iso: string | null | undefined): string => {
+  const t = iso ? Date.parse(iso) : NaN;
+  return Number.isNaN(t) ? "" : new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+};
+
+/** The hover on "Stopping": who asked, when (the viewer's time), and why. */
+export function stoppingTitle(k: KillInfo): string {
+  const at = clockOf(k.at);
+  return `Stop asked by ${k.by || "an operator"}${at ? ` at ${at}` : ""}${k.reason ? `: ${k.reason}` : ""}. It is still being carried out.`;
+}
+
+/** A kill of a run that had already ended: its state and when it finished (`KillRefused` with `state`). */
+export interface KillTooLate {
+  state: string;
+  finishedAt: string | null;
+}
+
+export function killTooLateOf(e: unknown): KillTooLate | null {
+  if (!(e instanceof DoorError) || e.status !== 409) return null;
+  const state = str(e.body.state);
+  return state ? { state, finishedAt: strOrNull(e.body.finished_at) } : null;
+}
+
+/** "This run already ended (done) at HH:MM.", in the viewer's time. */
+export function killTooLateText(t: KillTooLate): string {
+  const at = clockOf(t.finishedAt);
+  return `This run already ended (${t.state})${at ? ` at ${at}` : ""}.`;
+}
+
+/**
+ * What a kill that was refused shows: a run that had ended says so plainly,
+ * in the viewer's time; any other refusal is the service's own sentence,
+ * without the status and address the generic error text adds.
+ */
+export function killFailureText(e: unknown): string {
+  const late = killTooLateOf(e);
+  if (late) return killTooLateText(late);
+  if (e instanceof DoorError && typeof e.body.error === "string" && e.body.error) return e.body.error;
+  return e instanceof Error ? e.message : String(e);
+}
+
 /* ═══════════════════ rate limits across agents ═══════════════════ */
 
 /**
