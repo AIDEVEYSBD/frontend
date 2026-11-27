@@ -19,6 +19,8 @@ git diff FROM_COMMIT origin/BRANCH > changes.patch  # the full diff
 **From:** the code pushed on 24 November (backend `3a92d18`, console `e36228b`). If your pipeline builds the console
 from branch `abb-brand`, read the next section as well.
 
+**The changed files and full diffs** are in each repository under `deploy/changes/2026-11-27/`.
+
 ### What changed for your pipeline
 
 | Item | Change | What your pipeline does |

@@ -1,7 +1,7 @@
 # Saros console
 
 
-Upgrading a running deployment: [`deploy/UPGRADE.md`](deploy/UPGRADE.md) (the same file as in the service's repository).
+Upgrading a running deployment: [`deploy/UPGRADE.md`](deploy/UPGRADE.md) (the same file as in the service's repository). Joining the SAST tool: [`deploy/SAST.md`](deploy/SAST.md).
 
 The console is the pages of Saros: a Next.js app (app router, React 19) that runs in the browser and calls the platform's service for everything it shows or changes. It keeps no data, no session and no setting of its own beyond the two below. It has no API routes of its own: its only server-side logic is `proxy.ts`, which forwards.
 
