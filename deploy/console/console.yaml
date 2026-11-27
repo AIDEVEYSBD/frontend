@@ -53,6 +53,8 @@ metadata:
 spec:
   iap:
     enabled: true
+  # The chatbot streams one answer over several model calls (often 30-90 s); the load balancer's default of 30 s cuts it off.
+  timeoutSec: 600
   healthCheck:
     type: HTTP
     requestPath: /login
