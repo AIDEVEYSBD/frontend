@@ -1,6 +1,6 @@
 # Deploying on Google Cloud
 
-**Already deployed?** `deploy/UPGRADE.md` says what each new version changes for your pipeline. **Joining the SAST tool:** `deploy/SAST.md`.
+**Start with `deploy/HANDOVER.md`**: one page on deploying this release and joining the SAST tool. **Already deployed?** `deploy/UPGRADE.md` says what each new version changes for your pipeline. **Joining the SAST tool:** `deploy/SAST.md`.
 
 This guide is for the DevOps engineers who deploy Saros into their own Google Cloud project, using the two
 repositories and this guide. It assumes you know Google Cloud, GKE and Cloud Run. It explains only the product.
