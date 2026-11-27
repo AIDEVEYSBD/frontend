@@ -1,5 +1,8 @@
 # Deploying the console
 
+
+**Upgrading** a running deployment: [`../UPGRADE.md`](../UPGRADE.md).
+
 **The whole Google Cloud deployment, both parts together, is in [`deploy/GCP.md`](../GCP.md)** (the same file is in the
 service's repository). That guide covers the project, AlloyDB, GKE, IAM, the console on Cloud Run behind IAP, the route between the console and the
 service, and what to verify on the first day. This page is the console's own part.
