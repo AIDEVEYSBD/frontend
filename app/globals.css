@@ -761,3 +761,339 @@ header nav a[aria-current="page"] {
   }
 }
 /* ── ABB brand end ── */
+
+/* ── answer blocks start (the chatbot's tokens and classes, --ask-* and .ask-*: components/answer-blocks.tsx,
+   components/assistant-charts.tsx, and the assistant's drawer, full page and in-chat cards use them; delete this
+   block and those parts go plain) ──
+   Colour in an answer does one job at a time.
+   - Meaning: a tone per state, severity or kind. Red is critical, failed, killed, a refusal; orange is high;
+     amber is medium, suspended, a gate; green is done and resolved; blue is running, open and a tool call;
+     teal is low; violet is confirmed and a model call; slate is info, closed, dismissed and a note.
+     Each tone has a mark (--ask-<tone>: dots, bars, accents) and an ink (--ask-<tone>-ink: text on the tone's
+     tint, at least 4.5:1 in both themes).
+   - Identity: where nothing is meant, a figure or a series takes the categorical slots --ask-cat-1..6 in this
+     fixed order: blue, amber, teal, violet, olive, magenta (checked with the dataviz validator in both themes:
+     CVD ΔE 12.5 light / 11.9 dark, normal vision 21.5 / 20.7). Red is never a slot, so red always means something.
+   - The contract's names (--ask-ok, --ask-sev-high, …) are the INK, safe as text on their -bg; their -mark is the
+     colour for a dot, a bar or a stripe. Tints are mixed into the surface, never transparent, so a chip, a pill
+     or a tile is a solid fill in both themes.
+   - --ask-accent is the ABB red, for brand marks only (a greeting's mark, a stripe, the item that is active). It is
+     never a button's fill, since a solid red button means cancel or delete, and never small text (white on it is
+     4:1). A solid button that does something else takes --ask-action. */
+:root,
+[data-theme="light"] {
+  --ask-red: #d6302b;
+  --ask-red-ink: #a3201c;
+  --ask-orange: #e0661b;
+  --ask-orange-ink: #9a3f0c;
+  --ask-amber: #c8830b;
+  --ask-amber-ink: #7d5500;
+  --ask-green: #2f9e5b;
+  --ask-green-ink: #1b6a3b;
+  --ask-blue: #1577c8;
+  --ask-blue-ink: #13579a;
+  --ask-teal: #0b9488;
+  --ask-teal-ink: #0a675f;
+  --ask-violet: #7a59c3;
+  --ask-violet-ink: #5a3ca0;
+  --ask-olive: #889e2a;
+  --ask-olive-ink: #56651a;
+  --ask-magenta: #c74c8e;
+  --ask-magenta-ink: #93306a;
+  --ask-slate: #7a828e;
+  --ask-slate-ink: #4a515b;
+  /* How much of a tone is mixed into the surface: a tile's wash, a chip's tint, its hover, its edge. */
+  --ask-wash: 5%;
+  --ask-tint: 11%;
+  --ask-tint-strong: 19%;
+  --ask-edge: 30%;
+  --ask-accent: #ff000f;
+  --ask-on-accent: #ffffff;
+  --ask-action: #1a63ad;
+  --ask-on-action: #ffffff;
+}
+[data-theme="dark"] {
+  --ask-red: #e5534b;
+  --ask-red-ink: #f4a39d;
+  --ask-orange: #e8803a;
+  --ask-orange-ink: #f5b68c;
+  --ask-amber: #c38406;
+  --ask-amber-ink: #ecc66e;
+  --ask-green: #4cb87a;
+  --ask-green-ink: #93d8ae;
+  --ask-blue: #398ad6;
+  --ask-blue-ink: #a0c8f2;
+  --ask-teal: #099b8f;
+  --ask-teal-ink: #86d5cc;
+  --ask-violet: #8e71d6;
+  --ask-violet-ink: #c6b5f3;
+  --ask-olive: #82972f;
+  --ask-olive-ink: #c3d27e;
+  --ask-magenta: #c65b93;
+  --ask-magenta-ink: #eeabcf;
+  --ask-slate: #8a929e;
+  --ask-slate-ink: #c0c6ce;
+  --ask-wash: 9%;
+  --ask-tint: 20%;
+  --ask-tint-strong: 30%;
+  --ask-edge: 38%;
+  --ask-accent: #ff2a35;
+  --ask-on-accent: #ffffff;
+  --ask-action: #398ad6;
+  --ask-on-action: #0a0a09;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ask-red: #e5534b;
+    --ask-red-ink: #f4a39d;
+    --ask-orange: #e8803a;
+    --ask-orange-ink: #f5b68c;
+    --ask-amber: #c38406;
+    --ask-amber-ink: #ecc66e;
+    --ask-green: #4cb87a;
+    --ask-green-ink: #93d8ae;
+    --ask-blue: #398ad6;
+    --ask-blue-ink: #a0c8f2;
+    --ask-teal: #099b8f;
+    --ask-teal-ink: #86d5cc;
+    --ask-violet: #8e71d6;
+    --ask-violet-ink: #c6b5f3;
+    --ask-olive: #82972f;
+    --ask-olive-ink: #c3d27e;
+    --ask-magenta: #c65b93;
+    --ask-magenta-ink: #eeabcf;
+    --ask-slate: #8a929e;
+    --ask-slate-ink: #c0c6ce;
+    --ask-wash: 9%;
+    --ask-tint: 20%;
+    --ask-tint-strong: 30%;
+    --ask-edge: 38%;
+    --ask-accent: #ff2a35;
+    --ask-on-accent: #ffffff;
+    --ask-action: #398ad6;
+    --ask-on-action: #0a0a09;
+  }
+}
+
+/* The named tokens. Declared on every theme root, not :root alone: a var() resolves where it is declared, so a
+   nested [data-theme] subtree must work its own out. */
+:root,
+[data-theme] {
+  --ask-surface: var(--t-surface);
+  --ask-surface-2: color-mix(in oklab, var(--ask-slate) var(--ask-wash), var(--t-surface));
+  --ask-line: var(--t-line);
+  --ask-line-strong: var(--t-line-strong);
+
+  --ask-cat-1: var(--ask-blue);
+  --ask-cat-2: var(--ask-amber);
+  --ask-cat-3: var(--ask-teal);
+  --ask-cat-4: var(--ask-violet);
+  --ask-cat-5: var(--ask-olive);
+  --ask-cat-6: var(--ask-magenta);
+
+  --ask-ok: var(--ask-green-ink);
+  --ask-ok-mark: var(--ask-green);
+  --ask-ok-bg: color-mix(in oklab, var(--ask-green) var(--ask-tint), var(--t-surface));
+  --ask-warn: var(--ask-amber-ink);
+  --ask-warn-mark: var(--ask-amber);
+  --ask-warn-bg: color-mix(in oklab, var(--ask-amber) var(--ask-tint), var(--t-surface));
+  --ask-err: var(--ask-red-ink);
+  --ask-err-mark: var(--ask-red);
+  --ask-err-bg: color-mix(in oklab, var(--ask-red) var(--ask-tint), var(--t-surface));
+  --ask-info: var(--ask-blue-ink);
+  --ask-info-mark: var(--ask-blue);
+  --ask-info-bg: color-mix(in oklab, var(--ask-blue) var(--ask-tint), var(--t-surface));
+
+  --ask-sev-critical: var(--ask-red-ink);
+  --ask-sev-critical-mark: var(--ask-red);
+  --ask-sev-critical-bg: color-mix(in oklab, var(--ask-red) var(--ask-tint), var(--t-surface));
+  --ask-sev-high: var(--ask-orange-ink);
+  --ask-sev-high-mark: var(--ask-orange);
+  --ask-sev-high-bg: color-mix(in oklab, var(--ask-orange) var(--ask-tint), var(--t-surface));
+  --ask-sev-medium: var(--ask-amber-ink);
+  --ask-sev-medium-mark: var(--ask-amber);
+  --ask-sev-medium-bg: color-mix(in oklab, var(--ask-amber) var(--ask-tint), var(--t-surface));
+  --ask-sev-low: var(--ask-teal-ink);
+  --ask-sev-low-mark: var(--ask-teal);
+  --ask-sev-low-bg: color-mix(in oklab, var(--ask-teal) var(--ask-tint), var(--t-surface));
+  --ask-sev-info: var(--ask-slate-ink);
+  --ask-sev-info-mark: var(--ask-slate);
+  --ask-sev-info-bg: color-mix(in oklab, var(--ask-slate) var(--ask-tint), var(--t-surface));
+}
+
+/* A tone, named on the element that carries it: data-tone="red" and the rest (the tone words above). */
+[data-tone] {
+  --ask-tone: var(--ask-slate);
+  --ask-tone-ink: var(--ask-slate-ink);
+}
+[data-tone="red"] { --ask-tone: var(--ask-red); --ask-tone-ink: var(--ask-red-ink); }
+[data-tone="orange"] { --ask-tone: var(--ask-orange); --ask-tone-ink: var(--ask-orange-ink); }
+[data-tone="amber"] { --ask-tone: var(--ask-amber); --ask-tone-ink: var(--ask-amber-ink); }
+[data-tone="green"] { --ask-tone: var(--ask-green); --ask-tone-ink: var(--ask-green-ink); }
+[data-tone="blue"] { --ask-tone: var(--ask-blue); --ask-tone-ink: var(--ask-blue-ink); }
+[data-tone="teal"] { --ask-tone: var(--ask-teal); --ask-tone-ink: var(--ask-teal-ink); }
+[data-tone="violet"] { --ask-tone: var(--ask-violet); --ask-tone-ink: var(--ask-violet-ink); }
+[data-tone="olive"] { --ask-tone: var(--ask-olive); --ask-tone-ink: var(--ask-olive-ink); }
+[data-tone="magenta"] { --ask-tone: var(--ask-magenta); --ask-tone-ink: var(--ask-magenta-ink); }
+
+/* A block's card, its title bar, and the small glyph of its kind. */
+.ask-card {
+  border: 1px solid var(--ask-line);
+  background: var(--ask-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+}
+.ask-head {
+  background: var(--ask-surface-2);
+  border-bottom: 1px solid var(--ask-line);
+}
+.ask-glyph {
+  color: var(--ask-tone-ink);
+  background: color-mix(in oklab, var(--ask-tone) var(--ask-tint-strong), var(--ask-surface));
+}
+
+/* A chip for a state, a severity or a kind: the tone's dot, its word in the tone's ink, on its tint. */
+.ask-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  border-radius: 999px;
+  padding: 1px 8px 1px 6px;
+  font-size: 10.5px;
+  line-height: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--ask-tone-ink);
+  background: color-mix(in oklab, var(--ask-tone) var(--ask-tint), var(--ask-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ask-tone) var(--ask-edge), var(--ask-surface));
+}
+.ask-chip::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--ask-tone);
+}
+
+/* An id: monospace on a quiet chip. */
+.ask-id {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  border-radius: var(--radius-sm);
+  padding: 0 5px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 17px;
+  background: color-mix(in oklab, var(--ask-slate) var(--ask-tint), var(--ask-surface));
+  color: var(--ask-slate-ink);
+}
+
+/* A figure: a wash of its tone, a bar of it along the top. */
+.ask-tile {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--ask-tone) var(--ask-wash), var(--ask-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ask-tone) 24%, var(--ask-surface));
+}
+.ask-tile::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--ask-tone);
+}
+a.ask-tile:hover,
+button.ask-tile:hover {
+  background: color-mix(in oklab, var(--ask-tone) var(--ask-tint), var(--ask-surface));
+}
+.ask-tile[data-meaning] .ask-figure {
+  color: var(--ask-tone-ink);
+}
+
+/* A question to send: a pill on the blue tint, solid in both themes. */
+.ask-pill {
+  color: var(--ask-blue-ink);
+  background: color-mix(in oklab, var(--ask-blue) var(--ask-tint), var(--ask-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ask-blue) var(--ask-edge), var(--ask-surface));
+}
+.ask-pill:hover {
+  background: color-mix(in oklab, var(--ask-blue) var(--ask-tint-strong), var(--ask-surface));
+}
+
+/* A solid button that acts (a link to a console page, "Open page"): never red. */
+.ask-action {
+  color: var(--ask-on-action);
+  background: var(--ask-action);
+}
+.ask-action:hover {
+  filter: brightness(1.08);
+}
+
+/* A table: a tinted sticky header (opaque, so rows never show through it), zebra rows, a hover on rows that open.
+   Later in the file than .af-list, so its header's tint wins over the plain one. */
+.ask-table thead th,
+.ask-rows [data-sticky] {
+  background: color-mix(in oklab, var(--ask-slate) var(--ask-tint), var(--ask-surface));
+  box-shadow: inset 0 -1px 0 var(--ask-line);
+}
+.ask-table tbody tr:nth-child(even),
+.ask-rows > li:nth-child(even) {
+  background: color-mix(in oklab, var(--ask-slate) 3.5%, var(--ask-surface));
+}
+.ask-table tbody tr[data-opens]:hover,
+.ask-rows > li[data-opens]:hover {
+  background: color-mix(in oklab, var(--ask-blue) var(--ask-tint), var(--ask-surface));
+}
+.ask-chevron {
+  color: var(--t-fg-5);
+}
+[data-opens]:hover .ask-chevron,
+a:hover > .ask-chevron,
+button:hover > .ask-chevron {
+  color: var(--ask-blue-ink);
+}
+
+/* A bar's track. */
+.ask-track {
+  background: color-mix(in oklab, var(--ask-slate) var(--ask-tint), var(--ask-surface));
+}
+
+/* A step's dot on the timeline, ringed in the surface so it sits on the line. */
+.ask-dot {
+  color: var(--ask-surface);
+  background: var(--ask-tone);
+  box-shadow: 0 0 0 3px var(--ask-surface);
+}
+.ask-rail {
+  background: var(--ask-line-strong);
+}
+
+/* The chart's tooltip. */
+.ask-tip {
+  background: var(--ask-surface);
+  border: 1px solid var(--ask-line-strong);
+  box-shadow: var(--shadow-2);
+}
+
+/* A refused block, and the error card. */
+.ask-error {
+  background: color-mix(in oklab, var(--ask-red) var(--ask-wash), var(--ask-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ask-red) var(--ask-edge), var(--ask-surface));
+}
+/* ── ask dock start (components/assistant.tsx, Role B): while the assistant is docked on the right, the root element
+   carries data-ask-dock="1" and the console's main column (the <main> in components/chrome.tsx) makes room for the
+   420px dock, so nothing is covered. Below 1024px the dock is the floating drawer and nothing moves. ── */
+@media (min-width: 1024px) {
+  html[data-ask-dock="1"] main:not(main main) {
+    margin-right: 420px;
+  }
+}
+/* ── ask dock end ── */
+/* ── answer blocks end ── */

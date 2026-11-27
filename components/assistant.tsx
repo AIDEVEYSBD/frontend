@@ -1,38 +1,45 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, Mono, Spinner } from "./ui";
-import { CURRENT_USER } from "@/lib/user";
+import { Button, IconButton } from "./ui";
 import { useSession } from "@/lib/use-session";
 import { pageFor } from "@/lib/assistant";
-import { answerOf, type Answer } from "@/lib/answer-blocks";
-import { AnswerBlocks, AskButton } from "./answer-blocks";
-import { Markdown } from "./markdown";
+import { useAssistant, type AssistantChat } from "@/lib/use-assistant";
+import { ASK, AssistantThread, SparkIcon, tint } from "./assistant-thread";
 
 /**
  * The console assistant: a round launcher at the bottom right of every page,
- * and the panel it opens above it.
+ * and the drawer it opens above it. The full page at /ask shows the same
+ * conversation (lib/use-assistant.ts), so the launcher and the drawer are not
+ * drawn there.
  *
  * It answers questions about what the console shows from the platform
  * service's own records (`GET` and `POST /api/assistant`): the service reads
  * them itself with the asking person's permissions and can change nothing.
  * An answer is a few sentences in the model's own words and blocks (figures,
  * a table whose rows open their records, bars, a chart, steps, links,
- * choices) that the service filled from the reads it made in the same turn;
- * each block names its read in a quiet footer (components/answer-blocks.tsx).
- * A question about the product itself is answered from the service's
- * description of Saros and its console (the `describe_platform` read).
- * The drawer sends the conversation and the page's path and title, nothing
- * else. Every question and its answer, or why there is none, is kept by the
- * service with who asked.
+ * choices) that the service filled from the reads it made in the same turn.
+ * A record or page an answer points to opens as a card inside the
+ * conversation (components/assistant-thread.tsx); the card's "Open page"
+ * button is what leaves the chat. The drawer sends the conversation and the
+ * page's path and title, nothing else. Every question and its answer, or why
+ * there is none, is kept by the service with who asked.
  *
  * The launcher never covers a control of the page: it moves up past one that
  * sits in its corner (a sticky bar's buttons, a table's last row), and when
  * no free place is near, it folds into a narrow tab at the window's edge.
  *
- * The conversation and the panel's size are kept in this browser for the
- * session, so they survive moving between pages.
+ * The floating drawer closes on Escape and on a click outside it. "Embed"
+ * docks it on the right of the page as a full-height sidebar instead: the
+ * page's main column makes room for it (the marked "ask dock" rule in
+ * app/globals.css, keyed on `data-ask-dock` on the root element), and a click
+ * on the page leaves it open. Below 1024 px wide the dock is the floating
+ * drawer again. "Go to" opens the same conversation on the full page.
+ *
+ * The drawer's size is kept in this browser for the session; whether it is
+ * docked (and the dock open) is kept in this browser's local storage.
  */
 
 /**
@@ -45,46 +52,34 @@ export function usePageFacts(next: Record<string, unknown> | null): void {
   void next;
 }
 
-/** What `GET /api/assistant` says: whether a model is offered, which, or why not; and the reads the service may make for this person. */
-interface Availability {
-  available: boolean;
-  model: string | null;
-  reason: string | null;
-  reads: { name: string; description: string }[];
+const SIZE_STORE = "af.assistant.size";
+/** "open" or "closed" while the assistant is docked; absent while it floats. */
+const DOCK_STORE = "saros.ask.dock";
+/** The dock's width; the "ask dock" rule in app/globals.css gives the main column the same right margin. */
+const DOCK_WIDTH = 420;
+/** The narrowest window the dock is offered on; below it, the floating drawer. Matches the "ask dock" rule's media query. */
+const DOCK_MEDIA = "(min-width: 1024px)";
+
+/** Whether the window is wide enough for the dock, followed as it resizes. False on the server and the first render. */
+function useWide(): boolean {
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(DOCK_MEDIA);
+    const on = () => setWide(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  return wide;
 }
 
-/* ── the conversation ── */
+/** What a click outside the drawer may land on without closing it: a dialog, a menu or a popover opened from it. */
+const KEEPS_OPEN = '[data-assistant], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], dialog, [data-radix-popper-content-wrapper]';
 
-interface Turn { role: "user" | "assistant"; content: string; tools?: string[]; error?: string; answer?: Answer }
-
-const STORE = "af.assistant";
-const SIZE_STORE = "af.assistant.size";
-const TOOL_LABEL: Record<string, string> = {
-  describe_platform: "reading what Saros is",
-  overview: "reading the overview",
-  agents: "reading the agents",
-  runs: "reading the runs",
-  run_record: "reading a run record",
-  approvals: "reading the approval queue",
-  attention: "reading the attention queue",
-  knowledge: "reading the knowledge base",
-  search_knowledge: "searching the knowledge passages",
-  connectors: "reading the connectors",
-  use_cases: "reading the use cases",
-  findings: "reading the findings",
-  acceptance: "reading the acceptance records",
-  applications: "reading the applications",
-  models: "reading the models offered",
-  audit_trail: "reading the audit trail",
-  show_tiles: "laying out figures",
-  show_table: "laying out a table",
-  show_bars: "laying out bars",
-  show_chart: "drawing a chart",
-  show_steps: "listing steps",
-  show_links: "adding links",
-  show_choices: "offering choices",
-  suggest_followups: "suggesting questions",
-};
+/** The full page's address: the launcher and the drawer are not drawn on it. */
+function onAskPage(path: string): boolean {
+  return path === "/ask" || path.startsWith("/ask/");
+}
 
 /* ── where the launcher may sit ── */
 
@@ -144,7 +139,7 @@ function clearSpot(): Spot {
   return { lift: HOME, tab: true, edge };
 }
 
-/** Where the launcher sits now, checked again as the page scrolls, resizes or changes; held still while `frozen` (the panel is open). */
+/** Where the launcher sits now, checked again as the page scrolls, resizes or changes; held still while `frozen` (the drawer is open, or nothing is drawn). */
 function useClearSpot(frozen: boolean): Spot {
   const [spot, setSpot] = useState<Spot>({ lift: HOME, tab: false, edge: 0 });
   useEffect(() => {
@@ -175,44 +170,87 @@ function useClearSpot(frozen: boolean): Spot {
   return spot;
 }
 
-/** The launcher at the bottom right, and the panel it opens. */
+/** The launcher at the bottom right, and the drawer it opens. Nothing on the full page (/ask). */
 export function Assistant() {
+  const pathname = usePathname() || "/";
+  const onAsk = onAskPage(pathname);
+  const chat = useAssistant();
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [size, setSize] = useState<"compact" | "expanded">("compact");
+  const [dock, setDock] = useState(false);
+  const wide = useWide();
+  // Docked only where the window is wide enough; below it the same choice shows the floating drawer.
+  const docked = dock && wide && !onAsk;
   const launcher = useRef<HTMLButtonElement>(null);
-  // What the service said when asked whether the assistant can answer, or why that could not be read. Null until it has answered.
-  const [state, setState] = useState<{ ok: Availability } | { failed: string } | null>(null);
-  const spot = useClearSpot(open);
+  const spot = useClearSpot(open || onAsk);
   if (open && !mounted) setMounted(true);
 
   useEffect(() => {
-    let live = true;
-    fetch("/api/assistant", { cache: "no-store" })
-      .then(async (r) => {
-        const d = (await r.json().catch(() => null)) as (Availability & { error?: string; phase?: number }) | null;
-        if (!r.ok || !d) throw new Error(d?.error ? `${d.error}${d.error === "not built" && d.phase ? ` (phase ${d.phase})` : ""}` : `the server answered ${r.status}`);
-        if (live) setState({ ok: d });
-      })
-      .catch((e: Error) => live && setState({ failed: e.message || "the request did not reach the server" }));
     try {
       if (sessionStorage.getItem(SIZE_STORE) === "expanded") setSize("expanded");
     } catch {
       /* the small size */
     }
-    return () => {
-      live = false;
-    };
+    let saved: string | null = null;
+    try {
+      saved = localStorage.getItem(DOCK_STORE);
+    } catch {
+      /* floating */
+    }
+    if (saved === "open" || saved === "closed") {
+      setDock(true);
+      // A dock left open stays open across reloads, where the window is wide enough for it.
+      if (saved === "open" && !onAskPage(window.location.pathname) && window.matchMedia(DOCK_MEDIA).matches) setOpen(true);
+    }
   }, []);
 
-  const resize = (next: "compact" | "expanded") => {
+  // While docked, remember whether the dock is open; floating, forget it.
+  useEffect(() => {
+    try {
+      if (dock) localStorage.setItem(DOCK_STORE, open ? "open" : "closed");
+      else localStorage.removeItem(DOCK_STORE);
+    } catch {
+      /* held for this page only */
+    }
+  }, [dock, open]);
+
+  // The page's main column makes room for an open dock (the "ask dock" rule in app/globals.css).
+  const shifted = docked && open;
+  useEffect(() => {
+    const root = document.documentElement;
+    if (shifted) root.setAttribute("data-ask-dock", "1");
+    else root.removeAttribute("data-ask-dock");
+    return () => root.removeAttribute("data-ask-dock");
+  }, [shifted]);
+
+  const toggleDock = useCallback(() => {
+    setDock((d) => !d);
+    setOpen(true);
+  }, []);
+
+  const resize = useCallback((next: "compact" | "expanded") => {
     setSize(next);
     try {
       sessionStorage.setItem(SIZE_STORE, next);
     } catch {
       /* held for this page only */
     }
-  };
+  }, []);
+
+  // Moving to another page (a card's "Open page", the sidebar) shows that page: the large floating drawer steps back to
+  // the small size and a narrow window closes it; the dock stays as it is. Arriving on the full page closes the drawer,
+  // so it is not open on the way back unless docked.
+  const lastPath = useRef(pathname);
+  useEffect(() => {
+    if (lastPath.current === pathname) return;
+    lastPath.current = pathname;
+    if (onAsk) {
+      if (!dock) setOpen(false);
+    } else if (docked) return;
+    else if (window.innerWidth < 640) setOpen(false);
+    else if (size === "expanded") resize("compact");
+  }, [pathname, onAsk, dock, docked, size, resize]);
 
   const close = useCallback(() => {
     setOpen(false);
@@ -223,35 +261,40 @@ export function Assistant() {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
-      // A dialog or a menu above the panel takes Escape first.
+      // A dialog or a menu above the drawer takes Escape first.
       if (document.querySelector('[role="dialog"]:not([data-assistant]), [role="menu"]')) return;
+      // The dock is part of the page: Escape closes it only from inside it.
+      if (docked && !(document.activeElement instanceof Element && document.activeElement.closest('[data-assistant="panel"]'))) return;
       close();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [open, close]);
+  }, [open, docked, close]);
 
-  if (state === null) return null;
-  const cannot = "failed" in state ? `The assistant could not be reached: ${state.failed}` : state.ok.available ? null : state.ok.reason || "The assistant cannot answer on this deployment.";
+  // A click outside the floating drawer closes it. Not while docked, and not a click in a dialog, a menu or a popover
+  // (one opened from an in-chat card), nor on an element the click itself removed.
+  useEffect(() => {
+    if (!open || docked) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target;
+      if (!(t instanceof Element) || !t.isConnected) return;
+      if (t.closest(KEEPS_OPEN)) return;
+      setOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [open, docked]);
+
+  if (onAsk || !chat.availability.checked) return null;
   const panelBottom = (spot.tab ? HOME : spot.lift) + LAUNCHER + 12;
+  const folded = spot.tab && !open;
   return (
     <>
       {mounted && (
-        <AssistantPanel
-          open={open}
-          onClose={close}
-          cannot={cannot}
-          size={size}
-          onResize={resize}
-          bottom={panelBottom}
-          onNavigate={() => {
-            // Opening a record from an answer shows it behind the panel: the large size steps back, and a narrow window closes the panel.
-            if (window.innerWidth < 640) setOpen(false);
-            else if (size === "expanded") resize("compact");
-          }}
-        />
+        <AssistantPanel chat={chat} open={open} onClose={close} size={size} onResize={resize} bottom={panelBottom} docked={docked} canDock={wide} onDock={toggleDock} />
       )}
-      <button
+      {/* The open dock has its own Close; the launcher would sit on its composer. */}
+      {!shifted && <button
         ref={launcher}
         type="button"
         data-assistant="launcher"
@@ -260,12 +303,12 @@ export function Assistant() {
         aria-expanded={open}
         aria-label={open ? "Close the assistant" : "Open the assistant"}
         title={open ? "Close the assistant" : "Ask the assistant"}
-        style={spot.tab && !open ? { right: spot.edge, bottom: HOME, width: TAB_WIDTH, height: LAUNCHER } : { right: HOME, bottom: spot.lift, width: LAUNCHER, height: LAUNCHER }}
-        className={`focusable fixed z-50 grid place-items-center bg-ink text-on-ink elev-3 transition-[bottom,right,width,border-radius,filter] duration-150 ease-out hover:brightness-110 ${
-          spot.tab && !open ? "rounded-l-md" : "rounded-full"
+        style={folded ? { right: spot.edge, bottom: HOME, width: TAB_WIDTH, height: LAUNCHER } : { right: HOME, bottom: spot.lift, width: LAUNCHER, height: LAUNCHER }}
+        className={`focusable fixed z-50 grid place-items-center bg-ink text-on-ink elev-3 transition-[bottom,right,width,border-radius,filter,transform] duration-150 ease-out hover:brightness-110 ${
+          folded ? "rounded-l-md" : "rounded-full hover:-translate-y-0.5"
         }`}
       >
-        {spot.tab && !open ? (
+        {folded ? (
           <span className="h-5 w-[3px] rounded-full bg-on-ink/80" aria-hidden />
         ) : open ? (
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
@@ -274,271 +317,215 @@ export function Assistant() {
         ) : (
           <SparkIcon size={21} />
         )}
-      </button>
+        {/* An answer is coming while the drawer is closed. */}
+        {chat.busy && !open && !folded && (
+          <span className="af-pulse absolute top-0.5 right-0.5 size-3 rounded-full ring-2 ring-[var(--t-canvas)]" style={{ background: ASK.accent }} aria-hidden />
+        )}
+      </button>}
     </>
   );
 }
 
 function AssistantPanel({
+  chat,
   open,
   onClose,
-  cannot,
   size,
   onResize,
   bottom,
-  onNavigate,
+  docked,
+  canDock,
+  onDock,
 }: {
+  chat: AssistantChat;
   open: boolean;
   onClose: () => void;
-  cannot: string | null;
   size: "compact" | "expanded";
   onResize: (s: "compact" | "expanded") => void;
   bottom: number;
-  onNavigate: () => void;
+  /** Docked on the right of the page as a full-height sidebar. */
+  docked: boolean;
+  /** The window is wide enough to dock. */
+  canDock: boolean;
+  /** Dock the drawer, or float the dock again. */
+  onDock: () => void;
 }) {
-  const pathname = usePathname();
+  const pathname = usePathname() || "/";
   const page = pageFor(pathname);
-  const [turns, setTurns] = useState<Turn[]>([]);
   const [draft, setDraft] = useState("");
-  const [busy, setBusy] = useState(false);
-  const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
-  const abort = useRef<AbortController | null>(null);
   const { session: me } = useSession();
-  const expanded = size === "expanded";
-
-  useEffect(() => {
-    try {
-      const saved = sessionStorage.getItem(STORE);
-      if (saved) setTurns(JSON.parse(saved));
-    } catch {
-      /* fresh conversation */
-    }
-  }, []);
-
-  useEffect(() => {
-    try {
-      sessionStorage.setItem(STORE, JSON.stringify(turns.slice(-30)));
-    } catch {
-      /* fine */
-    }
-    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
-  }, [turns]);
+  const expanded = size === "expanded" && !docked;
+  const { turns, busy, cannot } = chat;
 
   useEffect(() => {
     if (open) setTimeout(() => input.current?.focus(), 50);
   }, [open]);
 
-  const askFrom = useCallback(
-    async (base: Turn[], text: string) => {
-      const q = text.trim();
-      if (!q) return;
-      setDraft("");
-      const history = [...base, { role: "user" as const, content: q }];
-      setTurns([...history, { role: "assistant", content: "", tools: [] }]);
-      setBusy(true);
-      abort.current?.abort();
-      const ac = new AbortController();
-      abort.current = ac;
-      try {
-        const res = await fetch("/api/assistant", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            messages: history.map((t) => ({ role: t.role, content: t.content })),
-            page: { path: pathname, title: page.info.title },
-          }),
-          signal: ac.signal,
-        });
-        if (!res.ok || !res.body) {
-          let msg = `HTTP ${res.status}`;
-          try { msg = String((await res.json()).error ?? msg); } catch { /* keep */ }
-          throw new Error(msg);
-        }
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buf = "";
-        const patch = (fn: (t: Turn) => Turn) =>
-          setTurns((prev) => {
-            const next = prev.slice();
-            next[next.length - 1] = fn(next[next.length - 1]);
-            return next;
-          });
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buf += decoder.decode(value, { stream: true });
-          let nl: number;
-          while ((nl = buf.indexOf("\n\n")) >= 0) {
-            const chunk = buf.slice(0, nl);
-            buf = buf.slice(nl + 2);
-            const line = chunk.split("\n").find((l) => l.startsWith("data:"));
-            if (!line) continue;
-            let ev: { delta?: string; tool?: string; error?: string; done?: boolean; answer?: unknown };
-            try { ev = JSON.parse(line.slice(5)); } catch { continue; }
-            if (ev.delta) patch((t) => ({ ...t, content: t.content + ev.delta }));
-            if (ev.tool) patch((t) => ({ ...t, tools: [...(t.tools ?? []), ev.tool!] }));
-            if (ev.answer) {
-              const a = answerOf(ev.answer);
-              if (a) patch((t) => ({ ...t, answer: a }));
-            }
-            if (ev.error) patch((t) => ({ ...t, error: ev.error }));
-          }
-        }
-      } catch (e) {
-        if ((e as Error).name !== "AbortError") {
-          setTurns((prev) => {
-            const next = prev.slice();
-            next[next.length - 1] = { ...next[next.length - 1], error: (e as Error).message };
-            return next;
-          });
-        }
-      } finally {
-        setBusy(false);
-      }
-    },
-    [pathname, page.info.title],
-  );
-  const ask = useCallback((text: string) => { if (!busy && !cannot) askFrom(turns, text); }, [askFrom, busy, turns, cannot]);
-
-  const clear = () => {
-    abort.current?.abort();
-    setTurns([]);
-    setBusy(false);
+  const send = (text: string) => {
+    if (busy || cannot || !text.trim()) return;
+    chat.ask(text);
+    setDraft("");
   };
 
-  // Re-ask the last question: drop the failed answer and its question, then
-  // send the question again so the record reads as one exchange.
-  const retry = () => {
-    const last = [...turns].reverse().find((t) => t.role === "user");
-    if (!last) return;
-    const idx = turns.lastIndexOf(last);
-    const before = turns.slice(0, idx);
-    setTurns(before);
-    setTimeout(() => askFrom(before, last.content), 0);
-  };
+  const first = me?.name?.split(/\s+/)[0];
 
   return (
     <section
       aria-label="Assistant"
       data-assistant="panel"
-      data-size={size}
+      data-size={docked ? "docked" : size}
       inert={!open}
-      style={{ bottom }}
-      className={`fixed right-6 z-40 flex origin-bottom-right flex-col overflow-hidden rounded-xl border border-line-strong bg-surface elev-3 transition-[opacity,transform,width,height] duration-200 ease-out max-sm:right-3 max-sm:h-[calc(100dvh-92px)] max-sm:w-[calc(100vw-1.5rem)] ${
-        expanded ? "h-[calc(100dvh-104px)] w-[min(860px,calc(100vw-3rem))]" : "h-[min(700px,calc(100dvh-112px))] w-[440px]"
-      } ${open ? "visible translate-y-0 scale-100 opacity-100" : "pointer-events-none invisible translate-y-2 scale-[0.96] opacity-0"}`}
+      style={docked ? { width: DOCK_WIDTH, background: ASK.surface2 } : { bottom, background: ASK.surface2 }}
+      className={
+        docked
+          ? `fixed inset-y-0 right-0 z-40 flex flex-col overflow-hidden border-l border-line-strong elev-2 transition-[opacity,transform] duration-200 ease-out ${
+              open ? "visible translate-x-0 opacity-100" : "pointer-events-none invisible translate-x-6 opacity-0"
+            }`
+          : `fixed right-6 z-40 flex origin-bottom-right flex-col overflow-hidden rounded-2xl border border-line-strong elev-3 transition-[opacity,transform,width,height] duration-200 ease-out max-sm:right-3 max-sm:h-[calc(100dvh-92px)] max-sm:w-[calc(100vw-1.5rem)] ${
+              expanded ? "h-[calc(100dvh-104px)] w-[min(860px,calc(100vw-3rem))]" : "h-[min(700px,calc(100dvh-112px))] w-[440px]"
+            } ${open ? "visible translate-y-0 scale-100 opacity-100" : "pointer-events-none invisible translate-y-2 scale-[0.96] opacity-0"}`
+      }
     >
-      <header className="flex h-[52px] shrink-0 items-center gap-2 border-b border-line pr-2.5 pl-3.5">
-        <span className="grid size-7 shrink-0 place-items-center rounded-md bg-ink text-on-ink"><SparkIcon size={14} /></span>
+      <header className="relative flex h-14 shrink-0 items-center gap-2 border-b pr-2.5 pl-3.5" style={{ background: ASK.surface, borderColor: ASK.line }}>
+        <span className="absolute inset-x-0 top-0 h-[3px]" style={{ background: `linear-gradient(90deg, ${ASK.accent} 0%, ${ASK.accent} 35%, ${ASK.cat(1)} 70%, ${ASK.cat(3)} 100%)` }} aria-hidden />
+        <span className="grid size-8 shrink-0 place-items-center rounded-lg" style={{ background: ASK.accent, color: ASK.onAccent }}>
+          <SparkIcon size={15} />
+        </span>
         <span className="flex min-w-0 grow flex-col leading-tight">
-          <span className="text-[13px] font-semibold">Assistant</span>
-          <span className="truncate text-[11px] text-faint">reads this deployment&rsquo;s records · on {page.info.title}</span>
+          <span className="text-[13.5px] font-semibold tracking-[-0.01em]">Assistant</span>
+          <span className="truncate text-[11px] text-faint max-[400px]:hidden">on {page.info.title}</span>
         </span>
-        <Button size="sm" variant="solid" tone="neutral" disabled={!turns.length} onClick={clear} title="Start a new conversation; the record of this one is kept">
-          New
-        </Button>
-        <span className="max-sm:hidden">
-          <Button size="sm" variant="solid" tone="neutral" onClick={() => onResize(expanded ? "compact" : "expanded")} title={expanded ? "Make the panel small" : "Make the panel large"}>
-            {expanded ? "Smaller" : "Larger"}
+        <IconButton size="sm" label="New conversation" disabled={!turns.length} onClick={chat.reset}>
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" />
+          </svg>
+        </IconButton>
+        {!docked && (
+          <IconButton size="sm" label={expanded ? "Make the panel smaller" : "Make the panel larger"} className="max-sm:hidden" onClick={() => onResize(expanded ? "compact" : "expanded")}>
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              {expanded ? <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" /> : <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />}
+            </svg>
+          </IconButton>
+        )}
+        {canDock && (
+          <Button size="sm" variant="solid" tone="neutral" onClick={onDock} title={docked ? "Float the assistant over the page again" : "Dock the assistant on the right of the page"}>
+            {docked ? "Undock" : "Embed"}
           </Button>
-        </span>
+        )}
+        {/* Button's link form takes no title, so the link is drawn here with the solid ink look. */}
+        <Link
+          href="/ask"
+          title="Open full page"
+          aria-label="Go to the full page"
+          className="focusable inline-flex h-7 shrink-0 cursor-pointer items-center justify-center gap-1 rounded-sm border border-transparent bg-ink px-2.5 text-[12px] font-medium whitespace-nowrap text-on-ink transition-[filter] duration-100 select-none hover:brightness-[1.08] active:brightness-95"
+        >
+          Go to
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M7 17L17 7M9 7h8v8" />
+          </svg>
+        </Link>
         <Button size="sm" variant="solid" tone="err" onClick={onClose}>
           Close
         </Button>
       </header>
 
-      <div ref={scroller} className="min-h-0 grow overflow-x-hidden overflow-y-auto overscroll-contain px-3.5 py-3.5">
+      <div className="min-h-0 grow overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-4">
         <div className={`flex flex-col gap-4 ${expanded ? "mx-auto max-w-[780px]" : ""}`}>
           {cannot && (
-            <p role="alert" className="rounded-md border border-err-line bg-canvas px-3 py-2 text-[12px] leading-[1.55] text-err">{cannot}</p>
+            <p role="alert" className="rounded-xl px-3.5 py-2.5 text-[12px] leading-[1.55]" style={{ background: ASK.errBg, color: ASK.err, boxShadow: `inset 0 0 0 1px ${tint(ASK.err, 35)}` }}>
+              {cannot}
+            </p>
           )}
           {turns.length === 0 && !cannot && (
-            <div className="flex flex-col gap-3">
-              <p className="text-[12px] leading-[1.6] text-dim">Ask about Saros or this deployment. Answers come from its records, read with your permissions.</p>
-              <div className="flex flex-col gap-1.5">
-                {page.info.suggested.map((s) => (
-                  <AskButton key={s} text={s} onSend={ask} full />
-                ))}
+            <div className="af-fade-up flex flex-col gap-4 pt-2">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-[17px] font-semibold tracking-[-0.015em]">{first ? `Hi ${first}, what would you like to know?` : "What would you like to know?"}</h2>
+                <p className="text-[12.5px] leading-[1.55] text-dim">Ask about Saros or this deployment. Answers come from its records, read with your permissions.</p>
               </div>
+              <Suggestions items={page.info.suggested} onSend={send} />
             </div>
           )}
-          {turns.map((t, i) =>
-            t.role === "user" ? (
-              <div key={i} className="flex items-start justify-end gap-2">
-                <div className="max-w-[85%] rounded-lg rounded-tr-sm bg-ink px-3 py-2 text-[12.5px] leading-[1.55] whitespace-pre-wrap text-on-ink">{t.content}</div>
-                <span className="grid size-6 shrink-0 place-items-center rounded-full bg-raise text-[9px] font-semibold text-fg">{me?.initials ?? CURRENT_USER.initials}</span>
-              </div>
-            ) : (
-              <div key={i} className="flex items-start gap-2" data-turn="assistant">
-                <span className="grid size-6 shrink-0 place-items-center rounded-full bg-ink text-on-ink"><SparkIcon size={11} /></span>
-                <div className="flex min-w-0 grow flex-col gap-2">
-                  {(t.tools ?? []).length > 0 && (
-                    <span className="flex flex-wrap gap-1">
-                      {(t.tools ?? []).map((name, k) => (
-                        <Mono key={k} className="rounded-sm bg-raise px-1.5 py-px text-[9.5px] text-faint">{TOOL_LABEL[name] ?? name}</Mono>
-                      ))}
-                    </span>
-                  )}
-                  {t.content ? (
-                    <div className="rounded-lg rounded-tl-sm border border-line bg-canvas px-3 py-2 text-[12.5px] leading-[1.6] text-fg">
-                      <Markdown text={t.content} />
-                    </div>
-                  ) : busy && i === turns.length - 1 && !t.error ? (
-                    <span className="flex items-center gap-2 px-1 py-1 text-[11px] text-faint"><Spinner size={12} /> reading the records</span>
-                  ) : null}
-                  {t.answer && (
-                    <AnswerBlocks answer={t.answer} origin={{ kind: "platform" }} onSend={ask} onNavigate={onNavigate} busy={busy || Boolean(cannot)} followups={i === turns.length - 1} />
-                  )}
-                  {t.error && (
-                    <span role="alert" className="flex flex-wrap items-center gap-2 px-1 text-[11px] leading-[1.5] text-err">
-                      {t.error}
-                      {i === turns.length - 1 && !busy && (
-                        <Button size="sm" variant="solid" tone="neutral" disabled={Boolean(cannot)} onClick={retry}>Try again</Button>
-                      )}
-                    </span>
-                  )}
-                </div>
-              </div>
-            ),
-          )}
+          <AssistantThread chat={chat} size={expanded ? "large" : "compact"} />
         </div>
       </div>
 
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          ask(draft);
+          send(draft);
         }}
-        className="flex shrink-0 items-end gap-2 border-t border-line p-3"
+        className="shrink-0 border-t p-3"
+        style={{ background: ASK.surface, borderColor: ASK.line }}
       >
-        <textarea
-          ref={input}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              ask(draft);
-            }
-          }}
-          rows={2}
-          disabled={Boolean(cannot)}
-          aria-label="Question to the assistant"
-          placeholder={cannot ? "The assistant cannot answer: see above" : `Ask about ${page.info.title.toLowerCase()}…`}
-          className="focusable min-h-[40px] grow resize-none rounded-md border border-line bg-canvas px-3 py-2 text-[12.5px] leading-[1.5] text-fg placeholder:text-ghost"
-        />
-        <Button size="sm" variant="solid" tone="ink" loading={busy} disabled={Boolean(cannot)} onClick={() => ask(draft)}>Send</Button>
+        <div className={`flex items-end gap-2 rounded-xl border bg-field p-1.5 pl-3 transition-[border-color,box-shadow] focus-within:border-line-strong ${expanded ? "mx-auto max-w-[780px]" : ""}`} style={{ borderColor: ASK.line }}>
+          <textarea
+            ref={input}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                send(draft);
+              }
+            }}
+            rows={2}
+            disabled={Boolean(cannot)}
+            aria-label="Question to the assistant"
+            placeholder={cannot ? "The assistant cannot answer: see above" : `Ask about ${page.info.title.toLowerCase()}…`}
+            className="min-h-[40px] grow resize-none bg-transparent py-1.5 text-[13px] leading-[1.5] text-fg outline-none placeholder:text-ghost disabled:cursor-not-allowed"
+          />
+          <SendButton busy={busy} disabled={Boolean(cannot) || !draft.trim()} />
+        </div>
       </form>
     </section>
   );
 }
 
-function SparkIcon({ size = 13 }: { size?: number }) {
+/** The page's suggested questions, as chips each tinted with one of the categorical colours. */
+function Suggestions({ items, onSend }: { items: string[]; onSend: (t: string) => void }) {
   return (
-    <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" aria-hidden>
-      <path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z" />
-      <path d="M19 15l.9 2.6L22.5 18.5l-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9z" opacity=".7" />
-    </svg>
+    <div className="flex flex-col gap-1.5" data-suggestions>
+      {items.map((s, k) => {
+        const c = ASK.cat(k + 1);
+        return (
+          <button
+            key={s}
+            type="button"
+            onClick={() => onSend(s)}
+            className="focusable group flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[12.5px] leading-[1.4] font-medium text-fg transition-[filter,transform] duration-100 hover:brightness-[0.97] active:scale-[0.99] dark:hover:brightness-110"
+            style={{ background: tint(c, 11), boxShadow: `inset 0 0 0 1px ${tint(c, 30)}` }}
+          >
+            <span className="size-2 shrink-0 rounded-full" style={{ background: c }} aria-hidden />
+            <span className="min-w-0 grow break-words">{s}</span>
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke={c} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 transition-transform duration-100 group-hover:translate-x-0.5" aria-hidden>
+              <path d="M9 6l6 6-6 6" />
+            </svg>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SendButton({ busy, disabled }: { busy: boolean; disabled: boolean }) {
+  return (
+    <button
+      type="submit"
+      aria-label="Send"
+      title="Send (Enter)"
+      disabled={busy || disabled}
+      aria-busy={busy || undefined}
+      className="focusable grid size-9 shrink-0 cursor-pointer place-items-center rounded-lg bg-ink text-on-ink transition-[filter,opacity] duration-100 hover:brightness-[1.08] active:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      {busy ? (
+        <span className="af-spin inline-block size-4 rounded-full border-2 border-on-ink/30 border-t-on-ink" aria-hidden />
+      ) : (
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M12 19V5M5 12l7-7 7 7" />
+        </svg>
+      )}
+    </button>
   );
 }

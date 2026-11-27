@@ -22,6 +22,11 @@ export interface PageInfo {
 }
 
 export const PAGES: Record<string, PageInfo> = {
+  "/ask": {
+    title: "Assistant",
+    shows: "The assistant on a full page: ask about this deployment and open its records as cards in the conversation.",
+    suggested: ["What is Saros?", "What requires attention?", "Which findings are open?"],
+  },
   "/overview": {
     title: "Overview",
     shows: "Runs, spend and what waits for a person, at a glance.",

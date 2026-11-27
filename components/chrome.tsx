@@ -27,10 +27,11 @@ import { roleLabel as roleName, type Permission } from "@/lib/permissions";
  * There is no Builder here: this console runs and configures the agents it
  * is given, and does not design them.
  */
-type Group = "Overview" | "Operations" | "Agents" | "Identity" | "Connections" | "Security and Policy" | "Observability";
-const GROUPS: Group[] = ["Overview", "Operations", "Agents", "Identity", "Connections", "Security and Policy", "Observability"];
+type Group = "Overview" | "Assistant" | "Operations" | "Agents" | "Identity" | "Connections" | "Security and Policy" | "Observability";
+const GROUPS: Group[] = ["Overview", "Assistant", "Operations", "Agents", "Identity", "Connections", "Security and Policy", "Observability"];
 const GROUP_ICON: Record<Group, NavIconName> = {
   Overview: "house",
+  Assistant: "sparkles",
   Operations: "list-checks",
   Agents: "bot",
   Identity: "key-round",
@@ -52,6 +53,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { href: "/overview", label: "Overview", group: "Overview", icon: "house" },
+  { href: "/ask", label: "Assistant", group: "Assistant", icon: "sparkles" },
 
   { href: "/workloads", label: "Workloads", group: "Operations", icon: "target" },
   { href: "/control", label: "Control", group: "Operations", icon: "gauge" },

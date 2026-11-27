@@ -14,6 +14,24 @@ git diff FROM_COMMIT origin/BRANCH > changes.patch  # the full diff
 
 ---
 
+## 27 November 2026, second release: chatbot and model-call fixes
+
+**Nothing changes in your pipeline.** There are no new build arguments, settings, files to apply or database
+migrations. Rebuild both images from the new commits and roll them out as usual.
+
+| What | Where |
+|---|---|
+| The chatbot has a full page (`/ask`, "Assistant" in the menu); the drawer can dock on the right; a click in an answer opens a card in the chat | console |
+| Broken model replies are asked again, the chatbot leaves room for the model's reasoning and asks Gemini for low reasoning effort (answers are several times faster) | backend |
+| Claude and other Model Garden partner models can be called once enabled in the project | backend |
+
+**One setting to check if the console runs on GKE behind an Ingress:** the load balancer's default response
+timeout is 30 seconds, which cuts off chatbot answers. `deploy/console/console.yaml` now sets `timeoutSec: 3600` in
+its BackendConfig; apply that file again, or add the line to yours. On Cloud Run, set the request timeout to 3600
+seconds (`--timeout=3600`).
+
+---
+
 ## 27 November 2026: backend `abb` at `10ff27b`, console `abb-platform` at `144f8e3`
 
 **From:** the code pushed on 24 November (backend `3a92d18`, console `e36228b`). If your pipeline builds the console
